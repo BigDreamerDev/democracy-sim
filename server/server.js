@@ -25,7 +25,13 @@ const pool = new Pool({
 const q = (sql, params = []) => pool.query(sql, params);
 
 const app = express();
-const ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(x => x.trim()).filter(Boolean);
+/* A browser only ever sends scheme + host as its Origin, so
+   "https://you.github.io/your-repo" would never match anything and every request
+   from the site would be dropped with no error the server can see. Normalise
+   whatever was pasted down to a bare origin, and accept a missing scheme too. */
+const ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(x => x.trim()).filter(Boolean)
+  .map(x => { try { return new URL(x.includes('://') ? x : 'https://' + x).origin; } catch { return null; } })
+  .filter(Boolean);
 app.use(cors({ origin: ORIGINS.length ? ORIGINS : true }));
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '256kb' }));
@@ -62,7 +68,16 @@ const DEFAULTS = {
   pass_threshold: '0.5',           // ordinary bills, share of non-abstaining votes
   constitutional_threshold: '0.667',
   veto_override: '0.667',
+  bill_proposers: 'mps',           // mps | citizens — who may propose and second a bill
   bill_voters: 'mps',              // mps | citizens
+  allow_veto_override: 'false',    // false: the President's assent is required, full stop
+  impeachment_threshold: '0.667',  // share of the division needed to remove an officer
+  referendum_threshold: '0.7',     // share of a referendum needed to strike a law down
+  referendum_quorum: '0.5',        // share of citizens who must vote for it to count
+  referendum_days: '2',            // how long a referendum poll stays open
+  petition_share: '0.334',         // share of citizens needed to force a referendum or an initiative
+  initiative_mode: 'table',        // off | table | enact — what citizens' signatures can do
+  initiative_threshold: '0.7',     // share of a referendum needed to enact an initiative directly
   secret_ballot: 'true',           // hide who voted for whom in elections
   allow_open_signup: 'false',      // if true, no invite code needed
   require_approval: 'true',        // new accounts stay inert until an admin approves them
@@ -77,9 +92,9 @@ const DEFAULTS = {
   speaker_auto: 'true',            // the House picks a Speaker after each election
   speaker_nomination_hours: '12',
   speaker_poll_hours: '12',
-  speaker_threshold: '0.667',
+  speaker_threshold: '0.667',      // Article 4: two thirds of the House
   speaker_relax: '1',              // votes the bar drops after each failed ballot; 0 to never relax
-  flag_law_ref: 'L001',            // the law the app reads the flag and its colours from      // Article 4: two thirds of the House
+  flag_law_ref: 'L001',            // the law the app reads the flag and its colours from
   enforce_term_limit: 'false'      // Article 7: no two consecutive cycles in office
 };
 
@@ -102,6 +117,9 @@ const num = (k) => Number(CONFIG[k]);
 const LEGISLATABLE = new Set([
   'nation_name', 'motto', 'seats', 'term_days', 'seconds_required', 'quorum',
   'pass_threshold', 'constitutional_threshold', 'veto_override', 'bill_voters',
+  'bill_proposers', 'allow_veto_override', 'impeachment_threshold', 'referendum_threshold',
+  'referendum_quorum', 'referendum_days', 'petition_share',
+  'initiative_mode', 'initiative_threshold',
   'secret_ballot', 'cycle_enabled', 'cycle_days', 'campaign_days', 'poll_days',
   'cycle_elects', 'speaker_auto', 'speaker_threshold', 'speaker_nomination_hours',
   'speaker_poll_hours', 'speaker_relax', 'enforce_term_limit', 'flag_law_ref'
@@ -243,6 +261,9 @@ async function bootstrap() {
   const u = await q('SELECT count(*)::int n FROM users');
   if (!u.rows[0].n) console.log('[republic] No citizens yet — the first account to register becomes admin.');
   console.log('[republic] ready');
+  console.log(ORIGINS.length
+    ? `[republic] browser requests accepted from: ${ORIGINS.join(', ')}`
+    : '[republic] ALLOWED_ORIGINS is not set — requests accepted from anywhere.');
 }
 
 /* ----------------------------------------------------------------- auth */
@@ -508,10 +529,102 @@ const DAY = 86400000, HOUR = 3600000;
 const TITLES = { parliament: 'General election', president: 'Presidential election', speaker: 'Election of the Speaker', referendum: 'Referendum' };
 
 /* Close an election and seat whoever won it. Used by the admin route and by the clock. */
+/* ------------------------------------------------------------ referendums
+
+   The House makes the law; the people can take it back. A referendum is bound to
+   a law, asks one question, and strikes the law down if enough of the Republic
+   says so. Citizens force one by petition — nobody has to ask permission. */
+
+async function citizenCount() {
+  return (await q('SELECT count(*)::int n FROM users WHERE is_active AND approved')).rows[0].n;
+}
+
+/* Two questions share one ballot box. On a law the proposition is "strike this
+   down", so `reject` is the affirmative. On an initiative it is "make this law",
+   so `enact` is. `share` always means the share in favour of the proposition. */
+async function referendumTally(electionId, kind = 'law') {
+  const { rows } = await q('SELECT choice FROM referendum_votes WHERE election_id=$1', [electionId]);
+  const yes = rows.filter(r => r.choice === (kind === 'initiative' ? 'enact' : 'reject')).length;
+  const no = rows.filter(r => r.choice === (kind === 'initiative' ? 'reject' : 'keep')).length;
+  const cast = yes + no;
+  return { yes, no, keep: kind === 'initiative' ? no : no, reject: kind === 'initiative' ? no : yes,
+           enact: kind === 'initiative' ? yes : 0, cast, share: cast ? yes / cast : 0 };
+}
+
+async function openInitiativeReferendum(bill, actorId) {
+  const open = (await q(
+    "SELECT 1 FROM elections WHERE kind='referendum' AND target_bill_id=$1 AND status<>'closed'", [bill.id])).rows[0];
+  if (open) return null;
+  const closes = new Date(Date.now() + num('referendum_days') * DAY);
+  const { rows } = await q(
+    `INSERT INTO elections(kind,title,seats,status,target_bill_id,opens_at,closes_at,auto)
+     VALUES('referendum',$1,1,'voting',$2,now(),$3,TRUE) RETURNING *`,
+    [`Initiative on ${bill.ref} — ${bill.title}`, bill.id, closes]);
+  await q("UPDATE bills SET status='referendum' WHERE id=$1", [bill.id]);
+  log(actorId, 'initiative.referendum', bill.ref);
+  return rows[0];
+}
+
+async function openReferendum(lawId, actorId, why) {
+  const open = (await q(
+    "SELECT 1 FROM elections WHERE kind='referendum' AND target_law_id=$1 AND status<>'closed'", [lawId])).rows[0];
+  if (open) return null;
+  const law = (await q('SELECT ref,title FROM laws WHERE id=$1 AND repealed_at IS NULL', [lawId])).rows[0];
+  if (!law) return null;
+  const closes = new Date(Date.now() + num('referendum_days') * DAY);
+  const { rows } = await q(
+    `INSERT INTO elections(kind,title,seats,status,target_law_id,opens_at,closes_at,auto)
+     VALUES('referendum',$1,1,'voting',$2,now(),$3,TRUE) RETURNING *`,
+    [`Referendum on ${law.ref} — ${law.title}`, lawId, closes]);
+  log(actorId, 'referendum.open', `${law.ref} (${why})`);
+  return rows[0];
+}
+
 async function certify(e, actorId) {
   await loadConfig();
   await q("UPDATE elections SET status='closed' WHERE id=$1", [e.id]);
-  if (e.kind === 'referendum') return { seated: [], referendum: true };
+
+  if (e.kind === 'referendum' && e.target_bill_id) {
+    const b = (await q('SELECT * FROM bills WHERE id=$1', [e.target_bill_id])).rows[0];
+    const t = await referendumTally(e.id, 'initiative');
+    const roll = await citizenCount();
+    const quorum = Math.ceil(num('referendum_quorum') * roll);
+    const need = num('initiative_threshold');
+    const out = { seated: [], referendum: true, initiative: true, ...t, roll, quorum, need };
+    if (t.cast < quorum || t.share < need) {
+      await q("UPDATE bills SET status='failed', result=$1, resolved_at=now() WHERE id=$2",
+        [`${t.yes} for / ${t.no} against`, b.id]);
+      log(actorId, 'initiative.lost', `${b.ref}: ${t.cast < quorum ? 'quorum' : Math.round(t.share * 100) + '%'}`);
+      return { ...out, enacted: false, reason: t.cast < quorum ? 'quorum' : 'threshold' };
+    }
+    // The people have spoken directly: this becomes law without the House or the President.
+    await enact(b, actorId);
+    await q('UPDATE bills SET result=$1 WHERE id=$2', [`${t.yes} for / ${t.no} against`, b.id]);
+    log(actorId, 'initiative.enacted', `${b.ref} by ${Math.round(t.share * 100)}% of ${t.cast} votes`);
+    return { ...out, enacted: true, bill: b.ref };
+  }
+
+  if (e.kind === 'referendum') {
+    if (!e.target_law_id) return { seated: [], referendum: true };
+    const t = await referendumTally(e.id, 'law');
+    const roll = await citizenCount();
+    const quorum = Math.ceil(num('referendum_quorum') * roll);
+    const need = num('referendum_threshold');
+    const out = { seated: [], referendum: true, ...t, roll, quorum, need };
+    if (t.cast < quorum) {
+      log(actorId, 'referendum.void', `too few voted: ${t.cast} of ${quorum} needed`);
+      return { ...out, struck: false, reason: 'quorum' };
+    }
+    if (t.share < need) {
+      log(actorId, 'referendum.kept', `${Math.round(t.share * 100)}% to reject, ${Math.round(need * 100)}% needed`);
+      return { ...out, struck: false, reason: 'threshold' };
+    }
+    const law = (await q(
+      'UPDATE laws SET repealed_at=now() WHERE id=$1 AND repealed_at IS NULL RETURNING ref,title',
+      [e.target_law_id])).rows[0];
+    log(actorId, 'referendum.struck', `${law?.ref || '?'} rejected by ${Math.round(t.share * 100)}% of ${t.cast} votes`);
+    return { ...out, struck: true, law: law?.ref };
+  }
 
   const results = (await tally(e.id)).filter(c => !c.withdrawn);
   const winners = results.slice(0, e.seats).filter(w => w.votes > 0);
@@ -674,6 +787,46 @@ app.get('/api/elections/:id', wrap(async (req, res) => {
     const v = await q('SELECT candidacy_id FROM votes WHERE election_id=$1 AND voter_id=$2', [e.id, req.user.id]);
     myVote = v.rows[0]?.candidacy_id ?? null;
   }
+  if (e.kind === 'referendum' && e.target_bill_id) {
+    const t = await referendumTally(e.id, 'initiative');
+    const bill = (await q('SELECT id,ref,title,kind,body,status FROM bills WHERE id=$1', [e.target_bill_id])).rows[0];
+    const mine = req.user
+      ? (await q('SELECT choice FROM referendum_votes WHERE election_id=$1 AND user_id=$2', [e.id, req.user.id])).rows[0]
+      : null;
+    const rollN = await citizenCount();
+    return res.json({
+      ...e, bill, initiative: true,
+      eligible: roll.length,
+      turnout: t.cast,
+      can_vote: req.user ? roll.includes(req.user.id) : false,
+      my_choice: mine?.choice || null,
+      tally: hideCounts ? null : t,
+      quorum: Math.ceil(num('referendum_quorum') * rollN),
+      need: num('initiative_threshold'),
+      candidates: []
+    });
+  }
+
+  if (e.kind === 'referendum' && e.target_law_id) {
+    const t = await referendumTally(e.id);
+    const law = (await q('SELECT id,ref,title,body,repealed_at FROM laws WHERE id=$1', [e.target_law_id])).rows[0];
+    const mine = req.user
+      ? (await q('SELECT choice FROM referendum_votes WHERE election_id=$1 AND user_id=$2', [e.id, req.user.id])).rows[0]
+      : null;
+    const rollN = await citizenCount();
+    return res.json({
+      ...e, law,
+      eligible: roll.length,
+      turnout: t.cast,
+      can_vote: req.user ? roll.includes(req.user.id) : false,
+      my_choice: mine?.choice || null,
+      tally: hideCounts ? null : t,
+      quorum: Math.ceil(num('referendum_quorum') * rollN),
+      need: num('referendum_threshold'),
+      candidates: []
+    });
+  }
+
   res.json({
     ...e,
     eligible: roll.length,
@@ -686,9 +839,14 @@ app.get('/api/elections/:id', wrap(async (req, res) => {
 
 app.post('/api/elections', admin, wrap(async (req, res) => {
   await loadConfig();
-  const { kind, title, seats, closes_at } = req.body || {};
+  const { kind, title, seats, closes_at, target_law_id } = req.body || {};
   if (!['president', 'parliament', 'speaker', 'referendum'].includes(kind))
     return res.status(400).json({ error: 'Pick a valid election type.' });
+  if (kind === 'referendum' && target_law_id) {
+    const made = await openReferendum(Number(target_law_id), req.user.id, 'called by the returning officer');
+    if (!made) return res.status(400).json({ error: 'That law is already under referendum, or is not in force.' });
+    return res.json(made);
+  }
   const n = kind === 'parliament' ? (Number(seats) || num('seats')) : 1;
   const { rows } = await q('INSERT INTO elections(kind,title,seats,closes_at) VALUES($1,$2,$3,$4) RETURNING *',
     [kind, title?.trim() || TITLES[kind], n, closes_at || null]);
@@ -744,6 +902,57 @@ app.post('/api/elections/:id/vote', auth, wrap(async (req, res) => {
   }
   log(req.user.id, 'election.vote', `#${e.id}`);
   res.json({ ok: true });
+}));
+
+app.post('/api/elections/:id/referendum', auth, wrap(async (req, res) => {
+  await loadConfig();
+  const e = (await q('SELECT * FROM elections WHERE id=$1', [req.params.id])).rows[0];
+  if (!e || e.kind !== 'referendum') return res.status(404).json({ error: 'No such referendum.' });
+  if (e.status !== 'voting') return res.status(400).json({ error: 'This referendum is not open.' });
+  if (e.closes_at && new Date(e.closes_at) < new Date()) return res.status(400).json({ error: 'The poll has closed.' });
+  const choice = req.body?.choice;
+  const allowed = e.target_bill_id ? ['enact', 'reject'] : ['keep', 'reject'];
+  if (!allowed.includes(choice))
+    return res.status(400).json({ error: `Vote ${allowed[0]} or ${allowed[1]}.` });
+  const roll = await electorate(e);
+  if (!roll.includes(req.user.id)) return res.status(403).json({ error: 'You are not in the electorate for this vote.' });
+  try {
+    await q('INSERT INTO referendum_votes(election_id,user_id,choice) VALUES($1,$2,$3)', [e.id, req.user.id, choice]);
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'You have already voted in this referendum. One vote each.' });
+    throw err;
+  }
+  log(req.user.id, 'referendum.vote', `#${e.id}`);
+  res.json({ ok: true });
+}));
+
+/* Any citizen may sign. Enough signatures and the referendum opens itself —
+   the House and the President are not consulted. */
+app.post('/api/laws/:id/petition', auth, wrap(async (req, res) => {
+  await loadConfig();
+  const law = (await q('SELECT id,ref FROM laws WHERE id=$1 AND repealed_at IS NULL', [req.params.id])).rows[0];
+  if (!law) return res.status(404).json({ error: 'No such law in force.' });
+  await q('INSERT INTO petitions(law_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING', [law.id, req.user.id]);
+  const signed = (await q('SELECT count(*)::int n FROM petitions WHERE law_id=$1', [law.id])).rows[0].n;
+  const needed = Math.max(1, Math.ceil(num('petition_share') * await citizenCount()));
+  let opened = null;
+  if (signed >= needed) opened = await openReferendum(law.id, req.user.id, `petition of ${signed}`);
+  res.json({ signed, needed, opened: !!opened, election_id: opened?.id || null });
+}));
+
+app.get('/api/laws/:id/petition', wrap(async (req, res) => {
+  await loadConfig();
+  const signed = (await q('SELECT count(*)::int n FROM petitions WHERE law_id=$1', [req.params.id])).rows[0].n;
+  const mine = req.user
+    ? !!(await q('SELECT 1 FROM petitions WHERE law_id=$1 AND user_id=$2', [req.params.id, req.user.id])).rows[0]
+    : false;
+  const live = (await q(
+    "SELECT id FROM elections WHERE kind='referendum' AND target_law_id=$1 AND status<>'closed'", [req.params.id])).rows[0];
+  res.json({
+    signed, mine,
+    needed: Math.max(1, Math.ceil(num('petition_share') * await citizenCount())),
+    election_id: live?.id || null
+  });
 }));
 
 app.post('/api/elections/:id/status', admin, wrap(async (req, res) => {
@@ -803,6 +1012,17 @@ app.post('/api/admin/cycle', admin, wrap(async (req, res) => {
 
 /* ---------------------------------------------------------------- bills */
 
+/* Who may put a bill before the House, and who may second one. Defaults to the
+   House alone; a rule bill can open it to every citizen. */
+async function canPropose(userId) {
+  if (CONFIG.bill_proposers === 'citizens') return true;
+  const u = (await q('SELECT is_admin FROM users WHERE id=$1', [userId])).rows[0];
+  if (u?.is_admin) return true;
+  return (await officesOf(userId)).some(o => o === 'mp' || o === 'speaker');
+}
+
+const NOT_YOURS = 'Only the House may do that. A rule bill can open it to every citizen.';
+
 async function billVoters() {
   if (CONFIG.bill_voters === 'citizens') {
     const { rows } = await q('SELECT id FROM users WHERE is_active AND approved');
@@ -815,8 +1035,11 @@ async function billVoters() {
 async function billDetail(id, viewer) {
   const b = (await q(`
     SELECT b.*, u.display_name AS author_name, u.username AS author_username,
+           t.display_name AS target_name,
+           (SELECT count(*)::int FROM bill_petitions p WHERE p.bill_id=b.id) AS signatures,
            (SELECT count(*)::int FROM bill_seconds s WHERE s.bill_id=b.id) AS seconds
-      FROM bills b LEFT JOIN users u ON u.id=b.author_id WHERE b.id=$1`, [id])).rows[0];
+      FROM bills b LEFT JOIN users u ON u.id=b.author_id
+      LEFT JOIN users t ON t.id=b.target_user_id WHERE b.id=$1`, [id])).rows[0];
   if (!b) return null;
   const div = (await q(`
     SELECT v.vote, u.id AS user_id, u.display_name
@@ -861,8 +1084,40 @@ app.get('/api/bills/:id', wrap(async (req, res) => {
 }));
 
 app.post('/api/bills', auth, slowWrites, wrap(async (req, res) => {
-  const { title, kind, body, target_law_id } = req.body || {};
+  await loadConfig();
+  if (!await canPropose(req.user.id)) return res.status(403).json({ error: NOT_YOURS });
+  const { title, kind, body, target_law_id, target_user_id } = req.body || {};
   if (!title || !body) return res.status(400).json({ error: 'A bill needs a title and a text.' });
+  const k = ['law', 'amendment', 'repeal', 'motion', 'constitutional', 'rule', 'impeachment'].includes(kind) ? kind : 'law';
+  if (k === 'rule') {
+    const { errors } = parseRuleChanges(body);
+    if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+  }
+  if (k === 'impeachment') {
+    const t = (await q('SELECT id FROM users WHERE id=$1 AND is_active', [target_user_id || 0])).rows[0];
+    if (!t) return res.status(400).json({ error: 'An impeachment must name the officer it removes.' });
+    const held = await officesOf(t.id);
+    if (!held.length) return res.status(400).json({ error: 'That citizen holds no office, so there is nothing to remove them from.' });
+  }
+  const n = (await q('SELECT count(*)::int n FROM bills')).rows[0].n + 1;
+  const { rows } = await q(
+    `INSERT INTO bills(ref,title,kind,body,target_law_id,target_user_id,author_id)
+     VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    [`B${String(n).padStart(3, '0')}`, title.trim().slice(0, 200), k, body,
+     target_law_id || null, k === 'impeachment' ? target_user_id : null, req.user.id]);
+  log(req.user.id, 'bill.propose', rows[0].ref);
+  res.json(rows[0]);
+}));
+
+/* A citizen's draft. Inert until enough of the Republic signs it — then either
+   the House must take it up, or it goes straight to the people, depending on
+   what the House has set initiative_mode to. */
+app.post('/api/initiatives', auth, slowWrites, wrap(async (req, res) => {
+  await loadConfig();
+  if (CONFIG.initiative_mode === 'off')
+    return res.status(403).json({ error: 'Citizens\' initiatives are switched off. The House would have to set initiative_mode to table or enact.' });
+  const { title, kind, body, target_law_id } = req.body || {};
+  if (!title || !body) return res.status(400).json({ error: 'An initiative needs a title and a text.' });
   const k = ['law', 'amendment', 'repeal', 'motion', 'constitutional', 'rule'].includes(kind) ? kind : 'law';
   if (k === 'rule') {
     const { errors } = parseRuleChanges(body);
@@ -870,10 +1125,44 @@ app.post('/api/bills', auth, slowWrites, wrap(async (req, res) => {
   }
   const n = (await q('SELECT count(*)::int n FROM bills')).rows[0].n + 1;
   const { rows } = await q(
-    'INSERT INTO bills(ref,title,kind,body,target_law_id,author_id) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
+    `INSERT INTO bills(ref,title,kind,body,target_law_id,author_id,status,origin)
+     VALUES($1,$2,$3,$4,$5,$6,'petition','initiative') RETURNING *`,
     [`B${String(n).padStart(3, '0')}`, title.trim().slice(0, 200), k, body, target_law_id || null, req.user.id]);
-  log(req.user.id, 'bill.propose', rows[0].ref);
+  log(req.user.id, 'initiative.propose', rows[0].ref);
   res.json(rows[0]);
+}));
+
+app.post('/api/bills/:id/sign', auth, wrap(async (req, res) => {
+  await loadConfig();
+  const b = (await q('SELECT * FROM bills WHERE id=$1', [req.params.id])).rows[0];
+  if (!b) return res.status(404).json({ error: 'No such initiative.' });
+  if (b.status !== 'petition') return res.status(400).json({ error: 'This is no longer collecting signatures.' });
+  if (CONFIG.initiative_mode === 'off') return res.status(403).json({ error: 'Citizens\' initiatives are switched off.' });
+  await q('INSERT INTO bill_petitions(bill_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING', [b.id, req.user.id]);
+  const signed = (await q('SELECT count(*)::int n FROM bill_petitions WHERE bill_id=$1', [b.id])).rows[0].n;
+  const needed = Math.max(1, Math.ceil(num('petition_share') * await citizenCount()));
+  if (signed < needed) return res.json({ signed, needed, mode: CONFIG.initiative_mode });
+
+  if (CONFIG.initiative_mode === 'enact') {
+    const el = await openInitiativeReferendum(b, req.user.id);
+    return res.json({ signed, needed, mode: 'enact', election_id: el?.id || null });
+  }
+  // 'table': the signatures stand in for seconders, and the Speaker must take it up.
+  await q("UPDATE bills SET status='tabled' WHERE id=$1", [b.id]);
+  log(req.user.id, 'initiative.tabled', `${b.ref} on ${signed} signatures`);
+  res.json({ signed, needed, mode: 'table', tabled: true });
+}));
+
+app.get('/api/bills/:id/sign', wrap(async (req, res) => {
+  await loadConfig();
+  const signed = (await q('SELECT count(*)::int n FROM bill_petitions WHERE bill_id=$1', [req.params.id])).rows[0].n;
+  const mine = req.user
+    ? !!(await q('SELECT 1 FROM bill_petitions WHERE bill_id=$1 AND user_id=$2', [req.params.id, req.user.id])).rows[0]
+    : false;
+  res.json({
+    signed, mine, mode: CONFIG.initiative_mode,
+    needed: Math.max(1, Math.ceil(num('petition_share') * await citizenCount()))
+  });
 }));
 
 app.post('/api/bills/:id/second', auth, wrap(async (req, res) => {
@@ -881,6 +1170,8 @@ app.post('/api/bills/:id/second', auth, wrap(async (req, res) => {
   if (!b) return res.status(404).json({ error: 'No such bill.' });
   if (b.status !== 'draft') return res.status(400).json({ error: 'This bill has already moved past seconding.' });
   if (b.author_id === req.user.id) return res.status(400).json({ error: 'You cannot second your own bill.' });
+  await loadConfig();
+  if (!await canPropose(req.user.id)) return res.status(403).json({ error: NOT_YOURS });
   await q('INSERT INTO bill_seconds(bill_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING', [b.id, req.user.id]);
   res.json({ ok: true });
 }));
@@ -944,10 +1235,25 @@ app.post('/api/bills/:id/close', requireOffice('speaker'), wrap(async (req, res)
   const no = v.filter(x => x.vote === 'no').length;
   if (v.length < num('quorum'))
     return res.status(400).json({ error: `Quorum is ${num('quorum')} and only ${v.length} voted.` });
-  const threshold = b.kind === 'constitutional' ? num('constitutional_threshold') : num('pass_threshold');
+  const threshold = b.kind === 'constitutional' ? num('constitutional_threshold')
+    : b.kind === 'impeachment' ? num('impeachment_threshold')
+    : num('pass_threshold');
   const share = (aye + no) ? aye / (aye + no) : 0;
   const carried = share > threshold || (threshold === 0.5 && share === 0.5 && aye > no);
   const result = `${aye} aye / ${no} no / ${v.filter(x => x.vote === 'abstain').length} abstain`;
+
+  // An impeachment takes effect the moment it carries. Sending it to the
+  // President for assent would let an officer veto their own removal.
+  if (carried && b.kind === 'impeachment') {
+    const t = (await q('SELECT display_name FROM users WHERE id=$1', [b.target_user_id])).rows[0];
+    const gone = (await q(
+      'UPDATE offices SET active=FALSE, until=now() WHERE user_id=$1 AND active RETURNING office',
+      [b.target_user_id])).rows.map(r => r.office);
+    await q("UPDATE bills SET status='enacted', result=$1, resolved_at=now() WHERE id=$2", [result, b.id]);
+    log(req.user.id, 'bill.impeach', `${b.ref}: ${t?.display_name} removed from ${gone.join(', ') || 'nothing'} (${result})`);
+    return res.json({ carried, result, share, impeached: t?.display_name, removed_from: gone });
+  }
+
   await q('UPDATE bills SET status=$1, result=$2, resolved_at=now() WHERE id=$3',
     [carried ? 'passed' : 'failed', result, b.id]);
   log(req.user.id, 'bill.close', `${b.ref} ${carried ? 'carried' : 'lost'} (${result})`);
@@ -972,6 +1278,10 @@ app.post('/api/bills/:id/override', requireOffice('speaker'), wrap(async (req, r
   await loadConfig();
   const b = (await q('SELECT * FROM bills WHERE id=$1', [req.params.id])).rows[0];
   if (!b || b.status !== 'vetoed') return res.status(400).json({ error: 'That bill is not under veto.' });
+  if (!bool('allow_veto_override'))
+    return res.status(403).json({
+      error: 'The President\'s assent is required for a bill to become law, and a veto is final. Pass a rule bill setting allow_veto_override = true if the House wants that power.'
+    });
   const v = (await q('SELECT vote FROM bill_votes WHERE bill_id=$1', [b.id])).rows;
   const aye = v.filter(x => x.vote === 'aye').length;
   const no = v.filter(x => x.vote === 'no').length;

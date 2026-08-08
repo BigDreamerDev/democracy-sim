@@ -46,9 +46,10 @@ This Constitution is written to be changed. Where it is silent, it means to be s
 
 1. The executive power is held by a single Citizen, styled the **President**, elected by a majority of the votes of the Citizens.
 2. The President advises the House what law ought to be made, approves the law the House has made, gives effect to the demands of the people, and keeps the Constitution in the will of the people.
-3. The President may veto any law passed by the House, in the interests of the people.
-4. A veto may be set aside by the House, by such fraction as ordinary law provides.
-5. The President may act in any matter this Constitution and the law have not assigned elsewhere.
+3. **No bill becomes law without the assent of the President.** A bill that has passed the House and been refused assent is dead, and the House may not set that refusal aside.
+4. Ordinary law may grant the House a power of override, and may set the fraction required for it. Until it does, a veto is final.
+5. The President does not sit in the House, does not vote in its divisions, and has no part in what business it takes.
+6. The President may act in any matter this Constitution and the law have not assigned elsewhere.
 
 ## Article 6 — Elections and the Electoral Cycle
 
@@ -67,26 +68,41 @@ This Constitution is written to be changed. Where it is silent, it means to be s
 
 ## Article 8 — The Making of Law
 
-1. Any Citizen may propose a law, an amendment to a law, or the repeal of a law.
-2. A proposal becomes law when it has passed the House and received the assent of the President, or when a vetoed proposal has been carried again as Article 5 provides.
-3. Every other question of procedure — how a proposal is supported, tabled, debated, divided upon, what majority carries it, what quorum is required, and what record is kept — is left to ordinary law, and ordinary law may change it at any time.
-4. Law made under this Article binds every Citizen and every office, including the office that made it.
-5. All laws, policies and acts of the Republic are subject to change evermore, as the House determines or the people decide by referendum.
+1. **A bill may be proposed and seconded only by a member of the House.** No other Citizen may put a bill before it.
+2. **A bill may be voted upon only by the members of the House.**
+3. A Citizen who is not of the House may ask any member to move a bill on their behalf, and may speak in its debate. The House is not obliged to listen.
+4. A proposal becomes law when it has passed the House and received the assent of the President.
+5. **Ordinary law may open the proposing of bills, or the voting on them, or both, to every Citizen, and may close them again.** Until it does, both belong to the House alone.
+6. Every other question of procedure — how a proposal is supported, tabled, debated, divided upon, what majority carries it, what quorum is required, and what record is kept — is left to ordinary law, and ordinary law may change it at any time.
+7. Law made under this Article binds every Citizen and every office, including the office that made it.
+8. All laws, policies and acts of the Republic are subject to change evermore, as the House determines or the people decide by referendum.
 
-## Article 9 — Referendum and the Initiative
+## Article 9 — Referendum, the People's Veto, and the Initiative
 
-1. The Citizens may decide any question directly, by referendum.
-2. A referendum may be called by the House, by the President, or by any group of Citizens amounting to one third of their number.
-3. The result of a referendum stands above any act of the House or the President on the same question.
-4. A referendum may repeal a law, direct an officer, settle a disputed reading of this Constitution, or resolve any other matter whatsoever.
-5. Nothing prevents the people from being asked the same question twice.
+1. The House makes the law. The Citizens may take it back, and may make law themselves where ordinary law permits it.
+2. **Any law in force may be struck down by referendum.** A referendum to strike a law is carried where seven tenths of the votes cast are against the law, and where enough Citizens have voted for the count to mean anything.
+3. A referendum is forced by petition: where a third of the Citizens have signed against a law, the referendum opens of itself. Neither the House nor the President is asked, and neither can prevent it.
+4. A law struck down by referendum is repealed at once, and the House may not simply pass it again in the same breath.
+5. **The Citizens may also propose.** Any Citizen may draft an initiative, and on the signatures of a third of the Citizens it ceases to be a private wish and becomes public business.
+6. What an initiative then does is set by ordinary law, which shall choose one of three things:
+   - that it is put before the House, which must take it up, and which decides it as it decides any bill, the President assenting or refusing as usual;
+   - that it is put to the Citizens directly, and becomes law on seven tenths of the votes cast, without the House and without the assent of the President;
+   - or that initiatives are not received at all.
+7. Where an initiative becomes law by the second of those, it is law as fully as anything the House has passed, and stands in the statute book on the same footing.
+8. The seven tenths, the third, the number who must turn out, the days a poll stays open, and which of the three courses an initiative takes are all set by ordinary law, and ordinary law may change any of them.
+9. The result of a referendum stands above any act of the House or the President on the same question.
+10. Nothing prevents the people from being asked the same question twice.
 
-## Article 10 — Removal from Office
+## Article 10 — Impeachment and Removal
 
-1. The House may impeach the President where the President has acted against the will of the people, and on impeachment the office falls vacant.
-2. The Citizens may remove any officer of the Republic by a Supermajority, at any time, for any reason or for none.
-3. The House may be dissolved and its seats vacated by a Supermajority, or by the President with the consent of a Supermajority, or as ordinary law provides.
-4. Removal from office is not a punishment and carries no further consequence unless ordinary law provides one.
+1. **The House may impeach any officer of the Republic** — the President, the Speaker, or any of its own members — where that officer has acted against the will of the people.
+2. An impeachment is moved, seconded and divided upon as any other bill. It carries on two thirds of the division.
+3. **An impeachment that carries takes effect at once.** The officer is removed from every office they hold in that moment. It is not sent to the President for assent, and no veto touches it: no officer may refuse their own removal.
+4. The fraction required to impeach is set by ordinary law and may be changed like any other.
+5. The Citizens may remove any officer of the Republic by a Supermajority, at any time, for any reason or for none.
+6. The House may be dissolved and its seats vacated by a Supermajority, or by the President with the consent of a Supermajority, or as ordinary law provides.
+7. Removal from office is not a punishment and carries no further consequence unless ordinary law provides one.
+8. A Citizen removed from office remains a Citizen, keeps their vote, and may stand again unless ordinary law says otherwise.
 
 ## Article 11 — Interpretation
 

@@ -68,9 +68,9 @@ While the chair is empty, no bill can be tabled and the business of the House wa
 ## 5. How a bill becomes law
 
 ```
-anyone proposes
+an MP proposes                  (bill_proposers — the House alone by default)
       ↓
-N citizens second it            (seconds_required, default 2 — you cannot second your own)
+N MPs second it                 (seconds_required, default 2 — not your own)
       ↓
 Speaker tables it
       ↓
@@ -81,8 +81,14 @@ MPs vote aye / no / abstain     (one vote each, final; quorum must be met)
 Speaker closes the division     → carried, or lost
       ↓
 President assents               → law
-        or vetoes               → Speaker may move an override
+        or vetoes               → dead. Assent is required.
+      ↓
+any law may be struck down by referendum at 70%
 ```
+
+**Only the House proposes, seconds and votes on bills.** If you are not an MP and want something done, ask one to move it for you, or stand at the next election. The House can hand that power to everyone with a rule bill setting `bill_proposers = citizens`.
+
+**The President's assent is required.** A veto kills a bill outright — there is no override unless the House first passes a rule bill setting `allow_veto_override = true`. That makes the presidency the strongest office in the Republic, which is the point: the House writes the law, one elected person can refuse it, and the whole Republic can overrule them both.
 
 A bill carries on a simple majority of aye and no votes; abstentions do not count towards either side. A tie is lost. Constitutional bills need two thirds.
 
@@ -97,6 +103,7 @@ If the President vetoes, the Speaker can move an override — but only if the or
 | `repeal` | Strikes a law from the active book; it stays readable in the archive |
 | `motion` | Resolves something without creating a statute — censures, no confidence, declarations |
 | `constitutional` | Publishes a new version of the constitution; needs two thirds |
+| `impeachment` | Removes an officer. Names a person, not a law. Carries at two thirds and takes effect at once — it never goes to the President |
 | `rule` | Changes a setting of the game itself |
 
 ---
@@ -116,6 +123,49 @@ If it passes and gets assent, the setting changes immediately. The bill page sho
 **What can be changed this way:** seats, quorum, seconders required, every threshold, who votes on bills, secret ballot, every cycle timing, the Speaker rules, the term limit, the name and motto of the state, and which law the flag comes from.
 
 **What cannot:** `require_approval` and `allow_open_signup`. Those decide who gets an account at all. A faction with one lucky majority could flip them, let in a pile of sockpuppets, and hold every majority afterwards — permanently. They stay with the returning officer. This is the single place where the constitution's promise that a supermajority can change anything is not honoured, and it is deliberate.
+
+---
+
+## 6a. The people's veto
+
+The House makes the law; the Republic can take it back.
+
+Open the **Statute book**, find a law in force, and press **Call a referendum**. That signs a petition. When a third of citizens have signed, the referendum opens by itself — the House is not asked and the President cannot stop it.
+
+Everyone then votes **keep** or **reject**. If seven tenths of the votes cast are to reject, and enough people turned out for the count to mean anything, the law is repealed the moment the poll closes.
+
+| Setting | Default | |
+|---|---|---|
+| `petition_share` | 0.334 | share of citizens needed to force the referendum |
+| `referendum_threshold` | 0.7 | share of votes cast needed to strike the law down |
+| `referendum_quorum` | 0.5 | share of citizens who must vote for it to count |
+| `referendum_days` | 2 | how long the poll stays open |
+
+All four are legislatable, so the House can make its laws harder or easier to overturn — including making itself easier to overrule.
+
+## 6c. Citizens' initiatives
+
+Petitions work in both directions. The one above takes a law away; this one puts one there.
+
+Anyone — MP or not — can draft an **initiative** from the Bills page and collect signatures. What happens when a third of citizens have signed depends on `initiative_mode`:
+
+| Mode | What signatures buy |
+|---|---|
+| `table` *(default)* | The House **must** take it up. No seconders needed — the signatures are the seconding. The House still votes and the President still has to assent, so it can still be thrown out. |
+| `enact` | It goes **straight to the Republic**. At `initiative_threshold` (70%) with quorum, it becomes law directly — no House vote, no presidential assent. |
+| `off` | Nothing. Citizens cannot start one. |
+
+`table` is the default because it costs the House nothing it should keep: the people get a guaranteed hearing, and the House keeps the decision. `enact` is a genuine constitutional shift — it makes both the House and the President bypassable, so a determined 70% can legislate around them entirely. Switch it on deliberately, not by accident.
+
+Either way the House chooses, by rule bill, which is the point.
+
+## 6b. Impeachment
+
+The House can remove any officer — the President, the Speaker, or one of its own. Propose a bill of kind `impeachment`, pick the officer from the list, and it runs like any other bill: seconders, tabling, division.
+
+It carries at **two thirds** rather than a simple majority, and when it carries the officer loses every office they hold **immediately**. It does not go to the President for assent, for the obvious reason that the President would otherwise veto their own removal.
+
+An impeached citizen stays a citizen, keeps their vote, and can stand again.
 
 ---
 

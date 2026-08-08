@@ -8,14 +8,24 @@ let STATE = null;
 /* ------------------------------------------------------------- plumbing */
 
 async function api(path, { method = 'GET', body } = {}) {
-  const res = await fetch(API + path, {
-    method,
-    headers: {
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
-      ...(TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {})
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
+  let res;
+  try {
+    res = await fetch(API + path, {
+      method,
+      headers: {
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {})
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+  } catch (err) {
+    // fetch only throws like this for network-level failures, and by far the
+    // commonest one here is CORS: the server answered, the browser binned it.
+    console.error('[republic] request to ' + API + path + ' failed before it got a reply:', err);
+    const e = new Error('NETWORK');
+    e.network = true;
+    throw e;
+  }
   const text = await res.text();
   let data; try { data = JSON.parse(text); } catch { data = text; }
   if (!res.ok) throw new Error(data?.error || 'The server could not be reached.');
@@ -140,7 +150,7 @@ function applyFlagTheme(flag) {
   const ink = lum(paper) > 0.5 ? '#14161C' : '#F2F3F5';
 
   const accent = legible(accentRaw, card);            // links and text
-  const accentFill = accentRaw;                       // buttons, seats, the seal
+  const accentFill = accentRaw;                       // buttons, seats, the brand dot
   const onAccent = contrast('#FFFFFF', accentFill) >= 3.2 ? '#FFFFFF' : '#14161C';
   const bar = legible(primary, '#FFFFFF', 3.5);
 
@@ -197,6 +207,8 @@ const statusTag = s => {
 };
 
 const isAdmin = () => !!ME?.is_admin;
+const canPropose = () => STATE?.config?.bill_proposers === 'citizens'
+  || isAdmin() || !!ME?.offices?.some(o => o === 'mp' || o === 'speaker');
 const has = o => !!ME?.offices?.includes(o) || isAdmin();
 
 /* ----------------------------------------------------------------- gate */
@@ -302,8 +314,16 @@ async function refreshState() {
 async function start() {
   try {
     await refreshState();
-  } catch {
-    return showGate('Cannot reach the server. Check API_BASE in config.js, and give Render a minute to wake up.');
+  } catch (err) {
+    if (!err.network) return showGate(`The server answered with an error: ${err.message}`);
+    // Tell the difference between "asleep or wrong address" and "blocked by CORS"
+    // by asking for the same URL without CORS in play. If that succeeds, the
+    // server is up and the origin is the problem.
+    let reachable = false;
+    try { await fetch(API + '/api/health', { mode: 'no-cors' }); reachable = true; } catch {}
+    return showGate(reachable
+      ? `The server is running but is refusing requests from this site. In Render, set ALLOWED_ORIGINS to exactly ${location.origin} (no path, no trailing slash) and redeploy.`
+      : `Cannot reach ${API || '(API_BASE is not set)'}. Check API_BASE in docs/config.js, then give Render up to a minute to wake up. Details are in the browser console.`);
   }
   if (!TOKEN) return showGate('');
   try { ME = await api('/api/me'); }
@@ -450,6 +470,7 @@ async function viewElections(v) {
 
 async function viewElection(v, id) {
   const e = await api('/api/elections/' + id);
+  if (e.kind === 'referendum' && (e.law || e.bill)) return renderReferendum(v, e, id);
   const live = e.candidates.filter(c => !c.withdrawn);
   const mine = live.find(c => c.user_id === ME.id);
   const elected = e.status === 'closed' ? live.slice(0, e.seats).filter(c => c.votes > 0).map(c => c.id) : [];
@@ -558,6 +579,77 @@ async function viewElection(v, id) {
   });
 }
 
+/* A referendum asks one question about one law: does it stay or go? */
+async function renderReferendum(v, e, id) {
+  const pct = n => Math.round(n * 100) + '%';
+  const t = e.tally;
+  const done = e.status === 'closed';
+  const init = !!e.initiative;
+  const subject = init ? e.bill : e.law;
+  const carried = done && (init ? e.bill.status === 'enacted' : !!e.law.repealed_at);
+  const yesWord = init ? 'enact' : 'reject';
+
+  v.innerHTML = `
+    <h1 class="page">${esc(e.title)}</h1>
+    <p class="page-sub">Referendum · ${statusTag(e.status)}${e.closes_at ? ' · closes ' + when(e.closes_at) : ''}</p>
+
+    <div class="card">
+      <p class="eyebrow">${init ? 'The proposal' : 'The law in question'} · ${esc(subject.ref)}</p>
+      <div class="prose">${md(subject.body)}</div>
+    </div>
+
+    ${done ? `<div class="card"><h2>Result</h2>
+        <p><strong>${init ? (carried ? 'Enacted.' : 'Not enacted.') : (carried ? 'Rejected.' : 'Kept.')}</strong>
+        ${t ? `${t.yes} for, ${t.no} against — ${pct(t.share)}, ${pct(e.need)} needed.` : ''}</p>
+        <p class="small muted">${init
+          ? (carried ? 'It is law, passed by the Republic itself.' : 'It does not become law.')
+          : (carried ? 'The law is repealed and has left the statute book.' : 'The law stands.')}</p>
+      </div>`
+    : e.my_choice ? `<div class="card"><h2>Your ballot is cast</h2>
+        <p>You voted to <strong>${esc(e.my_choice)}</strong>. That is final.</p>
+        <div class="stamp">Ballot recorded</div></div>`
+    : !e.can_vote ? '<div class="card"><div class="empty">You are not in the electorate for this vote.</div></div>'
+    : `<div class="ballot">
+        <div class="ballot-head">${init ? 'Should this become law?' : 'Should this law stand?'} · one vote each · you cannot change it</div>
+        <label class="option"><input type="radio" name="ref" value="${init ? 'enact' : 'keep'}">
+          <span class="option-body"><span class="option-name">${init ? 'Enact it' : 'Keep it'}</span>
+          <span class="option-statement">${init ? 'It enters the statute book at once.' : 'The law stays as it is.'}</span></span></label>
+        <label class="option"><input type="radio" name="ref" value="reject">
+          <span class="option-body"><span class="option-name">Reject it</span>
+          <span class="option-statement">${init ? 'It does not become law.' : 'The law is struck from the statute book.'}</span></span></label>
+      </div>
+      <div class="row" style="margin-top:14px"><button class="btn btn-primary" id="castref">Cast my vote</button></div>`}
+
+    <div class="card"><h2>Where it stands</h2>
+      <p class="item-meta">${e.turnout} of ${e.eligible} have voted · ${e.quorum} must vote for the result to count · ${pct(e.need)} of votes cast needed to ${init ? 'enact it' : 'strike the law down'}</p>
+      ${t ? `<div class="strip">${`<span class="blk ${init ? 'aye' : 'no'}"></span>`.repeat(t.yes)}${`<span class="blk ${init ? 'no' : 'aye'}"></span>`.repeat(t.no)}${'<span class="blk"></span>'.repeat(Math.max(0, e.eligible - t.cast))}</div>
+             <p class="item-meta">${t.yes} ${yesWord} · ${t.no} ${init ? 'reject' : 'keep'}</p>`
+          : '<p class="small muted">Counts are hidden until the poll closes.</p>'}
+    </div>
+
+    ${isAdmin() ? `<div class="card"><h2>Returning officer</h2>
+      <div class="row"><button class="btn" data-close>Close and count</button></div></div>` : ''}`;
+
+  if ($('#castref')) $('#castref').onclick = async () => {
+    const pick = document.querySelector('input[name=ref]:checked');
+    if (!pick) return toast('Choose keep or reject first.', true);
+    if (!confirm(`Vote to ${pick.value} this law? You get one vote and it cannot be changed.`)) return;
+    try { await api(`/api/elections/${id}/referendum`, { method: 'POST', body: { choice: pick.value } }); route(); }
+    catch (err) { toast(err.message, true); }
+  };
+  const closeBtn = document.querySelector('[data-close]');
+  if (closeBtn) closeBtn.onclick = async () => {
+    try {
+      const r = await api(`/api/elections/${id}/status`, { method: 'POST', body: { status: 'closed' } });
+      toast(r.struck ? `Struck down — ${Math.round(r.share * 100)}% voted to reject.`
+        : r.enacted ? `Enacted by the Republic — ${Math.round(r.share * 100)}% in favour.`
+        : r.reason === 'quorum' ? `Void: only ${r.cast} voted, ${r.quorum} needed.`
+        : `${Math.round(r.share * 100)}% in favour, ${Math.round(r.need * 100)}% needed.`);
+      route();
+    } catch (err) { toast(err.message, true); }
+  };
+}
+
 /* --------------------------------------------------------------- bills */
 
 async function viewBills(v) {
@@ -566,7 +658,7 @@ async function viewBills(v) {
     <h1 class="page">Bills</h1>
     <p class="page-sub">Anyone may propose · ${STATE.config.seconds_required} seconders to reach the floor</p>
 
-    <div class="card">
+    ${canPropose() ? `<div class="card">
       <h2>Propose something</h2>
       <form id="mk" class="stack">
         <label class="field"><span>Title</span><input name="title" required placeholder="Short and quotable"></label>
@@ -578,9 +670,11 @@ async function viewBills(v) {
             <option value="motion">Motion (no statute)</option>
             <option value="constitutional">Constitutional amendment</option>
             <option value="rule">Change a rule of the game</option>
+            <option value="impeachment">Impeachment</option>
           </select></label>
           <label class="field"><span>Law it changes</span><select name="target_law_id" id="targ"><option value="">—</option></select></label>
         </div>
+        <label class="field" id="targetuser" hidden><span>Officer to remove</span><select name="target_user_id" id="who"><option value="">—</option></select></label>
         <label class="field"><span>Text</span><textarea name="body" id="body" required placeholder="Write it as it should read in the statute book. Markdown works."></textarea></label>
         <div id="rulehelp" hidden>
           <p class="eyebrow">Rule bills</p>
@@ -591,7 +685,25 @@ async function viewBills(v) {
         </div>
         <button class="btn btn-primary">Propose</button>
       </form>
-    </div>
+    </div>` : `<div class="card"><h2>Propose something</h2>
+      <p class="small muted">Only the House may put a bill before itself. ${STATE.config.initiative_mode === 'off'
+        ? 'Ask an MP to move it for you, or stand at the next election.'
+        : `But you can start an <strong>initiative</strong>: draft it here, and if ${Math.round(Number(STATE.config.petition_share) * 100)}% of citizens sign it, ${STATE.config.initiative_mode === 'enact'
+            ? `it goes straight to the whole Republic, and becomes law at ${Math.round(Number(STATE.config.initiative_threshold) * 100)}% without the House or the President.`
+            : 'the House must take it up. The House still votes on it and the President still has to assent.'}`}</p>
+      ${STATE.config.initiative_mode === 'off' ? '' : `
+      <form id="init" class="stack" style="margin-top:14px">
+        <label class="field"><span>Title</span><input name="title" required placeholder="Short and quotable"></label>
+        <label class="field"><span>Kind</span><select name="kind">
+          <option value="law">New law</option>
+          <option value="amendment">Amend a law</option>
+          <option value="repeal">Repeal a law</option>
+          <option value="motion">Motion (no statute)</option>
+        </select></label>
+        <label class="field"><span>Text</span><textarea name="body" required placeholder="Write it as it should read in the statute book."></textarea></label>
+        <button class="btn btn-primary">Start the initiative</button>
+      </form>`}
+    </div>`}
 
     ${list.length ? `<div class="list">${list.map(b => `
       <a class="item" href="#/bill/${b.id}">
@@ -599,9 +711,23 @@ async function viewBills(v) {
         <div class="item-meta">${esc(b.kind)} · ${esc(b.author_name || 'unknown')} · ${b.seconds} seconded · ${b.comments} comments${b.result ? ' · ' + esc(b.result) : ''}</div>
       </a>`).join('')}</div>` : '<div class="empty">Nothing has been proposed yet. Be the first.</div>'}`;
 
+  if ($('#init')) $('#init').onsubmit = async e => {
+    e.preventDefault();
+    try {
+      const r = await api('/api/initiatives', { method: 'POST', body: Object.fromEntries(new FormData(e.target)) });
+      location.hash = `#/bill/${r.id}`;
+    } catch (err) { toast(err.message, true); }
+  };
+
   const kindSel = document.querySelector('select[name=kind]');
+  if (!kindSel) return;
+  api('/api/citizens').then(cs => {
+    $('#who').innerHTML = '<option value="">—</option>' + cs.filter(c => (c.offices || []).length)
+      .map(c => `<option value="${c.id}">${esc(c.display_name)} — ${(c.offices || []).join(', ')}</option>`).join('');
+  });
   const syncKind = () => {
     const isRule = kindSel.value === 'rule';
+    $('#targetuser').hidden = kindSel.value !== 'impeachment';
     $('#rulehelp').hidden = !isRule;
     $('#body').placeholder = isRule
       ? 'cycle_days = 5\ncampaign_days = 1'
@@ -623,6 +749,7 @@ async function viewBills(v) {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));
     if (!f.target_law_id) delete f.target_law_id;
+    if (f.target_user_id) f.target_user_id = Number(f.target_user_id); else delete f.target_user_id;
     try { const r = await api('/api/bills', { method: 'POST', body: f }); location.hash = `#/bill/${r.id}`; }
     catch (err) { toast(err.message, true); }
   };
@@ -641,10 +768,19 @@ async function viewBill(v, id) {
   };
 
   let action = '';
-  if (b.status === 'draft') {
+  if (b.status === 'petition') {
+    const mode = STATE.config.initiative_mode;
+    action = `<div id="signbox"><p class="small muted">Loading signatures…</p></div>
+      <p class="small muted" style="margin-top:10px">${mode === 'enact'
+        ? `Once enough citizens sign, this goes straight to the whole Republic. At ${Math.round(Number(STATE.config.initiative_threshold) * 100)}% it becomes law without the House or the President.`
+        : 'Once enough citizens sign, the House must take it up. It still has to pass a division and get the President\'s assent.'}</p>`;
+  } else if (b.status === 'referendum') {
+    action = '<p class="small">This proposal is with the people. See the open referendum on the Elections page.</p>';
+  } else if (b.status === 'draft') {
     action = `<div class="row">
       <span class="tag">${b.seconds} of ${need} seconders</span>
       ${b.author_id === ME.id ? '<span class="small muted">You cannot second your own bill.</span>'
+        : !canPropose() ? '<span class="small muted">Only the House may second a bill.</span>'
         : `<button class="btn ${b.i_seconded ? '' : 'btn-primary'}" id="second" ${b.i_seconded ? 'disabled' : ''}>${b.i_seconded ? 'You seconded this' : 'Second it'}</button>`}
       ${has('speaker') && b.seconds >= need ? '<button class="btn" data-act="table">Table it</button>' : ''}
     </div>`;
@@ -666,8 +802,11 @@ async function viewBill(v, id) {
         <button class="btn btn-aye" data-act="assent">Give assent</button>
         <button class="btn btn-no" data-act="veto">Veto</button></div>` : ''}`;
   } else if (b.status === 'vetoed') {
-    action = `${strip()}<p class="small">Vetoed by the President. Parliament may override with ${Math.round(Number(STATE.config.veto_override) * 100)}% of the division.</p>
-      ${has('speaker') ? '<button class="btn btn-primary" data-act="override">Move the override</button>' : ''}`;
+    const canOverride = STATE.config.allow_veto_override === 'true';
+    action = `${strip()}<p class="small">${canOverride
+      ? `Vetoed by the President. The House may override with ${Math.round(Number(STATE.config.veto_override) * 100)}% of the division.`
+      : 'Vetoed by the President. That is the end of it — assent is required for a bill to become law. The House would first have to pass a rule bill setting <span class="code">allow_veto_override = true</span>.'}</p>
+      ${canOverride && has('speaker') ? '<button class="btn btn-primary" data-act="override">Move the override</button>' : ''}`;
   } else if (b.status === 'failed' || b.status === 'enacted') {
     action = strip();
   }
@@ -676,6 +815,10 @@ async function viewBill(v, id) {
     <h1 class="page">${esc(b.title)}</h1>
     <p class="page-sub"><span class="ref">${esc(b.ref)}</span> · ${esc(b.kind)} · ${esc(b.author_name || 'unknown')} · ${day(b.created_at)} · ${statusTag(b.status)}</p>
 
+    ${b.kind === 'impeachment' ? `<div class="card">
+      <p class="eyebrow">Impeachment</p>
+      <p>If this carries at ${Math.round(Number(STATE.config.impeachment_threshold) * 100)}% of the division, <strong>${esc(b.target_name || 'the officer named')}</strong> is removed from every office they hold, at once. It does not go to the President for assent.</p>
+    </div>` : ''}
     <div class="card">${b.kind === 'rule'
       ? `<p class="eyebrow">If this passes, these settings change</p>
          <div class="list">${b.body.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#')).map(l => {
@@ -706,6 +849,26 @@ async function viewBill(v, id) {
       </form>
     </div>`;
 
+  if ($('#signbox')) {
+    const box = $('#signbox');
+    const draw = (p) => {
+      box.innerHTML = `<div class="row">
+        <button class="btn ${p.mine ? '' : 'btn-primary'}" ${p.mine ? 'disabled' : ''}>${p.mine ? 'You have signed' : 'Sign this initiative'}</button>
+        <span class="small muted">${p.signed} of ${p.needed} signatures</span></div>
+        <div class="bar" style="margin-top:8px"><span style="width:${Math.min(100, Math.round(p.signed / p.needed * 100))}%"></span></div>`;
+      const btn = box.querySelector('button');
+      if (btn) btn.onclick = async () => {
+        try {
+          const r = await api(`/api/bills/${id}/sign`, { method: 'POST' });
+          if (r.election_id) { toast('Enough signatures — it goes to the people.'); location.hash = `#/election/${r.election_id}`; }
+          else if (r.tabled) { toast('Enough signatures — it is before the House.'); route(); }
+          else { toast(`Signed. ${r.signed} of ${r.needed}.`); draw({ ...r, mine: true }); }
+        } catch (err) { toast(err.message, true); }
+      };
+    };
+    api(`/api/bills/${id}/sign`).then(draw).catch(() => {});
+  }
+
   $('#say').onsubmit = async e => {
     e.preventDefault();
     try { await api(`/api/bills/${id}/comments`, { method: 'POST', body: Object.fromEntries(new FormData(e.target)) }); route(); }
@@ -724,7 +887,8 @@ async function viewBill(v, id) {
     const paths = { table: 'table', division: 'division', close: 'close', assent: 'assent', veto: 'assent', override: 'override' };
     try {
       const r = await api(`/api/bills/${id}/${paths[a]}`, { method: 'POST', body: a === 'veto' ? { veto: true } : {} });
-      if (r.result) toast(`${r.carried ? 'Carried' : 'Lost'} — ${r.result}`);
+      if (r.impeached) toast(`${r.impeached} removed from ${r.removed_from.join(', ')} — ${r.result}`);
+      else if (r.result) toast(`${r.carried ? 'Carried' : 'Lost'} — ${r.result}`);
       route();
     } catch (err) { toast(err.message, true); }
   });
@@ -746,9 +910,30 @@ async function viewLaws(v) {
         </div>
         <p class="item-meta">Enacted ${day(l.enacted_at)}${l.author_name ? ' · proposed by ' + esc(l.author_name) : ''}${l.bill_ref ? ' · from ' + esc(l.bill_ref) : ''}</p>
         <div class="prose" style="margin-top:10px">${md(l.body)}</div>
+        ${l.repealed_at ? '' : `<div class="row" style="margin-top:12px" data-pet="${l.id}"></div>`}
       </div>`).join('') : '<div class="empty">No laws yet. The statute book opens with your first enacted bill.</div>'}
     <button class="btn" id="tog">${all ? 'Hide repealed' : 'Show repealed laws'}</button>`;
   $('#tog').onclick = () => { location.hash = all ? '#/laws' : '#/laws/all'; };
+
+  // The people's veto: sign, and past a threshold the referendum opens itself.
+  for (const box of document.querySelectorAll('[data-pet]')) {
+    const id = box.dataset.pet;
+    const draw = (p) => {
+      box.innerHTML = p.election_id
+        ? `<a class="btn btn-primary" href="#/election/${p.election_id}">Referendum open — vote on this law</a>`
+        : `<button class="btn ${p.mine ? '' : 'btn-primary'}" ${p.mine ? 'disabled' : ''}>${p.mine ? 'You have signed' : 'Call a referendum'}</button>
+           <span class="small muted">${p.signed} of ${p.needed} signatures needed to put this to the whole Republic</span>`;
+      const btn = box.querySelector('button');
+      if (btn) btn.onclick = async () => {
+        try {
+          const r = await api(`/api/laws/${id}/petition`, { method: 'POST' });
+          if (r.opened) { toast('Enough signatures — the referendum is open.'); location.hash = `#/election/${r.election_id}`; }
+          else { toast(`Signed. ${r.signed} of ${r.needed}.`); draw({ ...r, mine: true }); }
+        } catch (err) { toast(err.message, true); }
+      };
+    };
+    api(`/api/laws/${id}/petition`).then(draw).catch(() => {});
+  }
 }
 
 async function viewConstitution(v) {
@@ -902,7 +1087,10 @@ async function viewMe(v) {
 /* The settings a bill may change. Must match LEGISLATABLE on the server. */
 const RULE_KEYS = [
   'seats', 'quorum', 'seconds_required', 'pass_threshold', 'constitutional_threshold',
-  'veto_override', 'bill_voters', 'secret_ballot', 'term_days',
+  'veto_override', 'bill_voters', 'bill_proposers', 'allow_veto_override',
+  'impeachment_threshold', 'referendum_threshold', 'referendum_quorum',
+  'referendum_days', 'petition_share', 'initiative_mode', 'initiative_threshold',
+  'secret_ballot', 'term_days',
   'cycle_enabled', 'cycle_days', 'campaign_days', 'poll_days', 'cycle_elects',
   'speaker_auto', 'speaker_threshold', 'speaker_relax', 'enforce_term_limit', 'nation_name', 'motto'
 ];
@@ -917,7 +1105,16 @@ const CONFIG_FIELDS = [
   ['pass_threshold', 'Pass threshold (0–1)'],
   ['constitutional_threshold', 'Constitutional threshold'],
   ['veto_override', 'Veto override threshold'],
+  ['bill_proposers', 'Who may propose and second bills (mps / citizens)'],
   ['bill_voters', 'Who votes on bills (mps / citizens)'],
+  ['allow_veto_override', 'The House may override a presidential veto (true / false)'],
+  ['impeachment_threshold', 'Impeachment threshold (0–1 of the division)'],
+  ['referendum_threshold', 'Referendum threshold to strike a law (0–1)'],
+  ['referendum_quorum', 'Referendum quorum (0–1 of citizens)'],
+  ['referendum_days', 'Days a referendum stays open'],
+  ['petition_share', 'Share of citizens needed to force a referendum (0–1)'],
+  ['initiative_mode', "Citizens' initiatives (off / table / enact)"],
+  ['initiative_threshold', 'Initiative threshold to become law directly (0–1)'],
   ['secret_ballot', 'Hide election counts while voting (true / false)'],
   ['allow_open_signup', 'Allow signup without an invite (true / false)'],
   ['require_approval', 'New accounts need admin approval (true / false)'],

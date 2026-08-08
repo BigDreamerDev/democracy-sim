@@ -164,3 +164,65 @@ ALTER TABLE elections ADD COLUMN IF NOT EXISTS cycle_no    INT;
 ALTER TABLE users     ADD COLUMN IF NOT EXISTS approved BOOLEAN DEFAULT TRUE;
 ALTER TABLE users     ADD COLUMN IF NOT EXISTS token_version INT DEFAULT 0;
 ALTER TABLE elections ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ;
+
+-- Bills may now name a person (impeachment) as well as a law.
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS target_user_id INT;
+
+-- A challenge is the people striking down a bill the House already passed.
+CREATE TABLE IF NOT EXISTS challenges (
+  id         SERIAL PRIMARY KEY,
+  bill_id    INT NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
+  opened_by  INT REFERENCES users(id) ON DELETE SET NULL,
+  status     TEXT DEFAULT 'open',              -- open | struck | kept | void
+  opened_at  TIMESTAMPTZ DEFAULT now(),
+  closes_at  TIMESTAMPTZ NOT NULL,
+  resolved_at TIMESTAMPTZ,
+  result     TEXT
+);
+
+-- One vote per citizen per challenge, enforced by the database like every other vote.
+CREATE TABLE IF NOT EXISTS challenge_votes (
+  challenge_id INT REFERENCES challenges(id) ON DELETE CASCADE,
+  user_id      INT REFERENCES users(id) ON DELETE CASCADE,
+  vote         TEXT NOT NULL,                  -- reject | keep
+  cast_at      TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (challenge_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_challenges_open ON challenges(status);
+-- At most one live challenge per bill.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_challenge_one_open ON challenges(bill_id) WHERE status='open';
+
+-- The House impeaches: a bill can name a person instead of a law.
+ALTER TABLE bills     ADD COLUMN IF NOT EXISTS target_user_id INT;
+-- A referendum is bound to the law it is trying to strike down.
+ALTER TABLE elections ADD COLUMN IF NOT EXISTS target_law_id INT;
+
+-- Referendums ask a question rather than choosing a person, so they get their
+-- own ballot box. One row per citizen per referendum, enforced by the key.
+CREATE TABLE IF NOT EXISTS referendum_votes (
+  election_id INT REFERENCES elections(id) ON DELETE CASCADE,
+  user_id     INT REFERENCES users(id) ON DELETE CASCADE,
+  choice      TEXT NOT NULL,                    -- keep | reject
+  cast_at     TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (election_id, user_id)
+);
+
+-- Citizens calling for a referendum on a law they did not get to vote on.
+CREATE TABLE IF NOT EXISTS petitions (
+  law_id  INT REFERENCES laws(id) ON DELETE CASCADE,
+  user_id INT REFERENCES users(id) ON DELETE CASCADE,
+  at      TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (law_id, user_id)
+);
+
+-- A bill can now come from outside the House, on the signatures of citizens.
+ALTER TABLE bills     ADD COLUMN IF NOT EXISTS origin TEXT DEFAULT 'house';   -- house | initiative
+ALTER TABLE elections ADD COLUMN IF NOT EXISTS target_bill_id INT;            -- a referendum on a proposal
+
+CREATE TABLE IF NOT EXISTS bill_petitions (
+  bill_id INT REFERENCES bills(id) ON DELETE CASCADE,
+  user_id INT REFERENCES users(id) ON DELETE CASCADE,
+  at      TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (bill_id, user_id)
+);
