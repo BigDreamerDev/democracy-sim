@@ -337,24 +337,84 @@ async function start() {
 
 /* ------------------------------------------------------------- chamber */
 
+/* Seats are laid out to fit, however many there are. One row while they are
+   comfortable; concentric rows once they would touch, the way a real chamber
+   does it. The floor arc sits inside the seats so it never crosses them. */
+function seatLayout(n, W, H) {
+  const cx = W / 2, cy = H * 0.80, span = 152;          // degrees the benches sweep
+  const outer = H * 0.60, inner = outer * 0.46;
+  for (let rows = 1; rows <= 5; rows++) {
+    const radii = rows === 1 ? [outer]
+      : Array.from({ length: rows }, (_, i) => inner + (outer - inner) * (i / (rows - 1)));
+    const sum = radii.reduce((a, b) => a + b, 0);
+    const counts = radii.map(r => Math.max(1, Math.round(n * r / sum)));
+    let diff = n - counts.reduce((a, b) => a + b, 0), i = counts.length - 1;
+    while (diff !== 0) {                                 // fix rounding, back row first
+      counts[i] += diff > 0 ? 1 : -1;
+      diff += diff > 0 ? -1 : 1;
+      i = (i - 1 + counts.length) % counts.length;
+    }
+    if (counts.some(c => c < 1)) continue;
+
+    // Largest radius that keeps neighbours apart along every row...
+    let r = 22;
+    radii.forEach((R, k) => {
+      const c = counts[k];
+      const step = c > 1 ? (span / (c - 1)) * Math.PI / 180 : Math.PI;
+      r = Math.min(r, R * Math.sin(step / 2) - 2.5);
+    });
+    // ...and keeps the rows themselves apart.
+    if (rows > 1) r = Math.min(r, (outer - inner) / (rows - 1) / 2 - 2);
+
+    if (r >= 11 || rows === 5) return { cx, cy, radii, counts, r: Math.max(6, r), span, floor: inner - Math.max(6, r) - 8 };
+  }
+}
+
 function hemicycle(offices, seats) {
   const mps = offices.filter(o => o.office === 'mp').sort((a, b) => (a.seat || 0) - (b.seat || 0));
   const speaker = offices.find(o => o.office === 'speaker');
-  const cx = 260, cy = 195, R = 140, n = Math.max(seats, 1);
-  let svg = '<svg viewBox="0 0 520 250" role="img" aria-label="Seating of the chamber">';
-  svg += `<path d="M ${cx - R} ${cy} A ${R} ${R} 0 0 1 ${cx + R} ${cy}" fill="none" stroke="var(--rule)" stroke-width="1"/>`;
-  for (let i = 0; i < n; i++) {
-    const t = (n === 1 ? 90 : 160 - i * (140 / (n - 1))) * Math.PI / 180;
-    const x = cx + R * Math.cos(t), y = cy - R * Math.sin(t);
-    const m = mps[i];
-    const fill = m ? (m.party_colour || 'var(--ink-3)') : 'none';
-    svg += `<circle class="seat ${m ? '' : 'vacant'}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="21" fill="${esc(fill)}"/>`;
-    svg += `<text class="seat-no" x="${x.toFixed(1)}" y="${(y + 3.5).toFixed(1)}" fill="${m ? '#fff' : 'var(--ink-3)'}">${i + 1}</text>`;
-    svg += `<text class="seat-name" x="${x.toFixed(1)}" y="${(y + 36).toFixed(1)}">${esc(m ? m.display_name : 'vacant')}</text>`;
+  const n = Math.max(Number(seats) || 1, 1);
+  const W = 640, H = 300;
+  const L = seatLayout(n, W, H);
+  const named = L.r >= 15 && L.radii.length === 1;      // names only fit on a single roomy row
+
+  let svg = `<svg viewBox="0 0 ${W} ${H + (named ? 0 : 0)}" role="img" aria-label="Seating of the chamber">`;
+  if (L.floor > 20) {
+    svg += `<path d="M ${(L.cx - L.floor).toFixed(1)} ${L.cy} A ${L.floor.toFixed(1)} ${L.floor.toFixed(1)} 0 0 1 ${(L.cx + L.floor).toFixed(1)} ${L.cy}" fill="none" stroke="var(--rule)" stroke-width="1"/>`;
   }
-  svg += `<rect class="chair" x="${cx - 66}" y="206" width="132" height="28" rx="2"/>`;
-  svg += `<text class="chair-label" x="${cx}" y="224">${esc(speaker ? 'SPEAKER · ' + speaker.display_name.toUpperCase() : 'SPEAKER · VACANT')}</text>`;
-  return svg + '</svg>';
+
+  let seat = 0;
+  L.radii.forEach((R, row) => {
+    const c = L.counts[row];
+    for (let i = 0; i < c; i++, seat++) {
+      const deg = c === 1 ? 90 : (90 + L.span / 2) - i * (L.span / (c - 1));
+      const t = deg * Math.PI / 180;
+      const x = L.cx + R * Math.cos(t), y = L.cy - R * Math.sin(t);
+      const m = mps[seat];
+      const fill = m ? (m.party_colour || 'var(--ink-3)') : 'none';
+      svg += `<circle class="seat ${m ? '' : 'vacant'}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${L.r.toFixed(1)}" fill="${esc(fill)}"><title>${esc(m ? `Seat ${seat + 1}: ${m.display_name}` : `Seat ${seat + 1}: vacant`)}</title></circle>`;
+      if (L.r >= 9) {
+        svg += `<text class="seat-no" x="${x.toFixed(1)}" y="${(y + L.r * 0.34).toFixed(1)}" style="font-size:${Math.min(11, L.r * 0.75).toFixed(1)}px" fill="${m ? '#fff' : 'var(--ink-3)'}">${seat + 1}</text>`;
+      }
+      if (named) {
+        svg += `<text class="seat-name" x="${x.toFixed(1)}" y="${(y + L.r + 14).toFixed(1)}">${esc(m ? m.display_name : 'vacant')}</text>`;
+      }
+    }
+  });
+
+  const cw = Math.min(180, W * 0.34);
+  svg += `<rect class="chair" x="${(L.cx - cw / 2).toFixed(1)}" y="${(L.cy + 12).toFixed(1)}" width="${cw}" height="28" rx="2"/>`;
+  svg += `<text class="chair-label" x="${L.cx}" y="${(L.cy + 30).toFixed(1)}">${esc(speaker ? 'SPEAKER · ' + speaker.display_name.toUpperCase() : 'SPEAKER · VACANT')}</text>`;
+  svg += '</svg>';
+
+  // When the seats are too small to label, the names go underneath instead.
+  if (!named) {
+    svg += `<div class="seat-key">${Array.from({ length: n }, (_, k) => {
+      const m = mps[k];
+      return `<span class="seat-chip"><i style="background:${esc(m ? (m.party_colour || 'var(--ink-3)') : 'transparent')};${m ? '' : 'border-style:dashed'}"></i>${k + 1} ${esc(m ? m.display_name : 'vacant')}</span>`;
+    }).join('')}</div>`;
+  }
+  return svg;
 }
 
 async function viewChamber(v) {
@@ -421,6 +481,8 @@ async function viewChamber(v) {
     <div class="card">
       <h2>Where things stand</h2>
       <div class="row small">
+        ${stats.petitions ? `<a class="tag on-violet" href="#/bills">${stats.petitions} initiative${stats.petitions > 1 ? 's' : ''} need signatures</a>` : ''}
+        ${stats.referendums ? `<a class="tag on-violet" href="#/elections">${stats.referendums} referendum${stats.referendums > 1 ? 's' : ''} open</a>` : ''}
         <span class="tag">${stats.citizens} citizens</span>
         <span class="tag">${stats.laws} laws in force</span>
         <span class="tag">constitution v${stats.constitution_version ?? 1}</span>
@@ -685,24 +747,30 @@ async function viewBills(v) {
         </div>
         <button class="btn btn-primary">Propose</button>
       </form>
-    </div>` : `<div class="card"><h2>Propose something</h2>
-      <p class="small muted">Only the House may put a bill before itself. ${STATE.config.initiative_mode === 'off'
-        ? 'Ask an MP to move it for you, or stand at the next election.'
-        : `But you can start an <strong>initiative</strong>: draft it here, and if ${Math.round(Number(STATE.config.petition_share) * 100)}% of citizens sign it, ${STATE.config.initiative_mode === 'enact'
-            ? `it goes straight to the whole Republic, and becomes law at ${Math.round(Number(STATE.config.initiative_threshold) * 100)}% without the House or the President.`
-            : 'the House must take it up. The House still votes on it and the President still has to assent.'}`}</p>
-      ${STATE.config.initiative_mode === 'off' ? '' : `
+    </div>` : ''}
+
+    ${STATE.config.initiative_mode === 'off' ? (canPropose() ? '' : `<div class="card"><h2>Propose something</h2>
+      <p class="small muted">Only the House may put a bill before itself, and citizens' initiatives are switched off. Ask an MP to move it for you, or stand at the next election.</p></div>`)
+    : `<div class="card"><h2>Start an initiative</h2>
+      <p class="small muted">${canPropose() ? 'Open to every citizen, you included — this route goes to the people rather than through the House.' : 'Only the House may put a bill before itself, but anyone may start an initiative.'}
+        Collect signatures from ${Math.round(Number(STATE.config.petition_share) * 100)}% of citizens and ${STATE.config.initiative_mode === 'enact'
+          ? `it goes straight to the whole Republic, becoming law at ${Math.round(Number(STATE.config.initiative_threshold) * 100)}% — without the House and without the President.`
+          : 'the House must take it up. It still faces a division, and the President still has to assent.'}</p>
       <form id="init" class="stack" style="margin-top:14px">
         <label class="field"><span>Title</span><input name="title" required placeholder="Short and quotable"></label>
-        <label class="field"><span>Kind</span><select name="kind">
-          <option value="law">New law</option>
-          <option value="amendment">Amend a law</option>
-          <option value="repeal">Repeal a law</option>
-          <option value="motion">Motion (no statute)</option>
-        </select></label>
+        <div class="grid2">
+          <label class="field"><span>Kind</span><select name="kind" id="initkind">
+            <option value="law">New law</option>
+            <option value="amendment">Amend a law</option>
+            <option value="repeal">Repeal a law</option>
+            <option value="motion">Motion (no statute)</option>
+          </select></label>
+          <label class="field" id="initlawwrap" hidden><span>Law it changes</span>
+            <select name="target_law_id" id="initlaw"><option value="">—</option></select></label>
+        </div>
         <label class="field"><span>Text</span><textarea name="body" required placeholder="Write it as it should read in the statute book."></textarea></label>
         <button class="btn btn-primary">Start the initiative</button>
-      </form>`}
+      </form>
     </div>`}
 
     ${list.length ? `<div class="list">${list.map(b => `
@@ -711,15 +779,29 @@ async function viewBills(v) {
         <div class="item-meta">${esc(b.kind)} · ${esc(b.author_name || 'unknown')} · ${b.seconds} seconded · ${b.comments} comments${b.result ? ' · ' + esc(b.result) : ''}</div>
       </a>`).join('')}</div>` : '<div class="empty">Nothing has been proposed yet. Be the first.</div>'}`;
 
-  if ($('#init')) $('#init').onsubmit = async e => {
-    e.preventDefault();
-    try {
-      const r = await api('/api/initiatives', { method: 'POST', body: Object.fromEntries(new FormData(e.target)) });
-      location.hash = `#/bill/${r.id}`;
-    } catch (err) { toast(err.message, true); }
-  };
+  // Laws are needed by whichever forms are on the page, so fetch once.
+  const lawOptions = api('/api/laws').then(laws => '<option value="">—</option>' +
+    laws.map(l => `<option value="${l.id}">${esc(l.ref)} ${esc(l.title)}</option>`).join(''));
 
-  const kindSel = document.querySelector('select[name=kind]');
+  if ($('#init')) {
+    const ik = $('#initkind');
+    const syncInit = () => { $('#initlawwrap').hidden = !['amendment', 'repeal'].includes(ik.value); };
+    ik.onchange = syncInit; syncInit();
+    lawOptions.then(html => { if ($('#initlaw')) $('#initlaw').innerHTML = html; });
+    $('#init').onsubmit = async e => {
+      e.preventDefault();
+      const f = Object.fromEntries(new FormData(e.target));
+      if (!f.target_law_id) delete f.target_law_id;
+      try {
+        const r = await api('/api/initiatives', { method: 'POST', body: f });
+        location.hash = `#/bill/${r.id}`;
+      } catch (err) { toast(err.message, true); }
+    };
+  }
+
+  // Everything below belongs to the House's own bill form, which is not
+  // always on the page — scope the lookups to it or they find the other form.
+  const kindSel = document.querySelector('#mk select[name=kind]');
   if (!kindSel) return;
   api('/api/citizens').then(cs => {
     $('#who').innerHTML = '<option value="">—</option>' + cs.filter(c => (c.offices || []).length)
@@ -740,10 +822,7 @@ async function viewBills(v) {
     t.focus();
   });
 
-  api('/api/laws').then(laws => {
-    $('#targ').innerHTML = '<option value="">—</option>' +
-      laws.map(l => `<option value="${l.id}">${esc(l.ref)} ${esc(l.title)}</option>`).join('');
-  });
+  lawOptions.then(html => { if ($('#targ')) $('#targ').innerHTML = html; });
 
   $('#mk').onsubmit = async e => {
     e.preventDefault();

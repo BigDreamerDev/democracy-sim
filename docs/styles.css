@@ -11,7 +11,7 @@
   --rule:#C8CBD1;
   --box:#1E2A5A;
   --indelible:#5B2E9E;        /* accent for text and links — contrast-checked */
-  --indelible-fill:#5B2E9E;   /* accent for solid fills: buttons, seats, the seal */
+  --indelible-fill:#5B2E9E;   /* accent for solid fills: buttons, seats, the brand dot */
   --on-accent:#fff;           /* text that sits on --indelible-fill */
   --indelible-soft:#EBE3F7;
   --oxide:#A8362B;
@@ -26,7 +26,12 @@
 }
 
 *{box-sizing:border-box}
+
+/* The browser's own [hidden] rule lives in the user-agent stylesheet, and ANY
+   author declaration outranks it — so .stack{display:flex} and #shell{display:grid}
+   would quietly cancel it and render hidden elements anyway. This puts it back. */
 [hidden]{display:none !important}
+
 html,body{margin:0;padding:0}
 body{
   background:var(--paper);
@@ -86,7 +91,7 @@ a:hover{text-decoration:underline}
 .rail a:hover{text-decoration:none;color:var(--ink)}
 .rail a.is-on{color:var(--ink);border-bottom-color:var(--indelible)}
 
-main{grid-area:main;padding:22px 16px 80px;max-width:840px;width:100%}
+main{grid-area:main;padding:22px 16px 80px;width:100%;min-width:0}
 
 @media(min-width:900px){
   #shell{grid-template-columns:220px minmax(0,1fr);grid-template-areas:"top top" "rail main"}
@@ -96,7 +101,7 @@ main{grid-area:main;padding:22px 16px 80px;max-width:840px;width:100%}
   }
   .rail a{border-bottom:0;border-left:2px solid transparent;padding:8px 18px}
   .rail a.is-on{border-left-color:var(--indelible);background:var(--indelible-soft)}
-  main{padding:30px 34px 90px}
+  main{padding:30px 40px 90px;max-width:1500px}
 }
 
 /* -------------------------------------------------------------- pieces */
@@ -138,7 +143,7 @@ p.page-sub{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-tran
 /* ------------------------------------------------------- the hemicycle */
 
 .chamber{background:var(--card);border:1px solid var(--rule);padding:20px 18px 14px;margin-bottom:var(--gap)}
-.chamber svg{display:block;width:100%;height:auto;max-width:520px;margin:0 auto}
+.chamber svg{display:block;width:100%;height:auto;max-width:660px;margin:0 auto}
 .seat{stroke:var(--rule);stroke-width:1.5}
 .seat.vacant{fill:none;stroke:var(--ink-3);stroke-dasharray:3 3}
 .seat-no{font-family:var(--mono);font-size:8px;fill:var(--ink-2);text-anchor:middle}
@@ -146,7 +151,6 @@ p.page-sub{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-tran
 .chair{fill:var(--box)}
 .chair-label{font-family:var(--mono);font-size:8px;fill:#fff;text-anchor:middle;letter-spacing:.08em}
 
-.offices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
 .office{border:1px solid var(--rule);padding:10px 12px;background:var(--paper)}
 .office .eyebrow{margin-bottom:2px}
 .office strong{font-family:var(--display);font-weight:600;font-size:16px}
@@ -219,7 +223,7 @@ input[type=color]{padding:3px;height:38px}
 
 /* ------------------------------------------------------- legal text */
 
-.prose{font-size:15.5px;line-height:1.7}
+.prose{font-size:15.5px;line-height:1.7;max-width:78ch}
 .prose h1{font-family:var(--display);font-weight:800;font-size:26px;margin:26px 0 10px;letter-spacing:-.015em}
 .prose h2{font-family:var(--display);font-weight:600;font-size:19px;margin:26px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--rule)}
 .prose h3{font-size:15px;margin:18px 0 6px;font-weight:600}
@@ -231,7 +235,8 @@ input[type=color]{padding:3px;height:38px}
 
 /* --------------------------------------------------------- misc */
 
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.offices{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:16px}
 @media(max-width:560px){.grid2,.offices{grid-template-columns:1fr}}
 
 .swatch{width:12px;height:12px;border-radius:50%;display:inline-block;flex:none;border:1px solid rgba(0,0,0,.2)}
@@ -271,3 +276,9 @@ input[type=color]{padding:3px;height:38px}
 .swatch-chip{display:flex;align-items:center;gap:6px;border:1px solid var(--rule);padding:3px 7px;background:var(--paper);
   font-family:var(--mono);font-size:9px;letter-spacing:.04em;text-transform:uppercase}
 .swatch-chip i{width:11px;height:11px;display:block;border:1px solid rgba(0,0,0,.2)}
+
+/* Seat key — shown when the benches are too tight to carry names. */
+.seat-key{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;justify-content:center}
+.seat-chip{display:flex;align-items:center;gap:6px;border:1px solid var(--rule);padding:3px 8px;
+  background:var(--paper);font-family:var(--mono);font-size:9.5px}
+.seat-chip i{width:10px;height:10px;border-radius:50%;display:block;border:1px solid rgba(0,0,0,.25)}

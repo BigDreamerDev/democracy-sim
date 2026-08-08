@@ -406,8 +406,11 @@ app.get('/api/state', wrap(async (_req, res) => {
     q(`SELECT id,kind,title,seats,status,campaign_at,opens_at,closes_at,auto,cycle_no FROM elections
         WHERE status<>'closed' ORDER BY created_at DESC`),
     q(`SELECT id,ref,title,kind,status FROM bills
-        WHERE status IN ('draft','tabled','division','passed') ORDER BY created_at DESC LIMIT 20`),
-    q(`SELECT (SELECT count(*)::int FROM users WHERE is_active AND approved) AS citizens,
+        WHERE status IN ('petition','draft','tabled','division','referendum','passed')
+        ORDER BY created_at DESC LIMIT 20`),
+    q(`SELECT (SELECT count(*)::int FROM bills WHERE status='petition') AS petitions,
+              (SELECT count(*)::int FROM elections WHERE kind='referendum' AND status='voting') AS referendums,
+              (SELECT count(*)::int FROM users WHERE is_active AND approved) AS citizens,
               (SELECT count(*)::int FROM laws WHERE repealed_at IS NULL) AS laws,
               (SELECT max(version) FROM constitution) AS constitution_version`)
   ]);
@@ -1350,7 +1353,8 @@ app.get('/api/digest', wrap(async (_req, res) => {
   const off = (await q(`SELECT o.office,o.seat,u.display_name FROM offices o JOIN users u ON u.id=o.user_id
                         WHERE o.active ORDER BY o.office, o.seat`)).rows;
   const el = (await q("SELECT title,status,closes_at FROM elections WHERE status<>'closed'")).rows;
-  const bl = (await q("SELECT ref,title,status FROM bills WHERE status IN ('draft','tabled','division','passed')")).rows;
+  const bl = (await q(`SELECT ref,title,status FROM bills
+                       WHERE status IN ('petition','draft','tabled','division','referendum','passed')`)).rows;
   const laws = (await q('SELECT count(*)::int n FROM laws WHERE repealed_at IS NULL')).rows[0].n;
   const line = o => `${o.office === 'mp' ? `Seat ${o.seat}` : o.office[0].toUpperCase() + o.office.slice(1)}: ${o.display_name}`;
   const c = cycleNow();
