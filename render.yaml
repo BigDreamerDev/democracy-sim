@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: republic-api
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false   # paste your Postgres connection string in the Render dashboard

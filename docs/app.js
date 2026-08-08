@@ -1,0 +1,1082 @@
+/* Republic — client. No build step, no framework. */
+
+const API = (window.API_BASE || '').replace(/\/$/, '');
+let TOKEN = localStorage.getItem('republic.token') || '';
+let ME = null;
+let STATE = null;
+
+/* ------------------------------------------------------------- plumbing */
+
+async function api(path, { method = 'GET', body } = {}) {
+  const res = await fetch(API + path, {
+    method,
+    headers: {
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {})
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const text = await res.text();
+  let data; try { data = JSON.parse(text); } catch { data = text; }
+  if (!res.ok) throw new Error(data?.error || 'The server could not be reached.');
+  return data;
+}
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+let toastTimer;
+function toast(msg, bad = false) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (bad ? ' bad' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = 'toast'; }, 3400);
+}
+
+const when = d => d ? new Date(d).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+const day = d => d ? new Date(d).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
+/* "2d 6h" — how long until a scheduled moment. */
+function until(d) {
+  if (!d) return '';
+  const ms = new Date(d) - Date.now();
+  if (ms <= 0) return 'now';
+  const m = Math.floor(ms / 60000), h = Math.floor(m / 60), dd = Math.floor(h / 24);
+  if (dd) return `${dd}d ${h % 24}h`;
+  if (h) return `${h}h ${m % 60}m`;
+  return `${m}m`;
+}
+
+function scheduleNote(e) {
+  if (e.status === 'nominations' && e.campaign_at) return ` · nominations close in ${until(e.campaign_at)}`;
+  if (e.status === 'campaign' && e.opens_at) return ` · poll opens in ${until(e.opens_at)}`;
+  if (e.status === 'voting' && e.closes_at) return ` · poll closes in ${until(e.closes_at)}`;
+  return '';
+}
+
+const PHASE = {
+  pending:     ['Cycle not yet begun', 'starts'],
+  nominations: ['Nominations open', 'campaigning starts'],
+  campaign:    ['Campaigning', 'poll opens'],
+  poll:        ['Polls open', 'poll closes']
+};
+
+/* Minimal markdown: headings, lists, bold, italic, paragraphs. */
+function md(src) {
+  const lines = esc(src || '').split('\n');
+  let out = '', list = null;
+  const inline = s => s
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|\W)\*(?!\s)(.+?)\*/g, '$1<em>$2</em>');
+  const close = () => { if (list) { out += `</${list}>`; list = null; } };
+  for (const raw of lines) {
+    const l = raw.trimEnd();
+    let m;
+    if ((m = l.match(/^(#{1,3})\s+(.*)$/))) { close(); out += `<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`; }
+    else if ((m = l.match(/^\s*\d+[.)]\s+(.*)$/))) { if (list !== 'ol') { close(); out += '<ol>'; list = 'ol'; } out += `<li>${inline(m[1])}</li>`; }
+    else if ((m = l.match(/^\s*[-*•]\s+(.*)$/))) { if (list !== 'ul') { close(); out += '<ul>'; list = 'ul'; } out += `<li>${inline(m[1])}</li>`; }
+    else if (!l.trim()) { close(); }
+    else { close(); out += `<p>${inline(l)}</p>`; }
+  }
+  close();
+  return out;
+}
+
+/* ------------------------------------------------------------------- the flag
+
+   The palette is not written in the stylesheet. It is read out of whatever law
+   `flag_law_ref` points at, so amending the Flag Act re-skins the whole site.
+   Roles are assigned by area: the largest dark band leads, the device becomes
+   the accent, the lightest colour becomes the ground. Every result is then
+   checked for contrast and darkened until it is legible — a pale yellow flag
+   must not produce unreadable text. */
+
+const hex2rgb = h => { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+const rgb2hex = ([r, g, b]) => '#' + [r, g, b].map(x => Math.round(Math.max(0, Math.min(255, x))).toString(16).padStart(2, '0')).join('').toUpperCase();
+const lum = h => {
+  const c = hex2rgb(h).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+};
+const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+const mix = (a, b, t) => rgb2hex(hex2rgb(a).map((v, i) => v + (hex2rgb(b)[i] - v) * t));
+const sat = h => { const [r, g, b] = hex2rgb(h).map(v => v / 255); const mx = Math.max(r, g, b), mn = Math.min(r, g, b); return mx === 0 ? 0 : (mx - mn) / mx; };
+
+/* Darken (or lighten) a colour until it reads clearly against `on`. */
+function legible(colour, on, target = 4.5) {
+  const towards = lum(on) > 0.4 ? '#000000' : '#FFFFFF';
+  let out = colour;
+  for (let t = 0; t <= 0.9 && contrast(out, on) < target; t += 0.05) out = mix(colour, towards, t);
+  return out;
+}
+
+function applyFlagTheme(flag) {
+  const root = document.documentElement;
+  if (!flag || !flag.bands?.length) { root.removeAttribute('style'); return; }
+
+  // Area per colour, largest first. Repeating a colour in two bands doubles its weight.
+  const area = new Map();
+  for (const b of flag.bands) area.set(b.colour, (area.get(b.colour) || 0) + b.weight);
+  const byArea = [...area.entries()].sort((a, b) => b[1] - a[1]).map(x => x[0]);
+
+  const ground = byArea.slice().sort((a, b) => lum(b) - lum(a))[0];          // the lightest band
+  const dark = byArea.filter(c => lum(c) < 0.6).sort((a, b) => area.get(b) - area.get(a));
+  const primary = flag.primary || dark[0] || byArea.find(c => c !== ground) || byArea[0];
+
+  // A near-white or near-black band carries no hue worth using as an accent, so
+  // skip it. A flag of three greys falls back to its own primary rather than
+  // inventing a colour that is not on it.
+  const accentRaw = flag.accent || flag.device
+    || byArea.filter(c => c !== primary && sat(c) > 0.15).sort((a, b) => sat(b) - sat(a))[0]
+    || primary;
+
+  // The page stays light whatever the flag is. An all-black flag tints the paper
+  // towards a washed-out black, not to black itself — the tint carries the hue,
+  // never the darkness.
+  let wash = ground;
+  for (let i = 0; i < 24 && lum(wash) < 0.75; i++) wash = mix(wash, '#FFFFFF', 0.15);
+  const paper = mix('#E9EAEC', wash, 0.28);
+  const card = mix('#F5F6F7', wash, 0.22);
+  const ink = lum(paper) > 0.5 ? '#14161C' : '#F2F3F5';
+
+  const accent = legible(accentRaw, card);            // links and text
+  const accentFill = accentRaw;                       // buttons, seats, the seal
+  const onAccent = contrast('#FFFFFF', accentFill) >= 3.2 ? '#FFFFFF' : '#14161C';
+  const bar = legible(primary, '#FFFFFF', 3.5);
+
+  const set = (k, v) => root.style.setProperty(k, v);
+  set('--paper', paper);
+  set('--card', card);
+  set('--ink', ink);
+  set('--rule', mix(paper, ink, 0.22));
+  set('--ink-2', mix(paper, ink, 0.62));
+  set('--ink-3', mix(paper, ink, 0.42));
+  set('--box', bar);
+  set('--indelible', accent);
+  set('--indelible-fill', accentFill);
+  set('--on-accent', onAccent);
+  set('--indelible-soft', mix(card, accentFill, 0.16));
+}
+
+/* Draws the flag itself from the same schedule, so the picture and the palette
+   can never drift apart. */
+function flagSvg(flag, w = 300) {
+  if (!flag?.bands?.length) return '';
+  const h = Math.round(w * 0.6);
+  const total = flag.bands.reduce((n, b) => n + b.weight, 0) || 1;
+  let y = 0, out = `<svg viewBox="0 0 ${w} ${h}" class="flag" role="img" aria-label="Flag of the Republic">`;
+  for (const b of flag.bands) {
+    const bh = h * (b.weight / total);
+    out += `<rect x="0" y="${y.toFixed(2)}" width="${w}" height="${(bh + 0.5).toFixed(2)}" fill="${esc(b.colour)}"/>`;
+    y += bh;
+  }
+  if (flag.stars > 0 && flag.device) {
+    const cx = w / 2, cy = h / 2, ring = h * 0.2393, r = h * 0.0329, pts = 12;
+    for (let i = 0; i < flag.stars; i++) {
+      const a = (i / flag.stars) * Math.PI * 2 - Math.PI / 2;
+      const sx = cx + ring * Math.cos(a), sy = cy + ring * Math.sin(a);
+      let d = '';
+      for (let k = 0; k < pts * 2; k++) {
+        const rad = k % 2 ? r * 0.52 : r;
+        const t = (k / (pts * 2)) * Math.PI * 2 - Math.PI / 2;
+        d += `${k ? 'L' : 'M'}${(sx + rad * Math.cos(t)).toFixed(2)} ${(sy + rad * Math.sin(t)).toFixed(2)}`;
+      }
+      out += `<path d="${d}Z" fill="${esc(flag.device)}"/>`;
+    }
+  }
+  return out + `<rect x="0.5" y="0.5" width="${w - 1}" height="${h - 1}" fill="none" stroke="rgba(0,0,0,.18)"/></svg>`;
+}
+
+const statusTag = s => {
+  const map = {
+    draft: '', tabled: 'on-navy', division: 'on-violet', passed: 'on-green',
+    enacted: 'on-green', failed: 'on-oxide', vetoed: 'on-oxide', withdrawn: '',
+    nominations: 'on-navy', campaign: 'on-violet', voting: 'on-violet', closed: ''
+  };
+  return `<span class="tag ${map[s] ?? ''}">${esc(s)}</span>`;
+};
+
+const isAdmin = () => !!ME?.is_admin;
+const has = o => !!ME?.offices?.includes(o) || isAdmin();
+
+/* ----------------------------------------------------------------- gate */
+
+function showGate(msg) {
+  $('#gate').hidden = false;
+  $('#shell').hidden = true;
+  if (msg) $('#gateMsg').textContent = msg;
+}
+
+document.querySelectorAll('[data-gate]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('[data-gate]').forEach(x => x.classList.toggle('is-on', x === b));
+  $('#formIn').hidden = b.dataset.gate !== 'in';
+  $('#formUp').hidden = b.dataset.gate !== 'up';
+  $('#gateMsg').textContent = '';
+});
+
+$('#formIn').onsubmit = async e => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  try {
+    const r = await api('/api/auth/login', { method: 'POST', body: f });
+    TOKEN = r.token; localStorage.setItem('republic.token', TOKEN);
+    await start();
+  } catch (err) { $('#gateMsg').textContent = err.message; }
+};
+
+$('#formUp').onsubmit = async e => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  try {
+    const r = await api('/api/auth/register', { method: 'POST', body: f });
+    if (r.pending) {
+      const m = $('#gateMsg');
+      m.className = 'gate-msg ok';
+      m.textContent = 'Account created. The returning officer has to approve you before you can sign in.';
+      e.target.reset();
+      return;
+    }
+    TOKEN = r.token; localStorage.setItem('republic.token', TOKEN);
+    await start();
+  } catch (err) { $('#gateMsg').textContent = err.message; }
+};
+
+$('#signout').onclick = () => {
+  localStorage.removeItem('republic.token');
+  TOKEN = ''; ME = null;
+  location.hash = '';
+  location.reload();
+};
+
+/* --------------------------------------------------------------- router */
+
+const ROUTES = [
+  ['chamber', 'Chamber', viewChamber],
+  ['elections', 'Elections', viewElections],
+  ['bills', 'Bills', viewBills],
+  ['laws', 'Statute book', viewLaws],
+  ['constitution', 'Constitution', viewConstitution],
+  ['parties', 'Parties', viewParties],
+  ['citizens', 'Citizens', viewCitizens],
+  ['record', 'Record', viewRecord],
+  ['me', 'My account', viewMe],
+  ['admin', 'Returning officer', viewAdmin]
+];
+
+function drawRail() {
+  const path = (location.hash.slice(2) || 'chamber').split('/')[0];
+  $('#rail').innerHTML = ROUTES
+    .filter(r => r[0] !== 'admin' || isAdmin())
+    .map(([k, label]) => `<a href="#/${k}" class="${k === path ? 'is-on' : ''}">${label}</a>`).join('');
+}
+
+async function route() {
+  if (!ME) return;
+  const parts = (location.hash.slice(2) || 'chamber').split('/');
+  drawRail();
+  const view = $('#view');
+  view.innerHTML = '<p class="muted small">Loading…</p>';
+  const single = { election: viewElection, bill: viewBill, party: viewParty }[parts[0]];
+  const fn = single || (ROUTES.find(r => r[0] === parts[0])?.[2]) || viewChamber;
+  try {
+    await fn(view, parts[1]);
+  } catch (err) {
+    view.innerHTML = `<div class="empty">${esc(err.message)}</div>`;
+  }
+  view.focus({ preventScroll: true });
+  window.scrollTo({ top: 0 });
+}
+window.addEventListener('hashchange', route);
+
+async function refreshState() {
+  STATE = await api('/api/state');
+  $('#navName').textContent = STATE.config.nation_name;
+  $('#gateName').textContent = STATE.config.nation_name;
+  $('#navMotto').textContent = STATE.config.motto;
+  document.title = STATE.config.nation_name;
+  applyFlagTheme(STATE.flag);
+  const gf = $('#gateFlag');
+  if (gf) gf.innerHTML = flagSvg(STATE.flag, 340);
+}
+
+async function start() {
+  try {
+    await refreshState();
+  } catch {
+    return showGate('Cannot reach the server. Check API_BASE in config.js, and give Render a minute to wake up.');
+  }
+  if (!TOKEN) return showGate('');
+  try { ME = await api('/api/me'); }
+  catch { localStorage.removeItem('republic.token'); TOKEN = ''; return showGate('Your session expired. Sign in again.'); }
+  $('#gate').hidden = true;
+  $('#shell').hidden = false;
+  $('#whoName').textContent = ME.display_name;
+  if (!location.hash) location.hash = '#/chamber';
+  await route();
+}
+
+/* ------------------------------------------------------------- chamber */
+
+function hemicycle(offices, seats) {
+  const mps = offices.filter(o => o.office === 'mp').sort((a, b) => (a.seat || 0) - (b.seat || 0));
+  const speaker = offices.find(o => o.office === 'speaker');
+  const cx = 260, cy = 195, R = 140, n = Math.max(seats, 1);
+  let svg = '<svg viewBox="0 0 520 250" role="img" aria-label="Seating of the chamber">';
+  svg += `<path d="M ${cx - R} ${cy} A ${R} ${R} 0 0 1 ${cx + R} ${cy}" fill="none" stroke="var(--rule)" stroke-width="1"/>`;
+  for (let i = 0; i < n; i++) {
+    const t = (n === 1 ? 90 : 160 - i * (140 / (n - 1))) * Math.PI / 180;
+    const x = cx + R * Math.cos(t), y = cy - R * Math.sin(t);
+    const m = mps[i];
+    const fill = m ? (m.party_colour || 'var(--ink-3)') : 'none';
+    svg += `<circle class="seat ${m ? '' : 'vacant'}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="21" fill="${esc(fill)}"/>`;
+    svg += `<text class="seat-no" x="${x.toFixed(1)}" y="${(y + 3.5).toFixed(1)}" fill="${m ? '#fff' : 'var(--ink-3)'}">${i + 1}</text>`;
+    svg += `<text class="seat-name" x="${x.toFixed(1)}" y="${(y + 36).toFixed(1)}">${esc(m ? m.display_name : 'vacant')}</text>`;
+  }
+  svg += `<rect class="chair" x="${cx - 66}" y="206" width="132" height="28" rx="2"/>`;
+  svg += `<text class="chair-label" x="${cx}" y="224">${esc(speaker ? 'SPEAKER · ' + speaker.display_name.toUpperCase() : 'SPEAKER · VACANT')}</text>`;
+  return svg + '</svg>';
+}
+
+async function viewChamber(v) {
+  await refreshState();
+  const { offices, config, stats, elections, bills, parties } = STATE;
+  const pres = offices.find(o => o.office === 'president');
+  const spk = offices.find(o => o.office === 'speaker');
+
+  v.innerHTML = `
+    <h1 class="page">${esc(config.nation_name)}</h1>
+    <p class="page-sub">${esc(config.motto)}</p>
+
+    ${STATE.cycle ? `<div class="cycle">
+      <div>
+        <p class="eyebrow">Cycle ${STATE.cycle.number} · day ${Math.max(1, Math.floor((Date.now() - new Date(STATE.cycle.start)) / 86400000) + 1)} of ${config.cycle_days}</p>
+        <strong>${PHASE[STATE.cycle.phase][0]}</strong>
+      </div>
+      <div class="cycle-next">
+        <span>${PHASE[STATE.cycle.phase][1]} in</span>
+        <strong>${until(STATE.cycle.next_at)}</strong>
+      </div>
+    </div>` : ''}
+
+    ${STATE.flag ? `<section class="card flag-block">
+      ${flagSvg(STATE.flag, 260)}
+      <div class="flag-note">
+        <p class="eyebrow">The flag · ${esc(STATE.flag.law_ref)} ${esc(STATE.flag.law_title)}</p>
+        <p class="small">These are the colours of the Republic, and the colours of this site. They are set by law — amend <a href="#/laws">${esc(STATE.flag.law_ref)}</a> and everything here changes with it.</p>
+        <div class="swatches">${[...STATE.flag.bands.map(b => [b.colour, b.label]),
+            ...(STATE.flag.device ? [[STATE.flag.device, 'Device']] : [])]
+            .map(([c, l]) => `<span class="swatch-chip"><i style="background:${esc(c)}"></i>${esc(l || c)}</span>`).join('')}</div>
+      </div>
+    </section>` : ''}
+
+    <section class="chamber">
+      <p class="eyebrow">The chamber · ${config.seats} seats</p>
+      ${hemicycle(offices, Number(config.seats))}
+      <div class="offices">
+        <div class="office"><p class="eyebrow">President</p><strong>${esc(pres?.display_name || 'Vacant')}</strong></div>
+        <div class="office"><p class="eyebrow">Speaker</p><strong>${esc(spk?.display_name || 'Vacant')}</strong></div>
+      </div>
+    </section>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>Open elections</h2>
+        ${elections.length ? `<div class="list">${elections.map(e => `
+          <a class="item" href="#/election/${e.id}">
+            <div class="item-top"><span class="item-title">${esc(e.title)}</span>${statusTag(e.status)}</div>
+            <div class="item-meta">${esc(e.kind)}${e.seats > 1 ? ` · ${e.seats} seats` : ''}${e.closes_at ? ` · closes ${when(e.closes_at)}` : ''}</div>
+          </a>`).join('')}</div>` : '<div class="empty">No election is running.</div>'}
+      </div>
+
+      <div class="card">
+        <h2>Before the house</h2>
+        ${bills.length ? `<div class="list">${bills.map(b => `
+          <a class="item" href="#/bill/${b.id}">
+            <div class="item-top"><span class="item-title"><span class="ref">${esc(b.ref)}</span> ${esc(b.title)}</span>${statusTag(b.status)}</div>
+            <div class="item-meta">${esc(b.kind)}</div>
+          </a>`).join('')}</div>` : '<div class="empty">Nothing on the order paper.</div>'}
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Where things stand</h2>
+      <div class="row small">
+        <span class="tag">${stats.citizens} citizens</span>
+        <span class="tag">${stats.laws} laws in force</span>
+        <span class="tag">constitution v${stats.constitution_version ?? 1}</span>
+        <span class="tag">${parties.length} parties</span>
+      </div>
+    </div>`;
+}
+
+/* ----------------------------------------------------------- elections */
+
+async function viewElections(v) {
+  const list = await api('/api/elections');
+  v.innerHTML = `
+    <h1 class="page">Elections</h1>
+    <p class="page-sub">One citizen, one vote, no takebacks</p>
+    ${isAdmin() ? `
+    <div class="card">
+      <h2>Call an election</h2>
+      <form id="mk" class="stack">
+        <div class="grid2">
+          <label class="field"><span>Type</span><select name="kind">
+            <option value="parliament">Parliament (${STATE.config.seats} seats)</option>
+            <option value="president">President</option>
+            <option value="speaker">Speaker (MPs vote)</option>
+            <option value="referendum">Referendum</option>
+          </select></label>
+          <label class="field"><span>Closes (optional)</span><input type="datetime-local" name="closes_at"></label>
+        </div>
+        <label class="field"><span>Title</span><input name="title" placeholder="e.g. Second general election"></label>
+        <button class="btn btn-primary">Call it</button>
+      </form>
+    </div>` : ''}
+    ${list.length ? `<div class="list">${list.map(e => `
+      <a class="item" href="#/election/${e.id}">
+        <div class="item-top"><span class="item-title">${esc(e.title)}</span>${statusTag(e.status)}</div>
+        <div class="item-meta">${esc(e.kind)} · ${e.runners} standing · ${e.turnout} votes cast${e.seats > 1 ? ` · ${e.seats} seats` : ''}${e.auto ? ' · on the clock' : ''}${scheduleNote(e)}</div>
+      </a>`).join('')}</div>` : '<div class="empty">No elections have been held yet.</div>'}`;
+
+  if (isAdmin()) $('#mk').onsubmit = async e => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    if (!f.closes_at) delete f.closes_at;
+    try { const r = await api('/api/elections', { method: 'POST', body: f }); location.hash = `#/election/${r.id}`; }
+    catch (err) { toast(err.message, true); }
+  };
+}
+
+async function viewElection(v, id) {
+  const e = await api('/api/elections/' + id);
+  const live = e.candidates.filter(c => !c.withdrawn);
+  const mine = live.find(c => c.user_id === ME.id);
+  const elected = e.status === 'closed' ? live.slice(0, e.seats).filter(c => c.votes > 0).map(c => c.id) : [];
+  const top = Math.max(1, ...live.map(c => c.votes || 0));
+
+  let main = '';
+  if (e.status === 'campaign') {
+    main = `<div class="card"><h2>Campaigning</h2>
+      <p>Nominations are closed and the ballot is fixed. Make your case in the chat.
+      ${e.opens_at ? `The poll opens in <strong>${until(e.opens_at)}</strong>.` : ''}</p></div>`;
+  } else if (e.status === 'nominations') {
+    main = `<div class="card">
+      <h2>${mine ? 'Your nomination' : 'Stand for election'}</h2>
+      <form id="stand" class="stack">
+        <label class="field"><span>Why you</span><textarea name="statement" placeholder="Your pitch. The whole chat will read it.">${esc(mine?.statement || '')}</textarea></label>
+        <div class="row">
+          <button class="btn btn-primary">${mine ? 'Update nomination' : 'Put my name forward'}</button>
+          ${mine ? '<button class="btn" id="withdraw" type="button">Withdraw</button>' : ''}
+        </div>
+      </form>
+    </div>`;
+  } else if (e.status === 'voting') {
+    if (e.my_vote) {
+      const c = e.candidates.find(x => x.id === e.my_vote);
+      main = `<div class="card"><h2>Your ballot is cast</h2>
+        <p>You voted for <strong>${esc(c?.display_name || 'a candidate')}</strong>. That is final.</p>
+        <div class="stamp">Ballot recorded</div></div>`;
+    } else if (!e.can_vote) {
+      main = `<div class="card"><div class="empty">You are not in the electorate for this vote.</div></div>`;
+    } else {
+      main = `<div class="ballot">
+        <div class="ballot-head">Official ballot · mark one · you cannot change it</div>
+        ${live.map(c => `<label class="option">
+          <input type="radio" name="ballot" value="${c.id}">
+          <span class="option-body">
+            <span class="option-name">${esc(c.display_name)} ${c.party_abbr ? `<span class="tag">${esc(c.party_abbr)}</span>` : ''}</span>
+            ${c.statement ? `<span class="option-statement">${esc(c.statement)}</span>` : ''}
+          </span>
+        </label>`).join('') || '<div class="empty">Nobody is standing.</div>'}
+      </div>
+      <div class="row" style="margin-top:14px"><button class="btn btn-primary" id="cast">Cast my vote</button></div>`;
+    }
+  }
+
+  const results = `<div class="card">
+    <h2>${e.status === 'closed' ? 'Result' : 'Standing'}</h2>
+    ${live.length ? live.map(c => `
+      <div class="result-row ${elected.includes(c.id) ? 'is-elected' : ''}">
+        <div>
+          <div><strong>${esc(c.display_name)}</strong> ${c.party_abbr ? `<span class="tag">${esc(c.party_abbr)}</span>` : ''}
+            ${elected.includes(c.id) ? '<span class="tag on-green">elected</span>' : ''}</div>
+          ${c.votes !== null ? `<div class="bar"><span style="width:${Math.round((c.votes / top) * 100)}%"></span></div>` : ''}
+        </div>
+        <div class="result-count">${c.votes === null ? '—' : c.votes}</div>
+      </div>`).join('') : '<div class="empty">No candidates.</div>'}
+    <p class="item-meta" style="margin-top:12px">Turnout ${e.turnout} of ${e.eligible}${e.status === 'voting' && STATE.config.secret_ballot === 'true' ? ' · counts hidden until the poll closes' : ''}</p>
+  </div>`;
+
+  v.innerHTML = `
+    <h1 class="page">${esc(e.title)}</h1>
+    <p class="page-sub">${esc(e.kind)} · ${statusTag(e.status)}${e.auto ? ' · run by the clock' : ''}</p>
+    ${e.campaign_at || e.opens_at || e.closes_at ? `<div class="card"><p class="eyebrow">Timetable</p>
+      <div class="row small">
+        ${e.campaign_at ? `<span class="tag">nominations close ${when(e.campaign_at)}</span>` : ''}
+        ${e.opens_at ? `<span class="tag">poll opens ${when(e.opens_at)}</span>` : ''}
+        ${e.closes_at ? `<span class="tag">poll closes ${when(e.closes_at)}</span>` : ''}
+      </div></div>` : ''}
+    ${main}
+    ${results}
+    ${isAdmin() ? `<div class="card"><h2>Returning officer</h2>
+      <div class="row">
+        <button class="btn" data-set="nominations">Reopen nominations</button>
+        <button class="btn" data-set="campaign">Close nominations</button>
+        <button class="btn btn-primary" data-set="voting">Open the poll</button>
+        <button class="btn" data-set="closed">Close and certify</button>
+      </div>
+      <p class="small muted" style="margin-top:10px">Certifying seats the winners and vacates the previous holders. Closing a parliamentary election also vacates the Speaker. Touching any of these takes the election off the clock and you run it by hand from then on.</p>
+    </div>` : ''}`;
+
+  if ($('#stand')) $('#stand').onsubmit = async ev => {
+    ev.preventDefault();
+    try {
+      await api(`/api/elections/${id}/stand`, { method: 'POST', body: Object.fromEntries(new FormData(ev.target)) });
+      toast('You are on the ballot.'); route();
+    } catch (err) { toast(err.message, true); }
+  };
+  if ($('#withdraw')) $('#withdraw').onclick = async () => {
+    if (!confirm('Withdraw your candidacy?')) return;
+    await api(`/api/elections/${id}/withdraw`, { method: 'POST' }); route();
+  };
+  if ($('#cast')) $('#cast').onclick = async () => {
+    const pick = document.querySelector('input[name=ballot]:checked');
+    if (!pick) return toast('Mark a candidate first.', true);
+    if (!confirm('Cast your vote? You get one and it cannot be changed.')) return;
+    try { await api(`/api/elections/${id}/vote`, { method: 'POST', body: { candidacy_id: Number(pick.value) } }); route(); }
+    catch (err) { toast(err.message, true); }
+  };
+  document.querySelectorAll('[data-set]').forEach(b => b.onclick = async () => {
+    try {
+      const r = await api(`/api/elections/${id}/status`, { method: 'POST', body: { status: b.dataset.set } });
+      if (r.failed) toast(`No Speaker: best was ${r.best} of the ${r.needed} needed from a House of ${r.house}. Ballot ${r.ballot} — the next one needs ${r.next_needed}.`, true);
+      else if (r.tie) toast('Tie on the last seat — settle it and appoint manually in the admin page.', true);
+      else toast('Updated.');
+      route();
+    } catch (err) { toast(err.message, true); }
+  });
+}
+
+/* --------------------------------------------------------------- bills */
+
+async function viewBills(v) {
+  const list = await api('/api/bills');
+  v.innerHTML = `
+    <h1 class="page">Bills</h1>
+    <p class="page-sub">Anyone may propose · ${STATE.config.seconds_required} seconders to reach the floor</p>
+
+    <div class="card">
+      <h2>Propose something</h2>
+      <form id="mk" class="stack">
+        <label class="field"><span>Title</span><input name="title" required placeholder="Short and quotable"></label>
+        <div class="grid2">
+          <label class="field"><span>Kind</span><select name="kind">
+            <option value="law">New law</option>
+            <option value="amendment">Amend a law</option>
+            <option value="repeal">Repeal a law</option>
+            <option value="motion">Motion (no statute)</option>
+            <option value="constitutional">Constitutional amendment</option>
+            <option value="rule">Change a rule of the game</option>
+          </select></label>
+          <label class="field"><span>Law it changes</span><select name="target_law_id" id="targ"><option value="">—</option></select></label>
+        </div>
+        <label class="field"><span>Text</span><textarea name="body" id="body" required placeholder="Write it as it should read in the statute book. Markdown works."></textarea></label>
+        <div id="rulehelp" hidden>
+          <p class="eyebrow">Rule bills</p>
+          <p class="small muted">One change per line, written as <span class="code">setting = value</span>. Whatever passes is exactly what gets applied — no one edits it afterwards. Current values:</p>
+          <div class="row" style="margin-top:8px">${RULE_KEYS.map(k =>
+            `<button type="button" class="code" data-rule="${k}" style="cursor:pointer;border-style:dashed">${k} = ${esc(STATE.config[k] ?? '')}</button>`).join('')}</div>
+          <p class="small muted" style="margin-top:8px">Two settings are missing on purpose: whether new accounts need approval, and whether invites are required. Those decide who gets a vote at all, so they stay with the returning officer.</p>
+        </div>
+        <button class="btn btn-primary">Propose</button>
+      </form>
+    </div>
+
+    ${list.length ? `<div class="list">${list.map(b => `
+      <a class="item" href="#/bill/${b.id}">
+        <div class="item-top"><span class="item-title"><span class="ref">${esc(b.ref)}</span> ${esc(b.title)}</span>${statusTag(b.status)}</div>
+        <div class="item-meta">${esc(b.kind)} · ${esc(b.author_name || 'unknown')} · ${b.seconds} seconded · ${b.comments} comments${b.result ? ' · ' + esc(b.result) : ''}</div>
+      </a>`).join('')}</div>` : '<div class="empty">Nothing has been proposed yet. Be the first.</div>'}`;
+
+  const kindSel = document.querySelector('select[name=kind]');
+  const syncKind = () => {
+    const isRule = kindSel.value === 'rule';
+    $('#rulehelp').hidden = !isRule;
+    $('#body').placeholder = isRule
+      ? 'cycle_days = 5\ncampaign_days = 1'
+      : 'Write it as it should read in the statute book. Markdown works.';
+  };
+  kindSel.onchange = syncKind; syncKind();
+  document.querySelectorAll('[data-rule]').forEach(b => b.onclick = () => {
+    const t = $('#body');
+    t.value = (t.value ? t.value.replace(/\s*$/, '\n') : '') + `${b.dataset.rule} = ${STATE.config[b.dataset.rule] ?? ''}`;
+    t.focus();
+  });
+
+  api('/api/laws').then(laws => {
+    $('#targ').innerHTML = '<option value="">—</option>' +
+      laws.map(l => `<option value="${l.id}">${esc(l.ref)} ${esc(l.title)}</option>`).join('');
+  });
+
+  $('#mk').onsubmit = async e => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    if (!f.target_law_id) delete f.target_law_id;
+    try { const r = await api('/api/bills', { method: 'POST', body: f }); location.hash = `#/bill/${r.id}`; }
+    catch (err) { toast(err.message, true); }
+  };
+}
+
+async function viewBill(v, id) {
+  const b = await api('/api/bills/' + id);
+  const need = Number(STATE.config.seconds_required);
+  const c = b.counts;
+
+  const strip = () => {
+    const votes = b.division.map(d => `<span class="blk ${d.vote}" title="${esc(d.display_name)}: ${d.vote}"></span>`).join('');
+    const blanks = '<span class="blk"></span>'.repeat(Math.max(0, c.eligible - b.division.length));
+    return `<div class="strip">${votes}${blanks}</div>
+      <p class="item-meta">${c.aye} aye · ${c.no} no · ${c.abstain} abstain · ${c.eligible - b.division.length} yet to vote</p>`;
+  };
+
+  let action = '';
+  if (b.status === 'draft') {
+    action = `<div class="row">
+      <span class="tag">${b.seconds} of ${need} seconders</span>
+      ${b.author_id === ME.id ? '<span class="small muted">You cannot second your own bill.</span>'
+        : `<button class="btn ${b.i_seconded ? '' : 'btn-primary'}" id="second" ${b.i_seconded ? 'disabled' : ''}>${b.i_seconded ? 'You seconded this' : 'Second it'}</button>`}
+      ${has('speaker') && b.seconds >= need ? '<button class="btn" data-act="table">Table it</button>' : ''}
+    </div>`;
+  } else if (b.status === 'tabled') {
+    action = `<div class="row"><span class="small muted">Tabled and waiting on the Speaker to call a division.</span>
+      ${has('speaker') ? '<button class="btn btn-primary" data-act="division">Call the division</button>' : ''}</div>`;
+  } else if (b.status === 'division') {
+    action = `${strip()}
+      ${b.can_vote && !b.my_vote ? `<div class="row" style="margin-top:10px">
+        <button class="btn btn-aye" data-vote="aye">Aye</button>
+        <button class="btn btn-no" data-vote="no">No</button>
+        <button class="btn" data-vote="abstain">Abstain</button>
+      </div>` : b.my_vote ? `<div class="stamp">You voted ${esc(b.my_vote)}</div>`
+        : '<p class="small muted">You do not have a vote in this division.</p>'}
+      ${has('speaker') ? '<div class="row" style="margin-top:12px"><button class="btn" data-act="close">Close the division</button></div>' : ''}`;
+  } else if (b.status === 'passed') {
+    action = `${strip()}<p class="small">Carried. Awaiting presidential assent.</p>
+      ${has('president') ? `<div class="row">
+        <button class="btn btn-aye" data-act="assent">Give assent</button>
+        <button class="btn btn-no" data-act="veto">Veto</button></div>` : ''}`;
+  } else if (b.status === 'vetoed') {
+    action = `${strip()}<p class="small">Vetoed by the President. Parliament may override with ${Math.round(Number(STATE.config.veto_override) * 100)}% of the division.</p>
+      ${has('speaker') ? '<button class="btn btn-primary" data-act="override">Move the override</button>' : ''}`;
+  } else if (b.status === 'failed' || b.status === 'enacted') {
+    action = strip();
+  }
+
+  v.innerHTML = `
+    <h1 class="page">${esc(b.title)}</h1>
+    <p class="page-sub"><span class="ref">${esc(b.ref)}</span> · ${esc(b.kind)} · ${esc(b.author_name || 'unknown')} · ${day(b.created_at)} · ${statusTag(b.status)}</p>
+
+    <div class="card">${b.kind === 'rule'
+      ? `<p class="eyebrow">If this passes, these settings change</p>
+         <div class="list">${b.body.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#')).map(l => {
+            const [k, ...rest] = l.split('=');
+            const key = k.trim(), to = rest.join('=').trim();
+            const from = STATE.config[key];
+            return `<div class="item"><div class="item-top">
+              <span class="item-title">${esc(key)}</span>
+              <span class="item-meta">${esc(from ?? '—')} &rarr; <strong>${esc(to)}</strong></span></div></div>`;
+          }).join('')}</div>`
+      : `<div class="prose">${md(b.body)}</div>`}</div>
+
+    <div class="card"><h2>Progress</h2>${action || '<p class="small muted">Concluded.</p>'}
+      ${b.seconders.length ? `<p class="item-meta" style="margin-top:12px">Seconded by ${b.seconders.map(s => esc(s.display_name)).join(', ')}</p>` : ''}
+      ${b.division.length ? `<p class="item-meta">Division: ${b.division.map(d => `${esc(d.display_name)} ${d.vote}`).join(' · ')}</p>` : ''}
+    </div>
+
+    <div class="card">
+      <h2>Debate</h2>
+      ${b.comments.length ? b.comments.map(x => `
+        <div style="padding:10px 0;border-bottom:1px solid var(--rule)">
+          <div class="item-meta">${esc(x.display_name)} · ${when(x.created_at)}</div>
+          <div style="white-space:pre-wrap">${esc(x.body)}</div>
+        </div>`).join('') : '<p class="small muted">No one has spoken yet.</p>'}
+      <form id="say" class="stack" style="margin-top:14px">
+        <label class="field"><span>Speak</span><textarea name="body" style="min-height:90px" required></textarea></label>
+        <button class="btn">Add to the debate</button>
+      </form>
+    </div>`;
+
+  $('#say').onsubmit = async e => {
+    e.preventDefault();
+    try { await api(`/api/bills/${id}/comments`, { method: 'POST', body: Object.fromEntries(new FormData(e.target)) }); route(); }
+    catch (err) { toast(err.message, true); }
+  };
+  if ($('#second')) $('#second').onclick = async () => {
+    try { await api(`/api/bills/${id}/second`, { method: 'POST' }); route(); } catch (err) { toast(err.message, true); }
+  };
+  document.querySelectorAll('[data-vote]').forEach(btn => btn.onclick = async () => {
+    if (!confirm(`Vote ${btn.dataset.vote}? One vote per member, final.`)) return;
+    try { await api(`/api/bills/${id}/vote`, { method: 'POST', body: { vote: btn.dataset.vote } }); route(); }
+    catch (err) { toast(err.message, true); }
+  });
+  document.querySelectorAll('[data-act]').forEach(btn => btn.onclick = async () => {
+    const a = btn.dataset.act;
+    const paths = { table: 'table', division: 'division', close: 'close', assent: 'assent', veto: 'assent', override: 'override' };
+    try {
+      const r = await api(`/api/bills/${id}/${paths[a]}`, { method: 'POST', body: a === 'veto' ? { veto: true } : {} });
+      if (r.result) toast(`${r.carried ? 'Carried' : 'Lost'} — ${r.result}`);
+      route();
+    } catch (err) { toast(err.message, true); }
+  });
+}
+
+/* ------------------------------------------------------ laws + charter */
+
+async function viewLaws(v) {
+  const all = location.hash.includes('all');
+  const laws = await api('/api/laws?all=' + (all ? '1' : '0'));
+  v.innerHTML = `
+    <h1 class="page">Statute book</h1>
+    <p class="page-sub">${laws.filter(l => !l.repealed_at).length} in force</p>
+    ${laws.length ? laws.map(l => `
+      <div class="card">
+        <div class="spread">
+          <h2 style="margin:0"><span class="ref">${esc(l.ref)}</span> ${esc(l.title)}</h2>
+          ${l.repealed_at ? '<span class="tag on-oxide">repealed</span>' : '<span class="tag on-green">in force</span>'}
+        </div>
+        <p class="item-meta">Enacted ${day(l.enacted_at)}${l.author_name ? ' · proposed by ' + esc(l.author_name) : ''}${l.bill_ref ? ' · from ' + esc(l.bill_ref) : ''}</p>
+        <div class="prose" style="margin-top:10px">${md(l.body)}</div>
+      </div>`).join('') : '<div class="empty">No laws yet. The statute book opens with your first enacted bill.</div>'}
+    <button class="btn" id="tog">${all ? 'Hide repealed' : 'Show repealed laws'}</button>`;
+  $('#tog').onclick = () => { location.hash = all ? '#/laws' : '#/laws/all'; };
+}
+
+async function viewConstitution(v) {
+  const c = await api('/api/constitution');
+  v.innerHTML = `
+    <h1 class="page">Constitution</h1>
+    <p class="page-sub">Version ${c.current?.version ?? 1} · ratified ${day(c.current?.ratified_at)}</p>
+    <div class="card"><div class="prose">${md(c.current?.body || '')}</div></div>
+    ${c.history.length > 1 ? `<div class="card"><h2>Earlier versions</h2>
+      ${c.history.slice(1).map(h => `<details style="border-bottom:1px solid var(--rule);padding:8px 0">
+        <summary style="cursor:pointer">Version ${h.version} · ${day(h.ratified_at)}</summary>
+        <div class="prose" style="margin-top:10px">${md(h.body)}</div></details>`).join('')}</div>` : ''}
+    <p class="small muted">To change this, propose a bill of kind “constitutional”. It needs ${Math.round(Number(STATE.config.constitutional_threshold) * 100)}% of the division.</p>`;
+}
+
+/* ------------------------------------------------------------- parties */
+
+async function viewParties(v) {
+  const parties = await api('/api/parties');
+  v.innerHTML = `
+    <h1 class="page">Parties</h1>
+    <p class="page-sub">One membership each · leaving is instant, forgiveness is not</p>
+
+    <div class="card">
+      <h2>Found a party</h2>
+      <form id="mk" class="stack">
+        <div class="grid2">
+          <label class="field"><span>Name</span><input name="name" required></label>
+          <label class="field"><span>Short code</span><input name="abbr" maxlength="5" required placeholder="e.g. PPL"></label>
+        </div>
+        <label class="field"><span>Colour</span><input type="color" name="colour" value="#5B2E9E"></label>
+        <label class="field"><span>What you stand for</span><textarea name="manifesto" style="min-height:110px"></textarea></label>
+        <button class="btn btn-primary">Found it</button>
+      </form>
+    </div>
+
+    ${parties.map(p => {
+      const mine = ME.party?.id === p.id;
+      return `<div class="card">
+        <div class="spread">
+          <h2 style="margin:0"><span class="swatch" style="background:${esc(p.colour)}"></span> ${esc(p.name)} <span class="tag">${esc(p.abbr)}</span></h2>
+          <button class="btn btn-sm ${mine ? '' : 'btn-primary'}" data-join="${p.id}">${mine ? 'Leave' : 'Join'}</button>
+        </div>
+        <p class="item-meta">Leader ${esc(p.leader_name || '—')} · ${p.members.length} members: ${p.members.map(m => esc(m.display_name)).join(', ') || 'none'}</p>
+        ${p.manifesto ? `<div class="prose" style="margin-top:10px">${md(p.manifesto)}</div>` : ''}
+        ${p.leader_id === ME.id ? `<form data-edit="${p.id}" class="stack" style="margin-top:12px">
+          <label class="field"><span>Edit manifesto</span><textarea name="manifesto" style="min-height:90px">${esc(p.manifesto)}</textarea></label>
+          <button class="btn btn-sm">Save</button></form>` : ''}
+      </div>`;
+    }).join('') || '<div class="empty">No parties yet.</div>'}`;
+
+  $('#mk').onsubmit = async e => {
+    e.preventDefault();
+    try { await api('/api/parties', { method: 'POST', body: Object.fromEntries(new FormData(e.target)) }); ME = await api('/api/me'); route(); }
+    catch (err) { toast(err.message, true); }
+  };
+  document.querySelectorAll('[data-join]').forEach(b => b.onclick = async () => {
+    const leaving = b.textContent === 'Leave';
+    try {
+      await api(leaving ? '/api/parties/leave' : `/api/parties/${b.dataset.join}/join`, { method: 'POST' });
+      ME = await api('/api/me'); route();
+    } catch (err) { toast(err.message, true); }
+  });
+  document.querySelectorAll('[data-edit]').forEach(f => f.onsubmit = async e => {
+    e.preventDefault();
+    await api(`/api/parties/${f.dataset.edit}`, { method: 'PUT', body: Object.fromEntries(new FormData(f)) });
+    toast('Saved.'); route();
+  });
+}
+
+/* ------------------------------------------------------------ citizens */
+
+async function viewCitizens(v) {
+  const list = await api('/api/citizens');
+  v.innerHTML = `
+    <h1 class="page">Citizens</h1>
+    <p class="page-sub">${list.length} on the roll</p>
+    <div class="list">${list.map(u => `
+      <div class="item">
+        <div class="item-top">
+          <span class="item-title">${esc(u.display_name)} ${u.party_abbr ? `<span class="tag" style="border-color:${esc(u.party_colour)};color:${esc(u.party_colour)}">${esc(u.party_abbr)}</span>` : ''}</span>
+          <span>${(u.offices || []).map(o => `<span class="tag on-navy">${esc(o === 'mp' ? 'MP' : o)}</span>`).join(' ')}</span>
+        </div>
+        <div class="item-meta">@${esc(u.username)} · joined ${day(u.created_at)}</div>
+        ${u.bio ? `<div class="small" style="margin-top:4px">${esc(u.bio)}</div>` : ''}
+      </div>`).join('')}</div>`;
+}
+
+/* -------------------------------------------------------------- record */
+
+async function viewRecord(v) {
+  const [log, digest] = await Promise.all([api('/api/audit'), fetch(API + '/api/digest').then(r => r.text())]);
+  v.innerHTML = `
+    <h1 class="page">The record</h1>
+    <p class="page-sub">Everything that happened, in order</p>
+    <div class="card">
+      <h2>Digest for the group chat</h2>
+      <textarea id="dg" style="min-height:190px;font-family:var(--mono);font-size:12px">${esc(digest)}</textarea>
+      <div class="row" style="margin-top:10px"><button class="btn btn-primary" id="cp">Copy</button></div>
+    </div>
+    <div class="card"><h2>Log</h2>
+      ${log.map(l => `<div class="logline"><time>${when(l.at)}</time>
+        <div><strong>${esc(l.display_name || 'system')}</strong> ${esc(l.action)} ${esc(l.detail)}</div></div>`).join('')}
+    </div>`;
+  $('#cp').onclick = async () => {
+    try { await navigator.clipboard.writeText($('#dg').value); toast('Copied. Paste it in the chat.'); }
+    catch { $('#dg').select(); toast('Select and copy manually.', true); }
+  };
+}
+
+/* ------------------------------------------------------------ my account */
+
+async function viewMe(v) {
+  ME = await api('/api/me');
+  v.innerHTML = `
+    <h1 class="page">${esc(ME.display_name)}</h1>
+    <p class="page-sub">@${esc(ME.username)}${ME.offices.length ? ' · ' + ME.offices.join(', ') : ''}${ME.party ? ' · ' + esc(ME.party.name) : ''}</p>
+    <div class="card"><h2>Profile</h2>
+      <form id="pf" class="stack">
+        <label class="field"><span>Display name</span><input name="display_name" value="${esc(ME.display_name)}"></label>
+        <label class="field"><span>About you</span><textarea name="bio" style="min-height:90px">${esc(ME.bio || '')}</textarea></label>
+        <button class="btn btn-primary">Save</button>
+      </form>
+    </div>
+    <div class="card"><h2>Password</h2>
+      <form id="pw" class="stack">
+        <label class="field"><span>Current</span><input type="password" name="current" required></label>
+        <label class="field"><span>New</span><input type="password" name="next" required></label>
+        <button class="btn">Change it</button>
+      </form>
+    </div>`;
+  $('#pf').onsubmit = async e => {
+    e.preventDefault();
+    await api('/api/me', { method: 'PUT', body: Object.fromEntries(new FormData(e.target)) });
+    ME = await api('/api/me'); $('#whoName').textContent = ME.display_name; toast('Saved.');
+  };
+  $('#pw').onsubmit = async e => {
+    e.preventDefault();
+    try {
+      const r = await api('/api/me/password', { method: 'POST', body: Object.fromEntries(new FormData(e.target)) });
+      if (r.token) { TOKEN = r.token; localStorage.setItem('republic.token', TOKEN); }
+      toast('Password changed. Any other device signed in as you has been logged out.');
+      e.target.reset();
+    }
+    catch (err) { toast(err.message, true); }
+  };
+}
+
+/* --------------------------------------------------------------- admin */
+
+/* The settings a bill may change. Must match LEGISLATABLE on the server. */
+const RULE_KEYS = [
+  'seats', 'quorum', 'seconds_required', 'pass_threshold', 'constitutional_threshold',
+  'veto_override', 'bill_voters', 'secret_ballot', 'term_days',
+  'cycle_enabled', 'cycle_days', 'campaign_days', 'poll_days', 'cycle_elects',
+  'speaker_auto', 'speaker_threshold', 'speaker_relax', 'enforce_term_limit', 'nation_name', 'motto'
+];
+
+const CONFIG_FIELDS = [
+  ['nation_name', 'Name of the state'],
+  ['motto', 'Motto'],
+  ['seats', 'Parliamentary seats'],
+  ['term_days', 'Term length (days)'],
+  ['seconds_required', 'Seconders needed'],
+  ['quorum', 'Quorum for a division'],
+  ['pass_threshold', 'Pass threshold (0–1)'],
+  ['constitutional_threshold', 'Constitutional threshold'],
+  ['veto_override', 'Veto override threshold'],
+  ['bill_voters', 'Who votes on bills (mps / citizens)'],
+  ['secret_ballot', 'Hide election counts while voting (true / false)'],
+  ['allow_open_signup', 'Allow signup without an invite (true / false)'],
+  ['require_approval', 'New accounts need admin approval (true / false)'],
+  ['cycle_days', 'Electoral cycle length (days)'],
+  ['campaign_days', 'Days of campaigning'],
+  ['poll_days', 'Days the poll stays open'],
+  ['cycle_elects', 'Contested each cycle (parliament, president)'],
+  ['speaker_auto', 'House picks its own Speaker automatically (true / false)'],
+  ['speaker_threshold', 'Speaker threshold (0–1, share of the House)'],
+  ['speaker_relax', 'Votes the Speaker bar drops per failed ballot (0 = never)'],
+  ['speaker_nomination_hours', 'Speaker nominations (hours)'],
+  ['speaker_poll_hours', 'Speaker poll (hours)'],
+  ['enforce_term_limit', 'No two consecutive cycles in office (true / false)']
+];
+
+async function viewAdmin(v) {
+  if (!isAdmin()) return v.innerHTML = '<div class="empty">Admins only.</div>';
+  const [invites, citizens, con, pending] = await Promise.all([
+    api('/api/admin/invites'), api('/api/citizens'), api('/api/constitution'), api('/api/admin/pending')]);
+
+  v.innerHTML = `
+    <h1 class="page">Returning officer</h1>
+    <p class="page-sub">Rules, invites, and the appointment of offices</p>
+
+    ${pending.length ? `<div class="card">
+      <h2>Waiting for approval <span class="tag on-violet">${pending.length}</span></h2>
+      <p class="small muted">Check each name against the group chat before you approve it. This is the only thing standing between one person and two votes.</p>
+      <div class="list">${pending.map(u => `
+        <div class="item"><div class="item-top">
+          <span class="item-title">${esc(u.display_name)} <span class="muted small">@${esc(u.username)}</span></span>
+          <span class="row">
+            <button class="btn btn-sm btn-primary" data-ok="${u.id}">Approve</button>
+            <button class="btn btn-sm" data-no="${u.id}">Reject</button>
+          </span></div>
+          <div class="item-meta">applied ${when(u.created_at)}${u.invite_code ? ' · used code ' + esc(u.invite_code) : ' · no invite code'}${u.invite_note ? ' · issued to ' + esc(u.invite_note) : ''}</div>
+        </div>`).join('')}</div>
+    </div>` : ''}
+
+    <div class="card"><h2>Rules of the game</h2>
+      <form id="cfg" class="stack">
+        <div class="grid2">${CONFIG_FIELDS.map(([k, label]) =>
+          `<label class="field"><span>${label}</span><input name="${k}" value="${esc(STATE.config[k])}"></label>`).join('')}</div>
+        <button class="btn btn-primary">Save rules</button>
+      </form>
+    </div>
+
+    <div class="card"><h2>The clock</h2>
+      ${STATE.cycle ? `<p>Cycle ${STATE.cycle.number}, ${PHASE[STATE.cycle.phase][0].toLowerCase()}. Next change in <strong>${until(STATE.cycle.next_at)}</strong> (${when(STATE.cycle.next_at)}).</p>`
+        : '<p>The cycle is stopped. Elections only happen when you call them by hand.</p>'}
+      <p class="small muted">Running the clock creates each cycle's elections, closes nominations, opens the poll and certifies the result on time. Anyone can change the timings above; the clock picks them up on the next minute.</p>
+      <div class="row" style="margin-top:12px">
+        <input type="datetime-local" id="anchor" style="width:auto">
+        <button class="btn btn-primary" id="cycstart">${STATE.cycle ? 'Restart the cycle' : 'Start the cycle'}</button>
+        ${STATE.cycle ? '<button class="btn" id="cycstop">Stop the clock</button>' : ''}
+      </div>
+      <p class="small muted" style="margin-top:8px">Leave the date blank to start from this moment. Cycle 1 begins at whatever you set.</p>
+    </div>
+
+    <div class="card"><h2>Invites</h2>
+      <div class="row"><input id="n" type="number" value="1" min="1" max="50" style="width:80px">
+        <input id="note" placeholder="Issued to (name from the chat)" style="width:auto;flex:1;min-width:180px">
+        <button class="btn btn-primary" id="gen">Generate codes</button></div>
+      <p class="small muted" style="margin-top:8px">Make one code at a time, write down who it went to, and <strong>send it in a direct message</strong>. A code pasted into the group chat can be claimed by whoever reads it first.</p>
+      <div class="row" style="margin-top:10px">${invites.map(i =>
+        `<span class="code" style="${i.used_by ? 'opacity:.4;text-decoration:line-through' : ''}">${esc(i.code)}${i.used_by_name ? ' · ' + esc(i.used_by_name) : ''}</span>`).join('') || '<span class="small muted">None yet.</span>'}</div>
+    </div>
+
+    <div class="card"><h2>Appoint and remove</h2>
+      <p class="small muted">For ties, resignations, and coups. Elections normally do this for you.</p>
+      <form id="off" class="stack" style="margin-top:10px">
+        <div class="grid2">
+          <label class="field"><span>Citizen</span><select name="user_id">${citizens.map(u => `<option value="${u.id}">${esc(u.display_name)}</option>`).join('')}</select></label>
+          <label class="field"><span>Office</span><select name="office"><option value="mp">MP</option><option value="speaker">Speaker</option><option value="president">President</option></select></label>
+        </div>
+        <label class="field"><span>Seat number (MPs only)</span><input name="seat" type="number" min="1"></label>
+        <div class="row"><button class="btn btn-primary" name="do" value="add">Appoint</button>
+          <button class="btn" name="do" value="remove">Remove</button>
+          <button class="btn" type="button" id="dis">Dissolve parliament</button></div>
+      </form>
+    </div>
+
+    <div class="card"><h2>Citizens</h2>
+      <div class="list">${citizens.map(u => `
+        <div class="item"><div class="item-top">
+          <span class="item-title">${esc(u.display_name)} ${u.is_admin ? '<span class="tag on-violet">admin</span>' : ''}</span>
+          <span class="row">
+            <button class="btn btn-sm" data-adm="${u.id}" data-val="${u.is_admin ? 'false' : 'true'}">${u.is_admin ? 'Demote' : 'Make admin'}</button>
+            <button class="btn btn-sm" data-rst="${u.id}">Reset password</button>
+            <button class="btn btn-sm" data-sus="${u.id}">Suspend</button>
+          </span></div></div>`).join('')}</div>
+    </div>
+
+    <div class="card"><h2>Constitution</h2>
+      <p class="small muted">Editing here publishes a new version directly. Normally you would pass a constitutional bill instead.</p>
+      <form id="con" class="stack" style="margin-top:10px">
+        <textarea name="body" style="min-height:320px;font-family:var(--mono);font-size:12.5px">${esc(con.current?.body || '')}</textarea>
+        <button class="btn">Publish version ${(con.current?.version || 0) + 1}</button>
+      </form>
+    </div>`;
+
+  $('#cfg').onsubmit = async e => {
+    e.preventDefault();
+    await api('/api/admin/config', { method: 'PUT', body: Object.fromEntries(new FormData(e.target)) });
+    await refreshState(); toast('Rules saved.');
+  };
+  $('#cycstart').onclick = async () => {
+    const at = $('#anchor').value;
+    if (STATE.cycle && !confirm('Restarting re-times the current cycle. Ballots already cast are kept; elections left over from the old schedule are voided. Continue?')) return;
+    await api('/api/admin/cycle', { method: 'POST', body: { action: 'start', ...(at ? { anchor: new Date(at).toISOString() } : {}) } });
+    await refreshState(); toast('The clock is running.'); route();
+  };
+  if ($('#cycstop')) $('#cycstop').onclick = async () => {
+    await api('/api/admin/cycle', { method: 'POST', body: { action: 'stop' } });
+    await refreshState(); toast('Clock stopped.'); route();
+  };
+  $('#gen').onclick = async () => {
+    const codes = await api('/api/admin/invites', { method: 'POST', body: { count: Number($('#n').value), note: $('#note').value } });
+    toast(codes.length + ' codes made.'); route();
+  };
+  $('#off').onsubmit = async e => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    const remove = e.submitter?.value === 'remove';
+    await api('/api/admin/office', { method: 'POST', body: { ...f, user_id: Number(f.user_id), seat: Number(f.seat) || null, remove } });
+    toast(remove ? 'Removed.' : 'Appointed.'); await refreshState();
+  };
+  $('#dis').onclick = async () => {
+    if (!confirm('Vacate every seat and the Speaker?')) return;
+    await api('/api/admin/dissolve', { method: 'POST' }); toast('Parliament dissolved.'); await refreshState();
+  };
+  $('#con').onsubmit = async e => {
+    e.preventDefault();
+    await api('/api/admin/constitution', { method: 'PUT', body: Object.fromEntries(new FormData(e.target)) });
+    toast('New version published.'); route();
+  };
+  document.querySelectorAll('[data-ok]').forEach(b => b.onclick = async () => {
+    await api('/api/admin/approve', { method: 'POST', body: { user_id: Number(b.dataset.ok), approve: true } });
+    toast('Approved.'); await refreshState(); route();
+  });
+  document.querySelectorAll('[data-no]').forEach(b => b.onclick = async () => {
+    if (!confirm('Reject this application? The account is kept in the record but cannot sign in.')) return;
+    await api('/api/admin/approve', { method: 'POST', body: { user_id: Number(b.dataset.no), approve: false } });
+    toast('Rejected.'); route();
+  });
+  document.querySelectorAll('[data-adm]').forEach(b => b.onclick = async () => {
+    await api('/api/admin/user', { method: 'POST', body: { user_id: Number(b.dataset.adm), is_admin: b.dataset.val === 'true' } });
+    route();
+  });
+  document.querySelectorAll('[data-rst]').forEach(b => b.onclick = async () => {
+    const r = await api('/api/admin/user', { method: 'POST', body: { user_id: Number(b.dataset.rst), reset_password: true } });
+    alert('Temporary password: ' + r.temp_password);
+  });
+  document.querySelectorAll('[data-sus]').forEach(b => b.onclick = async () => {
+    if (!confirm('Suspend this citizen? They lose access but keep their record.')) return;
+    await api('/api/admin/user', { method: 'POST', body: { user_id: Number(b.dataset.sus), is_active: false } });
+    route();
+  });
+}
+
+async function viewParty(v, id) { location.hash = '#/parties'; }
+
+start();

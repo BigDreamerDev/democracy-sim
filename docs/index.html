@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Republic</title>
+<meta name="description" content="Elections, bills and the statute book for one group chat.">
+<meta name="theme-color" content="#E9EAEC">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Public+Sans:ital,wght@0,400;0,600;1,400&family=Martian+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="gate" class="gate">
+  <div class="gate-card">
+    <div class="gate-flag" id="gateFlag"></div>
+    <div class="seal" aria-hidden="true">
+      <svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" class="seal-ring"/><circle cx="32" cy="32" r="24" class="seal-ring thin"/><path d="M32 14 L32 50 M18 26 L46 26" class="seal-mark"/></svg>
+    </div>
+    <h1 class="gate-title" id="gateName">The Republic</h1>
+    <p class="gate-sub">Registered citizens only.</p>
+
+    <div class="tabs" role="tablist">
+      <button class="tab is-on" data-gate="in" role="tab">Sign in</button>
+      <button class="tab" data-gate="up" role="tab">Register</button>
+    </div>
+
+    <form id="formIn" class="stack">
+      <label class="field"><span>Username</span><input name="username" autocomplete="username" required></label>
+      <label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn btn-primary" type="submit">Sign in</button>
+    </form>
+
+    <form id="formUp" class="stack" hidden>
+      <label class="field"><span>Invite code</span><input name="invite" placeholder="Leave blank if you are the founder"></label>
+      <label class="field"><span>Username</span><input name="username" autocomplete="username" required></label>
+      <label class="field"><span>Display name</span><input name="display_name" placeholder="How you appear in the chamber"></label>
+      <label class="field"><span>Password</span><input name="password" type="password" autocomplete="new-password" required></label>
+      <button class="btn btn-primary" type="submit">Claim citizenship</button>
+    </form>
+
+    <p class="gate-msg" id="gateMsg" role="status"></p>
+  </div>
+</div>
+
+<div id="shell" hidden>
+  <header class="topbar">
+    <a class="brand" href="#/chamber">
+      <span class="brand-seal" aria-hidden="true"></span>
+      <span class="brand-text"><strong id="navName">The Republic</strong><em id="navMotto"></em></span>
+    </a>
+    <div class="whoami">
+      <a href="#/me" id="whoName">—</a>
+      <button class="btn btn-ghost btn-sm" id="signout">Sign out</button>
+    </div>
+  </header>
+
+  <nav class="rail" id="rail"></nav>
+
+  <main id="view" tabindex="-1"></main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
