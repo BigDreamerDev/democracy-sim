@@ -26,6 +26,7 @@
 }
 
 *{box-sizing:border-box}
+[hidden]{display:none !important}
 html,body{margin:0;padding:0}
 body{
   background:var(--paper);
@@ -43,10 +44,6 @@ a:hover{text-decoration:underline}
 
 .gate{min-height:100dvh;display:grid;place-items:center;padding:24px}
 .gate-card{width:100%;max-width:380px;background:var(--card);border:1px solid var(--rule);padding:28px 24px 22px}
-.seal{width:46px;height:46px;margin-bottom:14px}
-.seal-ring{fill:none;stroke:var(--indelible);stroke-width:2}
-.seal-ring.thin{stroke-width:.8;stroke-dasharray:3 3}
-.seal-mark{stroke:var(--indelible);stroke-width:2.5;fill:none}
 .gate-title{font-family:var(--display);font-weight:800;font-size:30px;line-height:1.05;margin:0}
 .gate-sub{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);margin:6px 0 20px}
 .gate-msg{font-size:13px;margin:14px 0 0;min-height:18px;color:var(--oxide)}
