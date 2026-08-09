@@ -120,6 +120,36 @@ function legible(colour, on, target = 4.5) {
   return out;
 }
 
+/* Light, dark, or follow the phone.
+
+   Dark cannot be a separate stylesheet here: the palette is derived at runtime
+   from whatever the Flag Act says, so the flag has to survive the inversion.
+   The rule is that the flag keeps its hue and loses its brightness — the paper
+   becomes a very dark tint of the flag's own ground rather than plain black,
+   and every accent is re-checked for contrast against the dark card instead of
+   the light one. */
+const THEMES = ['auto', 'light', 'dark'];
+const themePref = () => localStorage.getItem('republic.theme') || 'auto';
+const darkNow = () => {
+  const t = themePref();
+  if (t === 'dark') return true;
+  if (t === 'light') return false;
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+};
+
+function setTheme(next) {
+  localStorage.setItem('republic.theme', next);
+  document.documentElement.dataset.theme = next;
+  const btn = $('#themeBtn');
+  if (btn) btn.textContent = next === 'dark' ? '☾' : next === 'light' ? '☀' : '◐';
+  applyFlagTheme(STATE?.flag);
+}
+
+if (window.matchMedia) {
+  window.matchMedia('(prefers-color-scheme: dark)')
+    .addEventListener('change', () => { if (themePref() === 'auto') applyFlagTheme(STATE?.flag); });
+}
+
 function applyFlagTheme(flag) {
   const root = document.documentElement;
   if (!flag || !flag.bands?.length) { root.removeAttribute('style'); return; }
@@ -140,19 +170,30 @@ function applyFlagTheme(flag) {
     || byArea.filter(c => c !== primary && sat(c) > 0.15).sort((a, b) => sat(b) - sat(a))[0]
     || primary;
 
-  // The page stays light whatever the flag is. An all-black flag tints the paper
-  // towards a washed-out black, not to black itself — the tint carries the hue,
-  // never the darkness.
+  const night = darkNow();
+
+  // The tint carries the flag's hue; the theme decides the brightness. In light
+  // the ground is washed pale, in dark it is taken almost to black — either way
+  // the colour on the page is the colour on the flag.
   let wash = ground;
-  for (let i = 0; i < 24 && lum(wash) < 0.75; i++) wash = mix(wash, '#FFFFFF', 0.15);
-  const paper = mix('#E9EAEC', wash, 0.28);
-  const card = mix('#F5F6F7', wash, 0.22);
+  if (night) {
+    for (let i = 0; i < 24 && lum(wash) > 0.06; i++) wash = mix(wash, '#000000', 0.28);
+  } else {
+    for (let i = 0; i < 24 && lum(wash) < 0.75; i++) wash = mix(wash, '#FFFFFF', 0.15);
+  }
+  const paper = night ? mix('#0E1014', wash, 0.30) : mix('#E9EAEC', wash, 0.28);
+  const card = night ? mix('#171A20', wash, 0.24) : mix('#F5F6F7', wash, 0.22);
   const ink = lum(paper) > 0.5 ? '#14161C' : '#F2F3F5';
 
+  // legible() walks the colour towards black on a light card and towards white
+  // on a dark one, so the same call does the right thing in both themes.
   const accent = legible(accentRaw, card);            // links and text
   const accentFill = accentRaw;                       // buttons, seats, the brand dot
   const onAccent = contrast('#FFFFFF', accentFill) >= 3.2 ? '#FFFFFF' : '#14161C';
-  const bar = legible(primary, '#FFFFFF', 3.5);
+  // The top bar is a solid block of the flag's primary with white on it. In dark
+  // it is darkened further so it reads as a bar rather than a glowing panel.
+  const bar = night ? mix(legible(primary, '#FFFFFF', 3.5), '#000000', 0.35)
+                    : legible(primary, '#FFFFFF', 3.5);
 
   const set = (k, v) => root.style.setProperty(k, v);
   set('--paper', paper);
@@ -165,7 +206,11 @@ function applyFlagTheme(flag) {
   set('--indelible', accent);
   set('--indelible-fill', accentFill);
   set('--on-accent', onAccent);
-  set('--indelible-soft', mix(card, accentFill, 0.16));
+  set('--indelible-soft', mix(card, accentFill, night ? 0.26 : 0.16));
+  set('--shadow', night ? 'rgba(0,0,0,.55)' : 'rgba(0,0,0,.07)');
+  root.style.colorScheme = night ? 'dark' : 'light';
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', bar);
 }
 
 /* Draws the flag itself from the same schedule, so the picture and the palette
@@ -205,6 +250,29 @@ const statusTag = s => {
   };
   return `<span class="tag ${map[s] ?? ''}">${esc(s)}</span>`;
 };
+
+/* Every action button goes through this. It disables while the request is in
+   flight, which stops the double-submits that produce "you have already voted"
+   as a reward for an impatient tap, and gives the tap something to answer. */
+async function busy(btn, fn) {
+  if (!btn || btn.dataset.busy) return;
+  btn.dataset.busy = '1';
+  const was = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  try { return await fn(); }
+  finally { delete btn.dataset.busy; btn.disabled = false; btn.innerHTML = was; }
+}
+
+/* Wire a set of buttons to an action, refreshing only what changed. */
+function onAction(selector, handler) {
+  document.querySelectorAll(selector).forEach(btn => {
+    btn.onclick = () => busy(btn, async () => {
+      try { await handler(btn); }
+      catch (err) { toast(err.message, true); }
+    });
+  });
+}
 
 const isAdmin = () => !!ME?.is_admin;
 const canPropose = () => STATE?.config?.bill_proposers === 'citizens'
@@ -253,6 +321,11 @@ $('#formUp').onsubmit = async e => {
   } catch (err) { $('#gateMsg').textContent = err.message; }
 };
 
+if ($('#themeBtn')) {
+  $('#themeBtn').textContent = themePref() === 'dark' ? '☾' : themePref() === 'light' ? '☀' : '◐';
+  $('#themeBtn').onclick = () => setTheme(THEMES[(THEMES.indexOf(themePref()) + 1) % THEMES.length]);
+}
+
 $('#signout').onclick = () => {
   localStorage.removeItem('republic.token');
   TOKEN = ''; ME = null;
@@ -262,6 +335,10 @@ $('#signout').onclick = () => {
 
 /* --------------------------------------------------------------- router */
 
+/* Extra pages, added by the Act modules in acts.js. Kept as a separate surface so
+   those can be dropped in or removed without touching anything in here. */
+const SUBROUTES = {};
+
 const ROUTES = [
   ['chamber', 'Chamber', viewChamber],
   ['elections', 'Elections', viewElections],
@@ -270,6 +347,8 @@ const ROUTES = [
   ['constitution', 'Constitution', viewConstitution],
   ['parties', 'Parties', viewParties],
   ['citizens', 'Citizens', viewCitizens],
+  ['people', 'The People', viewPeople],
+  ['emergency', 'Article 12', viewEmergency],
   ['record', 'Record', viewRecord],
   ['me', 'My account', viewMe],
   ['admin', 'Returning officer', viewAdmin]
@@ -287,8 +366,9 @@ async function route() {
   const parts = (location.hash.slice(2) || 'chamber').split('/');
   drawRail();
   const view = $('#view');
-  view.innerHTML = '<p class="muted small">Loading…</p>';
-  const single = { election: viewElection, bill: viewBill, party: viewParty }[parts[0]];
+  view.innerHTML = `<div class="skeleton"><div class="sk sk-title"></div><div class="sk sk-line"></div>
+    <div class="sk sk-card"></div><div class="sk sk-card"></div></div>`;
+  const single = { election: viewElection, bill: viewBill, party: viewParty, ...SUBROUTES }[parts[0]];
   const fn = single || (ROUTES.find(r => r[0] === parts[0])?.[2]) || viewChamber;
   try {
     await fn(view, parts[1]);
@@ -300,6 +380,47 @@ async function route() {
 }
 window.addEventListener('hashchange', route);
 
+/* Article 12. While a declaration is in force it is the most important fact
+   about the Republic, so it sits above everything on every page — and it always
+   carries the way to end it. */
+async function drawEmergency() {
+  let e;
+  try { e = await api('/api/emergency'); } catch { return; }
+  const bar = $('#emergency');
+  if (!bar) return;
+  if (!e.in_force) { bar.innerHTML = ''; bar.hidden = true; return; }
+
+  const em = e.in_force;
+  const left = new Date(em.expires_at) - Date.now();
+  const hrs = Math.max(0, Math.floor(left / 3600000));
+  const mins = Math.max(0, Math.floor((left % 3600000) / 60000));
+  const canEnd = has('mp') || ME?.id === em.declared_by;
+
+  bar.hidden = false;
+  bar.innerHTML = `<div class="emergency">
+    <div class="emergency-main">
+      <p class="emergency-kicker">Extraordinary circumstances · declared by ${esc(em.declared_by_name || 'the President')}</p>
+      <p class="emergency-reason">${esc(em.reasons)}</p>
+      <ul class="emergency-powers">${em.powers.map(p => `<li>${esc(e.powers_available[p] || p)}</li>`).join('')}</ul>
+      <p class="emergency-meta">Lapses in ${hrs}h ${mins}m unless ended sooner · ${e.end_votes} of ${e.end_votes_needed} members have moved to end it</p>
+    </div>
+    ${canEnd ? `<div class="emergency-act">
+      <button class="btn btn-sm btn-no" id="endEmergency" ${e.i_voted_to_end ? 'disabled' : ''}>
+        ${e.i_voted_to_end ? 'You have moved to end it' : ME?.id === em.declared_by && !has('mp') ? 'End it' : 'Move to end it'}</button>
+    </div>` : ''}
+  </div>`;
+
+  if ($('#endEmergency')) $('#endEmergency').onclick = () => busy($('#endEmergency'), async () => {
+    try {
+      const r = await api('/api/emergency/end', { method: 'POST' });
+      toast(r.ended ? 'The declaration is ended. The ordinary law is back.'
+        : `Recorded — ${r.votes} of ${r.needed} members.`);
+      drawEmergency();
+      if (r.ended) route();
+    } catch (err) { toast(err.message, true); }
+  });
+}
+
 async function refreshState() {
   STATE = await api('/api/state');
   $('#navName').textContent = STATE.config.nation_name;
@@ -307,6 +428,7 @@ async function refreshState() {
   $('#navMotto').textContent = STATE.config.motto;
   document.title = STATE.config.nation_name;
   applyFlagTheme(STATE.flag);
+  drawEmergency();
   const gf = $('#gateFlag');
   if (gf) gf.innerHTML = flagSvg(STATE.flag, 340);
 }
@@ -331,6 +453,9 @@ async function start() {
   $('#gate').hidden = true;
   $('#shell').hidden = false;
   $('#whoName').textContent = ME.display_name;
+  const title = (ME.offices || []).map(o => o === 'mp' ? 'MP' : o[0].toUpperCase() + o.slice(1))[0];
+  const badge = $('#whoRole');
+  if (badge) { badge.textContent = title || (ME.is_admin ? 'Returning Officer' : 'Citizen'); badge.hidden = false; }
   if (!location.hash) location.hash = '#/chamber';
   await route();
 }
@@ -417,6 +542,148 @@ function hemicycle(offices, seats) {
   return svg;
 }
 
+/* The desk.
+
+   The complaint that produced this: the President's screen looked exactly like
+   everyone else's, so holding the highest office in the Republic felt like
+   holding none. Every officer now lands on a list of what is waiting for them,
+   with the actions inline — assent from the front page, not four taps deep.
+
+   It is built from data the chamber already fetches plus one bills call, so it
+   costs one extra request and no extra round trips per item. */
+async function deskItems() {
+  const out = [];
+  const bills = await api('/api/bills');
+  const need = Number(STATE.config.seconds_required);
+
+  if (has('president')) {
+    for (const b of bills.filter(b => b.status === 'passed')) {
+      out.push({
+        office: 'President', urgent: true,
+        what: `<span class="ref">${esc(b.ref)}</span> ${esc(b.title)} has passed the House`,
+        why: 'Nothing becomes law until you assent. A veto is final.',
+        actions: `<button class="btn btn-sm btn-aye" data-desk="assent" data-id="${b.id}">Assent</button>
+                  <button class="btn btn-sm btn-no" data-desk="veto" data-id="${b.id}">Veto</button>`
+      });
+    }
+  }
+
+  if (has('president')) {
+    let em = null;
+    try { em = await api('/api/emergency'); } catch {}
+    if (em && !em.in_force) {
+      out.push({
+        office: 'President',
+        what: 'Declare extraordinary circumstances',
+        why: 'Ask the House to suspend named parts of the ordinary law, for a stated time. Only the House can grant it, and the House alone can end it.',
+        actions: '<a class="btn btn-sm" href="#/emergency">Draft a declaration</a>'
+      });
+    }
+  }
+
+  if (has('speaker')) {
+    for (const b of bills.filter(b => b.status === 'draft' && b.seconds >= need)) {
+      out.push({
+        office: 'Speaker',
+        what: `<span class="ref">${esc(b.ref)}</span> ${esc(b.title)} has its seconders`,
+        why: 'It cannot reach a division until you table it.',
+        actions: `<button class="btn btn-sm btn-primary" data-desk="table" data-id="${b.id}">Table it</button>`
+      });
+    }
+    for (const b of bills.filter(b => b.status === 'tabled')) {
+      out.push({
+        office: 'Speaker',
+        what: `<span class="ref">${esc(b.ref)}</span> ${esc(b.title)} is tabled`,
+        why: 'The House is waiting on you to call the division.',
+        actions: `<button class="btn btn-sm btn-primary" data-desk="division" data-id="${b.id}">Call the division</button>`
+      });
+    }
+    for (const b of bills.filter(b => b.status === 'division')) {
+      out.push({
+        office: 'Speaker',
+        what: `<span class="ref">${esc(b.ref)}</span> ${esc(b.title)} is in division`,
+        why: 'Close it when the House has spoken. Nothing closes itself.',
+        actions: `<button class="btn btn-sm" data-desk="close" data-id="${b.id}">Close the division</button>`
+      });
+    }
+  }
+
+  if (has('mp')) {
+    for (const b of bills.filter(b => b.status === 'division')) {
+      const full = await api('/api/bills/' + b.id);
+      if (full.my_vote || !full.can_vote) continue;
+      out.push({
+        office: 'Member', urgent: true,
+        what: `<span class="ref">${esc(b.ref)}</span> ${esc(b.title)}`,
+        why: `${full.counts.aye} aye · ${full.counts.no} no · ${full.counts.eligible - full.division.length} yet to vote. You are one of them.`,
+        actions: `<button class="btn btn-sm btn-aye" data-desk="aye" data-id="${b.id}">Aye</button>
+                  <button class="btn btn-sm btn-no" data-desk="no" data-id="${b.id}">No</button>
+                  <button class="btn btn-sm" data-desk="abstain" data-id="${b.id}">Abstain</button>`
+      });
+    }
+  }
+
+  // Everyone: a poll you have not voted in is the most urgent thing there is.
+  for (const e of STATE.elections.filter(e => e.status === 'voting')) {
+    const full = await api('/api/elections/' + e.id);
+    if (!full.can_vote || full.my_vote || full.my_choice) continue;
+    out.push({
+      office: 'Citizen', urgent: true,
+      what: `${esc(e.title)} is open`,
+      why: `${full.turnout} of ${full.eligible} have voted. You have not.`,
+      actions: `<a class="btn btn-sm btn-primary" href="#/election/${e.id}">Go and vote</a>`
+    });
+  }
+
+  if (STATE.stats?.petitions) {
+    out.push({
+      office: 'Citizen',
+      what: `${STATE.stats.petitions} initiative${STATE.stats.petitions > 1 ? 's need' : ' needs'} signatures`,
+      why: 'Enough names and it goes before the House without anyone\'s permission.',
+      actions: '<a class="btn btn-sm" href="#/bills">Have a look</a>'
+    });
+  }
+  return out;
+}
+
+async function drawDesk() {
+  const box = $('#desk');
+  if (!box) return;
+  let items = [];
+  try { items = await deskItems(); } catch { box.innerHTML = ''; return; }
+
+  const titles = [...new Set(items.map(i => i.office))];
+  box.innerHTML = `<section class="desk ${items.some(i => i.urgent) ? 'is-urgent' : ''}">
+    <div class="desk-head">
+      <p class="eyebrow">${titles.length ? esc(titles.join(' · ')) : 'Your desk'}</p>
+      <h2>${items.length ? `${items.length} thing${items.length > 1 ? 's' : ''} waiting on you` : 'Nothing waiting on you'}</h2>
+    </div>
+    ${items.length ? items.map(i => `<div class="desk-item ${i.urgent ? 'is-urgent' : ''}">
+      <div class="desk-what"><div>${i.what}</div><p class="desk-why">${i.why}</p></div>
+      <div class="desk-actions">${i.actions}</div>
+    </div>`).join('')
+    : `<p class="desk-idle">The Republic is not waiting on you. ${has('president') ? 'Bills come here for assent when the House passes them.' : has('speaker') ? 'Bills appear here when they have their seconders.' : 'Polls and divisions you can take part in will appear here.'}</p>`}
+  </section>`;
+
+  const paths = { assent: 'assent', veto: 'assent', table: 'table', division: 'division', close: 'close' };
+  onAction('[data-desk]', async btn => {
+    const kind = btn.dataset.desk, id = btn.dataset.id;
+    if (['aye', 'no', 'abstain'].includes(kind)) {
+      await api(`/api/bills/${id}/vote`, { method: 'POST', body: { vote: kind } });
+      toast(`Voted ${kind}.`);
+    } else {
+      const r = await api(`/api/bills/${id}/${paths[kind]}`, {
+        method: 'POST', body: kind === 'veto' ? { veto: true } : {}
+      });
+      toast(r.result ? `${r.carried ? 'Carried' : 'Lost'} — ${r.result}`
+        : kind === 'veto' ? 'Vetoed. That is the end of it.'
+        : kind === 'assent' ? 'Assented. It is law.' : 'Done.');
+    }
+    await refreshState();
+    drawDesk();                       // only the desk redraws, not the page
+  });
+}
+
 async function viewChamber(v) {
   await refreshState();
   const { offices, config, stats, elections, bills, parties } = STATE;
@@ -426,6 +693,8 @@ async function viewChamber(v) {
   v.innerHTML = `
     <h1 class="page">${esc(config.nation_name)}</h1>
     <p class="page-sub">${esc(config.motto)}</p>
+
+    <div id="desk"></div>
 
     ${STATE.cycle ? `<div class="cycle">
       <div>
@@ -489,6 +758,7 @@ async function viewChamber(v) {
         <span class="tag">${parties.length} parties</span>
       </div>
     </div>`;
+  drawDesk();
 }
 
 /* ----------------------------------------------------------- elections */
@@ -708,6 +978,140 @@ async function renderReferendum(v, e, id) {
         : r.reason === 'quorum' ? `Void: only ${r.cast} voted, ${r.quorum} needed.`
         : `${Math.round(r.share * 100)}% in favour, ${Math.round(r.need * 100)}% needed.`);
       route();
+    } catch (err) { toast(err.message, true); }
+  };
+}
+
+/* Article 2 — the People's power. Two thirds of all Citizens, gathering by
+   signature rather than by poll, because no officer opens or closes it. */
+async function viewPeople(v) {
+  const d = await api('/api/supermajority');
+  const cs = await api('/api/citizens');
+  const open = d.motions.filter(m => m.status === 'open');
+  const past = d.motions.filter(m => m.status !== 'open');
+
+  v.innerHTML = `
+    <h1 class="page">The People</h1>
+    <p class="page-sub">Article 2 · ${d.needed} of ${d.citizens} citizens carries anything below</p>
+
+    <div class="card">
+      <p class="small">Two thirds of all Citizens may do what no officer can stop: appoint a Speaker over a deadlocked House, remove any officer at all, dissolve the House, or end a declaration of extraordinary circumstances. Nobody opens or closes this — signatures gather, and the act happens the moment two thirds is reached.</p>
+    </div>
+
+    ${open.length ? open.map(m => `<div class="card">
+      <div class="spread"><h2 style="margin:0">${esc(d.acts[m.kind] || m.kind)}</h2>
+        <span class="tag on-violet">${m.signatures} of ${d.needed}</span></div>
+      ${m.target_name ? `<p class="item-meta">Concerning ${esc(m.target_name)}</p>` : ''}
+      <p style="margin:8px 0 0">${esc(m.reasons)}</p>
+      <div class="bar" style="margin-top:10px"><span style="width:${Math.min(100, Math.round(m.signatures / d.needed * 100))}%"></span></div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn btn-sm ${m.signed ? '' : 'btn-primary'}" data-sign="${m.id}" ${m.signed ? 'disabled' : ''}>${m.signed ? 'You have signed' : 'Sign it'}</button>
+        ${m.opened_by === ME.id ? `<button class="btn btn-sm" data-pull="${m.id}">Withdraw</button>` : ''}
+        <span class="small muted">opened by ${esc(m.opened_by_name || '')}</span>
+      </div>
+    </div>`).join('') : '<div class="card"><div class="empty">No motion is open.</div></div>'}
+
+    <div class="card"><h2>Open one</h2>
+      <form id="sm" class="stack">
+        <label class="field"><span>What should the Republic do?</span><select name="kind" id="smk">
+          ${Object.entries(d.acts).map(([k, l]) => `<option value="${esc(k)}">${esc(l)}</option>`).join('')}
+        </select></label>
+        <label class="field" id="smt" hidden><span>Concerning whom</span><select name="target_user_id">
+          ${cs.map(c => `<option value="${c.id}">${esc(c.display_name)}${(c.offices || []).length ? ` — ${esc((c.offices || []).join(', '))}` : ''}</option>`).join('')}
+        </select></label>
+        <label class="field"><span>Why</span><textarea name="reasons" required></textarea></label>
+        <button class="btn btn-primary">Open the motion</button>
+      </form>
+    </div>
+
+    ${past.length ? `<div class="card"><h2>The record</h2><div class="list">${past.map(m => `<div class="item">
+      <div class="item-top"><span class="item-title">${esc(d.acts[m.kind] || m.kind)}</span>
+        <span class="tag ${m.status === 'carried' ? 'on-green' : ''}">${esc(m.status)}</span></div>
+      <div class="item-meta">${m.signatures} signatures · ${when(m.created_at)}${m.outcome ? ` · ${esc(m.outcome)}` : ''}</div>
+    </div>`).join('')}</div></div>` : ''}`;
+
+  const k = $('#smk');
+  const syncK = () => { $('#smt').hidden = !['appoint_speaker', 'remove_officer'].includes(k.value); };
+  k.onchange = syncK; syncK();
+
+  $('#sm').onsubmit = async ev => {
+    ev.preventDefault();
+    const f = Object.fromEntries(new FormData(ev.target));
+    if (f.target_user_id) f.target_user_id = Number(f.target_user_id); else delete f.target_user_id;
+    try { await api('/api/supermajority', { method: 'POST', body: f }); toast('Motion opened.'); route(); }
+    catch (err) { toast(err.message, true); }
+  };
+  onAction('[data-sign]', async btn => {
+    const r = await api(`/api/supermajority/${btn.dataset.sign}/sign`, { method: 'POST' });
+    toast(r.carried ? `Carried by ${r.signatures} of ${r.citizens}. ${r.outcome}` : `Signed — ${r.signatures} of ${r.needed}.`);
+    route();
+  });
+  onAction('[data-pull]', async btn => {
+    await api(`/api/supermajority/${btn.dataset.pull}/withdraw`, { method: 'POST' });
+    route();
+  });
+}
+
+/* Article 12 — the President drafting a declaration, and the record of every
+   one ever made. The form is deliberately blunt about what it costs. */
+async function viewEmergency(v) {
+  const e = await api('/api/emergency');
+  const mine = has('president');
+
+  v.innerHTML = `
+    <h1 class="page">Extraordinary circumstances</h1>
+    <p class="page-sub">Article 12 · the House grants it, the House ends it</p>
+
+    <div class="card">
+      <p class="small">A declaration suspends <strong>only what it names</strong>, and <strong>only for as long as it says</strong>. The President moves one; it is a bill and the House votes on it like any other. A majority of the House can end it at any moment without asking the President, and it lapses on its own when its time runs out.</p>
+      <p class="small muted">Three things can never be suspended: the House's power to end a declaration, impeachment, and a poll that has already opened.</p>
+    </div>
+
+    ${e.in_force ? `<div class="card"><h2>In force</h2>
+      <p>${esc(e.in_force.reasons)}</p>
+      <ul class="emergency-powers">${e.in_force.powers.map(p => `<li>${esc(e.powers_available[p] || p)}</li>`).join('')}</ul>
+      <p class="item-meta">Declared ${when(e.in_force.declared_at)} · lapses ${when(e.in_force.expires_at)} · ${e.end_votes} of ${e.end_votes_needed} members have moved to end it</p>
+    </div>`
+    : mine ? `<div class="card"><h2>Draft a declaration</h2>
+      <form id="dec" class="stack">
+        <label class="field"><span>What are the circumstances?</span>
+          <textarea name="reasons" required placeholder="The House is being asked to suspend the ordinary law on your word. Say why."></textarea></label>
+        <p class="eyebrow" style="margin-bottom:0">Powers claimed</p>
+        <div class="powers">${Object.entries(e.powers_available).map(([k, label]) => `
+          <label class="power"><input type="checkbox" name="powers" value="${esc(k)}">
+            <span>${esc(label)}</span></label>`).join('')}</div>
+        <label class="field"><span>For how long</span><select name="days">
+          <option value="0.25">6 hours</option>
+          <option value="0.5">12 hours</option>
+          <option value="1" selected>1 day</option>
+          <option value="2">2 days</option>
+          <option value="${esc(e.max_days)}">${esc(e.max_days)} days — the longest allowed</option>
+        </select></label>
+        <button class="btn btn-primary">Put it to the House</button>
+      </form>
+    </div>`
+    : '<div class="card"><div class="empty">Only the President may move a declaration.</div></div>'}
+
+    <div class="card"><h2>The record</h2>
+      ${e.history.length ? `<div class="list">${e.history.map(h => `<div class="item">
+        <div class="item-top"><span class="item-title">${esc(h.reasons.slice(0, 80))}</span>
+          <span class="tag ${h.status === 'in_force' ? 'on-oxide' : h.status === 'refused' ? '' : 'on-green'}">${esc(h.status.replace('_', ' '))}</span></div>
+        <div class="item-meta">${esc(h.declared_by_name || '')} · ${when(h.created_at)}${h.ended_by ? ` · ended by ${esc(h.ended_by)}` : ''}</div>
+      </div>`).join('')}</div>` : '<p class="small muted">No declaration has ever been made.</p>'}
+    </div>`;
+
+  if ($('#dec')) $('#dec').onsubmit = async ev => {
+    ev.preventDefault();
+    const f = new FormData(ev.target);
+    const powers = f.getAll('powers');
+    if (!powers.length) return toast('Name at least one power — a declaration suspends only what it names.', true);
+    if (!confirm(`Put this to the House? It claims ${powers.length} power${powers.length > 1 ? 's' : ''} and everyone will see exactly what you asked for.`)) return;
+    try {
+      const r = await api('/api/emergency', { method: 'POST', body: {
+        reasons: f.get('reasons'), powers, days: Number(f.get('days'))
+      } });
+      toast(`Moved as ${r.bill_ref}. The House decides.`);
+      location.hash = `#/bill/${r.bill_id}`;
     } catch (err) { toast(err.message, true); }
   };
 }
@@ -1137,6 +1541,12 @@ async function viewMe(v) {
         <button class="btn btn-primary">Save</button>
       </form>
     </div>
+    ${ME.offices.length ? `<div class="card"><h2>Resign</h2>
+      <p class="small muted">Article 7.4: you may resign any office at any time, and need give no reason. Leaving the House leaves the chair with it.</p>
+      <div class="row" style="margin-top:10px">${ME.offices.map(o =>
+        `<button class="btn btn-sm" data-resign="${esc(o)}">Resign as ${esc(o === 'mp' ? 'MP' : o)}</button>`).join('')}</div>
+    </div>` : ''}
+
     <div class="card"><h2>Password</h2>
       <form id="pw" class="stack">
         <label class="field"><span>Current</span><input type="password" name="current" required></label>
@@ -1149,6 +1559,12 @@ async function viewMe(v) {
     await api('/api/me', { method: 'PUT', body: Object.fromEntries(new FormData(e.target)) });
     ME = await api('/api/me'); $('#whoName').textContent = ME.display_name; toast('Saved.');
   };
+  onAction('[data-resign]', async btn => {
+    if (!confirm(`Resign as ${btn.dataset.resign}? It takes effect at once.`)) return;
+    await api('/api/me/resign', { method: 'POST', body: { office: btn.dataset.resign } });
+    ME = await api('/api/me'); toast('Resigned.'); route();
+  });
+
   $('#pw').onsubmit = async e => {
     e.preventDefault();
     try {
@@ -1171,7 +1587,8 @@ const RULE_KEYS = [
   'referendum_days', 'petition_share', 'initiative_mode', 'initiative_threshold',
   'secret_ballot', 'term_days',
   'cycle_enabled', 'cycle_days', 'campaign_days', 'poll_days', 'cycle_elects',
-  'speaker_auto', 'speaker_threshold', 'speaker_relax', 'enforce_term_limit', 'nation_name', 'motto'
+  'speaker_auto', 'speaker_threshold', 'speaker_relax', 'enforce_term_limit', 'nation_name', 'motto',
+  'diplomacy_enabled', 'foreign_actions_per_cycle', 'treaty_threshold', 'recognition_threshold', 'foreign_trade_tax'
 ];
 
 const CONFIG_FIELDS = [
@@ -1206,7 +1623,13 @@ const CONFIG_FIELDS = [
   ['speaker_relax', 'Votes the Speaker bar drops per failed ballot (0 = never)'],
   ['speaker_nomination_hours', 'Speaker nominations (hours)'],
   ['speaker_poll_hours', 'Speaker poll (hours)'],
-  ['enforce_term_limit', 'No two consecutive cycles in office (true / false)']
+  ['enforce_term_limit', 'No two consecutive cycles in office (true / false)'],
+  ['goods_economy_enabled', 'Strategic goods economy (true / false)'],
+  ['diplomacy_enabled', 'Enable diplomacy (true / false)'],
+  ['foreign_actions_per_cycle', 'Foreign actions allowed per cycle'],
+  ['treaty_threshold', 'Treaty ratification threshold (0–1)'],
+  ['recognition_threshold', 'Foreign recognition threshold (0–1)'],
+  ['foreign_trade_tax', 'Tax on foreign imports (0–1)']
 ];
 
 async function viewAdmin(v) {
@@ -1354,5 +1777,18 @@ async function viewAdmin(v) {
 }
 
 async function viewParty(v, id) { location.hash = '#/parties'; }
+
+/* What acts.js is allowed to reach. Deliberately narrow. */
+window.Republic = {
+  api, esc, md, toast, $, when, day, statusTag,
+  state: () => STATE,
+  me: () => ME,
+  reload: () => route(),
+  addRoute: (path, label, fn) => {
+    if (!ROUTES.some(r => r[0] === path)) ROUTES.splice(ROUTES.length - 2, 0, [path, label, fn]);
+  },
+  addSubRoute: (path, fn) => { SUBROUTES[path] = fn; },
+  refreshNav: () => { if (ME) drawRail(); }
+};
 
 start();

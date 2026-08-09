@@ -282,3 +282,422 @@ input[type=color]{padding:3px;height:38px}
 .seat-chip{display:flex;align-items:center;gap:6px;border:1px solid var(--rule);padding:3px 8px;
   background:var(--paper);font-family:var(--mono);font-size:9.5px}
 .seat-chip i{width:10px;height:10px;border-radius:50%;display:block;border:1px solid rgba(0,0,0,.25)}
+
+/* ═══════════════════════════════════════════════════ THE SUPREME COURT
+
+   The register is the court list and the written judgment: ruled paper, small
+   caps for the parties, the ruling set in the display face because a judgment
+   is meant to be read slowly. Same palette as everything else — it takes its
+   colour from the Flag Act like the rest of the site. */
+
+.court-head{
+  border:1px solid var(--ink);background:var(--card);padding:20px 22px;margin-bottom:var(--gap);
+  text-align:center;position:relative;
+}
+.court-head::before,.court-head::after{
+  content:'';position:absolute;left:22px;right:22px;height:1px;background:var(--ink);opacity:.35;
+}
+.court-head::before{top:6px}
+.court-head::after{bottom:6px}
+.court-title{
+  font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-2);margin:0 0 8px;
+}
+.court-name{font-family:var(--display);font-weight:800;font-size:clamp(20px,3.6vw,28px);line-height:1.1;margin:0;letter-spacing:-.01em}
+.court-quorum{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin:10px 0 0}
+
+/* The bench — three seats, each showing who fills it and by whose gift. */
+.bench{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.justice{
+  border:1px solid var(--rule);background:var(--paper);padding:14px 14px 12px;text-align:center;position:relative;
+}
+.justice.vacant{border-style:dashed;opacity:.75}
+.justice-seat{
+  font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);
+  display:block;margin-bottom:10px;
+}
+.justice-mark{
+  width:34px;height:34px;margin:0 auto 10px;border-radius:50%;
+  border:1.5px solid var(--indelible);display:grid;place-items:center;
+  font-family:var(--display);font-weight:800;font-size:14px;color:var(--indelible);
+}
+.justice.vacant .justice-mark{border-style:dashed;border-color:var(--ink-3);color:var(--ink-3)}
+.justice-name{font-family:var(--display);font-weight:600;font-size:17px;display:block;line-height:1.2}
+.justice-by{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);display:block;margin-top:4px}
+.justice-term{font-family:var(--mono);font-size:9px;color:var(--ink-3);display:block;margin-top:6px}
+
+/* The cause list. */
+.cause{display:block;padding:13px 2px;border-bottom:1px solid var(--rule);color:inherit}
+.cause:hover{text-decoration:none;background:rgba(0,0,0,.03)}
+.cause-top{display:flex;gap:10px;align-items:baseline;justify-content:space-between}
+.cause-ref{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--indelible);flex:none}
+.cause-title{font-weight:600;font-size:15px}
+.cause-meta{font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;color:var(--ink-2);margin-top:4px}
+
+/* A judgment, and the stamp that closes it. */
+.judgment{border:1px solid var(--ink);background:var(--card);padding:22px;margin-bottom:var(--gap)}
+.judgment-head{
+  font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--ink-2);border-bottom:1px solid var(--rule);padding-bottom:10px;margin-bottom:16px;
+}
+.judgment .prose{font-size:16px}
+.opinion{padding:16px 0;border-bottom:1px solid var(--rule)}
+.opinion:last-child{border-bottom:0}
+.opinion-by{
+  font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);
+  display:flex;gap:8px;align-items:center;margin-bottom:8px;
+}
+.opinion-by em{font-style:normal;color:var(--ink-2);letter-spacing:.04em}
+.opinion-body{white-space:pre-wrap;line-height:1.65}
+.verdict{
+  display:inline-block;border:2px solid currentColor;padding:8px 16px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;
+  transform:rotate(-2deg);
+}
+.verdict.upheld{color:var(--oxide)}
+.verdict.dismissed{color:var(--tally)}
+.verdict.open{color:var(--indelible);border-style:dashed;transform:none}
+
+/* ═══════════════════════════════════════════════════════ THE ACCOUNT
+
+   A bank statement, not a dashboard: the balance dominates, the ledger reads
+   as credits and debits, and every figure is monospaced so columns line up. */
+
+.passbook{
+  border:1px solid var(--ink);background:var(--card);padding:0;overflow:hidden;margin-bottom:var(--gap);
+}
+.passbook-top{
+  background:var(--box);color:#fff;padding:16px 20px;
+  display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+}
+.passbook-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;opacity:.75}
+.passbook-holder{font-family:var(--display);font-weight:600;font-size:16px;margin-top:4px}
+.passbook-no{font-family:var(--mono);font-size:10px;opacity:.6;letter-spacing:.08em}
+.passbook-balance{padding:22px 20px 18px;border-bottom:1px solid var(--rule)}
+.passbook-balance .passbook-label{color:var(--ink-2);opacity:1}
+.balance-figure{
+  font-family:var(--mono);font-weight:600;font-size:clamp(30px,6vw,42px);line-height:1;
+  letter-spacing:-.02em;display:block;margin-top:8px;
+}
+.balance-side{display:flex;gap:22px;flex-wrap:wrap;margin-top:14px}
+.balance-side div{min-width:88px}
+.balance-side span{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);display:block}
+.balance-side strong{font-family:var(--mono);font-size:15px;font-weight:600}
+
+.statement{padding:4px 20px 16px}
+.entry{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:baseline;padding:11px 0;border-bottom:1px solid var(--rule)}
+.entry:last-child{border-bottom:0}
+.entry-what{font-size:14px}
+.entry-when{font-family:var(--mono);font-size:9.5px;color:var(--ink-3);letter-spacing:.04em;margin-top:2px}
+.entry-amount{font-family:var(--mono);font-size:14px;font-weight:600;white-space:nowrap}
+.entry-amount.in{color:var(--tally)}
+.entry-amount.out{color:var(--oxide)}
+.entry-kind{
+  font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-2);border:1px solid var(--rule);padding:1px 5px;margin-left:6px;
+}
+
+.money{font-family:var(--mono);font-weight:600}
+.money-big{font-family:var(--mono);font-weight:600;font-size:22px}
+
+/* ═══════════════════════════════════════════════ DIPLOMACY / FOREIGN OFFICE
+
+   A public foreign-office communications desk: cables, routing marks, nation
+   dossiers and a deliberately more technical Returning Officer console. It
+   still uses the Flag Act palette and the site's paper/card typography, so a
+   flag-law theme change carries straight through diplomacy as well. */
+
+.diplomacy-office{max-width:1180px}
+.dip-head{
+  position:relative;overflow:hidden;display:flex;justify-content:space-between;gap:24px;align-items:flex-start;
+  border:1px solid var(--ink);background:var(--card);padding:20px 22px;margin-bottom:var(--gap);
+  box-shadow:inset 5px 0 0 var(--box);
+}
+.dip-head::after{
+  content:'';position:absolute;right:-44px;bottom:-52px;width:180px;height:180px;border:1px solid var(--rule);
+  border-radius:50%;box-shadow:0 0 0 16px rgba(91,46,158,.025),0 0 0 34px rgba(30,42,90,.025);pointer-events:none;
+}
+.dip-head h1{font-family:var(--display);font-weight:800;font-size:clamp(28px,4vw,38px);line-height:1;margin:0 0 8px;letter-spacing:-.02em}
+.dip-head p.muted{max-width:760px;margin:0}
+.dip-head-code,.dip-section-kicker{
+  font-family:var(--mono);font-size:9px;line-height:1.3;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2);
+}
+.dip-head-code{margin:0 0 9px;color:var(--indelible)}
+.dip-signal{display:flex;gap:5px;align-items:center;margin-top:4px;position:relative;z-index:1}
+.dip-signal span{width:8px;height:8px;border-radius:50%;background:var(--rule);box-shadow:0 0 0 1px var(--ink)}
+.dip-signal span:first-child{background:var(--tally)}
+.dip-signal span:nth-child(2){background:var(--indelible-fill)}
+
+.dip-compose{border-color:var(--ink);box-shadow:inset 0 3px 0 var(--indelible);padding:20px 22px}
+.dip-compose > h2{margin-top:5px}
+.dip-compose textarea{min-height:150px;line-height:1.55;background:var(--card)}
+.dip-compose .btn-primary{align-self:flex-start}
+
+.dip-section{background:var(--card);border:1px solid var(--rule);padding:17px 18px;margin-bottom:var(--gap)}
+.dip-section-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;border-bottom:1px solid var(--rule);padding-bottom:9px;margin-bottom:2px}
+.dip-section-head h2{font-family:var(--display);font-weight:650;font-size:19px;margin:0;letter-spacing:-.01em}
+.dip-powers .item{padding:12px 5px}
+.dip-powers .item-title{font-family:var(--display);font-size:16px}
+.dip-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--gap)}
+@media(min-width:760px){.dip-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Cable traffic. Outbound Republic messages and inbound foreign messages use
+   different routing marks, not different colour themes. This remains legible
+   even if the nation's flag palette changes radically. */
+.dip-correspondence{padding-bottom:20px}
+.dip-thread{display:flex;flex-direction:column;gap:12px;margin-top:14px}
+.dip-message{
+  position:relative;border:1px solid var(--rule);background:var(--paper);padding:0 15px 15px 18px;
+  box-shadow:inset 3px 0 0 var(--ink-3);
+}
+.dip-message.is-republic{box-shadow:inset 3px 0 0 var(--box)}
+.dip-message.is-foreign{box-shadow:inset 3px 0 0 var(--indelible)}
+.dip-message.is-reply{margin-left:28px}
+.dip-message.is-reply::before{content:'↳';position:absolute;left:-22px;top:18px;font-family:var(--mono);color:var(--ink-3)}
+.dip-message-route{
+  display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:9px;align-items:center;
+  border-bottom:1px dashed var(--rule);padding:10px 0 9px;margin-bottom:12px;
+}
+.dip-route-mark{
+  width:25px;height:25px;display:grid;place-items:center;border:1px solid currentColor;border-radius:50%;
+  font-family:var(--mono);font-size:9px;font-weight:700;color:var(--indelible);background:var(--card);
+}
+.is-republic .dip-route-mark{color:var(--box)}
+.dip-sender{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;font-weight:600}
+.dip-route-detail{display:block;font-family:var(--mono);font-size:8.5px;color:var(--ink-3);letter-spacing:.04em;margin-top:1px}
+.dip-message-id{font-family:var(--mono);font-size:9px;color:var(--ink-3)}
+.dip-message-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.dip-message-head h3{font-family:var(--display);font-size:17px;line-height:1.2;margin:0;font-weight:650}
+.dip-message-tags{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;flex:none}
+.dip-meta{font-family:var(--mono);font-size:8.7px;letter-spacing:.03em;color:var(--ink-3);margin:6px 0 12px}
+.dip-message-body{white-space:normal;font-size:14px;line-height:1.65;padding:11px 12px;background:var(--card);border-left:1px solid var(--rule)}
+.dip-message-actions{display:flex;justify-content:flex-end;margin-top:11px}
+@media(max-width:600px){
+  .dip-message.is-reply{margin-left:14px}.dip-message.is-reply::before{display:none}
+  .dip-message-head{display:block}.dip-message-tags{justify-content:flex-start;margin-top:8px}
+}
+
+/* Conflicts get a restrained warning treatment: official notice, not a game
+   HUD alarm. */
+.dip-alerts{border-top-color:var(--oxide)}
+.dip-alerts .dip-section-kicker{color:var(--oxide)}
+
+/* Returning Officer: intentionally denser and more procedural than the public
+   correspondence area, while retaining the same card/form primitives. */
+.dip-ro{margin-top:30px;border:1px solid var(--ink);background:linear-gradient(180deg,var(--card),var(--paper));padding:18px}
+.dip-ro-head{border-bottom:2px double var(--ink);padding-bottom:10px;margin-bottom:14px}
+.dip-ro-head h2{font-family:var(--display);font-size:21px;margin:4px 0 0}
+.dip-ro-console{border-color:var(--ink);background:var(--card);box-shadow:inset 0 3px 0 var(--box)}
+.dip-ro-console #ro-power-panel{border-top:1px dashed var(--rule);margin-top:14px;padding-top:2px}
+.dip-ro-console h3{
+  font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);
+  border-bottom:1px solid var(--rule);padding-bottom:6px;margin:18px 0 10px;
+}
+.dip-ro-console textarea[readonly],.dip-ro-create textarea[readonly]{font-family:var(--mono);font-size:11px;background:var(--indelible-soft);border-color:var(--indelible)}
+.dip-ro-create{margin-top:12px;background:var(--card)}
+.dip-ro-create summary{cursor:pointer;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
+.dip-ro-create[open] summary{border-bottom:1px solid var(--rule);padding-bottom:10px;margin-bottom:12px}
+
+/* ═══════════════════════════════════ FOREIGN LEDGER AND STRATEGIC GOODS
+
+   Additions to the diplomacy pages. A foreign power now holds a real account in
+   our currency, so the numbers on this page are constraints rather than
+   decoration and are typeset to be read as such. */
+
+.dip-ledger{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:14px 0 4px;
+}
+.dip-ledger-cell{border:1px solid var(--rule);background:var(--paper);padding:12px 14px}
+.dip-ledger-cell span{
+  font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-2);display:block;margin-bottom:6px;
+}
+.dip-ledger-cell strong{font-family:var(--mono);font-weight:600;font-size:19px;display:block;line-height:1}
+.dip-ledger-cell.is-surplus strong{color:var(--tally)}
+.dip-ledger-cell.is-deficit strong{color:var(--oxide)}
+.dip-ledger-note{font-family:var(--mono);font-size:9px;color:var(--ink-3);margin-top:6px;display:block}
+
+/* A power's purse, and how much of its cycle allowance is spent. */
+.dip-purse{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:8px}
+.dip-purse .money-big{font-size:20px}
+.dip-allowance{height:6px;background:var(--paper);border:1px solid var(--rule);overflow:hidden;margin-top:8px}
+.dip-allowance > span{display:block;height:100%;background:var(--indelible-fill)}
+.dip-allowance.is-spent > span{background:var(--oxide)}
+
+/* Strategic goods — categories carry a small standing mark so a cable about
+   grain and a cable about ore are distinguishable at a glance. */
+.good-tag{
+  display:inline-flex;align-items:center;gap:5px;border:1px solid var(--rule);background:var(--paper);
+  padding:2px 7px;font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+}
+.good-tag::before{content:'';width:7px;height:7px;border-radius:1px;background:var(--ink-3)}
+.good-tag[data-good="food"]::before{background:var(--tally)}
+.good-tag[data-good="fuel"]::before{background:var(--ink)}
+.good-tag[data-good="ore"]::before{background:var(--box)}
+.good-tag[data-good="arms"]::before{background:var(--oxide)}
+.good-tag[data-good="luxury"]::before{background:var(--indelible-fill)}
+.good-tag[data-good="medicine"]::before{background:#2E7D7B}
+
+.goods-off{
+  border:1px dashed var(--rule);padding:10px 12px;font-size:13px;color:var(--ink-2);
+}
+
+/* ═══════════════════════════════════════════════════════════ THE DESK
+
+   What is waiting on you, with the buttons to do it. The President's screen
+   used to be identical to everyone else's; this is the difference. */
+
+.desk{border:1px solid var(--ink);background:var(--card);margin-bottom:var(--gap)}
+.desk.is-urgent{border-color:var(--indelible)}
+.desk-head{padding:14px 18px 12px;border-bottom:1px solid var(--rule)}
+.desk-head h2{font-family:var(--display);font-weight:600;font-size:18px;margin:2px 0 0;letter-spacing:-.01em}
+.desk.is-urgent .desk-head{background:var(--indelible-soft)}
+
+.desk-item{
+  display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;
+  padding:14px 18px;border-bottom:1px solid var(--rule);
+}
+.desk-item:last-child{border-bottom:0}
+.desk-item.is-urgent{border-left:3px solid var(--indelible);padding-left:15px}
+.desk-what{flex:1;min-width:220px;font-size:15px}
+.desk-why{font-size:13px;color:var(--ink-2);margin:4px 0 0}
+.desk-actions{display:flex;gap:8px;flex-wrap:wrap;flex:none}
+.desk-idle{padding:16px 18px;margin:0;color:var(--ink-2);font-size:14px}
+
+/* The office you hold, said out loud rather than inferred from what you can click. */
+.who-role{
+  font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  border:1px solid rgba(255,255,255,.45);padding:2px 7px;color:#fff;white-space:nowrap;
+}
+
+/* ══════════════════════════════════════════════ WAITING, VISIBLY
+
+   A tap that does nothing for 400ms reads as a broken app, and on a sleeping
+   free instance it can be thirty seconds. Every action says so. */
+
+.spinner{
+  display:inline-block;width:11px;height:11px;border:2px solid currentColor;
+  border-right-color:transparent;border-radius:50%;animation:spin .6s linear infinite;vertical-align:-1px;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.btn[data-busy]{opacity:.75;cursor:progress}
+
+.skeleton{padding:4px 0}
+.sk{background:var(--rule);opacity:.45;border-radius:2px;animation:pulse 1.4s ease-in-out infinite}
+.sk-title{height:30px;width:min(58%,320px);margin-bottom:12px}
+.sk-line{height:11px;width:min(38%,220px);margin-bottom:22px}
+.sk-card{height:104px;margin-bottom:14px}
+@keyframes pulse{0%,100%{opacity:.28}50%{opacity:.55}}
+@media(prefers-reduced-motion:reduce){.sk,.spinner{animation:none}}
+
+/* ═══════════════════════════════════════════════════ ON A PHONE
+
+   This is a WhatsApp group. Most people will only ever see it on a phone, so
+   the navigation belongs under the thumb rather than in a strip that scrolls
+   off the top. */
+
+@media(max-width:700px){
+  .rail{
+    position:fixed;bottom:0;left:0;right:0;z-index:30;
+    display:flex;gap:0;padding:0;overflow-x:auto;
+    background:var(--card);border-top:1px solid var(--rule);border-bottom:0;
+    padding-bottom:env(safe-area-inset-bottom);
+    box-shadow:0 -2px 14px rgba(0,0,0,.07);
+  }
+  .rail a{
+    flex:1 0 auto;text-align:center;padding:12px 13px;border-bottom:0;border-top:2px solid transparent;
+    min-height:46px;display:flex;align-items:center;justify-content:center;
+  }
+  .rail a.is-on{border-top-color:var(--indelible);background:var(--indelible-soft)}
+  main{padding-bottom:76px}
+  .topbar{padding:9px 13px}
+  .brand-text em{display:none}
+
+  /* Thumbs are not mice. */
+  .btn{padding:11px 15px}
+  .btn-sm{padding:9px 12px}
+  .option{padding:16px 14px}
+  .option input{width:21px;height:21px}
+  .desk-item{padding:14px}
+  .desk-actions{width:100%}
+  .desk-actions .btn{flex:1}
+}
+
+/* ═════════════════════════════════════════════════════════ DARK MODE
+
+   There is no dark stylesheet. The palette is derived at runtime from the Flag
+   Act, and dark is a branch of that derivation — the flag keeps its hue and
+   loses its brightness. What is left here is the handful of things that cannot
+   be expressed as a colour variable: borders that need more weight on a dark
+   card, shadows that need less. */
+
+html[data-theme='dark'], html[data-theme='auto'] { color-scheme: light dark; }
+
+@media (prefers-color-scheme: dark) {
+  html[data-theme='auto'] .card,
+  html[data-theme='auto'] .passbook,
+  html[data-theme='auto'] .desk { box-shadow: 0 1px 0 rgba(255,255,255,.04) inset; }
+}
+html[data-theme='dark'] .card,
+html[data-theme='dark'] .passbook,
+html[data-theme='dark'] .desk { box-shadow: 0 1px 0 rgba(255,255,255,.04) inset; }
+
+/* Photographs and the flag itself are left alone; only the chrome inverts. */
+html[data-theme='dark'] .flag, html[data-theme='dark'] .chamber svg { filter: none; }
+
+/* The theme control cycles light → dark → follow the phone. */
+#themeBtn { font-size: 13px; line-height: 1; padding: 6px 9px; min-width: 32px; }
+
+/* ═══════════════════════════════════════════════ INSTALLED AS AN APP
+
+   Standalone has no browser chrome, so the top bar becomes the status bar and
+   has to keep clear of the notch. */
+@media (display-mode: standalone) {
+  .topbar { padding-top: calc(10px + env(safe-area-inset-top)); }
+  main { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+}
+
+/* ═══════════════════════════════════ ARTICLE 12 — EXTRAORDINARY CIRCUMSTANCES
+
+   While a declaration is in force it is the most important fact about the
+   Republic, so the banner is loud and sits above everything on every page. It
+   always carries the way to end it: a suspension of the ordinary law that is
+   easy to forget about is the dangerous kind. */
+
+#emergency{position:sticky;top:54px;z-index:25}
+.emergency{
+  display:flex;gap:14px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;
+  background:var(--oxide);color:#fff;padding:12px 18px;
+  border-bottom:2px solid rgba(0,0,0,.25);
+}
+.emergency-main{flex:1;min-width:230px}
+.emergency-kicker{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  margin:0 0 5px;opacity:.85;
+}
+.emergency-reason{margin:0;font-size:15px;font-weight:600;line-height:1.35}
+.emergency-powers{margin:8px 0 0;padding-left:18px;font-size:13px}
+.emergency-powers li{margin-bottom:2px}
+.emergency-meta{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;margin:8px 0 0;opacity:.85;
+}
+.emergency-act{flex:none;padding-top:2px}
+.emergency-act .btn{background:#fff;border-color:#fff;color:var(--oxide)}
+.emergency-act .btn:disabled{background:transparent;color:#fff;border-color:rgba(255,255,255,.5)}
+
+/* The declaration form: one checkbox per power, because naming them one at a
+   time is the point of Article 12.2. */
+.powers{display:grid;gap:8px;margin-bottom:4px}
+.power{
+  display:flex;gap:11px;align-items:flex-start;border:1px solid var(--rule);
+  background:var(--paper);padding:11px 13px;cursor:pointer;font-size:14px;
+}
+.power:hover{border-color:var(--indelible)}
+.power input{margin:2px 0 0;accent-color:var(--oxide);width:17px;height:17px;flex:none}
+.power:has(input:checked){border-color:var(--oxide);background:var(--card)}
+
+@media(max-width:700px){
+  #emergency{top:46px}
+  .emergency{padding:11px 14px}
+  .emergency-act{width:100%}
+  .emergency-act .btn{width:100%}
+}

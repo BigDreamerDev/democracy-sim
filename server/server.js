@@ -78,6 +78,45 @@ const DEFAULTS = {
   petition_share: '0.334',         // share of citizens needed to force a referendum or an initiative
   initiative_mode: 'table',        // off | table | enact — what citizens' signatures can do
   initiative_threshold: '0.7',     // share of a referendum needed to enact an initiative directly
+
+  // The Judicial Enforcement Act
+  supermajority_share: '0.667',    // Article 2.2 — two thirds of ALL citizens
+  supermajority_days: '7',         // how long a motion may gather signatures
+
+  emergency_max_days: '3',         // longest a declaration may run before it lapses
+  emergency_end_share: '0.5',      // share of the House needed to end one at once
+
+  justice_terms: '3',              // cycles a Justice serves
+
+  // The Creation of an Economy Act
+  currency_name: 'Mark',
+  currency_symbol: 'M',
+  dividend: '100',                 // paid to every citizen every cycle, unconditionally
+  salary_president: '150',
+  salary_speaker: '120',
+  salary_mp: '80',
+  salary_justice: '100',
+  tax_free_allowance: '200',       // nothing is taken below this
+  tax_rate: '0.1',                 // on the balance above the allowance
+  tax_upper_threshold: '1000',
+  tax_rate_upper: '0.25',          // progressive: a higher rate above the threshold
+  registration_fee: '25',
+  deposit_rate: '0.02',            // paid on deposits each cycle
+  loan_rate: '0.05',               // charged on loans each cycle
+  loan_ceiling: '500',             // most one citizen may owe the public bank
+  ownership_cap: '0.4',            // most of one business a single citizen may hold
+  goods_economy_enabled: 'false',   // categorise business goods for strategic/foreign trade
+
+  // Diplomacy
+  foreign_treasury_start: '5000',     // what a new foreign power holds in our currency
+  foreign_treasury_per_cycle: '1000', // topped up each cycle by the payrun
+  foreign_export_cap_per_cycle: '2000', // most one power may buy from us in a cycle; 0 = no cap
+  diplomacy_enabled: 'false',
+  foreign_actions_per_cycle: '6',
+  treaty_threshold: '0.667',
+  recognition_threshold: '0.5',
+  foreign_trade_tax: '0.1',
+
   secret_ballot: 'true',           // hide who voted for whom in elections
   allow_open_signup: 'false',      // if true, no invite code needed
   require_approval: 'true',        // new accounts stay inert until an admin approves them
@@ -99,6 +138,8 @@ const DEFAULTS = {
 };
 
 let CONFIG = { ...DEFAULTS };
+const ENACT_HOOKS = [];
+const addEnactHook = fn => { if (typeof fn === 'function') ENACT_HOOKS.push(fn); };
 
 async function loadConfig() {
   const { rows } = await q('SELECT key, value FROM config');
@@ -119,10 +160,18 @@ const LEGISLATABLE = new Set([
   'pass_threshold', 'constitutional_threshold', 'veto_override', 'bill_voters',
   'bill_proposers', 'allow_veto_override', 'impeachment_threshold', 'referendum_threshold',
   'referendum_quorum', 'referendum_days', 'petition_share',
-  'initiative_mode', 'initiative_threshold',
+  'initiative_mode', 'initiative_threshold', 'justice_terms',
+  'emergency_max_days', 'emergency_end_share',
+  'supermajority_share', 'supermajority_days',
+  'currency_name', 'currency_symbol', 'dividend', 'salary_president', 'salary_speaker',
+  'salary_mp', 'salary_justice', 'tax_free_allowance', 'tax_rate',
+  'tax_upper_threshold', 'tax_rate_upper', 'registration_fee',
+  'deposit_rate', 'loan_rate', 'loan_ceiling', 'ownership_cap', 'goods_economy_enabled',
+  'diplomacy_enabled', 'foreign_actions_per_cycle', 'treaty_threshold', 'recognition_threshold', 'foreign_trade_tax',
   'secret_ballot', 'cycle_enabled', 'cycle_days', 'campaign_days', 'poll_days',
   'cycle_elects', 'speaker_auto', 'speaker_threshold', 'speaker_nomination_hours',
-  'speaker_poll_hours', 'speaker_relax', 'enforce_term_limit', 'flag_law_ref'
+  'speaker_poll_hours', 'speaker_relax', 'enforce_term_limit', 'flag_law_ref',
+  'foreign_treasury_per_cycle', 'foreign_export_cap_per_cycle', 'foreign_trade_tax'
 ]);
 
 /* ------------------------------------------------------------------ the flag
@@ -205,6 +254,23 @@ function parseRuleChanges(body) {
 }
 const bool = (k) => String(CONFIG[k]).toLowerCase() === 'true';
 
+/* Article 12.2: a declaration suspends only what it names. So the names are a
+   fixed list, and anything not on it cannot be suspended however the declaration
+   is worded.
+
+   Three things are deliberately absent and can never be claimed: the House's
+   power to end the emergency, impeachment, and the holding of a poll that has
+   already opened. An emergency that could switch off its own off-switch is not
+   an emergency power, it is a coup. */
+const EMERGENCY_POWERS = {
+  halt_elections: 'Halt elections — no new poll opens and the cycle clock does not advance',
+  extend_term: 'Extend the current term — sitting members stay in office past the cycle',
+  fast_track: 'Fast-track bills — no seconders required to table',
+  president_may_table: 'The President may table bills and call divisions',
+  lower_quorum: 'Lower the quorum for a division to one member',
+  close_borders: 'Close the borders — no foreign trade or new treaties'
+};
+
 const SEED_CONSTITUTION = `# Constitution of the Republic
 
 ## Article I — The Citizens
@@ -240,11 +306,36 @@ const SEED_CONSTITUTION = `# Constitution of the Republic
 1. All elections, divisions and enactments are recorded and public.
 2. No record may be deleted, only superseded.`;
 
+/* The declaration in force, if any. Lapses on its own the moment it is read
+   after expiry — nobody has to remember to end it. */
+let EMERGENCY = null;
+async function currentEmergency() {
+  const e = (await q("SELECT * FROM emergencies WHERE status='in_force' ORDER BY id DESC LIMIT 1")).rows[0];
+  if (!e) { EMERGENCY = null; return null; }
+  if (e.expires_at && new Date(e.expires_at) <= new Date()) {
+    await q("UPDATE emergencies SET status='lapsed', ended_at=now(), ended_by='lapsed' WHERE id=$1", [e.id]);
+    log(null, 'emergency.lapse', `#${e.id} ran out`);
+    EMERGENCY = null;
+    return null;
+  }
+  EMERGENCY = e;
+  return e;
+}
+
+const emergencyPowers = async () => {
+  const e = await currentEmergency();
+  return new Set(String(e?.powers || '').split(',').map(x => x.trim()).filter(Boolean));
+};
+const underPower = async (name) => (await emergencyPowers()).has(name);
+
 /* ------------------------------------------------------------ bootstrap */
 
 async function bootstrap() {
-  const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
-  await pool.query(schema);
+  await pool.query(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
+  const extra = path.join(__dirname, 'schema-acts.sql');
+  if (fs.existsSync(extra)) await pool.query(fs.readFileSync(extra, 'utf8'));
+  const diplomacySchema = path.join(__dirname, 'schema-diplomacy.sql');
+  if (fs.existsSync(diplomacySchema)) await pool.query(fs.readFileSync(diplomacySchema, 'utf8'));
   for (const [k, v] of Object.entries(DEFAULTS)) {
     await q('INSERT INTO config(key,value) VALUES($1,$2) ON CONFLICT (key) DO NOTHING', [k, v]);
   }
@@ -291,6 +382,12 @@ app.use(attach);
 const auth = (req, res, next) => req.user ? next() : res.status(401).json({ error: 'Sign in to do that.' });
 const admin = (req, res, next) => req.user?.is_admin ? next() : res.status(403).json({ error: 'Admins only.' });
 
+/* Article 7.1 is "one seat", and Article 4.1 makes the Speaker a member of the
+   House — so mp and speaker are one seat held together, not two. */
+const SAME_SEAT = new Set(['mp', 'speaker']);
+const seatClash = (held, office) =>
+  held.filter(o => o !== office && !(SAME_SEAT.has(o) && SAME_SEAT.has(office)));
+
 async function officesOf(userId) {
   const { rows } = await q('SELECT office FROM offices WHERE user_id=$1 AND active', [userId]);
   return rows.map(r => r.office);
@@ -301,6 +398,10 @@ function requireOffice(office) {
   return async (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Sign in to do that.' });
     if (req.user.is_admin || await holds(req.user.id, office)) return next();
+    // Article 12: a declaration may hand the Speaker's business to the President
+    // for its duration. It never hands over anything else.
+    if (office === 'speaker' && await holds(req.user.id, 'president') && await underPower('president_may_table'))
+      return next();
     res.status(403).json({ error: `Only the ${office} can do that.` });
   };
 }
@@ -584,6 +685,14 @@ async function openReferendum(lawId, actorId, why) {
 }
 
 async function certify(e, actorId) {
+  /* Article 12: a declaration may extend the current term. Certifying is what
+     vacates the sitting House, so under that power the result is recorded and
+     the seats are simply not changed hands until the emergency ends. */
+  if (await underPower('extend_term') && (e.kind === 'parliament' || e.kind === 'president')) {
+    await q("UPDATE elections SET status='closed' WHERE id=$1", [e.id]);
+    log(actorId, 'emergency.term.extend', `${e.title} counted but not seated`);
+    return { seated: [], held: true, reason: 'the term is extended under a declaration of extraordinary circumstances' };
+  }
   await loadConfig();
   await q("UPDATE elections SET status='closed' WHERE id=$1", [e.id]);
 
@@ -674,6 +783,13 @@ async function certify(e, actorId) {
   const seated = [];
   let seat = 1;
   for (const w of winners) {
+    // Article 7.1: one seat each. Someone who already holds another office is
+    // not seated in a second — they keep the one they have.
+    const clash = seatClash(await officesOf(w.user_id), office);
+    if (clash.length) {
+      log(actorId, 'election.unseated', `${w.display_name} won but holds ${clash.join(', ')} — Article 7.1`);
+      continue;
+    }
     await q('INSERT INTO offices(office,user_id,seat,election_id) VALUES($1,$2,$3,$4)',
       [office, w.user_id, office === 'mp' ? seat++ : null, e.id]);
     seated.push({ office, name: w.display_name, votes: w.votes });
@@ -728,8 +844,14 @@ async function ensureSpeakerElection() {
 async function tick() {
   try {
     await loadConfig();
+
+    /* Article 12: a declaration may halt elections. It stops new polls opening
+       and the clock advancing — it does NOT stop a poll that is already open,
+       and it does not stop one closing. An emergency that could freeze a poll
+       mid-count would be a way to lose an election and keep the seat. */
+    const halted = await underPower('halt_elections');
     const c = cycleNow();
-    if (c && c.number > 0) {
+    if (!halted && c && c.number > 0) {
       for (const kind of CONFIG.cycle_elects.split(',').map(x => x.trim()).filter(Boolean)) {
         if (!TITLES[kind] || kind === 'speaker') continue;
         // The closing deadline identifies a cycle's election, so restarting the clock
@@ -758,6 +880,10 @@ async function tick() {
         if (e.opens_at && now >= +new Date(e.opens_at)) want = 'voting';
       } else if (e.opens_at && now >= +new Date(e.opens_at) && e.status !== 'voting') want = 'voting';
       else if (e.campaign_at && now >= +new Date(e.campaign_at) && e.status === 'nominations') want = 'campaign';
+
+      // Under a halt, a poll that has not opened stays shut. One already open is
+      // left alone, and closing is never blocked — see the note above.
+      if (halted && want === 'voting' && e.status !== 'voting') want = e.status;
 
       if (want !== e.status) {
         await q('UPDATE elections SET status=$1 WHERE id=$2', [want, e.id]);
@@ -1091,7 +1217,7 @@ app.post('/api/bills', auth, slowWrites, wrap(async (req, res) => {
   if (!await canPropose(req.user.id)) return res.status(403).json({ error: NOT_YOURS });
   const { title, kind, body, target_law_id, target_user_id } = req.body || {};
   if (!title || !body) return res.status(400).json({ error: 'A bill needs a title and a text.' });
-  const k = ['law', 'amendment', 'repeal', 'motion', 'constitutional', 'rule', 'impeachment'].includes(kind) ? kind : 'law';
+  const k = ['law', 'amendment', 'repeal', 'motion', 'constitutional', 'rule', 'impeachment', 'treaty', 'recognition'].includes(kind) ? kind : 'law';
   if (k === 'rule') {
     const { errors } = parseRuleChanges(body);
     if (errors.length) return res.status(400).json({ error: errors.join(' ') });
@@ -1193,7 +1319,8 @@ app.post('/api/bills/:id/table', requireOffice('speaker'), wrap(async (req, res)
   if (!b) return res.status(404).json({ error: 'No such bill.' });
   if (b.status !== 'draft') return res.status(400).json({ error: 'Only draft bills can be tabled.' });
   const s = (await q('SELECT count(*)::int n FROM bill_seconds WHERE bill_id=$1', [b.id])).rows[0].n;
-  if (s < num('seconds_required'))
+  if (await underPower('fast_track')) { /* Article 12: seconders suspended by declaration */ }
+  else if (s < num('seconds_required'))
     return res.status(400).json({ error: `This bill needs ${num('seconds_required')} seconders and has ${s}.` });
   await q("UPDATE bills SET status='tabled' WHERE id=$1", [b.id]);
   log(req.user.id, 'bill.table', b.ref);
@@ -1236,10 +1363,13 @@ app.post('/api/bills/:id/close', requireOffice('speaker'), wrap(async (req, res)
   const v = (await q('SELECT vote FROM bill_votes WHERE bill_id=$1', [b.id])).rows;
   const aye = v.filter(x => x.vote === 'aye').length;
   const no = v.filter(x => x.vote === 'no').length;
-  if (v.length < num('quorum'))
-    return res.status(400).json({ error: `Quorum is ${num('quorum')} and only ${v.length} voted.` });
+  const quorum = await underPower('lower_quorum') ? 1 : num('quorum');
+  if (v.length < quorum)
+    return res.status(400).json({ error: `Quorum is ${quorum} and only ${v.length} voted.` });
   const threshold = b.kind === 'constitutional' ? num('constitutional_threshold')
     : b.kind === 'impeachment' ? num('impeachment_threshold')
+    : b.kind === 'treaty' ? num('treaty_threshold')
+    : b.kind === 'recognition' ? num('recognition_threshold')
     : num('pass_threshold');
   const share = (aye + no) ? aye / (aye + no) : 0;
   const carried = share > threshold || (threshold === 0.5 && share === 0.5 && aye > no);
@@ -1295,6 +1425,22 @@ app.post('/api/bills/:id/override', requireOffice('speaker'), wrap(async (req, r
 }));
 
 async function enact(b, actorId, overridden = false) {
+  if (b.kind === 'emergency') {
+    // The clock starts when the House agrees, not when the President asked.
+    await loadConfig();
+    const em = (await q("SELECT * FROM emergencies WHERE bill_id=$1", [b.id])).rows[0];
+    if (em) {
+      // Same floor as the proposal, or a short declaration is silently stretched.
+      const days = Math.min(num('emergency_max_days'),
+        Math.max(0.0001, (new Date(em.expires_at) - new Date(em.created_at)) / DAY));
+      await q(`UPDATE emergencies SET status='in_force', declared_at=now(), expires_at=$1 WHERE id=$2`,
+        [new Date(Date.now() + days * DAY), em.id]);
+      log(actorId, 'emergency.declare', `#${em.id}: ${em.powers} for ${days} day(s)`);
+      await currentEmergency();
+    }
+    await q("UPDATE bills SET status='enacted' WHERE id=$1", [b.id]);
+    return;
+  }
   if (b.kind === 'rule') {
     const { changes } = parseRuleChanges(b.body);
     for (const c of changes) {
@@ -1315,6 +1461,7 @@ async function enact(b, actorId, overridden = false) {
       [`L${String(n).padStart(3, '0')}`, b.title, b.body, b.id]);
   }
   await q("UPDATE bills SET status='enacted' WHERE id=$1", [b.id]);
+  for (const hook of ENACT_HOOKS) await hook(b, actorId);
   log(actorId, overridden ? 'bill.override' : 'bill.assent', b.ref);
 }
 
@@ -1348,6 +1495,331 @@ app.get('/api/audit', wrap(async (_req, res) => {
 }));
 
 /* A paste-ready digest for the group chat. */
+/* A live image of the state of the Republic.
+
+   Home screen widgets proper need a native app — WidgetKit on iOS, an
+   AppWidgetProvider in an APK on Android — and a web app cannot supply one on
+   either platform. What every widget system *can* do is display an image from a
+   URL and refresh it on a timer. So this endpoint is the widget: no auth, no
+   personal data, just what a passer-by could read off the front page anyway.
+
+   Deliberately public. It is embedded by widget apps that cannot hold a token,
+   and it exposes nothing that /api/state does not. */
+/* ═════════════════════════════ Article 2 — the Sovereignty of the People
+
+   Two thirds of all Citizens may do what no officer can stop. Until now this
+   existed only on paper: the Constitution's most powerful mechanism had no
+   machinery at all, while four other Articles leaned on it.
+
+     4.6   appoint a Speaker directly, ending a deadlock the House cannot
+     10.5  remove any officer, at any time, for any reason or none
+     10.6  dissolve the House
+     12.3  end a declaration of extraordinary circumstances
+
+   It is a standing motion rather than a poll: signatures accumulate and the act
+   happens the moment two thirds is reached. No officer opens it, closes it, or
+   is asked about it — because Article 2 does not ask one.
+
+   Anything outside that list is a `resolution`. It records that two thirds of
+   the Republic wanted something, which binds every officer under 2.5, but the
+   app does not pretend it can execute an arbitrary instruction. */
+const SUPER_ACTS = {
+  appoint_speaker: 'Appoint a Speaker directly (Article 4.6)',
+  remove_officer: 'Remove an officer from every office they hold (Article 10.5)',
+  dissolve_house: 'Dissolve the House and vacate every seat (Article 10.6)',
+  end_emergency: 'End the declaration of extraordinary circumstances (Article 12.3)',
+  resolution: 'Resolve that something is the will of the Republic (Article 2.3)'
+};
+
+async function superNeeded() {
+  const n = (await q('SELECT count(*)::int n FROM users WHERE is_active AND approved')).rows[0].n;
+  return { citizens: n, needed: Math.max(1, Math.ceil(n * num('supermajority_share'))) };
+}
+
+async function carrySupermajority(m, actorId) {
+  let outcome = 'Recorded as the will of the Republic.';
+  if (m.kind === 'appoint_speaker' && m.target_user_id) {
+    if (!(await officesOf(m.target_user_id)).includes('mp'))
+      outcome = 'Not seated: Article 4.1 requires the Speaker to be a member of the House.';
+    else {
+      await q("UPDATE offices SET active=FALSE, until=now() WHERE office='speaker' AND active");
+      await q("INSERT INTO offices(office,user_id) VALUES('speaker',$1)", [m.target_user_id]);
+      outcome = 'Speaker appointed by the Citizens.';
+    }
+  } else if (m.kind === 'remove_officer' && m.target_user_id) {
+    const gone = (await q(
+      'UPDATE offices SET active=FALSE, until=now() WHERE user_id=$1 AND active RETURNING office',
+      [m.target_user_id])).rows.map(r => r.office);
+    outcome = gone.length ? `Removed from ${gone.join(', ')}.` : 'That citizen held no office.';
+  } else if (m.kind === 'dissolve_house') {
+    await q("UPDATE offices SET active=FALSE, until=now() WHERE active AND office IN ('mp','speaker')");
+    outcome = 'The House is dissolved and every seat vacated.';
+  } else if (m.kind === 'end_emergency') {
+    const em = await currentEmergency();
+    if (em) {
+      await q("UPDATE emergencies SET status='ended', ended_at=now(), ended_by='citizens' WHERE id=$1", [em.id]);
+      await currentEmergency();
+      outcome = 'The declaration is ended by the Citizens.';
+    } else outcome = 'No declaration was in force.';
+  }
+  await q("UPDATE supermajorities SET status='carried', carried_at=now(), outcome=$1 WHERE id=$2",
+    [outcome, m.id]);
+  log(actorId, 'supermajority.carried', `#${m.id} ${m.kind}: ${outcome}`);
+  return outcome;
+}
+
+app.get('/api/supermajority', wrap(async (req, res) => {
+  await loadConfig();
+  const { citizens, needed } = await superNeeded();
+  await q(`UPDATE supermajorities SET status='lapsed'
+            WHERE status='open' AND expires_at IS NOT NULL AND expires_at <= now()`);
+  const rows = (await q(`
+    SELECT m.*, u.display_name AS opened_by_name, t.display_name AS target_name,
+           (SELECT count(*)::int FROM supermajority_signatures s WHERE s.motion_id=m.id) AS signatures
+      FROM supermajorities m
+      LEFT JOIN users u ON u.id=m.opened_by
+      LEFT JOIN users t ON t.id=m.target_user_id
+     ORDER BY (m.status='open') DESC, m.id DESC LIMIT 30`)).rows;
+  let mine = [];
+  if (req.user) {
+    mine = (await q('SELECT motion_id FROM supermajority_signatures WHERE user_id=$1', [req.user.id]))
+      .rows.map(r => r.motion_id);
+  }
+  res.json({
+    citizens, needed, acts: SUPER_ACTS,
+    motions: rows.map(m => ({ ...m, signed: mine.includes(m.id) }))
+  });
+}));
+
+app.post('/api/supermajority', auth, slowWrites, wrap(async (req, res) => {
+  await loadConfig();
+  const kind = req.body?.kind;
+  if (!(kind in SUPER_ACTS))
+    return res.status(400).json({ error: 'Choose one of the acts the Constitution names.' });
+  const reasons = String(req.body?.reasons || '').trim();
+  if (!reasons) return res.status(400).json({ error: 'Say what you are asking the Republic to agree to.' });
+  let target = null;
+  if (kind === 'appoint_speaker' || kind === 'remove_officer') {
+    target = (await q('SELECT id FROM users WHERE id=$1 AND is_active AND approved',
+      [req.body?.target_user_id || 0])).rows[0];
+    if (!target) return res.status(400).json({ error: 'Name the citizen this concerns.' });
+  }
+  const { rows } = await q(
+    `INSERT INTO supermajorities(kind,target_user_id,reasons,opened_by,expires_at)
+     VALUES($1,$2,$3,$4,$5) RETURNING *`,
+    [kind, target?.id || null, reasons.slice(0, 4000), req.user.id,
+     new Date(Date.now() + num('supermajority_days') * DAY)]);
+  log(req.user.id, 'supermajority.open', `#${rows[0].id} ${kind}`);
+  res.json(rows[0]);
+}));
+
+app.post('/api/supermajority/:id/sign', auth, wrap(async (req, res) => {
+  await loadConfig();
+  const m = (await q("SELECT * FROM supermajorities WHERE id=$1 AND status='open'", [req.params.id])).rows[0];
+  if (!m) return res.status(404).json({ error: 'No such open motion.' });
+  if (m.expires_at && new Date(m.expires_at) <= new Date()) {
+    await q("UPDATE supermajorities SET status='lapsed' WHERE id=$1", [m.id]);
+    return res.status(400).json({ error: 'That motion has lapsed.' });
+  }
+  await q('INSERT INTO supermajority_signatures(motion_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
+    [m.id, req.user.id]);
+  const signatures = (await q('SELECT count(*)::int n FROM supermajority_signatures WHERE motion_id=$1',
+    [m.id])).rows[0].n;
+  const { citizens, needed } = await superNeeded();
+  if (signatures < needed) return res.json({ carried: false, signatures, needed, citizens });
+  const outcome = await carrySupermajority(m, req.user.id);
+  res.json({ carried: true, signatures, needed, citizens, outcome });
+}));
+
+app.post('/api/supermajority/:id/withdraw', auth, wrap(async (req, res) => {
+  const m = (await q("SELECT * FROM supermajorities WHERE id=$1 AND status='open'", [req.params.id])).rows[0];
+  if (!m) return res.status(404).json({ error: 'No such open motion.' });
+  if (m.opened_by !== req.user.id && !req.user.is_admin)
+    return res.status(403).json({ error: 'Only whoever opened it may withdraw it.' });
+  await q("UPDATE supermajorities SET status='withdrawn' WHERE id=$1", [m.id]);
+  res.json({ ok: true });
+}));
+
+/* Article 7.4 — a Citizen may resign any office at any time, and need give no
+   reason. There was no way to do this at all: an officer could only be removed
+   by somebody else, which is not what the Constitution says. */
+app.post('/api/me/resign', auth, wrap(async (req, res) => {
+  const office = req.body?.office;
+  const held = await officesOf(req.user.id);
+  if (!held.includes(office)) return res.status(400).json({ error: 'You do not hold that office.' });
+  await q('UPDATE offices SET active=FALSE, until=now() WHERE user_id=$1 AND office=$2 AND active',
+    [req.user.id, office]);
+  // Article 4.1: the Speaker is a member of the House, so leaving the House
+  // leaves the chair with it.
+  if (office === 'mp' && held.includes('speaker')) {
+    await q("UPDATE offices SET active=FALSE, until=now() WHERE user_id=$1 AND office='speaker' AND active",
+      [req.user.id]);
+  }
+  log(req.user.id, 'office.resign', office);
+  res.json({ ok: true, offices: await officesOf(req.user.id) });
+}));
+
+/* ═══════════════════════════════════ Article 12 — Extraordinary Circumstances
+
+   The President moves it, the House decides it, and the House alone can end it.
+   That shape is the whole safeguard: an emergency the President could declare
+   unilaterally would simply be the President ruling. */
+
+app.get('/api/emergency', wrap(async (req, res) => {
+  await loadConfig();
+  const now = await currentEmergency();
+  const history = (await q(`
+    SELECT e.*, u.display_name AS declared_by_name,
+           (SELECT count(*)::int FROM emergency_end_votes v WHERE v.emergency_id=e.id) AS end_votes
+      FROM emergencies e LEFT JOIN users u ON u.id=e.declared_by
+     ORDER BY e.id DESC LIMIT 20`)).rows;
+  const house = (await q("SELECT count(*)::int n FROM offices WHERE active AND office='mp'")).rows[0].n;
+  const needed = Math.max(1, Math.ceil(house * num('emergency_end_share')));
+  let mine = false;
+  if (req.user && now) {
+    mine = !!(await q('SELECT 1 FROM emergency_end_votes WHERE emergency_id=$1 AND user_id=$2',
+      [now.id, req.user.id])).rows[0];
+  }
+  res.json({
+    in_force: now ? { ...now, powers: String(now.powers || '').split(',').filter(Boolean) } : null,
+    powers_available: EMERGENCY_POWERS,
+    max_days: num('emergency_max_days'),
+    house, end_votes_needed: needed, i_voted_to_end: mine,
+    end_votes: now ? (await q('SELECT count(*)::int n FROM emergency_end_votes WHERE emergency_id=$1', [now.id])).rows[0].n : 0,
+    history
+  });
+}));
+
+/* The President moves a declaration. It is a bill, so the House decides it. */
+app.post('/api/emergency', requireOffice('president'), wrap(async (req, res) => {
+  await loadConfig();
+  if (await currentEmergency()) return res.status(400).json({ error: 'A declaration is already in force.' });
+  const reasons = String(req.body?.reasons || '').trim();
+  if (!reasons) return res.status(400).json({ error: 'Say what the circumstances are. The House is being asked to suspend the ordinary law on your word.' });
+  const asked = (req.body?.powers || []).filter(p => p in EMERGENCY_POWERS);
+  if (!asked.length) return res.status(400).json({ error: 'Name at least one power. A declaration suspends only what it names.' });
+  // The floor is deliberately tiny rather than a round number: a declaration of
+  // twenty minutes is a legitimate thing to want, and it must be possible to
+  // watch one lapse without waiting an hour.
+  const days = Math.min(Math.max(Number(req.body?.days) || 1, 0.0001), num('emergency_max_days'));
+
+  const n = (await q('SELECT count(*)::int n FROM bills')).rows[0].n + 1;
+  const body = [
+    reasons, '',
+    '## Powers claimed',
+    ...asked.map(p => `- ${EMERGENCY_POWERS[p]}`), '',
+    `This declaration lapses after ${days} day${days === 1 ? '' : 's'} unless ended sooner.`,
+    'The House may end it at any moment without the President\'s consent.'
+  ].join('\n');
+
+  const bill = (await q(
+    `INSERT INTO bills(ref,title,kind,body,author_id) VALUES($1,$2,'emergency',$3,$4) RETURNING *`,
+    [`B${String(n).padStart(3, '0')}`, 'Declaration of Extraordinary Circumstances', body, req.user.id])).rows[0];
+  const em = (await q(
+    `INSERT INTO emergencies(bill_id,declared_by,reasons,powers,expires_at)
+     VALUES($1,$2,$3,$4,$5) RETURNING *`,
+    [bill.id, req.user.id, reasons, asked.join(','), new Date(Date.now() + days * DAY)])).rows[0];
+  log(req.user.id, 'emergency.propose', `${bill.ref}: ${asked.join(', ')}`);
+  res.json({ ...em, bill_ref: bill.ref, bill_id: bill.id });
+}));
+
+/* Article 12.3 — the House alone, at any moment. No Speaker, no division, no
+   waiting for the President. Each member's vote counts the instant it is cast. */
+app.post('/api/emergency/end', auth, wrap(async (req, res) => {
+  await loadConfig();
+  const em = await currentEmergency();
+  if (!em) return res.status(400).json({ error: 'No declaration is in force.' });
+
+  const isMp = (await officesOf(req.user.id)).includes('mp');
+  const isPres = req.user.id === em.declared_by;
+  if (!isMp && !isPres && !req.user.is_admin)
+    return res.status(403).json({ error: 'The House ends a declaration. Ask a member to move it.' });
+
+  if (isPres && !isMp) {
+    await q("UPDATE emergencies SET status='ended', ended_at=now(), ended_by='president' WHERE id=$1", [em.id]);
+    log(req.user.id, 'emergency.end', `#${em.id} ended by the President`);
+    await currentEmergency();
+    return res.json({ ended: true, by: 'president' });
+  }
+
+  await q('INSERT INTO emergency_end_votes(emergency_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
+    [em.id, req.user.id]);
+  const votes = (await q('SELECT count(*)::int n FROM emergency_end_votes WHERE emergency_id=$1', [em.id])).rows[0].n;
+  const house = (await q("SELECT count(*)::int n FROM offices WHERE active AND office='mp'")).rows[0].n;
+  const needed = Math.max(1, Math.ceil(house * num('emergency_end_share')));
+  if (votes < needed) {
+    log(req.user.id, 'emergency.end.move', `#${em.id}: ${votes} of ${needed}`);
+    return res.json({ ended: false, votes, needed });
+  }
+  await q("UPDATE emergencies SET status='ended', ended_at=now(), ended_by='house' WHERE id=$1", [em.id]);
+  log(req.user.id, 'emergency.end', `#${em.id} ended by the House, ${votes} of ${house}`);
+  await currentEmergency();
+  res.json({ ended: true, by: 'house', votes, needed });
+}));
+
+app.get('/api/widget.svg', wrap(async (req, res) => {
+  await loadConfig();
+  const dark = String(req.query.theme || '').toLowerCase() === 'dark';
+  const W = 360, H = 170;
+
+  const flag = await currentFlag();
+  const bands = flag?.bands || [];
+  const primary = bands.map(b => b.colour).filter(c => c && c !== '#FFFFFF')[0] || '#1E2A5A';
+  const accent = flag?.device || primary;
+  const paper = dark ? '#15171C' : '#F5F6F7';
+  const ink = dark ? '#F2F3F5' : '#14161C';
+  const ink2 = dark ? '#9AA0AB' : '#5C6270';
+  const rule = dark ? '#2C3037' : '#C8CBD1';
+
+  const off = (await q(`SELECT o.office, u.display_name FROM offices o
+                        JOIN users u ON u.id = o.user_id WHERE o.active`)).rows;
+  const one = k => off.find(o => o.office === k)?.display_name || 'Vacant';
+  const mps = off.filter(o => o.office === 'mp').length;
+
+  const el = (await q("SELECT title, status FROM elections WHERE status IN ('nominations','campaign','voting') ORDER BY id DESC LIMIT 1")).rows[0];
+  const live = (await q(`SELECT count(*)::int n FROM bills
+                         WHERE status IN ('petition','draft','tabled','division','referendum','passed')`)).rows[0].n;
+  const laws = (await q('SELECT count(*)::int n FROM laws WHERE repealed_at IS NULL')).rows[0].n;
+  const cits = (await q('SELECT count(*)::int n FROM users WHERE is_active AND approved')).rows[0].n;
+
+  const e = str => String(str ?? '').replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])).slice(0, 40);
+
+  const headline = el
+    ? (el.status === 'voting' ? 'POLL OPEN' : el.status === 'campaign' ? 'CAMPAIGNING' : 'NOMINATIONS OPEN')
+    : (live ? `${live} BEFORE THE HOUSE` : 'THE HOUSE IS QUIET');
+
+  let bandStrip = '';
+  if (bands.length) {
+    const total = bands.reduce((n, b) => n + (b.weight || 1), 0) || 1;
+    let x = 0;
+    for (const b of bands) {
+      const w = W * ((b.weight || 1) / total);
+      bandStrip += `<rect x="${x.toFixed(1)}" y="0" width="${(w + 0.6).toFixed(1)}" height="6" fill="${e(b.colour)}"/>`;
+      x += w;
+    }
+  } else bandStrip = `<rect width="${W}" height="6" fill="${e(primary)}"/>`;
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
+  <rect width="${W}" height="${H}" rx="18" fill="${paper}"/>
+  <clipPath id="r"><rect width="${W}" height="${H}" rx="18"/></clipPath>
+  <g clip-path="url(#r)">${bandStrip}<line x1="0" y1="6.5" x2="${W}" y2="6.5" stroke="${rule}" stroke-width="1"/></g>
+  <text x="20" y="38" font-size="19" font-weight="700" fill="${ink}">${e(CONFIG.nation_name)}</text>
+  <text x="20" y="58" font-size="10.5" letter-spacing="1.6" font-weight="600" fill="${e(accent)}">${e(headline)}</text>
+  ${el ? `<text x="20" y="79" font-size="12" fill="${ink2}">${e(el.title)}</text>` : ''}
+  <line x1="20" y1="94" x2="${W - 20}" y2="94" stroke="${rule}"/>
+  <text x="20" y="116" font-size="11" fill="${ink2}">President</text>
+  <text x="20" y="133" font-size="13.5" font-weight="600" fill="${ink}">${e(one('president'))}</text>
+  <text x="190" y="116" font-size="11" fill="${ink2}">Speaker</text>
+  <text x="190" y="133" font-size="13.5" font-weight="600" fill="${ink}">${e(one('speaker'))}</text>
+  <text x="20" y="156" font-size="10.5" fill="${ink2}">${mps} sitting · ${laws} laws · ${cits} citizens</text>
+</svg>`;
+
+  res.set('Content-Type', 'image/svg+xml');
+  res.set('Cache-Control', 'public, max-age=120');
+  res.send(svg);
+}));
+
 app.get('/api/digest', wrap(async (_req, res) => {
   await loadConfig();
   const off = (await q(`SELECT o.office,o.seat,u.display_name FROM offices o JOIN users u ON u.id=o.user_id
@@ -1403,7 +1875,15 @@ app.put('/api/admin/config', admin, wrap(async (req, res) => {
 
 app.post('/api/admin/office', admin, wrap(async (req, res) => {
   const { user_id, office, seat, remove } = req.body || {};
-  if (!['president', 'speaker', 'mp'].includes(office)) return res.status(400).json({ error: 'Unknown office.' });
+  if (!['president', 'speaker', 'mp', 'justice'].includes(office)) return res.status(400).json({ error: 'Unknown office.' });
+  if (!remove) {
+    // Article 7.1 — no Citizen holds more than one seat. The Speaker is a member
+    // of the House (4.1), so those two are one seat and may be held together.
+    const held = await officesOf(user_id);
+    const clash = seatClash(held, office);
+    if (clash.length)
+      return res.status(400).json({ error: `Article 7.1: that citizen already holds office as ${clash.join(', ')}. They must resign it first.` });
+  }
   if (remove) {
     await q('UPDATE offices SET active=FALSE, until=now() WHERE user_id=$1 AND office=$2 AND active', [user_id, office]);
   } else {
@@ -1475,6 +1955,23 @@ app.put('/api/admin/constitution', admin, wrap(async (req, res) => {
   log(req.user.id, 'constitution.edit', `v${v + 1}`);
   res.json({ version: v + 1 });
 }));
+
+/* The Acts are mounted as modules so they can be added or removed without
+   touching anything above. Each is optional: if the file is not there, the
+   Republic simply does not have that institution yet. */
+const ACT_CONTEXT = {
+  q, log, auth, admin, wrap, num, bool, loadConfig, officesOf, holds,
+  citizenCount, slowWrites, requireOffice, enact, canPropose, cycleNow, addEnactHook, bcrypt, crypto,
+  get CONFIG() { return CONFIG; }
+};
+for (const mod of ['./judiciary', './diplomacy', './economy']) {
+  try {
+    require(mod).mount(app, ACT_CONTEXT);
+  } catch (err) {
+    if (err.code === 'MODULE_NOT_FOUND' && String(err.message).includes(mod)) continue;
+    console.error(`[republic] ${mod} failed to mount:`, err.message);
+  }
+}
 
 app.use((_req, res) => res.status(404).json({ error: 'No such endpoint.' }));
 

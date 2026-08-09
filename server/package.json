@@ -7,10 +7,13 @@
   "engines": { "node": ">=18" },
   "scripts": {
     "start": "node server.js",
-    "test": "node test/run.js"
+    "dev": "node dev.js",
+    "test": "node test/run.js",
+    "test:layout": "node test/layout.js && node test/seats.mjs && node test/billsview.js && node test/desk.js && node test/theme.mjs"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.2.0"
+    "@electric-sql/pglite": "^0.2.0",
+    "jsdom": "^24.0.0"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

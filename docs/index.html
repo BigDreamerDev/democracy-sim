@@ -5,7 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>The Republic</title>
 <meta name="description" content="Elections, bills and the statute book for one group chat.">
-<meta name="theme-color" content="#E9EAEC">
+<meta name="theme-color" content="#E9EAEC" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14161C" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="icon" href="icons/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Republic">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Public+Sans:ital,wght@0,400;0,600;1,400&family=Martian+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -50,11 +61,15 @@
     </a>
     <div class="whoami">
       <a href="#/me" id="whoName">—</a>
+      <span class="who-role" id="whoRole" hidden></span>
+      <button class="btn btn-ghost btn-sm" id="themeBtn" title="Light, dark, or follow the phone" aria-label="Change theme">◐</button>
       <button class="btn btn-ghost btn-sm" id="signout">Sign out</button>
     </div>
   </header>
 
   <nav class="rail" id="rail"></nav>
+
+  <div id="emergency" hidden></div>
 
   <main id="view" tabindex="-1"></main>
 
@@ -62,6 +77,17 @@
 </div>
 
 <script src="config.js"></script>
+<script>
+  /* Theme is applied before the stylesheet paints, so an install opening in dark
+     never flashes white first. */
+  (function () {
+    var t = localStorage.getItem('republic.theme') || 'auto';
+    document.documentElement.dataset.theme = t;
+  })();
+  if ('serviceWorker' in navigator) {
+    addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+  }
+</script>
 <script src="app.js"></script>
 </body>
 </html>

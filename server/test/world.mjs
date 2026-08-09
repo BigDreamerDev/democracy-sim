@@ -28,7 +28,10 @@ export async function call(path, { method = 'GET', body, token, raw } = {}) {
 export const PW = 'hunter22';
 
 /* Founder, `n` approved citizens, a seated parliament, a Speaker and a President. */
-export async function setup({ citizens = 6, parliament = true } = {}) {
+export async function setup({ citizens = 7, parliament = true } = {}) {
+  // 7, not 6: five take seats and one becomes President, leaving one citizen who
+  // holds no office at all — which is exactly who you need to test what an
+  // ordinary person can and cannot do.
   const founder = (await call('/api/auth/register', {
     method: 'POST', body: { username: 'uzair', display_name: 'Uzair', password: PW }
   })).d;
@@ -84,7 +87,12 @@ export async function setup({ citizens = 6, parliament = true } = {}) {
 
   world.spk = world.T[0];
   world.pres = world.tok[world.presUser.display_name];
-  world.citizens = roll;
+  // Re-read the roll AFTER the offices are handed out, or `offices` on each
+  // citizen is a stale empty array and tests pick the President as their
+  // "ordinary citizen".
+  world.citizens = (await call('/api/citizens')).d;
+  world.plain = world.citizens.find(c => !(c.offices || []).length && c.display_name !== 'Uzair');
+  world.plainTok = world.plain ? world.tok[world.plain.display_name] : null;
   return world;
 }
 

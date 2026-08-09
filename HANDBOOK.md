@@ -147,7 +147,9 @@ All four are legislatable, so the House can make its laws harder or easier to ov
 
 Petitions work in both directions. The one above takes a law away; this one puts one there.
 
-Anyone — MP or not — can draft an **initiative** from the Bills page and collect signatures. What happens when a third of citizens have signed depends on `initiative_mode`:
+Anyone — MP or not — can draft an **initiative** from the **Bills page**, in the *Start an initiative* card. It appears for every citizen, including MPs, since the point of the route is that it goes to the people rather than through the House.
+
+Signing happens on the initiative's own page, with a bar showing how far it has to go. Open initiatives and open referendums are flagged on the front page so nobody misses one. What happens when a third of citizens have signed depends on `initiative_mode`:
 
 | Mode | What signatures buy |
 |---|---|

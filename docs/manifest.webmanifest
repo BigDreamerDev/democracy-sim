@@ -1,0 +1,21 @@
+{
+  "name": "The Republic",
+  "short_name": "Republic",
+  "description": "Elections, bills and the statute book for one group chat.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#E9EAEC",
+  "theme_color": "#003087",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "The chamber", "url": "./index.html#/chamber" },
+    { "name": "Elections", "url": "./index.html#/elections" },
+    { "name": "Bills", "url": "./index.html#/bills" }
+  ]
+}

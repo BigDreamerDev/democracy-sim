@@ -3,7 +3,7 @@
 const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 
-const SUITES = ['functional.mjs', 'attack.mjs', 'rules.mjs', 'speaker.mjs', 'flag.mjs'];
+const SUITES = ['functional.mjs', 'attack.mjs', 'rules.mjs', 'speaker.mjs', 'flag.mjs', 'powers.mjs', 'houserule.mjs', 'initiative.mjs', 'emergency.mjs', 'people.mjs'];
 
 const up = async () => {
   for (let i = 0; i < 90; i++) {

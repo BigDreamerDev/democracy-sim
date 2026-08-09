@@ -140,10 +140,14 @@ ok(dbl.status === 409, 'one vote per MP per division');
 const closed = (await call(`/api/bills/${bill.id}/close`, { method: 'POST', token: speakerToken })).d;
 ok(closed.carried === true, 'bill carried 3–1');
 
-// veto, then override
+// veto — and by default that is the end of it
 ok((await call(`/api/bills/${bill.id}/assent`, { method: 'POST', body: { veto: true }, token: presToken })).d.status === 'vetoed', 'president vetoes');
+ok((await call(`/api/bills/${bill.id}/override`, { method: 'POST', token: speakerToken })).status === 403,
+  'a veto is final: assent is required unless the House has granted itself an override');
+await call('/api/admin/config', { method: 'POST', body: {}, token: founder.token });
+await call('/api/admin/config', { method: 'PUT', body: { allow_veto_override: 'true' }, token: founder.token });
 const ov = await call(`/api/bills/${bill.id}/override`, { method: 'POST', token: speakerToken });
-ok(ov.d.status === 'enacted', 'parliament overrides the veto at 75%');
+ok(ov.d.status === 'enacted', 'once allowed, parliament overrides the veto at 75%');
 
 const laws = (await call('/api/laws')).d;
 const tea = laws.find(l => l.title === 'Tea Break Act');

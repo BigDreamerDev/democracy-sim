@@ -226,3 +226,70 @@ CREATE TABLE IF NOT EXISTS bill_petitions (
   at      TIMESTAMPTZ DEFAULT now(),
   PRIMARY KEY (bill_id, user_id)
 );
+
+-- Diplomacy metadata attached to bills proposed on behalf of a foreign power.
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS foreign_power_id INT;
+
+/* Article 12 — Extraordinary Circumstances.
+
+   Declared jointly: the President moves it, the House votes on it. It suspends
+   only what it names (12.2), lapses on its own at a stated time (12.1), and the
+   House alone can end it at any moment without the President's consent (12.3). */
+CREATE TABLE IF NOT EXISTS emergencies (
+  id          SERIAL PRIMARY KEY,
+  bill_id     INT REFERENCES bills(id) ON DELETE SET NULL,
+  declared_by INT REFERENCES users(id) ON DELETE SET NULL,
+  reasons     TEXT NOT NULL,
+  powers      TEXT NOT NULL DEFAULT '',      -- comma-separated, from a fixed list
+  status      TEXT DEFAULT 'proposed',       -- proposed | in_force | lapsed | ended | refused
+  declared_at TIMESTAMPTZ,
+  expires_at  TIMESTAMPTZ,
+  ended_at    TIMESTAMPTZ,
+  ended_by    TEXT,                          -- house | president | lapsed
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+/* The House ending it. A simple majority of sitting members, counted the moment
+   each one votes — no Speaker required, because 12.3 says "at any moment". */
+CREATE TABLE IF NOT EXISTS emergency_end_votes (
+  emergency_id INT REFERENCES emergencies(id) ON DELETE CASCADE,
+  user_id      INT REFERENCES users(id) ON DELETE CASCADE,
+  at           TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (emergency_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_emergency_status ON emergencies(status);
+
+/* Article 2 — the Sovereignty of the People.
+
+   The Constitution's most powerful mechanism, and the one with no machinery
+   behind it until now. A Supermajority is two thirds of ALL citizens, not of
+   those who turned up, and Articles 4.6, 10.5, 10.6 and 12.3 all lean on it:
+   appointing a Speaker over a deadlocked House, removing any officer at all,
+   dissolving the House, ending a declaration of extraordinary circumstances.
+
+   It is a standing motion rather than a poll: signatures accumulate until the
+   threshold is met, and the act happens the moment it is. Nobody schedules it,
+   nobody closes it, and no officer is asked. */
+CREATE TABLE IF NOT EXISTS supermajorities (
+  id             SERIAL PRIMARY KEY,
+  kind           TEXT NOT NULL,   -- appoint_speaker | remove_officer | dissolve_house | end_emergency | resolution
+  target_user_id INT REFERENCES users(id) ON DELETE SET NULL,
+  target_office  TEXT,
+  reasons        TEXT NOT NULL,
+  opened_by      INT REFERENCES users(id) ON DELETE SET NULL,
+  status         TEXT DEFAULT 'open',   -- open | carried | lapsed | withdrawn
+  outcome        TEXT,
+  carried_at     TIMESTAMPTZ,
+  expires_at     TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS supermajority_signatures (
+  motion_id INT REFERENCES supermajorities(id) ON DELETE CASCADE,
+  user_id   INT REFERENCES users(id) ON DELETE CASCADE,
+  at        TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (motion_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_super_status ON supermajorities(status);

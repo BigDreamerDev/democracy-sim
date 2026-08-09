@@ -12,3 +12,9 @@ services:
         generateValue: true
       - key: DATABASE_URL
         sync: false   # paste your Postgres connection string in the Render dashboard
+
+# Optional free-only diplomacy cabinet variables are best added in the Render dashboard:
+# LLM_FREE_ONLY=true
+# GROQ_API_KEY=...
+# GEMINI_API_KEY=...
+# OPENROUTER_API_KEY=...

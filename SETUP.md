@@ -127,7 +127,13 @@ Back in Render, set `ALLOWED_ORIGINS` to your Pages URL:
 https://your-username.github.io
 ```
 
-Save; Render redeploys. Now only your own site can call the API from a browser.
+**Origin means scheme and host only — no repo path, no trailing slash.** If your site is at `https://you.github.io/republic/`, the origin is still `https://you.github.io`. The server now trims a path or slash for you if you paste the whole address, but it is worth knowing why: a browser never sends the path in its `Origin` header, so a mismatch here blocks every request from your site while `/api/health` keeps working perfectly in a tab. It is the single most confusing way this can fail.
+
+Save; Render redeploys. The log will confirm what it accepts:
+
+```
+[republic] browser requests accepted from: https://your-username.github.io
+```
 
 ---
 
@@ -201,8 +207,14 @@ This boots the real server against a real Postgres, five times over with a fresh
 
 ## Troubleshooting
 
-**"Cannot reach the server" on the sign-in card.**
-Three usual causes, in order of likelihood: `API_BASE` in `docs/config.js` has a typo or a trailing slash; the Render service is asleep and needs thirty seconds; `ALLOWED_ORIGINS` does not match your Pages URL exactly, including `https://` and no trailing slash.
+**"The server is running but is refusing requests from this site."**
+CORS. `ALLOWED_ORIGINS` does not match. Set it to exactly what the message tells you — scheme and host, nothing else — and redeploy. Check the Render log line `browser requests accepted from:` to see what the server actually parsed.
+
+**"Cannot reach ..." on the sign-in card.**
+The request never got a reply. Usual causes in order: `API_BASE` in `docs/config.js` has a typo or a trailing slash; the Render service is asleep and needs thirty seconds; the service crashed on boot — check the Render log. Open the browser console (F12) for the underlying error.
+
+**`/api/health` works in a browser tab but the site still fails.**
+That is the signature of a CORS problem, not a server problem. Typing the URL into a tab sends no `Origin` header so the server answers happily; the site sends one and the browser discards the reply. Fix `ALLOWED_ORIGINS`.
 
 **Render log says it refused to start over `JWT_SECRET`.**
 Working as intended. Set it to 32+ random characters and redeploy.
@@ -239,3 +251,49 @@ Keep a copy somewhere that is not your laptop.
 ## Handing it over
 
 If you want out, or want the game to be provably fair, promote someone else to admin from the citizens list. Two admins watching each other is worth more than any code, because the one thing the system cannot prevent is an admin resetting a password and voting as somebody else. Every such action is written to the public record — but a record only works if somebody reads it.
+
+
+## Optional: free-only model-backed foreign governments
+
+The diplomacy cabinet is **hard-locked to free providers**. `LLM_FREE_ONLY=true` is included as an explicit deployment declaration, but setting it to `false` does not enable paid providers in this build.
+
+Create free-tier API keys with one or more of these providers and add them as Render server environment variables:
+
+```text
+LLM_FREE_ONLY=true
+
+GROQ_API_KEY=...
+GEMINI_API_KEY=...
+OPENROUTER_API_KEY=...
+```
+
+The automatic fallback order is:
+
+```text
+requested free provider -> Groq -> Gemini -> OpenRouter free router
+```
+
+Default models:
+
+```text
+GROQ_FREE_MODEL=llama-3.1-8b-instant
+GEMINI_FREE_MODEL=gemini-2.5-flash-lite
+OPENROUTER_FREE_MODEL=openrouter/free
+```
+
+You normally do not need to set those three model variables; the values above are built in.
+
+Free-only mode enforces these rules in code:
+
+- OpenAI and Anthropic are rejected.
+- OpenRouter accepts only `openrouter/free` or a model ID ending in `:free`.
+- Groq accepts only model IDs on the build's verified free-plan allowlist.
+- Gemini accepts only model IDs on the build's verified free-tier allowlist.
+- Automatic fallback never crosses into a paid provider or paid OpenRouter route.
+- If every configured free provider fails or reaches quota, that minister call fails and the cabinet continues/falls back according to the normal government-turn rules. It does not buy capacity.
+
+**Account billing still matters.** The server cannot inspect whether you have separately upgraded a Groq or Gemini account to a paid billing tier. To guarantee that those providers themselves do not charge you, keep those provider projects/accounts on their free tier and do not attach billing. OpenRouter's `openrouter/free` route is explicitly zero-cost at the model-routing layer.
+
+Never put API keys in `docs/config.js` or another browser-delivered file. They are server environment variables only.
+
+For local development with no provider keys, use the `mock` provider. It takes no real diplomatic action and costs nothing.
