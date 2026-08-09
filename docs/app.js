@@ -276,8 +276,12 @@ function onAction(selector, handler) {
 
 const isAdmin = () => !!ME?.is_admin;
 const canPropose = () => STATE?.config?.bill_proposers === 'citizens'
-  || isAdmin() || !!ME?.offices?.some(o => o === 'mp' || o === 'speaker');
-const has = o => !!ME?.offices?.includes(o) || isAdmin();
+  || !!ME?.offices?.some(o => o === 'mp' || o === 'speaker');
+
+/* Holding an office, not administering one. The Returning Officer is deliberately
+   excluded: they keep the Returning officer page and nothing else, so their screen
+   shows what they actually are rather than every office at once. */
+const has = o => !!ME?.offices?.includes(o);
 
 /* ----------------------------------------------------------------- gate */
 

@@ -38,24 +38,23 @@ THE HOUSE IS QUIET), the live election if there is one, the President and Speake
 and a line of counts. It carries your flag's colours across the top. No login, no
 personal data — nothing a passer-by could not read off the front page.
 
-### iOS — Scriptable (free)
+### iOS — Scriptable (free), and this is the good one
 
-Install **Scriptable**, add a script, paste this, then add a Scriptable widget to
-your home screen and choose it:
+Scriptable draws its own text, so nothing is scaled and nothing is blurry. It
+reads `/api/widget.json` and lays the widget out natively at the phone's own
+density, picking up dark mode without being told.
 
-```javascript
-const url = "https://your-service.onrender.com/api/widget.svg";
-const w = new ListWidget();
-w.url = "https://your-username.github.io/your-repo/";   // tapping opens the site
-const img = await new Request(url).loadImage();
-w.backgroundImage = img;
-w.refreshAfterDate = new Date(Date.now() + 15 * 60 * 1000);
-Script.setWidget(w);
-Script.complete();
-```
+1. Install **Scriptable** from the App Store
+2. New script → paste `republic-widget.js` → name it **Republic**
+3. Change `BASE` (your Render URL) and `SITE` (your Pages URL) at the top
+4. Long-press the home screen → **+** → Scriptable → choose the script
 
-Some Scriptable versions will not decode SVG. If the widget comes up blank, point
-it at a PNG conversion service or ask me and I will add `/api/widget.png`.
+Small and medium widgets both work: small shows the President, medium shows the
+President and the Speaker. It refreshes every 30 minutes, or every 10 when a poll
+is open or a declaration is in force. Tapping it opens the site.
+
+If the server is asleep the widget says so rather than going blank, and fixes
+itself on the next refresh.
 
 ### iOS — no extra app
 
@@ -66,9 +65,21 @@ it comes to you.
 
 ### Android
 
-Any image-widget app works — **KWGT**, **Widgetsmith**-style apps, or the
-built-in widget of most launchers that supports a web image. Point it at the same
-URL and set the refresh to 15 minutes.
+Any image-widget app works — **KWGT**, **Widgetsmith**-style apps, or any
+launcher widget that takes a web image. Point it at:
+
+```
+https://your-service.onrender.com/api/widget.png
+https://your-service.onrender.com/api/widget.png?theme=dark
+```
+
+That renders at 1080×510 — three device pixels per point — because a 1x image on
+a phone is visibly soft. `/api/widget.svg` is still there for anything that
+prefers vectors.
+
+**The PNG needs `sharp`**, which is a large native dependency. It is required
+lazily inside the endpoint, so if it is missing or fails to build you get a 503
+on the widget rather than a Republic that will not boot.
 
 ### The honest recommendation
 

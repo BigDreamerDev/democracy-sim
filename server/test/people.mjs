@@ -35,4 +35,6 @@ ok((await call('/api/me/resign', { method:'POST', body:{ office:'mp' }, token:mp
 ok(!(await call('/api/citizens')).d.find(c=>c.id===mp.id).offices.includes('mp'), 'and the seat is vacant');
 ok((await call('/api/admin/office', { method:'POST', body:{ user_id: mp.id, office:'president' }, token:T })).status === 200,
   'having resigned, they may take another office');
+
+
 report();

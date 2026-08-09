@@ -5,7 +5,6 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const zlib = require('zlib');
-const sharp = require('sharp');
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
@@ -399,7 +398,13 @@ const holds = async (userId, office) => (await officesOf(userId)).includes(offic
 function requireOffice(office) {
   return async (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Sign in to do that.' });
-    if (req.user.is_admin || await holds(req.user.id, office)) return next();
+    /* The Returning Officer runs the elections. They are not the President, the
+       Speaker, or the House, and they do not act in those offices — an admin who
+       can assent to their own bills makes every result look arranged.
+
+       If an officer goes absent, the answer is to appoint or remove one through
+       /api/admin/office, not to stand in for them. */
+    if (await holds(req.user.id, office)) return next();
     // Article 12: a declaration may hand the Speaker's business to the President
     // for its duration. It never hands over anything else.
     if (office === 'speaker' && await holds(req.user.id, 'president') && await underPower('president_may_table'))
@@ -1148,7 +1153,6 @@ app.post('/api/admin/cycle', admin, wrap(async (req, res) => {
 async function canPropose(userId) {
   if (CONFIG.bill_proposers === 'citizens') return true;
   const u = (await q('SELECT is_admin FROM users WHERE id=$1', [userId])).rows[0];
-  if (u?.is_admin) return true;
   return (await officesOf(userId)).some(o => o === 'mp' || o === 'speaker');
 }
 
@@ -1734,8 +1738,8 @@ app.post('/api/emergency/end', auth, wrap(async (req, res) => {
 
   const isMp = (await officesOf(req.user.id)).includes('mp');
   const isPres = req.user.id === em.declared_by;
-  if (!isMp && !isPres && !req.user.is_admin)
-    return res.status(403).json({ error: 'The House ends a declaration. Ask a member to move it.' });
+  if (!isMp && !isPres)
+    return res.status(403).json({ error: 'The House ends a declaration, or the President who made it. Ask a member to move it.' });
 
   if (isPres && !isMp) {
     await q("UPDATE emergencies SET status='ended', ended_at=now(), ended_by='president' WHERE id=$1", [em.id]);
@@ -1759,56 +1763,6 @@ app.post('/api/emergency/end', auth, wrap(async (req, res) => {
   res.json({ ended: true, by: 'house', votes, needed });
 }));
 
-/* PNG widget for iOS / Scriptable.
-   Uses only Node built-ins, so no extra npm package is needed. */
-
-const WIDGET_FONT = {
-  ' ': [0,0,0,0,0,0,0],
-  '!': [4,4,4,4,4,0,4],
-  '-': [0,0,0,31,0,0,0],
-  '.': [0,0,0,0,0,6,6],
-  '/': [1,2,2,4,8,8,16],
-  ':': [0,6,6,0,6,6,0],
-  '?': [14,17,1,2,4,0,4],
-
-  '0':[14,17,19,21,25,17,14],
-  '1':[4,12,4,4,4,4,14],
-  '2':[14,17,1,2,4,8,31],
-  '3':[30,1,1,14,1,1,30],
-  '4':[2,6,10,18,31,2,2],
-  '5':[31,16,16,30,1,1,30],
-  '6':[14,16,16,30,17,17,14],
-  '7':[31,1,2,4,8,8,8],
-  '8':[14,17,17,14,17,17,14],
-  '9':[14,17,17,15,1,1,14],
-
-  'A':[14,17,17,31,17,17,17],
-  'B':[30,17,17,30,17,17,30],
-  'C':[14,17,16,16,16,17,14],
-  'D':[30,17,17,17,17,17,30],
-  'E':[31,16,16,30,16,16,31],
-  'F':[31,16,16,30,16,16,16],
-  'G':[14,17,16,23,17,17,15],
-  'H':[17,17,17,31,17,17,17],
-  'I':[14,4,4,4,4,4,14],
-  'J':[7,2,2,2,2,18,12],
-  'K':[17,18,20,24,20,18,17],
-  'L':[16,16,16,16,16,16,31],
-  'M':[17,27,21,21,17,17,17],
-  'N':[17,25,21,19,17,17,17],
-  'O':[14,17,17,17,17,17,14],
-  'P':[30,17,17,30,16,16,16],
-  'Q':[14,17,17,17,21,18,13],
-  'R':[30,17,17,30,20,18,17],
-  'S':[15,16,16,14,1,1,30],
-  'T':[31,4,4,4,4,4,4],
-  'U':[17,17,17,17,17,17,14],
-  'V':[17,17,17,17,17,10,4],
-  'W':[17,17,17,21,21,21,10],
-  'X':[17,17,10,4,10,17,17],
-  'Y':[17,17,10,4,4,4,4],
-  'Z':[31,1,2,4,8,16,31]
-};
 
 function pngColour(hex, fallback = '#000000') {
   const m = String(hex || fallback).match(/^#?([0-9a-f]{6})$/i);
@@ -1852,99 +1806,6 @@ function pngChunk(type, data) {
   return out;
 }
 
-function makeWidgetPng(width, height, draw) {
-  const rgba = Buffer.alloc(width * height * 4);
-
-  const set = (x, y, colour) => {
-    x |= 0;
-    y |= 0;
-
-    if (x < 0 || y < 0 || x >= width || y >= height) return;
-
-    const i = (y * width + x) * 4;
-
-    rgba[i] = colour[0];
-    rgba[i + 1] = colour[1];
-    rgba[i + 2] = colour[2];
-    rgba[i + 3] = colour[3] ?? 255;
-  };
-
-  const rect = (x, y, w, h, colour) => {
-    const x0 = Math.max(0, x | 0);
-    const y0 = Math.max(0, y | 0);
-    const x1 = Math.min(width, Math.ceil(x + w));
-    const y1 = Math.min(height, Math.ceil(y + h));
-
-    for (let yy = y0; yy < y1; yy++) {
-      for (let xx = x0; xx < x1; xx++) {
-        set(xx, yy, colour);
-      }
-    }
-  };
-
-  const text = (str, x, y, scale, colour, maxChars = 999) => {
-    str = String(str ?? '')
-      .toUpperCase()
-      .slice(0, maxChars);
-
-    let cx = x | 0;
-
-    for (const ch of str) {
-      const glyph = WIDGET_FONT[ch] || WIDGET_FONT['?'];
-
-      for (let gy = 0; gy < 7; gy++) {
-        for (let gx = 0; gx < 5; gx++) {
-          if (glyph[gy] & (1 << (4 - gx))) {
-            rect(
-              cx + gx * scale,
-              y + gy * scale,
-              scale,
-              scale,
-              colour
-            );
-          }
-        }
-      }
-
-      cx += 6 * scale;
-    }
-  };
-
-  draw({ rect, text });
-
-  const raw = Buffer.alloc((width * 4 + 1) * height);
-
-  for (let y = 0; y < height; y++) {
-    const ro = y * (width * 4 + 1);
-
-    raw[ro] = 0;
-
-    rgba.copy(
-      raw,
-      ro + 1,
-      y * width * 4,
-      (y + 1) * width * 4
-    );
-  }
-
-  const ihdr = Buffer.alloc(13);
-
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-
-  ihdr[8] = 8;
-  ihdr[9] = 6;
-  ihdr[10] = 0;
-  ihdr[11] = 0;
-  ihdr[12] = 0;
-
-  return Buffer.concat([
-    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
-    pngChunk('IHDR', ihdr),
-    pngChunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
-    pngChunk('IEND', Buffer.alloc(0))
-  ]);
-}
 
 async function makeWidgetSvg(dark = false) {
   await loadConfig();
@@ -2193,6 +2054,52 @@ async function makeWidgetSvg(dark = false) {
   </svg>`;
 }
 
+/* The same widget as data, for anything that can draw its own text.
+
+   Scriptable on iOS renders natively with real fonts at the device's own
+   density, which is sharper than any image we could send and picks up the
+   phone's dark mode without being told. An image is only needed where the
+   widget host cannot draw — Android image widgets, mostly. */
+app.get('/api/widget.json', wrap(async (_req, res) => {
+  await loadConfig();
+  const flag = await currentFlag();
+  const bands = (flag?.bands || []).map(b => ({ colour: b.colour, weight: b.weight || 1 }));
+
+  const off = (await q(`SELECT o.office, u.display_name FROM offices o
+                        JOIN users u ON u.id = o.user_id WHERE o.active`)).rows;
+  const one = k => off.find(o => o.office === k)?.display_name || null;
+  const el = (await q(`SELECT title, status, closes_at FROM elections
+                        WHERE status IN ('nominations','campaign','voting')
+                        ORDER BY id DESC LIMIT 1`)).rows[0] || null;
+  const live = (await q(`SELECT count(*)::int n FROM bills
+                         WHERE status IN ('petition','draft','tabled','division','referendum','passed')`)).rows[0].n;
+  const laws = (await q('SELECT count(*)::int n FROM laws WHERE repealed_at IS NULL')).rows[0].n;
+  const cits = (await q('SELECT count(*)::int n FROM users WHERE is_active AND approved')).rows[0].n;
+  const mps = off.filter(o => o.office === 'mp').length;
+  let emergency = null;
+  try {
+    const em = await currentEmergency();
+    if (em) emergency = { reasons: em.reasons, expires_at: em.expires_at };
+  } catch { /* core without Article 12 */ }
+
+  res.set('Cache-Control', 'public, max-age=120');
+  res.json({
+    nation: CONFIG.nation_name,
+    accent: flag?.device || bands.find(b => b.colour !== '#FFFFFF')?.colour || '#1E2A5A',
+    bands,
+    headline: emergency ? 'EXTRAORDINARY CIRCUMSTANCES'
+      : el ? (el.status === 'voting' ? 'POLL OPEN' : el.status === 'campaign' ? 'CAMPAIGNING' : 'NOMINATIONS OPEN')
+      : live ? `${live} BEFORE THE HOUSE` : 'THE HOUSE IS QUIET',
+    urgent: !!(emergency || el?.status === 'voting'),
+    subtitle: emergency ? emergency.reasons : el ? el.title : null,
+    closes_at: el?.closes_at || emergency?.expires_at || null,
+    president: one('president'),
+    speaker: one('speaker'),
+    counts: { mps, laws, citizens: cits, live },
+    as_of: new Date().toISOString()
+  });
+}));
+
 app.get('/api/widget.svg', wrap(async (req, res) => {
   const dark =
     String(req.query.theme || '').toLowerCase() === 'dark';
@@ -2212,9 +2119,17 @@ app.get('/api/widget.png', wrap(async (req, res) => {
 
   const svg = await makeWidgetSvg(dark);
 
-  const png = await sharp(
-    Buffer.from(svg)
-  )
+  /* Required here rather than at the top of the file. sharp is a large native
+     dependency; if it is missing or fails to build, that must cost one widget
+     request and not the whole Republic's ability to boot. */
+  let sharp;
+  try { sharp = require('sharp'); }
+  catch { return res.status(503).json({ error: 'PNG rendering is unavailable on this server. Use /api/widget.svg or /api/widget.json.' }); }
+
+  // Rendered at 3x. A widget canvas is roughly three device pixels per point,
+  // so a 1x PNG is the blurry one.
+  const png = await sharp(Buffer.from(svg), { density: 216 })
+    .resize(1080, 510, { fit: 'fill' })
     .png()
     .toBuffer();
 
