@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const zlib = require('zlib');
+const sharp = require('sharp');
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
@@ -1945,45 +1946,24 @@ function makeWidgetPng(width, height, draw) {
   ]);
 }
 
-
-app.get('/api/widget.png', wrap(async (req, res) => {
+async function makeWidgetSvg(dark = false) {
   await loadConfig();
 
-  const dark =
-    String(req.query.theme || '').toLowerCase() === 'dark';
-
-  const W = 720;
-  const H = 340;
+  const W = 360, H = 170;
 
   const flag = await currentFlag();
   const bands = flag?.bands || [];
 
   const primary =
-    bands
-      .map(b => b.colour)
-      .find(c => c && c !== '#FFFFFF') ||
-    '#1E2A5A';
+    bands.map(b => b.colour).filter(c => c && c !== '#FFFFFF')[0]
+    || '#1E2A5A';
 
   const accent = flag?.device || primary;
 
-  const paper = pngColour(
-    dark ? '#15171C' : '#F5F6F7'
-  );
-
-  const ink = pngColour(
-    dark ? '#F2F3F5' : '#14161C'
-  );
-
-  const ink2 = pngColour(
-    dark ? '#9AA0AB' : '#5C6270'
-  );
-
-  const rule = pngColour(
-    dark ? '#2C3037' : '#C8CBD1'
-  );
-
-  const accentC = pngColour(accent, primary);
-
+  const paper = dark ? '#15171C' : '#F5F6F7';
+  const ink = dark ? '#F2F3F5' : '#14161C';
+  const ink2 = dark ? '#9AA0AB' : '#5C6270';
+  const rule = dark ? '#2C3037' : '#C8CBD1';
 
   const off = (
     await q(`
@@ -1994,15 +1974,11 @@ app.get('/api/widget.png', wrap(async (req, res) => {
     `)
   ).rows;
 
-
-  const one = office =>
-    off.find(o => o.office === office)?.display_name ||
-    'Vacant';
-
+  const one = k =>
+    off.find(o => o.office === k)?.display_name || 'Vacant';
 
   const mps =
     off.filter(o => o.office === 'mp').length;
-
 
   const el = (
     await q(`
@@ -2013,7 +1989,6 @@ app.get('/api/widget.png', wrap(async (req, res) => {
       LIMIT 1
     `)
   ).rows[0];
-
 
   const live = (
     await q(`
@@ -2030,7 +2005,6 @@ app.get('/api/widget.png', wrap(async (req, res) => {
     `)
   ).rows[0].n;
 
-
   const laws = (
     await q(`
       SELECT count(*)::int n
@@ -2038,7 +2012,6 @@ app.get('/api/widget.png', wrap(async (req, res) => {
       WHERE repealed_at IS NULL
     `)
   ).rows[0].n;
-
 
   const cits = (
     await q(`
@@ -2048,6 +2021,16 @@ app.get('/api/widget.png', wrap(async (req, res) => {
     `)
   ).rows[0].n;
 
+  const e = str =>
+    String(str ?? '')
+      .replace(/[&<>"']/g, c => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[c])
+      .slice(0, 40);
 
   const headline = el
     ? (
@@ -2063,229 +2046,184 @@ app.get('/api/widget.png', wrap(async (req, res) => {
           : 'THE HOUSE IS QUIET'
       );
 
+  let bandStrip = '';
 
-  const png = makeWidgetPng(
-    W,
-    H,
-    ({ rect, text }) => {
+  if (bands.length) {
+    const total =
+      bands.reduce((n, b) => n + (b.weight || 1), 0) || 1;
 
-      // Background
-      rect(0, 0, W, H, paper);
+    let x = 0;
 
+    for (const b of bands) {
+      const w =
+        W * ((b.weight || 1) / total);
 
-      // Flag strip
-      if (bands.length) {
-        const total =
-          bands.reduce(
-            (n, b) => n + (b.weight || 1),
-            0
-          ) || 1;
+      bandStrip +=
+        `<rect x="${x.toFixed(1)}"
+               y="0"
+               width="${(w + 0.6).toFixed(1)}"
+               height="6"
+               fill="${e(b.colour)}"/>`;
 
-        let x = 0;
-
-        for (const b of bands) {
-          const w =
-            W * ((b.weight || 1) / total);
-
-          rect(
-            x,
-            0,
-            Math.ceil(w) + 1,
-            12,
-            pngColour(b.colour, primary)
-          );
-
-          x += w;
-        }
-      } else {
-        rect(
-          0,
-          0,
-          W,
-          12,
-          pngColour(primary)
-        );
-      }
-
-
-      rect(0, 13, W, 2, rule);
-
-
-      // Republic name
-      text(
-        CONFIG.nation_name,
-        40,
-        54,
-        4,
-        ink,
-        26
-      );
-
-
-      // Current state
-      text(
-        headline,
-        40,
-        105,
-        2,
-        accentC,
-        40
-      );
-
-
-      // Election title
-      if (el) {
-        text(
-          el.title,
-          40,
-          142,
-          2,
-          ink2,
-          50
-        );
-      }
-
-
-      // Divider
-      rect(
-        40,
-        188,
-        W - 80,
-        2,
-        rule
-      );
-
-
-      // President
-      text(
-        'PRESIDENT',
-        40,
-        216,
-        2,
-        ink2,
-        20
-      );
-
-      text(
-        one('president'),
-        40,
-        248,
-        3,
-        ink,
-        20
-      );
-
-
-      // Speaker
-      text(
-        'SPEAKER',
-        380,
-        216,
-        2,
-        ink2,
-        20
-      );
-
-      text(
-        one('speaker'),
-        380,
-        248,
-        3,
-        ink,
-        18
-      );
-
-
-      // Bottom stats
-      text(
-        `${mps} SITTING / ${laws} LAWS / ${cits} CITIZENS`,
-        40,
-        310,
-        2,
-        ink2,
-        52
-      );
+      x += w;
     }
-  );
+  } else {
+    bandStrip =
+      `<rect width="${W}"
+             height="6"
+             fill="${e(primary)}"/>`;
+  }
 
+  return `<svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="${W}"
+    height="${H}"
+    viewBox="0 0 ${W} ${H}"
+    font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
+
+    <rect
+      width="${W}"
+      height="${H}"
+      rx="18"
+      fill="${paper}"
+    />
+
+    <clipPath id="r">
+      <rect
+        width="${W}"
+        height="${H}"
+        rx="18"
+      />
+    </clipPath>
+
+    <g clip-path="url(#r)">
+      ${bandStrip}
+
+      <line
+        x1="0"
+        y1="6.5"
+        x2="${W}"
+        y2="6.5"
+        stroke="${rule}"
+        stroke-width="1"
+      />
+    </g>
+
+    <text
+      x="20"
+      y="38"
+      font-size="19"
+      font-weight="700"
+      fill="${ink}">
+      ${e(CONFIG.nation_name)}
+    </text>
+
+    <text
+      x="20"
+      y="58"
+      font-size="10.5"
+      letter-spacing="1.6"
+      font-weight="600"
+      fill="${e(accent)}">
+      ${e(headline)}
+    </text>
+
+    ${
+      el
+        ? `<text
+             x="20"
+             y="79"
+             font-size="12"
+             fill="${ink2}">
+             ${e(el.title)}
+           </text>`
+        : ''
+    }
+
+    <line
+      x1="20"
+      y1="94"
+      x2="${W - 20}"
+      y2="94"
+      stroke="${rule}"
+    />
+
+    <text
+      x="20"
+      y="116"
+      font-size="11"
+      fill="${ink2}">
+      President
+    </text>
+
+    <text
+      x="20"
+      y="133"
+      font-size="13.5"
+      font-weight="600"
+      fill="${ink}">
+      ${e(one('president'))}
+    </text>
+
+    <text
+      x="190"
+      y="116"
+      font-size="11"
+      fill="${ink2}">
+      Speaker
+    </text>
+
+    <text
+      x="190"
+      y="133"
+      font-size="13.5"
+      font-weight="600"
+      fill="${ink}">
+      ${e(one('speaker'))}
+    </text>
+
+    <text
+      x="20"
+      y="156"
+      font-size="10.5"
+      fill="${ink2}">
+      ${mps} sitting · ${laws} laws · ${cits} citizens
+    </text>
+
+  </svg>`;
+}
+
+app.get('/api/widget.svg', wrap(async (req, res) => {
+  const dark =
+    String(req.query.theme || '').toLowerCase() === 'dark';
+
+  const svg = await makeWidgetSvg(dark);
+
+  res.set('Content-Type', 'image/svg+xml');
+  res.set('Cache-Control', 'public, max-age=120');
+
+  res.send(svg);
+}));
+
+
+app.get('/api/widget.png', wrap(async (req, res) => {
+  const dark =
+    String(req.query.theme || '').toLowerCase() === 'dark';
+
+  const svg = await makeWidgetSvg(dark);
+
+  const png = await sharp(
+    Buffer.from(svg)
+  )
+    .png()
+    .toBuffer();
 
   res.set('Content-Type', 'image/png');
-
-  res.set(
-    'Content-Length',
-    String(png.length)
-  );
-
-  res.set(
-    'Cache-Control',
-    'public, max-age=120'
-  );
+  res.set('Cache-Control', 'public, max-age=120');
 
   res.send(png);
 }));
 
-app.get('/api/widget.svg', wrap(async (req, res) => {
-  await loadConfig();
-  const dark = String(req.query.theme || '').toLowerCase() === 'dark';
-  const W = 360, H = 170;
-
-  const flag = await currentFlag();
-  const bands = flag?.bands || [];
-  const primary = bands.map(b => b.colour).filter(c => c && c !== '#FFFFFF')[0] || '#1E2A5A';
-  const accent = flag?.device || primary;
-  const paper = dark ? '#15171C' : '#F5F6F7';
-  const ink = dark ? '#F2F3F5' : '#14161C';
-  const ink2 = dark ? '#9AA0AB' : '#5C6270';
-  const rule = dark ? '#2C3037' : '#C8CBD1';
-
-  const off = (await q(`SELECT o.office, u.display_name FROM offices o
-                        JOIN users u ON u.id = o.user_id WHERE o.active`)).rows;
-  const one = k => off.find(o => o.office === k)?.display_name || 'Vacant';
-  const mps = off.filter(o => o.office === 'mp').length;
-
-  const el = (await q("SELECT title, status FROM elections WHERE status IN ('nominations','campaign','voting') ORDER BY id DESC LIMIT 1")).rows[0];
-  const live = (await q(`SELECT count(*)::int n FROM bills
-                         WHERE status IN ('petition','draft','tabled','division','referendum','passed')`)).rows[0].n;
-  const laws = (await q('SELECT count(*)::int n FROM laws WHERE repealed_at IS NULL')).rows[0].n;
-  const cits = (await q('SELECT count(*)::int n FROM users WHERE is_active AND approved')).rows[0].n;
-
-  const e = str => String(str ?? '').replace(/[&<>"']/g, c =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])).slice(0, 40);
-
-  const headline = el
-    ? (el.status === 'voting' ? 'POLL OPEN' : el.status === 'campaign' ? 'CAMPAIGNING' : 'NOMINATIONS OPEN')
-    : (live ? `${live} BEFORE THE HOUSE` : 'THE HOUSE IS QUIET');
-
-  let bandStrip = '';
-  if (bands.length) {
-    const total = bands.reduce((n, b) => n + (b.weight || 1), 0) || 1;
-    let x = 0;
-    for (const b of bands) {
-      const w = W * ((b.weight || 1) / total);
-      bandStrip += `<rect x="${x.toFixed(1)}" y="0" width="${(w + 0.6).toFixed(1)}" height="6" fill="${e(b.colour)}"/>`;
-      x += w;
-    }
-  } else bandStrip = `<rect width="${W}" height="6" fill="${e(primary)}"/>`;
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
-  <rect width="${W}" height="${H}" rx="18" fill="${paper}"/>
-  <clipPath id="r"><rect width="${W}" height="${H}" rx="18"/></clipPath>
-  <g clip-path="url(#r)">${bandStrip}<line x1="0" y1="6.5" x2="${W}" y2="6.5" stroke="${rule}" stroke-width="1"/></g>
-  <text x="20" y="38" font-size="19" font-weight="700" fill="${ink}">${e(CONFIG.nation_name)}</text>
-  <text x="20" y="58" font-size="10.5" letter-spacing="1.6" font-weight="600" fill="${e(accent)}">${e(headline)}</text>
-  ${el ? `<text x="20" y="79" font-size="12" fill="${ink2}">${e(el.title)}</text>` : ''}
-  <line x1="20" y1="94" x2="${W - 20}" y2="94" stroke="${rule}"/>
-  <text x="20" y="116" font-size="11" fill="${ink2}">President</text>
-  <text x="20" y="133" font-size="13.5" font-weight="600" fill="${ink}">${e(one('president'))}</text>
-  <text x="190" y="116" font-size="11" fill="${ink2}">Speaker</text>
-  <text x="190" y="133" font-size="13.5" font-weight="600" fill="${ink}">${e(one('speaker'))}</text>
-  <text x="20" y="156" font-size="10.5" fill="${ink2}">${mps} sitting · ${laws} laws · ${cits} citizens</text>
-</svg>`;
-
-  res.set('Content-Type', 'image/svg+xml');
-  res.set('Cache-Control', 'public, max-age=120');
-  res.send(svg);
-}));
 
 app.get('/api/digest', wrap(async (_req, res) => {
   await loadConfig();
