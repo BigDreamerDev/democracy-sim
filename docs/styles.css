@@ -700,4 +700,34 @@ html[data-theme='dark'] .flag, html[data-theme='dark'] .chamber svg { filter: no
   .emergency{padding:11px 14px}
   .emergency-act{width:100%}
   .emergency-act .btn{width:100%}
+
+
+}
+
+/* ═════════════════════════════════════════════════════════ TAPPING
+
+   iOS Safari keeps a legacy double-tap-to-zoom gesture on anything tappable
+   unless told otherwise, so a quick second tap zooms the page instead of
+   pressing the button. That is worst on a sleeping server, where the first tap
+   appears to do nothing and everyone taps again.
+
+   touch-action: manipulation switches off double-tap zoom on these elements
+   while leaving pinch-to-zoom alone, so the page is still zoomable. */
+button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea, [role="button"] {
+  touch-action: manipulation;
+}
+
+/* A tap needs to look like it landed. */
+.btn, .option, .power { -webkit-tap-highlight-color: rgba(0,0,0,.06); }
+.btn:active { transform: translateY(1px); }
+.option:active { background: var(--indelible-soft); }
+
+@media (max-width: 700px) {
+  /* iOS zooms the page when focusing any field under 16px. Ours were 15. */
+  input, select, textarea { font-size: 16px; }
+
+  /* Ballot rows are the most important target in the app; make them thumb-sized. */
+  .option { padding: 18px 14px; }
+  .option input { width: 22px; height: 22px; }
+}
 }
