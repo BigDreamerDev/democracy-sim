@@ -700,8 +700,6 @@ html[data-theme='dark'] .flag, html[data-theme='dark'] .chamber svg { filter: no
   .emergency{padding:11px 14px}
   .emergency-act{width:100%}
   .emergency-act .btn{width:100%}
-
-
 }
 
 /* ═════════════════════════════════════════════════════════ TAPPING
@@ -729,5 +727,4 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
   /* Ballot rows are the most important target in the app; make them thumb-sized. */
   .option { padding: 18px 14px; }
   .option input { width: 22px; height: 22px; }
-}
 }
