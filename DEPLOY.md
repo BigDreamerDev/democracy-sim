@@ -40,6 +40,67 @@ so redeploying is safe and your existing data is untouched.
 Then hard-refresh (Ctrl/Cmd+Shift+R). Pages caches JS hard, and a stale `app.js`
 looks exactly like a failed deploy.
 
+## The Returning Officer no longer holds every office
+
+Previously an admin passed every office check, so your screen offered the
+Speaker's buttons, the President's, and a vote in every division at once. That is
+gone. The Returning Officer administers the machinery — invites, approvals, the
+rules, calling elections, appointing and removing officers — and exercises none
+of the offices.
+
+If the Speaker vanishes mid-week, the answer is to **appoint a new one** from the
+admin page, not to stand in for them. An admin who can assent to their own bills
+makes every result look arranged, which is the one thing this whole system exists
+to avoid.
+
+Practical effect: unless you also hold a seat, you will no longer see Table,
+Call the division, Assent or Veto anywhere. Your desk will say the Republic is
+not waiting on you, because it is not.
+
+## The Prime Minister — Article 17
+
+**The President appoints, the House confirms, the House alone removes.** That
+triangle is the whole safeguard: a PM the President could dismiss would be an
+employee, and one the House could not remove would be a second President.
+
+**Assent has moved.** The Prime Minister assents to ordinary bills. The President
+keeps constitutional bills and any rule bill touching the electoral system —
+seats, cycle length, thresholds, quorum, who votes. So the two never hold the
+same key to the same door.
+
+With no Prime Minister in office, the President assents to everything. The
+Republic does not stop legislating because an appointment has not been made.
+
+**No confidence** is one endpoint, not a bill: any member moves it, each vote
+counts as it is cast, and the office falls the moment a simple majority has
+moved. No Speaker, no division, no President.
+
+**Three refusals dissolve the House.** The Speaker declares each refusal; on the
+third the seats are vacated and contested afresh, so a House that will confirm
+nobody is sent back to the country rather than left to sulk.
+
+**The casting vote went to the Speaker, not the Prime Minister.** A tied division
+used to be lost silently. It now goes to the chair, by the same convention that
+gives the Speaker the business of the House. Giving it to whoever assents would
+let one person break a tie and then approve the result of it.
+
+Endpoints: `GET/POST /api/prime-minister`, `/confirm`, `/refuse`,
+`/no-confidence`, and `POST /api/bills/:id/casting-vote`.
+
+**The Vice President is gone.** Succession, acting and the VP casting vote have
+been removed with it.
+
+## The Court and the economy are now in this build
+
+`judiciary.js`, `economy.js` and `schema-acts.sql` ship here, so one deploy gets
+the Supreme Court, money, tax, enterprise, banking and the share market alongside
+everything else. Diplomacy is deliberately not included.
+
+`docs/acts.js` probes the server before registering anything, so tabs appear only
+for what actually answers.
+
+## Article 2 — the People's power
+
 ## Article 2 — the People's power
 
 The Constitution's most powerful mechanism had no machinery at all until now.
