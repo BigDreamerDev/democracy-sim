@@ -1393,6 +1393,17 @@ app.post('/api/bills/:id/close', requireOffice('speaker'), wrap(async (req, res)
     return res.json({ carried, result, share, impeached: t?.display_name, removed_from: gone });
   }
 
+  /* A tie used to be lost by default, silently. If there is a Vice President it
+     is theirs to break, in public; if there is not, it is lost as before. */
+  /* Article 4.7: the Speaker decides the business of the House, and by long
+     convention breaks its ties. Giving the casting vote to whoever assents would
+     let one person break a tie and then approve the result of it. */
+  if (aye === no && aye > 0) {
+    await q("UPDATE bills SET status='tied', result=$1 WHERE id=$2", [result, b.id]);
+    log(req.user.id, 'bill.tied', `${b.ref} tied ${result} — to the Speaker's casting vote`);
+    return res.json({ tied: true, result });
+  }
+
   await q('UPDATE bills SET status=$1, result=$2, resolved_at=now() WHERE id=$3',
     [carried ? 'passed' : 'failed', result, b.id]);
   log(req.user.id, 'bill.close', `${b.ref} ${carried ? 'carried' : 'lost'} (${result})`);
@@ -1400,7 +1411,31 @@ app.post('/api/bills/:id/close', requireOffice('speaker'), wrap(async (req, res)
 }));
 
 /* Presidential assent, veto, and override. Motions skip the statute book. */
-app.post('/api/bills/:id/assent', requireOffice('president'), wrap(async (req, res) => {
+/* Article 17.4 and 18.5. The Prime Minister assents to ordinary bills; the
+   President keeps constitutional bills and anything touching how elections run.
+   Where there is no Prime Minister, the President assents — the Republic does
+   not stop legislating because an appointment has not been made. */
+app.post('/api/bills/:id/assent', auth, wrap(async (req, res) => {
+  const held = await officesOf(req.user.id);
+  /* Refuse on the office before touching the database. Someone with no standing
+     should get 403 whatever they put in the URL, not an error from a bad id. */
+  if (!held.includes('president') && !held.includes('prime_minister'))
+    return res.status(403).json({ error: 'Assent belongs to the Prime Minister, and to the President for constitutional and electoral bills.' });
+  if (!/^\d+$/.test(String(req.params.id))) return res.status(404).json({ error: 'No such bill.' });
+  const target = (await q('SELECT * FROM bills WHERE id=$1', [req.params.id])).rows[0];
+  if (!target) return res.status(404).json({ error: 'No such bill.' });
+  const pm = await pmNow();
+  const presidential = presidentialBill(target) || !pm;
+  if (presidential && !held.includes('president'))
+    return res.status(403).json({ error: pm
+      ? 'This bill changes the Constitution or the electoral system. Only the President may assent to it.'
+      : 'There is no Prime Minister. Until one is confirmed, only the President may assent.' });
+  if (!presidential && !held.includes('prime_minister'))
+    return res.status(403).json({ error: 'The Prime Minister assents to ordinary bills.' });
+  return assentHandler(req, res);
+}));
+
+const assentHandler = wrap(async (req, res) => {
   const b = (await q('SELECT * FROM bills WHERE id=$1', [req.params.id])).rows[0];
   if (!b) return res.status(404).json({ error: 'No such bill.' });
   if (b.status !== 'passed') return res.status(400).json({ error: 'Only a bill that has passed can be assented to.' });
@@ -1411,7 +1446,7 @@ app.post('/api/bills/:id/assent', requireOffice('president'), wrap(async (req, r
   }
   await enact(b, req.user.id);
   res.json({ status: 'enacted' });
-}));
+});
 
 app.post('/api/bills/:id/override', requireOffice('speaker'), wrap(async (req, res) => {
   await loadConfig();
@@ -1511,6 +1546,178 @@ app.get('/api/audit', wrap(async (_req, res) => {
 
    Deliberately public. It is embedded by widget apps that cannot hold a token,
    and it exposes nothing that /api/state does not. */
+/* ═════════════════════════════════ The Prime Minister — Article 17
+
+   The President appoints; the House confirms; the House alone removes. That
+   triangle is the whole safeguard. A Prime Minister the President could dismiss
+   would be an employee, and a Prime Minister the House could not remove would be
+   a second President.
+
+   The Prime Minister assents to ordinary bills. The President keeps a veto over
+   constitutional bills and over rule bills touching the electoral system —
+   Article 18.5 — so the two never hold the same key to the same door.  */
+
+async function pmNow() {
+  const { rows } = await q(`
+    SELECT u.id, u.display_name FROM offices o JOIN users u ON u.id=o.user_id
+     WHERE o.office='prime_minister' AND o.active LIMIT 1`);
+  return rows[0] || null;
+}
+
+/* Which bills does the President keep? Anything that changes the Constitution,
+   and any rule bill touching how elections are run. Everything else is the
+   Prime Minister's. */
+const ELECTORAL_KEYS = [
+  'seats', 'cycle_days', 'campaign_days', 'poll_days', 'cycle_elects', 'secret_ballot',
+  'enforce_term_limit', 'speaker_threshold', 'speaker_relax', 'speaker_auto',
+  'pass_threshold', 'constitutional_threshold', 'veto_override', 'quorum',
+  'supermajority_share', 'petition_share', 'referendum_threshold', 'referendum_quorum',
+  'initiative_mode', 'initiative_threshold', 'bill_voters', 'bill_proposers'
+];
+
+function presidentialBill(b) {
+  if (b.kind === 'constitutional') return true;
+  if (b.kind !== 'rule') return false;
+  const { changes } = parseRuleChanges(b.body);
+  return changes.some(c => ELECTORAL_KEYS.includes(c.key));
+}
+
+app.get('/api/prime-minister', wrap(async (req, res) => {
+  await loadConfig();
+  const pm = await pmNow();
+  const nom = (await q(`
+    SELECT n.*, u.display_name, p.display_name AS nominated_by_name,
+           (SELECT count(*)::int FROM pm_confirmations c WHERE c.nomination_id=n.id) AS confirmations
+      FROM pm_nominations n
+      LEFT JOIN users u ON u.id=n.user_id
+      LEFT JOIN users p ON p.id=n.nominated_by
+     WHERE n.status='open' ORDER BY n.id DESC LIMIT 1`)).rows[0] || null;
+  const house = (await q("SELECT count(*)::int n FROM offices WHERE active AND office='mp'")).rows[0].n;
+  const needed = Math.max(1, Math.floor(house / 2) + 1);
+  const refused = (await q(`SELECT count(*)::int n FROM pm_nominations
+                             WHERE status='refused' AND created_at > now() - interval '30 days'`)).rows[0].n;
+  let confirmed = false, movedNC = false;
+  if (req.user) {
+    if (nom) confirmed = !!(await q('SELECT 1 FROM pm_confirmations WHERE nomination_id=$1 AND user_id=$2',
+      [nom.id, req.user.id])).rows[0];
+    if (pm) movedNC = !!(await q('SELECT 1 FROM no_confidence WHERE pm_user_id=$1 AND user_id=$2',
+      [pm.id, req.user.id])).rows[0];
+  }
+  const nc = pm ? (await q('SELECT count(*)::int n FROM no_confidence WHERE pm_user_id=$1', [pm.id])).rows[0].n : 0;
+  res.json({
+    prime_minister: pm, nomination: nom, house, needed,
+    refusals_this_cycle: refused,
+    i_confirmed: confirmed, no_confidence: nc, i_moved_no_confidence: movedNC
+  });
+}));
+
+app.post('/api/prime-minister', requireOffice('president'), wrap(async (req, res) => {
+  if (await pmNow()) return res.status(400).json({ error: 'There is a Prime Minister. Only the House can remove one.' });
+  const target = (await q('SELECT id, display_name FROM users WHERE id=$1 AND is_active AND approved',
+    [req.body?.user_id || 0])).rows[0];
+  if (!target) return res.status(400).json({ error: 'Name a citizen to appoint.' });
+  if (target.id === req.user.id) return res.status(400).json({ error: 'The President may not appoint themselves.' });
+  await q("UPDATE pm_nominations SET status='withdrawn', settled_at=now() WHERE status='open'");
+  const { rows } = await q('INSERT INTO pm_nominations(user_id,nominated_by) VALUES($1,$2) RETURNING *',
+    [target.id, req.user.id]);
+  log(req.user.id, 'pm.nominate', target.display_name);
+  res.json(rows[0]);
+}));
+
+/* Article 17.3 — an appointment takes effect only on the confidence of the
+   House, and a House that refuses three in a cycle is sent back to the country. */
+app.post('/api/prime-minister/confirm', auth, wrap(async (req, res) => {
+  await loadConfig();
+  const nom = (await q("SELECT * FROM pm_nominations WHERE status='open' ORDER BY id DESC LIMIT 1")).rows[0];
+  if (!nom) return res.status(400).json({ error: 'No appointment is before the House.' });
+  if (!(await officesOf(req.user.id)).includes('mp'))
+    return res.status(403).json({ error: 'The House confirms a Prime Minister.' });
+  const support = req.body?.support !== false;
+  if (!support) {
+    await q('DELETE FROM pm_confirmations WHERE nomination_id=$1 AND user_id=$2', [nom.id, req.user.id]);
+    return res.json({ confirmed: false, withdrew: true });
+  }
+  await q('INSERT INTO pm_confirmations(nomination_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
+    [nom.id, req.user.id]);
+  const votes = (await q('SELECT count(*)::int n FROM pm_confirmations WHERE nomination_id=$1', [nom.id])).rows[0].n;
+  const house = (await q("SELECT count(*)::int n FROM offices WHERE active AND office='mp'")).rows[0].n;
+  const needed = Math.max(1, Math.floor(house / 2) + 1);
+  if (votes < needed) return res.json({ confirmed: false, votes, needed });
+
+  const clash = seatClash(await officesOf(nom.user_id), 'prime_minister');
+  if (clash.filter(o => o !== 'mp' && o !== 'speaker').length)
+    return res.status(400).json({ error: `They hold office as ${clash.join(', ')}. Article 17.10 excuses a seat in the House and nothing else.` });
+
+  await q("INSERT INTO offices(office,user_id) VALUES('prime_minister',$1)", [nom.user_id]);
+  await q("UPDATE pm_nominations SET status='confirmed', settled_at=now() WHERE id=$1", [nom.id]);
+  await q('DELETE FROM no_confidence WHERE pm_user_id=$1', [nom.user_id]);
+  const who = (await q('SELECT display_name FROM users WHERE id=$1', [nom.user_id])).rows[0];
+  log(req.user.id, 'pm.confirm', `${who?.display_name} confirmed, ${votes} of ${house}`);
+  res.json({ confirmed: true, votes, needed });
+}));
+
+app.post('/api/prime-minister/refuse', auth, wrap(async (req, res) => {
+  const nom = (await q("SELECT * FROM pm_nominations WHERE status='open' ORDER BY id DESC LIMIT 1")).rows[0];
+  if (!nom) return res.status(400).json({ error: 'No appointment is before the House.' });
+  if (!(await officesOf(req.user.id)).includes('speaker'))
+    return res.status(403).json({ error: 'The Speaker declares the House\'s refusal.' });
+  await q("UPDATE pm_nominations SET status='refused', settled_at=now() WHERE id=$1", [nom.id]);
+  const refused = (await q(`SELECT count(*)::int n FROM pm_nominations
+                             WHERE status='refused' AND created_at > now() - interval '30 days'`)).rows[0].n;
+  log(req.user.id, 'pm.refuse', `refusal ${refused}`);
+  if (refused >= 3) {
+    await q("UPDATE offices SET active=FALSE, until=now() WHERE active AND office IN ('mp','speaker')");
+    await q("UPDATE pm_nominations SET status='withdrawn' WHERE status='refused'");
+    log(req.user.id, 'pm.dissolution', 'three refusals — the House is dissolved');
+    return res.json({ refused, dissolved: true });
+  }
+  res.json({ refused, dissolved: false });
+}));
+
+/* Article 17.6 — the House withdraws confidence at any time, on a simple
+   majority, and the office falls at once. No Speaker, no division, no President. */
+app.post('/api/prime-minister/no-confidence', auth, wrap(async (req, res) => {
+  const pm = await pmNow();
+  if (!pm) return res.status(400).json({ error: 'There is no Prime Minister.' });
+  if (!(await officesOf(req.user.id)).includes('mp'))
+    return res.status(403).json({ error: 'Only the House may withdraw its confidence.' });
+  await q('INSERT INTO no_confidence(pm_user_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
+    [pm.id, req.user.id]);
+  const votes = (await q('SELECT count(*)::int n FROM no_confidence WHERE pm_user_id=$1', [pm.id])).rows[0].n;
+  const house = (await q("SELECT count(*)::int n FROM offices WHERE active AND office='mp'")).rows[0].n;
+  const needed = Math.max(1, Math.floor(house / 2) + 1);
+  if (votes < needed) return res.json({ fallen: false, votes, needed });
+  await q("UPDATE offices SET active=FALSE, until=now() WHERE user_id=$1 AND office='prime_minister' AND active", [pm.id]);
+  await q('DELETE FROM no_confidence WHERE pm_user_id=$1', [pm.id]);
+  log(req.user.id, 'pm.no_confidence', `${pm.display_name} falls, ${votes} of ${house}`);
+  res.json({ fallen: true, votes, needed });
+}));
+
+/* The Speaker's casting vote — Article 4.7 and long convention. */
+app.post('/api/bills/:id/casting-vote', requireOffice('speaker'), wrap(async (req, res) => {
+  const b = (await q('SELECT * FROM bills WHERE id=$1', [req.params.id])).rows[0];
+  if (!b) return res.status(404).json({ error: 'No such bill.' });
+  if (b.status !== 'tied') return res.status(400).json({ error: 'That bill is not tied.' });
+  const vote = req.body?.vote;
+  if (!['aye', 'no'].includes(vote))
+    return res.status(400).json({ error: 'Cast aye or no. There is no abstaining from a casting vote.' });
+  if (vote === 'no') {
+    await q("UPDATE bills SET status='failed', casting_vote='no', resolved_at=now() WHERE id=$1", [b.id]);
+    log(req.user.id, 'bill.casting', `${b.ref} lost on the Speaker's casting vote`);
+    return res.json({ carried: false });
+  }
+  if (b.kind === 'impeachment') {
+    const gone = (await q('UPDATE offices SET active=FALSE, until=now() WHERE user_id=$1 AND active RETURNING office',
+      [b.target_user_id])).rows.map(r => r.office);
+    await q("UPDATE bills SET status='enacted', casting_vote='aye', resolved_at=now() WHERE id=$1", [b.id]);
+    log(req.user.id, 'bill.casting', `${b.ref} carried on the casting vote`);
+    return res.json({ carried: true, removed_from: gone });
+  }
+  await q("UPDATE bills SET status='passed', casting_vote='aye', resolved_at=now() WHERE id=$1", [b.id]);
+  log(req.user.id, 'bill.casting', `${b.ref} carried on the Speaker's casting vote`);
+  res.json({ carried: true });
+}));
+
 /* ═════════════════════════════ Article 2 — the Sovereignty of the People
 
    Two thirds of all Citizens may do what no officer can stop. Until now this
@@ -1807,10 +2014,12 @@ function pngChunk(type, data) {
 }
 
 
-async function makeWidgetSvg(dark = false) {
+async function makeWidgetSvg(dark = false, radius = 0) {
   await loadConfig();
 
   const W = 360, H = 170;
+  /* Kept clear of the host's corner mask on every side. */
+  const SAFE = 26;
 
   const flag = await currentFlag();
   const bands = flag?.bands || [];
@@ -1907,151 +2116,53 @@ async function makeWidgetSvg(dark = false) {
           : 'THE HOUSE IS QUIET'
       );
 
-  let bandStrip = '';
-
+  /* Inset from both sides and rounded, so the host's corner mask never eats an
+     end. A full-bleed strip loses roughly 24pt at each corner on iOS. */
+  const STRIP_Y = 16, STRIP_H = 7, STRIP_W = W - SAFE * 2;
+  let bandStrip = `<clipPath id="strip"><rect x="${SAFE}" y="${STRIP_Y}" width="${STRIP_W}" height="${STRIP_H}" rx="${STRIP_H / 2}"/></clipPath><g clip-path="url(#strip)">`;
   if (bands.length) {
-    const total =
-      bands.reduce((n, b) => n + (b.weight || 1), 0) || 1;
-
-    let x = 0;
-
+    const total = bands.reduce((n, b) => n + (b.weight || 1), 0) || 1;
+    let x = SAFE;
     for (const b of bands) {
-      const w =
-        W * ((b.weight || 1) / total);
-
-      bandStrip +=
-        `<rect x="${x.toFixed(1)}"
-               y="0"
-               width="${(w + 0.6).toFixed(1)}"
-               height="6"
-               fill="${e(b.colour)}"/>`;
-
-      x += w;
+      const bw = STRIP_W * ((b.weight || 1) / total);
+      bandStrip += `<rect x="${x.toFixed(1)}" y="${STRIP_Y}" width="${(bw + 0.6).toFixed(1)}" height="${STRIP_H}" fill="${e(b.colour)}"/>`;
+      x += bw;
     }
   } else {
-    bandStrip =
-      `<rect width="${W}"
-             height="6"
-             fill="${e(primary)}"/>`;
+    bandStrip += `<rect x="${SAFE}" y="${STRIP_Y}" width="${STRIP_W}" height="${STRIP_H}" fill="${e(primary)}"/>`;
   }
+  // A hairline round the bar so a white band is still visible on pale paper.
+  bandStrip += `</g><rect x="${SAFE}" y="${STRIP_Y}" width="${STRIP_W}" height="${STRIP_H}" rx="${STRIP_H / 2}" fill="none" stroke="${rule}" stroke-width="0.75"/>`;
 
-  return `<svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="${W}"
-    height="${H}"
-    viewBox="0 0 ${W} ${H}"
-    font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
+     font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
 
-    <rect
-      width="${W}"
-      height="${H}"
-      rx="18"
-      fill="${paper}"
-    />
+    <!-- iOS masks a widget with its own corner radius, and so does KWGT. Anything
+         within about 24pt of a corner is eaten by that arc, which is why a
+         full-bleed strip lost its ends. The background goes edge to edge and
+         everything else stays inside SAFE. -->
+    <rect width="${W}" height="${H}" ${radius ? `rx="${radius}"` : ''} fill="${paper}"/>
 
-    <clipPath id="r">
-      <rect
-        width="${W}"
-        height="${H}"
-        rx="18"
-      />
-    </clipPath>
+    <!-- The flag as an inset bar rather than a full-bleed strip, with rounded
+         ends of its own so the inset reads as deliberate. -->
+    ${bandStrip}
 
-    <g clip-path="url(#r)">
-      ${bandStrip}
+    <text x="${SAFE}" y="52" font-size="19" font-weight="700" fill="${ink}">${e(CONFIG.nation_name)}</text>
+    <text x="${SAFE}" y="69" font-size="10.5" letter-spacing="1.6" font-weight="600" fill="${e(accent)}">${e(headline)}</text>
+    ${el ? `<text x="${SAFE}" y="87" font-size="12" fill="${ink2}">${e(el.title)}</text>` : ''}
 
-      <line
-        x1="0"
-        y1="6.5"
-        x2="${W}"
-        y2="6.5"
-        stroke="${rule}"
-        stroke-width="1"
-      />
-    </g>
+    <line x1="${SAFE}" y1="${el ? 99 : 84}" x2="${W - SAFE}" y2="${el ? 99 : 84}" stroke="${rule}"/>
 
-    <text
-      x="20"
-      y="38"
-      font-size="19"
-      font-weight="700"
-      fill="${ink}">
-      ${e(CONFIG.nation_name)}
-    </text>
+    <text x="${SAFE}" y="116" font-size="11" fill="${ink2}">President</text>
+    <text x="${SAFE}" y="132" font-size="13.5" font-weight="600" fill="${ink}">${e(one('president'))}</text>
+    <text x="${W / 2 + 6}" y="116" font-size="11" fill="${ink2}">Speaker</text>
+    <text x="${W / 2 + 6}" y="132" font-size="13.5" font-weight="600" fill="${ink}">${e(one('speaker'))}</text>
 
-    <text
-      x="20"
-      y="58"
-      font-size="10.5"
-      letter-spacing="1.6"
-      font-weight="600"
-      fill="${e(accent)}">
-      ${e(headline)}
-    </text>
-
-    ${
-      el
-        ? `<text
-             x="20"
-             y="79"
-             font-size="12"
-             fill="${ink2}">
-             ${e(el.title)}
-           </text>`
-        : ''
-    }
-
-    <line
-      x1="20"
-      y1="94"
-      x2="${W - 20}"
-      y2="94"
-      stroke="${rule}"
-    />
-
-    <text
-      x="20"
-      y="116"
-      font-size="11"
-      fill="${ink2}">
-      President
-    </text>
-
-    <text
-      x="20"
-      y="133"
-      font-size="13.5"
-      font-weight="600"
-      fill="${ink}">
-      ${e(one('president'))}
-    </text>
-
-    <text
-      x="190"
-      y="116"
-      font-size="11"
-      fill="${ink2}">
-      Speaker
-    </text>
-
-    <text
-      x="190"
-      y="133"
-      font-size="13.5"
-      font-weight="600"
-      fill="${ink}">
-      ${e(one('speaker'))}
-    </text>
-
-    <text
-      x="20"
-      y="156"
-      font-size="10.5"
-      fill="${ink2}">
-      ${mps} sitting · ${laws} laws · ${cits} citizens
-    </text>
+    <!-- Baseline 150: the bottom corner arc reaches about y=146 at this inset. -->
+    <text x="${SAFE}" y="150" font-size="10.5" fill="${ink2}">${mps} sitting · ${laws} laws · ${cits} citizens</text>
 
   </svg>`;
+
 }
 
 /* The same widget as data, for anything that can draw its own text.
@@ -2104,7 +2215,8 @@ app.get('/api/widget.svg', wrap(async (req, res) => {
   const dark =
     String(req.query.theme || '').toLowerCase() === 'dark';
 
-  const svg = await makeWidgetSvg(dark);
+  const radius = Math.max(0, Math.min(48, parseInt(req.query.radius, 10) || 0));
+  const svg = await makeWidgetSvg(dark, radius);
 
   res.set('Content-Type', 'image/svg+xml');
   res.set('Cache-Control', 'public, max-age=120');
@@ -2117,7 +2229,8 @@ app.get('/api/widget.png', wrap(async (req, res) => {
   const dark =
     String(req.query.theme || '').toLowerCase() === 'dark';
 
-  const svg = await makeWidgetSvg(dark);
+  const radius = Math.max(0, Math.min(48, parseInt(req.query.radius, 10) || 0));
+  const svg = await makeWidgetSvg(dark, radius);
 
   /* Required here rather than at the top of the file. sharp is a large native
      dependency; if it is missing or fails to build, that must cost one widget
@@ -2195,7 +2308,7 @@ app.put('/api/admin/config', admin, wrap(async (req, res) => {
 
 app.post('/api/admin/office', admin, wrap(async (req, res) => {
   const { user_id, office, seat, remove } = req.body || {};
-  if (!['president', 'speaker', 'mp', 'justice'].includes(office)) return res.status(400).json({ error: 'Unknown office.' });
+  if (!['president', 'prime_minister', 'speaker', 'mp', 'justice'].includes(office)) return res.status(400).json({ error: 'Unknown office.' });
   if (!remove) {
     // Article 7.1 — no Citizen holds more than one seat. The Speaker is a member
     // of the House (4.1), so those two are one seat and may be held together.
@@ -2284,7 +2397,7 @@ const ACT_CONTEXT = {
   citizenCount, slowWrites, requireOffice, enact, canPropose, cycleNow, addEnactHook, bcrypt, crypto,
   get CONFIG() { return CONFIG; }
 };
-for (const mod of ['./judiciary', './diplomacy', './economy']) {
+for (const mod of ['./judiciary', './economy']) {
   try {
     require(mod).mount(app, ACT_CONTEXT);
   } catch (err) {
