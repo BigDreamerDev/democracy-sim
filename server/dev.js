@@ -102,7 +102,7 @@ async function seed() {
   for (const p of ['Bilal', 'Cleo']) await call('/api/parties/1/join', { method: 'POST', token: tok[p] });
   for (const p of ['Esme', 'Farid']) await call('/api/parties/2/join', { method: 'POST', token: tok[p] });
 
-  await call('/api/admin/config', { method: 'PUT', body: { seats: '5', quorum: '2', nation_name: 'McServerLandia', motto: 'Founded by group chat.' }, token: T });
+  await call('/api/admin/config', { method: 'PUT', body: { seats: '5', quorum: '2', nation_name: 'McServerLandia', motto: 'Founded by group chat.', dividend: '2000' }, token: T });
 
   // A general election, run and certified.
   const el = await call('/api/elections', { method: 'POST', body: { kind: 'parliament', title: 'General election — cycle 1' }, token: T });
@@ -169,6 +169,57 @@ async function seed() {
   const init = await call('/api/initiatives', { method: 'POST', body: { title: 'Citizens Music Act', kind: 'law', body: 'The Republic shall keep a shared playlist.' }, token: tok[free[1].display_name] });
   await call(`/api/bills/${init.id}/sign`, { method: 'POST', token: tok[free[1].display_name] });
 
+  /* A Treasury and a Fed, so both pages have something on them. The Treasurer
+     is appointed by the President (there is no Prime Minister here); the head
+     of the Fed is nominated by the President and confirmed by the House, which
+     is the only way that office can ever be filled. */
+  await call('/api/economy/payrun', { method: 'POST', body: { cycle_no: 1 }, token: T });
+  const treasurer = free[2], fedChair = free[3];
+  if (treasurer) {
+    await call('/api/treasury/appoint', { method: 'POST', body: { user_id: treasurer.id }, token: pres });
+    await call('/api/treasury/statement', {
+      method: 'POST',
+      body: { body: 'Cycle 1. Taken: nothing, the House has laid no tax. Spent: the dividend, in full, to every citizen.' },
+      token: tok[treasurer.display_name]
+    });
+  }
+  if (fedChair) {
+    await call('/api/fed/nominate', { method: 'POST', body: { user_id: fedChair.id }, token: pres });
+    for (const t of mpTok) {
+      const r = await call('/api/fed/confirm', { method: 'POST', token: t });
+      if (r.confirmed) break;
+    }
+    const fTok = tok[fedChair.display_name];
+    await call('/api/fed/issue', {
+      method: 'POST',
+      body: { amount: 20000, reasons: 'The Treasury cannot meet the dividend out of a nil tax take, and the dividend is unconditional.' },
+      token: fTok
+    });
+    await call('/api/fed/rates', {
+      method: 'POST',
+      body: { loan_rate: 0.06, reasons: 'Borrowing is thin and nothing yet threatens the value of the Mark.' },
+      token: fTok
+    });
+    // One bank applied and licensed, one still waiting, so the page shows both.
+    const bank = await call('/api/banks', {
+      method: 'POST',
+      body: { name: 'Harbour Savings', capital: 800, prospectus: 'Deposits, and small loans to anyone who asks.' },
+      token: tok[PEOPLE[9]]
+    });
+    if (bank && bank.id) {
+      await call(`/api/banks/${bank.id}/licence`, {
+        method: 'POST',
+        body: { reasons: 'Adequately capitalised, and the prospectus is plain about what it will lend.' },
+        token: fTok
+      });
+    }
+    await call('/api/banks', {
+      method: 'POST',
+      body: { name: 'The Second Bank', capital: 300, prospectus: 'Higher rates, and a thinner reserve.' },
+      token: tok[free[1].display_name]
+    });
+  }
+
   // An election in progress, so the ballot has something to show.
   const next = await call('/api/elections', { method: 'POST', body: { kind: 'president', title: 'Presidential election — cycle 2' }, token: T });
   for (const p of [PEOPLE[0], PEOPLE[3], PEOPLE[6]]) {
@@ -188,7 +239,9 @@ async function seed() {
     ${mps[0].display_name.toLowerCase().padEnd(10)} the Speaker — tables bills, calls and closes divisions
     ${free[0].display_name.toLowerCase().padEnd(10)} the President — assent, veto, and Article 12
     ${mps[1].display_name.toLowerCase().padEnd(10)} an ordinary MP — votes in divisions
-    ${PEOPLE[9].toLowerCase().padEnd(10)} an ordinary citizen — no office at all
+    ${(free[2]?.display_name || '—').toLowerCase().padEnd(10)} the Treasurer — names the money, reports to the House
+    ${(free[3]?.display_name || '—').toLowerCase().padEnd(10)} the head of the Fed — rates, issuance, bank licences
+    ${PEOPLE[9].toLowerCase().padEnd(10)} an ordinary citizen — no office at all, but owns a bank
 
   Nothing here touches your live Republic. Ctrl+C and it is gone.
 ────────────────────────────────────────────────────────

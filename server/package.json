@@ -9,7 +9,7 @@
     "start": "node server.js",
     "dev": "node dev.js",
     "test": "node test/run.js",
-    "test:layout": "node test/layout.js && node test/seats.mjs && node test/billsview.js && node test/desk.js && node test/theme.mjs"
+    "test:layout": "node test/layout.js && node test/seats.mjs && node test/billsview.js && node test/desk.js && node test/theme.mjs && node test/money-view.js"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.2.0",
