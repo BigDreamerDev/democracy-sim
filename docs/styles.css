@@ -740,3 +740,37 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
 }
 .office.is-vacant strong{color:var(--oxide)}
 .office.is-vacant .office-note{color:var(--oxide);opacity:.85}
+
+/* ═══════════════════════════════════════════════ THE DESPATCH BOX
+
+   The desk on the chamber page is the urgent list — what is waiting on you
+   today. This is the standing one: every power the office holds, in reach,
+   whether or not there is work. An officer should be able to see the shape of
+   their own job without navigating for it.
+
+   Rendered only for someone holding an office; a citizen sees nothing. */
+
+.despatch{border:1px solid var(--ink);background:var(--card);margin-bottom:var(--gap)}
+.despatch-head{padding:14px 18px 12px;border-bottom:1px solid var(--rule);background:var(--indelible-soft)}
+.despatch-head h2{font-family:var(--display);font-weight:600;font-size:19px;margin:2px 0 0;letter-spacing:-.01em}
+.despatch-head .small{margin:6px 0 0}
+
+.despatch-row{
+  display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;
+  padding:13px 18px;border-bottom:1px solid var(--rule);
+}
+.despatch-row:last-child{border-bottom:0}
+.despatch-row.is-live{border-left:3px solid var(--indelible);padding-left:15px;background:rgba(0,0,0,.015)}
+.despatch-what{font-weight:600;font-size:15px}
+.despatch-why{font-size:12.5px;color:var(--ink-2);margin:3px 0 0;max-width:52ch;line-height:1.45}
+.despatch-do{display:flex;gap:7px;flex-wrap:wrap;flex:none;align-items:center}
+.despatch-none{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);
+}
+
+@media(max-width:700px){
+  .despatch-row{padding:13px 14px}
+  .despatch-row.is-live{padding-left:11px}
+  .despatch-do{width:100%}
+  .despatch-do .btn{flex:1}
+}

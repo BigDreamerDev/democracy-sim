@@ -244,7 +244,7 @@ function flagSvg(flag, w = 300) {
 
 const statusTag = s => {
   const map = {
-    draft: '', tabled: 'on-navy', division: 'on-violet', passed: 'on-green',
+    draft: '', tabled: 'on-navy', division: 'on-violet', tied: 'on-oxide', passed: 'on-green',
     enacted: 'on-green', failed: 'on-oxide', vetoed: 'on-oxide', withdrawn: '',
     nominations: 'on-navy', campaign: 'on-violet', voting: 'on-violet', closed: ''
   };
@@ -352,6 +352,7 @@ const ROUTES = [
   ['parties', 'Parties', viewParties],
   ['citizens', 'Citizens', viewCitizens],
   ['people', 'The People', viewPeople],
+  ['prime-minister', 'The Government', viewPrimeMinister],
   ['emergency', 'Article 12', viewEmergency],
   ['record', 'Record', viewRecord],
   ['me', 'My account', viewMe],
@@ -600,6 +601,14 @@ async function deskItems() {
         what: `<span class="ref">${esc(b.ref)}</span> ${esc(b.title)} is tabled`,
         why: 'The House is waiting on you to call the division.',
         actions: `<button class="btn btn-sm btn-primary" data-desk="division" data-id="${b.id}">Call the division</button>`
+      });
+    }
+    for (const b of bills.filter(b => b.status === 'tied')) {
+      out.push({
+        office: 'Speaker', urgent: true,
+        what: `<span class="ref">${esc(b.ref)}</span> ${esc(b.title)} is tied`,
+        why: 'The casting vote is yours, and nothing moves until you use it.',
+        actions: `<a class="btn btn-sm btn-primary" href="#/bill/${b.id}">Cast it</a>`
       });
     }
     for (const b of bills.filter(b => b.status === 'division')) {
@@ -1069,6 +1078,177 @@ async function viewPeople(v) {
   });
 }
 
+/* Article 17 — the Government.
+
+   The President appoints, the House confirms, the House alone removes. Every
+   part of that has to be reachable, or an office exists only in the API. */
+/* The despatch box.
+
+   The desk on the chamber page lists what is waiting on you right now. This is
+   the other half: every power your office holds, always visible, with the
+   controls in reach whether or not there is work today. An officer should be
+   able to see the shape of their own job without opening four menus and
+   guessing.
+
+   It renders nothing for a citizen holding no office — there is no despatch box
+   for someone with no despatches. */
+async function despatchBox() {
+  const held = ME?.offices || [];
+  if (!held.length) return '';
+
+  const bills = await api('/api/bills');
+  const at = st => bills.filter(b => b.status === st);
+  const label = { president: 'President', prime_minister: 'Prime Minister', speaker: 'Speaker', mp: 'Member', justice: 'Justice' };
+
+  const rows = [];
+
+  const row = (what, why, actions, urgent) =>
+    `<div class="despatch-row ${urgent ? 'is-live' : ''}">
+       <div><div class="despatch-what">${what}</div><p class="despatch-why">${why}</p></div>
+       <div class="despatch-do">${actions}</div>
+     </div>`;
+
+  const listOf = (arr, verb, path) => arr.length
+    ? arr.map(b => `<a class="btn btn-sm btn-primary" href="#/bill/${b.id}">${verb} ${esc(b.ref)}</a>`).join('')
+    : `<span class="despatch-none">Nothing ${path}</span>`;
+
+  if (has('speaker')) {
+    const need = Number(STATE.config.seconds_required);
+    const ready = at('draft').filter(b => b.seconds >= need);
+    rows.push(row('Table a bill', `A bill with ${need} seconders cannot reach a division until you table it.`,
+      listOf(ready, 'Table', 'waiting'), ready.length));
+    rows.push(row('Call a division', 'A tabled bill waits on you to put it to the House.',
+      listOf(at('tabled'), 'Divide', 'tabled'), at('tabled').length));
+    rows.push(row('Close a division', 'Nothing closes itself. The House has not decided until you say so.',
+      listOf(at('division'), 'Close', 'open'), at('division').length));
+    rows.push(row('Break a tie', 'Article 4.7 — the casting vote is yours, and you may not abstain from it.',
+      listOf(at('tied'), 'Cast on', 'tied'), at('tied').length));
+  }
+
+  if (has('prime_minister')) {
+    rows.push(row('Assent to a bill', 'An ordinary bill becomes law when you assent, and dies if you refuse.',
+      listOf(at('passed'), 'Decide', 'awaiting you'), at('passed').length));
+    rows.push(row('Your government', 'You hold office while the House allows it, and no longer.',
+      '<a class="btn btn-sm" href="#/bills">Propose through a member</a>', false));
+  }
+
+  if (has('president')) {
+    const mine = at('passed');
+    rows.push(row('Assent to a constitutional bill',
+      'Yours alone: constitutional bills and anything touching the electoral system. Ordinary bills belong to the Prime Minister.',
+      listOf(mine, 'Review', 'awaiting you'), mine.length));
+    rows.push(row('Appoint a Prime Minister', 'Article 17.2 — appoint whoever can command the House.',
+      '<a class="btn btn-sm btn-primary" href="#/prime-minister">Appoint</a>', false));
+    rows.push(row('Declare extraordinary circumstances',
+      'Article 12 — ask the House to suspend named parts of the ordinary law, for a stated time.',
+      '<a class="btn btn-sm" href="#/emergency">Draft a declaration</a>', false));
+  }
+
+  if (has('mp')) {
+    rows.push(row('Vote in a division', 'One vote each, and it is final.',
+      listOf(at('division'), 'Vote on', 'open'), at('division').length));
+    rows.push(row('Move a bill', 'Only the House may propose. If a citizen wants something, they need you.',
+      '<a class="btn btn-sm btn-primary" href="#/bills">Propose a bill</a>', false));
+    rows.push(row('Confidence', 'Confirm an appointment, or withdraw confidence from the government.',
+      '<a class="btn btn-sm" href="#/prime-minister">The Government</a>', false));
+  }
+
+  if (has('justice')) {
+    rows.push(row('Rule on a case', 'Two Justices agreeing decide it, and reasons are published.',
+      '<a class="btn btn-sm btn-primary" href="#/court">The Court</a>', false));
+  }
+
+  return `<section class="despatch">
+    <div class="despatch-head">
+      <p class="eyebrow">${esc(held.map(o => label[o] || o).join(' · '))}</p>
+      <h2>Your despatch box</h2>
+      <p class="small muted">Everything your office may do, whether or not anything is waiting.</p>
+    </div>
+    ${rows.join('')}
+  </section>`;
+}
+
+async function viewPrimeMinister(v) {
+  const d = await api('/api/prime-minister');
+  const cs = await api('/api/citizens');
+  const pm = d.prime_minister, nom = d.nomination;
+  const box = await despatchBox();
+
+  v.innerHTML = `
+    <h1 class="page">The Government</h1>
+    <p class="page-sub">Article 17 · the President appoints, the House confirms, the House alone removes</p>
+
+    ${box}
+
+    <div class="card">
+      <p class="eyebrow">Prime Minister</p>
+      <strong style="font-family:var(--display);font-size:24px">${esc(pm?.display_name || 'Vacant')}</strong>
+      <p class="small muted" style="margin-top:8px">${pm
+        ? 'Assents to ordinary bills. The President keeps constitutional bills and anything touching the electoral system.'
+        : 'While the office is vacant the President assents to everything, so the Republic does not stop legislating.'}</p>
+    </div>
+
+    ${nom ? `<div class="card">
+      <h2>Before the House</h2>
+      <p><strong>${esc(nom.display_name)}</strong> was put forward by ${esc(nom.nominated_by_name || 'the President')}.</p>
+      <p class="item-meta">${nom.confirmations} of ${d.needed} members have confirmed</p>
+      <div class="bar" style="margin-top:8px"><span style="width:${Math.min(100, Math.round(nom.confirmations / d.needed * 100))}%"></span></div>
+      ${has('mp') ? `<div class="row" style="margin-top:12px">
+        <button class="btn btn-sm ${d.i_confirmed ? '' : 'btn-primary'}" id="conf" ${d.i_confirmed ? 'disabled' : ''}>${d.i_confirmed ? 'You have confirmed' : 'Confirm'}</button>
+        ${has('speaker') ? '<button class="btn btn-sm btn-no" id="refuse">Declare the House\'s refusal</button>' : ''}
+      </div>` : '<p class="small muted" style="margin-top:10px">The House confirms a Prime Minister.</p>'}
+      ${d.refusals_this_cycle ? `<p class="small" style="margin-top:10px;color:var(--oxide)">${d.refusals_this_cycle} of 3 refusals this cycle. A third dissolves the House.</p>` : ''}
+    </div>` : ''}
+
+    ${!pm && !nom && has('president') ? `<div class="card">
+      <h2>Appoint a Prime Minister</h2>
+      <p class="small muted">Article 17.2: appoint whoever can command a majority of the House. They take office only once the House confirms.</p>
+      <form id="nom" class="stack" style="margin-top:12px">
+        <label class="field"><span>Whom</span><select name="user_id">
+          ${cs.filter(c => c.id !== ME.id).map(c => `<option value="${c.id}">${esc(c.display_name)}${(c.offices || []).length ? ` — ${esc((c.offices || []).join(', '))}` : ''}</option>`).join('')}
+        </select></label>
+        <button class="btn btn-primary">Put them to the House</button>
+      </form>
+    </div>` : ''}
+
+    ${pm && has('mp') ? `<div class="card">
+      <h2>Confidence</h2>
+      <p class="small muted">Article 17.6: the House may withdraw its confidence at any moment. On a simple majority the office falls at once — no Speaker, no division, no President.</p>
+      <p class="item-meta" style="margin-top:8px">${d.no_confidence} of ${d.needed} members have moved to withdraw it</p>
+      <button class="btn btn-sm btn-no" id="nc" style="margin-top:10px" ${d.i_moved_no_confidence ? 'disabled' : ''}>${d.i_moved_no_confidence ? 'You have moved' : 'Move no confidence'}</button>
+    </div>` : ''}`;
+
+  if ($('#nom')) $('#nom').onsubmit = async e => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    try { await api('/api/prime-minister', { method: 'POST', body: { user_id: Number(f.user_id) } }); toast('Put to the House.'); route(); }
+    catch (err) { toast(err.message, true); }
+  };
+  if ($('#conf')) $('#conf').onclick = () => busy($('#conf'), async () => {
+    try {
+      const r = await api('/api/prime-minister/confirm', { method: 'POST' });
+      toast(r.confirmed ? 'Confirmed. They are Prime Minister.' : `Recorded — ${r.votes} of ${r.needed}.`);
+      route();
+    } catch (err) { toast(err.message, true); }
+  });
+  if ($('#refuse')) $('#refuse').onclick = () => busy($('#refuse'), async () => {
+    if (!confirm('Declare that the House refuses this appointment?')) return;
+    try {
+      const r = await api('/api/prime-minister/refuse', { method: 'POST' });
+      toast(r.dissolved ? 'Three refusals — the House is dissolved.' : `Refusal ${r.refused} of 3.`);
+      route();
+    } catch (err) { toast(err.message, true); }
+  });
+  if ($('#nc')) $('#nc').onclick = () => busy($('#nc'), async () => {
+    if (!confirm('Move that the House has no confidence in the Prime Minister?')) return;
+    try {
+      const r = await api('/api/prime-minister/no-confidence', { method: 'POST' });
+      toast(r.fallen ? 'The government has fallen.' : `Recorded — ${r.votes} of ${r.needed}.`);
+      route();
+    } catch (err) { toast(err.message, true); }
+  });
+}
+
 /* Article 12 — the President drafting a declaration, and the record of every
    one ever made. The form is deliberately blunt about what it costs. */
 async function viewEmergency(v) {
@@ -1301,6 +1481,15 @@ async function viewBill(v, id) {
       ${has('president') ? `<div class="row">
         <button class="btn btn-aye" data-act="assent">Give assent</button>
         <button class="btn btn-no" data-act="veto">Veto</button></div>` : ''}`;
+  } else if (b.status === 'tied') {
+    /* A tie used to be lost silently. It now waits for the chair, which means the
+       chair has to be able to reach it. */
+    action = `${strip()}
+      <p class="small">The division is tied. Article 4.7 gives the casting vote to the Speaker, who must vote one way or the other — there is no abstaining from it.</p>
+      ${has('speaker') ? `<div class="row" style="margin-top:10px">
+        <button class="btn btn-aye" data-cast="aye">Cast aye</button>
+        <button class="btn btn-no" data-cast="no">Cast no</button>
+      </div>` : '<p class="small muted">Waiting on the Speaker.</p>'}`;
   } else if (b.status === 'vetoed') {
     const canOverride = STATE.config.allow_veto_override === 'true';
     action = `${strip()}<p class="small">${canOverride
@@ -1385,6 +1574,12 @@ async function viewBill(v, id) {
   document.querySelectorAll('[data-act]').forEach(btn => btn.onclick = async () => {
     const a = btn.dataset.act;
     const paths = { table: 'table', division: 'division', close: 'close', assent: 'assent', veto: 'assent', override: 'override' };
+    onAction('[data-cast]', async btn => {
+      if (!confirm(`Cast ${btn.dataset.cast}? The casting vote decides the bill.`)) return;
+      const r = await api(`/api/bills/${id}/casting-vote`, { method: 'POST', body: { vote: btn.dataset.cast } });
+      toast(r.carried ? 'Carried on your casting vote.' : 'Lost on your casting vote.');
+      route();
+    });
     try {
       const r = await api(`/api/bills/${id}/${paths[a]}`, { method: 'POST', body: a === 'veto' ? { veto: true } : {} });
       if (r.impeached) toast(`${r.impeached} removed from ${r.removed_from.join(', ')} — ${r.result}`);
