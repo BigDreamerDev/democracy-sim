@@ -1592,6 +1592,7 @@ const RULE_KEYS = [
   'secret_ballot', 'term_days',
   'cycle_enabled', 'cycle_days', 'campaign_days', 'poll_days', 'cycle_elects',
   'speaker_auto', 'speaker_threshold', 'speaker_relax', 'enforce_term_limit', 'nation_name', 'motto',
+  'salary_treasurer', 'salary_fed_chair', 'fed_terms', 'bank_charter_fee', 'deposit_guarantee',
   'diplomacy_enabled', 'foreign_actions_per_cycle', 'treaty_threshold', 'recognition_threshold', 'foreign_trade_tax'
 ];
 
@@ -1629,6 +1630,11 @@ const CONFIG_FIELDS = [
   ['speaker_poll_hours', 'Speaker poll (hours)'],
   ['enforce_term_limit', 'No two consecutive cycles in office (true / false)'],
   ['goods_economy_enabled', 'Strategic goods economy (true / false)'],
+  ['salary_treasurer', 'Treasurer salary'],
+  ['salary_fed_chair', 'Fed chair salary'],
+  ['fed_terms', 'Cycles the head of the Fed serves'],
+  ['bank_charter_fee', 'Least capital a citizen may open a bank with'],
+  ['deposit_guarantee', 'What the Treasury makes good per depositor if a bank fails'],
   ['diplomacy_enabled', 'Enable diplomacy (true / false)'],
   ['foreign_actions_per_cycle', 'Foreign actions allowed per cycle'],
   ['treaty_threshold', 'Treaty ratification threshold (0–1)'],
@@ -1690,6 +1696,7 @@ async function viewAdmin(v) {
 
     <div class="card"><h2>Appoint and remove</h2>
       <p class="small muted">For ties, resignations, and coups. Elections normally do this for you.</p>
+      <p class="small muted">The Treasurer and the head of the Fed are not here on purpose. The Treasurer is the government's to appoint, and the Fed's head is nominated by the President, confirmed by the House, and removable only by impeachment — you would be taking a power from one of them, or a power nobody has.</p>
       <form id="off" class="stack" style="margin-top:10px">
         <div class="grid2">
           <label class="field"><span>Citizen</span><select name="user_id">${citizens.map(u => `<option value="${u.id}">${esc(u.display_name)}</option>`).join('')}</select></label>
