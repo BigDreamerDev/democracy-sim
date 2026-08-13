@@ -293,3 +293,38 @@ CREATE TABLE IF NOT EXISTS supermajority_signatures (
 );
 
 CREATE INDEX IF NOT EXISTS idx_super_status ON supermajorities(status);
+
+/* The Prime Minister.
+
+   The President appoints, the House confirms, the House alone removes. The
+   Prime Minister assents to ordinary bills; the President keeps a veto over
+   constitutional and electoral ones, so neither holds the other's key.
+
+   casting_vote records the Speaker breaking a tied division — previously a tie
+   was simply lost, silently. */
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS casting_vote TEXT;
+
+CREATE TABLE IF NOT EXISTS pm_nominations (
+  id           SERIAL PRIMARY KEY,
+  user_id      INT REFERENCES users(id) ON DELETE CASCADE,
+  nominated_by INT REFERENCES users(id) ON DELETE SET NULL,
+  status       TEXT DEFAULT 'open',     -- open | confirmed | refused | withdrawn
+  created_at   TIMESTAMPTZ DEFAULT now(),
+  settled_at   TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS pm_confirmations (
+  nomination_id INT REFERENCES pm_nominations(id) ON DELETE CASCADE,
+  user_id       INT REFERENCES users(id) ON DELETE CASCADE,
+  at            TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (nomination_id, user_id)
+);
+
+/* Article 17.6 — confidence withdrawn one member at a time, and the office
+   falls the moment a majority has moved. */
+CREATE TABLE IF NOT EXISTS no_confidence (
+  pm_user_id INT REFERENCES users(id) ON DELETE CASCADE,
+  user_id    INT REFERENCES users(id) ON DELETE CASCADE,
+  at         TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (pm_user_id, user_id)
+);

@@ -87,7 +87,10 @@ const DEFAULTS = {
   emergency_max_days: '3',         // longest a declaration may run before it lapses
   emergency_end_share: '0.5',      // share of the House needed to end one at once
 
-  justice_terms: '3',              // cycles a Justice serves
+  justice_terms: '2',              // cycles a Justice sits — two 7-day cycles is the fortnight
+  justice_auto: 'true',            // call the ballot when the People's seat falls empty
+  justice_nomination_hours: '24',
+  justice_poll_hours: '48',              // cycles a Justice serves
 
   // The Creation of an Economy Act
   currency_name: 'Mark',
@@ -658,7 +661,7 @@ async function electorate(e) {
 }
 
 const DAY = 86400000, HOUR = 3600000;
-const TITLES = { parliament: 'General election', president: 'Presidential election', speaker: 'Election of the Speaker', referendum: 'Referendum' };
+const TITLES = { parliament: 'General election', president: 'Presidential election', speaker: 'Election of the Speaker', justice: "Election of the People's Justice", referendum: 'Referendum' };
 
 /* Close an election and seat whoever won it. Used by the admin route and by the clock. */
 /* ------------------------------------------------------------ referendums
@@ -806,6 +809,49 @@ async function certify(e, actorId) {
   const cutoff = winners.at(-1)?.votes;
   const tie = results.filter(r => r.votes === cutoff).length > winners.filter(w => w.votes === cutoff).length;
 
+  /* The People's Justice.
+
+     Article 17.1 gives the Citizens one seat on the Court, and until now nobody
+     voted for it — the Returning Officer simply recorded a name. This is that
+     vote. Three things make it unlike every other election:
+
+     1. It seats into court_seats as well as offices, and only seat 3. The
+        generic path below vacates every holder of the office being elected,
+        which for 'justice' would sweep the House's and the President's
+        appointees out of a ballot they had no part in.
+     2. A tie leaves the seat vacant and the ballot is simply run again. The
+        generic path breaks ties by display-name order, and display names are
+        user-editable, so on a seat held for a fixed term that is worth gaming.
+     3. It is refused outright while the seat is occupied. A Justice holds for a
+        term (17.3); an election that could unseat one mid-term would make the
+        term decorative and put the Court at the mercy of whoever calls polls. */
+  if (e.kind === 'justice') {
+    const seat = (await q('SELECT * FROM court_seats WHERE seat=3')).rows[0];
+    if (seat?.user_id) {
+      log(actorId, 'election.justice.void', `${e.title}: the seat was already filled`);
+      return { seated: [], void: true, reason: 'the seat was filled before the poll closed' };
+    }
+    if (!winners[0]) {
+      log(actorId, 'election.justice.empty', `${e.title}: nobody stood, or nobody voted`);
+      return { seated: [], failed: true, reason: 'nobody was elected' };
+    }
+    if (tie) {
+      log(actorId, 'election.justice.tied', `${e.title}: tied on ${cutoff} votes, seat left vacant`);
+      return { seated: [], tie: true, reason: 'the vote was tied, so the seat stays empty and the ballot is run again' };
+    }
+    // Article 17.11: a Justice holds no other office.
+    const clash = await officesOf(winners[0].user_id);
+    if (clash.length) {
+      log(actorId, 'election.justice.unseated', `${winners[0].display_name} won but holds ${clash.join(', ')} — Article 17.11`);
+      return { seated: [], failed: true, reason: `${winners[0].display_name} holds office as ${clash.join(', ')} and would have to resign it first` };
+    }
+    const ends = justiceTermEnds();
+    await q('UPDATE court_seats SET user_id=$1, appointed_at=now(), term_ends=$2 WHERE seat=3', [winners[0].user_id, ends]);
+    await q("INSERT INTO offices(office,user_id,seat,election_id) VALUES('justice',$1,3,$2)", [winners[0].user_id, e.id]);
+    log(actorId, 'election.justice.carried', `${winners[0].display_name} elected to the People's seat with ${winners[0].votes} votes, until ${ends.toISOString().slice(0, 10)}`);
+    return { seated: [{ office: 'justice', name: winners[0].display_name, votes: winners[0].votes }], term_ends: ends };
+  }
+
   await q('UPDATE offices SET active=FALSE, until=now() WHERE office=$1 AND active', [office]);
   if (office === 'mp') await q("UPDATE offices SET active=FALSE, until=now() WHERE office='speaker' AND active");
   const seated = [];
@@ -853,6 +899,44 @@ function cycleNow() {
   if (now >= p.opens_at.getTime()) { phase = 'poll'; next = p.closes_at; }
   else if (now >= p.campaign_at.getTime()) { phase = 'campaign'; next = p.opens_at; }
   return { number: k + 1, phase, next_at: next, ...p };
+}
+
+/* How long a Justice sits, in one place, because certify() and judiciary.js both
+   need the answer and a fortnight in one and three weeks in the other would be
+   invisible until somebody's term ended early. Two cycles of seven days is the
+   fortnight the Act asks for; both halves are settings. */
+function justiceTermEnds() {
+  const terms = Math.max(1, num('justice_terms') || 2);
+  return new Date(Date.now() + terms * num('cycle_days') * DAY);
+}
+
+/* A term that never ends is not a term. Nothing used to expire a Justice's seat,
+   so `term_ends` was decoration. This retires them on the tick — for all three
+   seats, since the House's and the President's appointees hold for a term too. */
+async function retireExpiredJustices() {
+  const { rows } = await q(`
+    SELECT s.seat, s.user_id, u.display_name FROM court_seats s
+      JOIN users u ON u.id = s.user_id
+     WHERE s.user_id IS NOT NULL AND s.term_ends IS NOT NULL AND s.term_ends <= now()`);
+  for (const j of rows) {
+    await q("UPDATE offices SET active=FALSE, until=now() WHERE user_id=$1 AND office='justice' AND active", [j.user_id]);
+    await q('UPDATE court_seats SET user_id=NULL, appointed_at=NULL, term_ends=NULL WHERE seat=$1', [j.seat]);
+    log(null, 'court.term.ended', `${j.display_name} leaves seat ${j.seat}, term served`);
+  }
+}
+
+/* The Citizens' seat is filled by a vote, so when it falls empty the vote is
+   called rather than waiting for someone to remember. Same shape as the
+   Speaker's ballot, and the same guard against opening a second one. */
+async function ensureJusticeElection() {
+  const seat = (await q('SELECT user_id FROM court_seats WHERE seat=3')).rows[0];
+  if (!seat || seat.user_id) return;
+  if ((await q("SELECT 1 FROM elections WHERE kind='justice' AND status<>'closed'")).rows[0]) return;
+  const opens = new Date(Date.now() + num('justice_nomination_hours') * HOUR);
+  const closes = new Date(opens.getTime() + num('justice_poll_hours') * HOUR);
+  await q(`INSERT INTO elections(kind,title,seats,status,opens_at,closes_at,auto)
+           VALUES('justice',$1,1,'nominations',$2,$3,TRUE)`, [TITLES.justice, opens, closes]);
+  log(null, 'cycle.justice', "ballot opened for the People's seat");
 }
 
 /* The House keeps balloting until someone clears the threshold. */
@@ -920,6 +1004,10 @@ async function tick() {
     }
 
     if (bool('speaker_auto')) await ensureSpeakerElection();
+    /* Retire first, then call the ballot, so a term that ends on this tick puts
+       the election in the same minute rather than sixty seconds later. */
+    await retireExpiredJustices();
+    if (!halted && bool('justice_auto')) await ensureJusticeElection();
   } catch (err) {
     console.error('[republic] tick failed:', err.message);
   }
@@ -997,7 +1085,7 @@ app.get('/api/elections/:id', wrap(async (req, res) => {
 app.post('/api/elections', admin, wrap(async (req, res) => {
   await loadConfig();
   const { kind, title, seats, closes_at, target_law_id } = req.body || {};
-  if (!['president', 'parliament', 'speaker', 'referendum'].includes(kind))
+  if (!['president', 'parliament', 'speaker', 'justice', 'referendum'].includes(kind))
     return res.status(400).json({ error: 'Pick a valid election type.' });
   if (kind === 'referendum' && target_law_id) {
     const made = await openReferendum(Number(target_law_id), req.user.id, 'called by the returning officer');
@@ -1128,6 +1216,16 @@ app.post('/api/elections/:id/status', admin, wrap(async (req, res) => {
   await q('UPDATE elections SET status=$1, auto=FALSE WHERE id=$2', [status, e.id]);
   log(req.user.id, 'election.status', `${e.title} -> ${status}`);
   res.json({ ...e, status });
+}));
+
+/* Run the clock now. Render's free tier sleeps and a sleeping instance has no
+   timer, so polls can open late and a Justice's term can outlast itself by
+   however long nobody visited. Everything self-heals on the next tick; this is
+   the button that says "next tick, please" instead of waiting up to a minute. */
+app.post('/api/admin/tick', admin, wrap(async (req, res) => {
+  await tick();
+  log(req.user.id, 'cycle.tick', 'run by hand');
+  res.json({ ok: true, at: new Date().toISOString(), cycle: cycleNow() });
 }));
 
 app.post('/api/admin/cycle', admin, wrap(async (req, res) => {
@@ -2428,6 +2526,7 @@ app.put('/api/admin/constitution', admin, wrap(async (req, res) => {
 const ACT_CONTEXT = {
   q, log, auth, admin, wrap, num, bool, loadConfig, officesOf, holds,
   citizenCount, slowWrites, requireOffice, enact, canPropose, cycleNow, addEnactHook, bcrypt, crypto,
+  justiceTermEnds,
   get CONFIG() { return CONFIG; }
 };
 for (const mod of ['./judiciary', './economy', './money']) {

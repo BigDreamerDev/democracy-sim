@@ -38,11 +38,12 @@ module.exports.mount = function mount(app, ctx) {
      through themselves, and the people through a vote — which for now the
      Returning Officer records, since there is no separate ballot for it yet. */
   async function mayAppoint(user, appointer) {
-    /* The Returning Officer records the People's seat, because there is no
-       separate ballot for it yet. That is the whole of their part in the Court.
-       They are not the House and not the President, and an RO who could fill
-       those two seats would hold a majority of the bench outright. */
-    if (user.is_admin) return appointer === 'people';
+    /* Offices are checked first, and the admin flag is only ever an *extra*
+       route into the People's seat — never a short circuit. Uzair is the
+       Returning Officer and also plays, so the same account routinely holds an
+       office too; testing is_admin up front silently took the Speaker's own seat
+       away from them. Ask what office someone holds, then ask whether they are
+       also the RO. Never the other way round. */
     const held = await officesOf(user.id);
     if (appointer === 'house') return held.includes('speaker');
     /* The President's seat on the Court. A Vice President may fill it only while
@@ -54,7 +55,11 @@ module.exports.mount = function mount(app, ctx) {
       const sitting = (await q("SELECT 1 FROM offices WHERE office='president' AND active")).rows[0];
       return !sitting;
     }
-    return false; // 'people' — recorded by the Returning Officer
+    /* The People's seat is filled by the People, at a ballot, and by nobody
+       else — not the Speaker, not the President, and not the Returning Officer,
+       who used to record a name here because there was no vote to record.
+       certify() seats the winner directly. */
+    return false;
   }
 
   async function courtNow() {
@@ -90,7 +95,12 @@ module.exports.mount = function mount(app, ctx) {
         FROM cases c LEFT JOIN users u ON u.id = c.brought_by
        ORDER BY c.created_at DESC LIMIT 50`)
       ).rows;
-      res.json({ seats, cases, sitting: seats.filter(s => s.user_id).length });
+      /* The People's seat has a ballot behind it now, so the bench points at it
+         instead of showing a vacancy with no way to fill it. */
+      const ballot = (await q(`
+        SELECT id, title, status, opens_at, closes_at FROM elections
+         WHERE kind='justice' AND status<>'closed' ORDER BY id DESC LIMIT 1`)).rows[0] || null;
+      res.json({ seats, cases, ballot, sitting: seats.filter(s => s.user_id).length });
     })
   );
 
@@ -106,7 +116,7 @@ module.exports.mount = function mount(app, ctx) {
         const who = {
           house: 'the Speaker, on behalf of the House',
           president: 'the President',
-          people: 'the Citizens'
+          people: 'the Citizens, at a ballot — call an election of kind "justice" rather than appointing to it'
         }[seat.appointer];
         return res.status(403).json({ error: `Seat ${seat.seat} is filled by ${who}.` });
       }
@@ -139,8 +149,7 @@ module.exports.mount = function mount(app, ctx) {
       ).rows[0];
       if (already) return res.status(400).json({ error: 'That citizen already sits on the Court.' });
 
-      const terms = Math.max(1, num('justice_terms') || 3);
-      const ends = new Date(Date.now() + terms * num('cycle_days') * 86400000);
+      const ends = ctx.justiceTermEnds();
 
       await q('UPDATE court_seats SET user_id=$1, appointed_at=now(), term_ends=$2 WHERE seat=$3', [
         target.id,
