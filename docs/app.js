@@ -693,6 +693,7 @@ async function viewChamber(v) {
   const { offices, config, stats, elections, bills, parties } = STATE;
   const pres = offices.find(o => o.office === 'president');
   const spk = offices.find(o => o.office === 'speaker');
+  const pm = offices.find(o => o.office === 'prime_minister');
 
   v.innerHTML = `
     <h1 class="page">${esc(config.nation_name)}</h1>
@@ -726,8 +727,20 @@ async function viewChamber(v) {
       <p class="eyebrow">The chamber · ${config.seats} seats</p>
       ${hemicycle(offices, Number(config.seats))}
       <div class="offices">
-        <div class="office"><p class="eyebrow">President</p><strong>${esc(pres?.display_name || 'Vacant')}</strong></div>
-        <div class="office"><p class="eyebrow">Speaker</p><strong>${esc(spk?.display_name || 'Vacant')}</strong></div>
+        <div class="office"><p class="eyebrow">President</p><strong>${esc(pres?.display_name || 'Vacant')}</strong>
+          <p class="office-note">Appoints the Prime Minister · assents to constitutional bills</p></div>
+
+        <div class="office ${pm ? '' : 'is-vacant'}"><p class="eyebrow">Prime Minister</p>
+          <strong>${esc(pm?.display_name || 'Vacant')}</strong>
+          <p class="office-note">${pm
+            ? 'Assents to ordinary bills · holds office while the House allows'
+            : 'No ordinary bill can become law until the President appoints one and the House confirms'}</p>
+          ${!pm && has('president') ? '<a class="btn btn-sm btn-primary" href="#/prime-minister" style="margin-top:8px">Appoint one</a>' : ''}
+          ${!pm && has('mp') && !has('president') ? '<a class="btn btn-sm" href="#/prime-minister" style="margin-top:8px">See the appointment</a>' : ''}
+        </div>
+
+        <div class="office"><p class="eyebrow">Speaker</p><strong>${esc(spk?.display_name || 'Vacant')}</strong>
+          <p class="office-note">Tables bills, calls and closes divisions, breaks ties</p></div>
       </div>
     </section>
 

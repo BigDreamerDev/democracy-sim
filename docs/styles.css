@@ -728,3 +728,15 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
   .option { padding: 18px 14px; }
   .option input { width: 22px; height: 22px; }
 }
+
+/* The offices that decide what becomes law, with what each one is for. A vacant
+   Prime Ministership stops ordinary bills entirely, so it is marked rather than
+   left looking like an empty slot nobody has got round to. */
+.office-note{
+  font-size:11.5px;line-height:1.45;color:var(--ink-2);margin:6px 0 0;
+}
+.office.is-vacant{
+  border-color:var(--oxide);border-style:dashed;
+}
+.office.is-vacant strong{color:var(--oxide)}
+.office.is-vacant .office-note{color:var(--oxide);opacity:.85}
