@@ -1709,11 +1709,12 @@ async function viewAdmin(v) {
 
     <div class="card"><h2>Appoint and remove</h2>
       <p class="small muted">For ties, resignations, and coups. Elections normally do this for you.</p>
+      <p class="small muted">The Prime Minister is properly appointed by the President and confirmed by the House on the <a href="#/prime-minister">Prime Minister</a> page — that records who backed the government. Use this only where the House has already decided elsewhere and will not tap through.</p>
       <p class="small muted">The Treasurer and the head of the Fed are not here on purpose. The Treasurer is the government's to appoint, and the Fed's head is nominated by the President, confirmed by the House, and removable only by impeachment — you would be taking a power from one of them, or a power nobody has.</p>
       <form id="off" class="stack" style="margin-top:10px">
         <div class="grid2">
           <label class="field"><span>Citizen</span><select name="user_id">${citizens.map(u => `<option value="${u.id}">${esc(u.display_name)}</option>`).join('')}</select></label>
-          <label class="field"><span>Office</span><select name="office"><option value="mp">MP</option><option value="speaker">Speaker</option><option value="president">President</option></select></label>
+          <label class="field"><span>Office</span><select name="office"><option value="mp">MP</option><option value="speaker">Speaker</option><option value="president">President</option><option value="prime_minister">Prime Minister</option></select></label>
         </div>
         <label class="field"><span>Seat number (MPs only)</span><input name="seat" type="number" min="1"></label>
         <div class="row"><button class="btn btn-primary" name="do" value="add">Appoint</button>
