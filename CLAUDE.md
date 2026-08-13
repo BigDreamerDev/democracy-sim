@@ -16,8 +16,8 @@ It is a game, but the constraints are not pretend: the people playing it will tr
 cd server
 npm install
 npm run dev          # localhost:4321, in-memory DB, seeded republic, no deploy
-npm test             # ten suites, each on a fresh database
-npm run test:layout  # three frontend checks (needs jsdom)
+npm test             # fourteen suites, each on a fresh database
+npm run test:layout  # six frontend checks (needs jsdom)
 ```
 
 `npm run dev` prints six logins. Use them to see the same page as an MP, the President, a Justice, and someone with no office at all. The last one is the view most people have and the one most often broken.
@@ -33,12 +33,15 @@ server/server.js      core. Auth, config, elections, bills, laws, constitution, 
                       Ends by mounting ./judiciary and ./economy, then a 404 catch-all.
 server/judiciary.js   the Supreme Court. Optional module.
 server/economy.js     money, tax, enterprise, bank, shares. Optional module.
+server/money.js       the Treasury, the Fed, private banks. Optional; needs economy.js.
 server/diplomacy.js   foreign powers, treaties, trade, conflict, multi-agent governments. Optional module.
 server/schema.sql     core tables. Runs on every boot; everything IF NOT EXISTS.
 server/schema-acts.sql court + economy tables. Same.
 server/schema-diplomacy.sql diplomacy + foreign-government tables. Same.
+server/schema-money.sql Treasury, Fed and private-bank tables. Same.
 docs/app.js           the SPA. Hash router, view functions, exposes window.Republic.
 docs/acts.js          Court and Economy pages, registered through that hook.
+docs/money.js         Treasury and Fed pages, registered the same way.
 ```
 
 Modules receive a context object (`q`, `log`, `auth`, `admin`, `wrap`, `num`, `bool`, …) rather than importing from `server.js`. A missing module file is logged and skipped, so either Act can be removed without editing core.
@@ -86,6 +89,27 @@ Each of these has already caused a real bug here.
 
 **Seeding a balance is a transfer, never an insert.** The same bug in miniature: giving a new power its opening balance directly on the accounts row prints it. Debit the Treasury.
 
+**economy.js must mount before money.js.** The Treasury and the Fed do not own
+the ledger; they borrow `pay()`, `accountFor()` and the rest off `ctx.economy`,
+which economy.js sets on the shared context as its last act. Reorder the mount
+list and `/api/treasury` and `/api/fed` answer 503 forever.
+
+**Issuance cannot go through `pay()`.** `pay()` refuses an overdraft, and the
+Fed's account is *supposed* to be overdrawn — that negative balance is the money
+supply. `issue()` in money.js writes both sides itself for that reason. It is the
+one place outside a foreign seeding that does, and it still writes the ledger, so
+`sum(accounts.balance)` stays 0. If you add a third, prove that sum first.
+
+**The deposit guarantee is a cap, not a promise.** A depositor above it loses the
+difference when a bank fails, and the founder loses the lot. That is deliberate
+and the suite asserts the exact numbers; if you "fix" it so everyone is made
+whole, you have removed the only reason anyone would care which bank they use.
+
+**A licensed bank's interest moves no money.** Paying deposit interest raises the
+depositor's *claim* without raising the bank's reserves, exactly as the public
+bank already does. The shortfall is real and shows up on closure. Do not
+"correct" this by crediting reserves — that mints money.
+
 **`offices` is the source of truth.** Impeachment and suspension write there and know nothing about `court_seats`, which must be reconciled on read or the bench shows a ghost.
 
 ---
@@ -98,6 +122,30 @@ Each of these has already caused a real bug here.
 - **Repeal is easier than enactment.** Petition and referendum can strike a law down; enacting by initiative needs `initiative_mode = enact`, which is off by default.
 - **The Treasury may go negative.** The dividend is unconditional, so it cannot be contingent on the state being solvent.
 - **`term_days` does nothing.** Vestigial. A term is one cycle. Delete it if you are touching that area.
+- **There is no endpoint that dismisses the head of the Fed.** Not an oversight.
+  Article 21.10 and 21.11: the President who nominated them cannot remove them,
+  and neither can the House except by impeachment at two thirds. An appointee who
+  can be dismissed is an employee. The front end hides the control too, and
+  `test/money-view.js` asserts that it stays hidden — a button that appears and
+  then 403s teaches players the office is removable and they merely lack the knack.
+- **`deposit_rate`, `loan_rate`, `loan_ceiling` and `reserve_ratio` are not
+  legislatable.** A rule bill setting the rate of interest is the House
+  instructing the Fed with a vote attached, which 21.10 forbids in terms. They
+  move only through `/api/fed/rates`, with published reasons. The Returning
+  Officer can still set them through `/api/admin/config`, as they can every other
+  setting — that is the existing admin seam, not a new one, and the tests rely on
+  it. Setting a value is not holding an office; see the entry on
+  `/api/admin/office` below.
+- **`/api/admin/office` refuses `treasurer` and `fed_chair`.** The RO runs the
+  machinery and holds no office; those two have routes of their own that mean
+  something, and a second administrative door would empty them. The RO can still
+  edit every *setting* on the admin page, including the Fed's rates — that is the
+  existing seam, it is logged, and someone has to be able to fix a typo. On the
+  Court the RO fills only the People's seat, for the same reason.
+- **The Treasurer falls with the government; the Fed chair does not.** The
+  Treasury is appointed by the Prime Minister, or by the President where there is
+  none, and either may dismiss them. That asymmetry is the entire point of having
+  two money offices instead of one.
 
 ---
 
@@ -128,6 +176,7 @@ Multi-agent foreign governments are hard-locked to free providers; `LLM_FREE_ONL
 - `docs-src/REFERENCE.md` — full API and system reference.
 - `docs-src/DIPLOMACY.md` — contract and implementation guide for the foreign-powers interface.
 - `docs-src/MULTI-AGENT-DIPLOMACY.md` — foreign governments run by several cooperating LLM agents.
+- `MONEY.md` — the Treasury and the Fed: offices, powers, and what each cannot do.
 - `campaign/` — a candidate's speech and three drafted bills. Content, not code.
 
 ---

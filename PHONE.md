@@ -81,6 +81,20 @@ prefers vectors.
 lazily inside the endpoint, so if it is missing or fails to build you get a 503
 on the widget rather than a Republic that will not boot.
 
+### Why the image has an inset border
+
+iOS masks a widget with its own corner radius, and Android launchers do the same.
+Anything within about 24pt of a corner is simply cut away — which is why a
+full-bleed flag strip lost both its ends.
+
+So the image keeps everything inside a safe inset, and the flag is drawn as a
+rounded bar rather than an edge-to-edge stripe. The background still goes edge to
+edge, because the host is doing the rounding. If your widget host does **not**
+clip, add `?radius=18` and the image rounds itself.
+
+Verified by rendering the widget and masking it at 24pt: nothing of the content
+is lost.
+
 ### The honest recommendation
 
 The **home screen icon plus a badge** is worth more than any widget. Most people
