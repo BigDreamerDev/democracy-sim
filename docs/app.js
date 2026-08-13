@@ -803,6 +803,7 @@ async function viewElections(v) {
             <option value="parliament">Parliament (${STATE.config.seats} seats)</option>
             <option value="president">President</option>
             <option value="speaker">Speaker (MPs vote)</option>
+            <option value="justice">The People's Justice</option>
             <option value="referendum">Referendum</option>
           </select></label>
           <label class="field"><span>Closes (optional)</span><input type="datetime-local" name="closes_at"></label>
@@ -1800,6 +1801,7 @@ const RULE_KEYS = [
   'secret_ballot', 'term_days',
   'cycle_enabled', 'cycle_days', 'campaign_days', 'poll_days', 'cycle_elects',
   'speaker_auto', 'speaker_threshold', 'speaker_relax', 'enforce_term_limit', 'nation_name', 'motto',
+  'justice_terms', 'justice_auto', 'justice_nomination_hours', 'justice_poll_hours',
   'salary_treasurer', 'salary_fed_chair', 'fed_terms', 'bank_charter_fee', 'deposit_guarantee',
   'diplomacy_enabled', 'foreign_actions_per_cycle', 'treaty_threshold', 'recognition_threshold', 'foreign_trade_tax'
 ];
@@ -1831,6 +1833,10 @@ const CONFIG_FIELDS = [
   ['campaign_days', 'Days of campaigning'],
   ['poll_days', 'Days the poll stays open'],
   ['cycle_elects', 'Contested each cycle (parliament, president)'],
+  ['justice_terms', "Cycles a Justice sits (2 x 7 days = a fortnight)"],
+  ['justice_auto', "Call a ballot when the People's seat falls empty (true / false)"],
+  ['justice_nomination_hours', 'Hours to stand for the People\'s seat'],
+  ['justice_poll_hours', "Hours the People's ballot stays open"],
   ['speaker_auto', 'House picks its own Speaker automatically (true / false)'],
   ['speaker_threshold', 'Speaker threshold (0–1, share of the House)'],
   ['speaker_relax', 'Votes the Speaker bar drops per failed ballot (0 = never)'],

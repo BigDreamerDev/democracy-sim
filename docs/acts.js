@@ -42,7 +42,7 @@
             <span class="justice-seat">Seat ${s.seat}</span>
             <div class="justice-mark">${esc(s.display_name ? s.display_name.trim()[0].toUpperCase() : '—')}</div>
             <span class="justice-name">${esc(s.display_name || 'Vacant')}</span>
-            <span class="justice-by">appointed ${esc(byWhom(s.appointer))}</span>
+            <span class="justice-by">${s.appointer === 'people' ? 'elected by the Citizens' : `appointed ${esc(byWhom(s.appointer))}`}</span>
             ${s.term_ends ? `<span class="justice-term">until ${day(s.term_ends)}</span>` : ''}
             ${
               s.can_appoint || s.can_vacate
@@ -58,7 +58,19 @@
             )
             .join('')}
         </div>
-        <p class="small muted" style="margin-top:14px">A Justice may hold no other office, and serves ${esc(STATE().config.justice_terms)} cycles — outlasting whoever appointed them. A seat can only be filled when it is empty: a sitting Justice leaves by resigning, or by being impeached at two thirds of the House.</p>
+        <p class="small muted" style="margin-top:14px">A Justice may hold no other office, and serves ${esc(STATE().config.justice_terms)} cycles — outlasting whoever appointed them. A seat can only be filled when it is empty: a sitting Justice leaves by resigning, by being impeached at two thirds of the House, or by serving out the term.</p>
+        ${
+          c.ballot
+            ? `<div class="item" style="margin-top:12px">
+          <div class="item-top"><span class="item-title">The People's seat is being voted on</span>
+            <span class="tag">${esc(c.ballot.status)}</span></div>
+          <p class="small muted" style="margin-top:4px">Seat 3 belongs to the Citizens, so it is filled at a ballot rather than by appointment. Anyone may stand, everyone votes, and a tie leaves it empty and runs the vote again.</p>
+          <div class="row" style="margin-top:8px"><a class="btn btn-sm btn-primary" href="#/election/${c.ballot.id}">Go to the ballot</a></div>
+        </div>`
+            : !c.seats[2].user_id
+              ? `<p class="small muted" style="margin-top:10px">The People's seat is empty and no ballot is open. It is filled by a vote of every Citizen, not by appointment — the Returning Officer calls one from the elections page.</p>`
+              : ''
+        }
       </div>
 
       <div class="card">
