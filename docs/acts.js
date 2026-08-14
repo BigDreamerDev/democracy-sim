@@ -960,6 +960,9 @@
       .join('');
 
     const subdivisionGroups = Object.entries(subCodesByCountry).map(([country, codes]) => {
+      const hasOwnership = countriesWithSubdivisionOwnership.has(String(country));
+      const densityClass = codes.length > 30 ? ' is-dense' : '';
+      const activeClass = hasOwnership ? ' is-active' : '';
       const paths = codes.map(code => {
         const d = S.shapes[code];
         const owner = subdivisionOwners.get(code);
@@ -977,8 +980,15 @@
                   <title>${esc(p.name)} — ${esc(standingLabel(p.standing))}</title>
                 </path>`;
       }).join('');
-      return `<g class="wm-subdivision-country" data-territory="${country}" clip-path="url(#wm-clip-${country})">${paths}</g>`;
+      return `<g class="wm-subdivision-country${activeClass}${densityClass}" data-territory="${country}" data-subdivision-count="${codes.length}" clip-path="url(#wm-clip-${country})">${paths}</g>`;
     }).join('');
+
+    /* Country outlines are redrawn above ADM1 paths. This keeps international
+       borders visually stronger than internal borders and hides tiny source-
+       dataset coastline differences at the clip edge. */
+    const countryOutlines = Object.entries(M.shapes)
+      .map(([code, d]) => `<path d="${d}" class="wm-country-outline" data-outline-territory="${code}"/>`)
+      .join('');
 
     const republicLabel = (() => {
       const code = [...republicHeld]
@@ -1023,6 +1033,7 @@
           </defs>
           <g class="wm-shapes">${countryShapes}</g>
           <g class="wm-subdivision-layer">${subdivisionGroups}</g>
+          <g class="wm-country-outline-layer" aria-hidden="true">${countryOutlines}</g>
           <g class="wm-preview-layer" aria-hidden="true"></g>
           <g class="wm-labels">${labels}</g>
         </svg>
@@ -1041,14 +1052,35 @@
   }
 
 
+  function setSubdivisionCountryState(code, className, on) {
+    if (!code) return;
+    const group = document.querySelector(`.wm-subdivision-country[data-territory="${String(code)}"]`);
+    if (group) group.classList.toggle(className, !!on);
+  }
+
+  function setEditingSubdivisionCountry(code) {
+    document.querySelectorAll('.wm-subdivision-country.is-editing').forEach(n => n.classList.remove('is-editing'));
+    if (code) setSubdivisionCountryState(code, 'is-editing', true);
+  }
+
   /* Clicking a country is how you find out who it is. The panel says only what
      the map cannot: the standing in words, whether the Republic recognises them,
-     and how much of the world they hold. */
+     and how much of the world they hold. Hover/focus reveals that country's
+     internal ADM1 lines without turning the full-world view into visual noise. */
   function bindWorldMap(world) {
     if (!world) return;
     const detail = document.querySelector('#wm-detail');
     if (!detail) return;
     const byId = Object.fromEntries(world.powers.map(p => [String(p.id), p]));
+
+    document.querySelectorAll('.wm-shapes [data-territory]').forEach(n => {
+      const code = n.dataset.territory;
+      n.addEventListener('mouseenter', () => setSubdivisionCountryState(code, 'is-hovered', true));
+      n.addEventListener('mouseleave', () => setSubdivisionCountryState(code, 'is-hovered', false));
+      n.addEventListener('focus', () => setSubdivisionCountryState(code, 'is-hovered', true));
+      n.addEventListener('blur', () => setSubdivisionCountryState(code, 'is-hovered', false));
+    });
+
     const show = id => {
       const p = byId[String(id)];
       if (!p) return;
@@ -1300,6 +1332,7 @@
 
     async function loadCountry(code) {
       searchEl.value = '';
+      setEditingSubdivisionCountry(code);
       if (!code) {
         searchEl.disabled = selectVisible.disabled = clearCountry.disabled = true;
         listEl.innerHTML = '<p class="small muted">Choose a country to see its subdivisions.</p>';

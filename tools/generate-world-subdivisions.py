@@ -22,6 +22,7 @@ import difflib
 import json
 import math
 import re
+import statistics
 import sys
 import time
 import unicodedata
@@ -39,8 +40,9 @@ CACHE_DIR = ROOT / ".tools-cache" / "world-subdivisions"
 API = "https://www.geoboundaries.org/api/current/gbOpen/{alpha3}/ADM1/"
 USER_AGENT = "democracy-sim subdivision map generator/1.0"
 ROUND = 1
-SIMPLIFY_TOLERANCE_PX = 0.28
+SIMPLIFY_TOLERANCE_PX = 0.20
 MAX_WORKERS = 8
+MIN_CALIBRATION_SIZE_PX = 5.0
 
 
 def fetch_json(url: str, retries: int = 3):
@@ -123,16 +125,27 @@ def country_lon_mode(features):
     return max(lons) - min(lons) > 180
 
 
-def projected_rings(feature, wrap_antimeridian: bool):
+def projected_rings(feature):
+    """Project lon/lat with the same Natural Earth raw formula as world-map.js.
+
+    Crucially, this does *not* fit or stretch a feature to its parent country.
+    Every subdivision is projected in one global coordinate system, so borders
+    in neighbouring subdivisions remain geographically consistent.
+    """
     out = []
     for ring in geometry_rings(feature.get("geometry")):
         points = []
+        longitudes = [float(coord[0]) for coord in ring if len(coord) >= 2]
+        # A single ring spanning the anti-meridian needs d3's spherical clipper
+        # to be perfect. Skipping such a ring is safer than drawing a line right
+        # across the world; ordinary multipart countries are unaffected because
+        # their individual rings stay local.
+        if longitudes and max(longitudes) - min(longitudes) > 180:
+            continue
         for coord in ring:
             if len(coord) < 2:
                 continue
             lon, lat = float(coord[0]), float(coord[1])
-            if wrap_antimeridian and lon < 0:
-                lon += 360
             points.append(natural_earth_raw(lon, lat))
         if len(points) >= 3:
             out.append(points)
@@ -185,14 +198,9 @@ def fmt(n: float):
     return f"{value:.{ROUND}f}".rstrip("0").rstrip(".")
 
 
-def rings_to_path(rings, source_bbox, target_bbox):
-    sx0, sy0, sx1, sy1 = source_bbox
-    tx0, ty0, tx1, ty1 = target_bbox
-    sw, sh = max(sx1 - sx0, 1e-12), max(sy1 - sy0, 1e-12)
-    tw, th = tx1 - tx0, ty1 - ty0
-
+def rings_to_path(rings, scale, translate_x, translate_y):
     def transform(p):
-        return (tx0 + (p[0] - sx0) / sw * tw, ty0 + (p[1] - sy0) / sh * th)
+        return (translate_x + p[0] * scale, translate_y + p[1] * scale)
 
     parts = []
     for ring in rings:
@@ -202,6 +210,89 @@ def rings_to_path(rings, source_bbox, target_bbox):
             continue
         parts.append("M" + "L".join(f"{fmt(x)},{fmt(y)}" for x, y in pts) + "Z")
     return "".join(parts)
+
+
+def projected_bbox(features):
+    points = []
+    for feature in features:
+        for ring in projected_rings(feature):
+            points.extend(ring)
+    if not points:
+        return None
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def calibrate_projection(downloaded, target_boxes):
+    """Infer the scale/translation used by the existing country map.
+
+    world-map.js was generated with d3's Natural Earth projection, but the old
+    generator did not retain its scale/translate settings. We recover them from
+    many countries at once. Using medians makes the fit robust to differences
+    between Natural Earth coastlines and geoBoundaries coastlines/remote islands.
+
+    This is intentionally one GLOBAL transform. A per-country fit is what caused
+    subdivisions to look stretched and misaligned.
+    """
+    samples = []
+    for country, data in downloaded.items():
+        target = target_boxes.get(country)
+        features = (data or {}).get("features") or []
+        if not target or not features:
+            continue
+        source = projected_bbox(features)
+        if not source:
+            continue
+        sx0, sy0, sx1, sy1 = source
+        tx0, ty0, tx1, ty1 = target
+        sw, sh = sx1 - sx0, sy1 - sy0
+        tw, th = tx1 - tx0, ty1 - ty0
+        if sw <= 0 or sh <= 0 or tw < MIN_CALIBRATION_SIZE_PX or th < MIN_CALIBRATION_SIZE_PX:
+            continue
+        rx, ry = tw / sw, th / sh
+        # Very different source/target extents usually mean one dataset includes
+        # a remote dependency/island the other omits. Do not let it skew the map.
+        if rx <= 0 or ry <= 0 or max(rx, ry) / min(rx, ry) > 1.35:
+            continue
+        samples.append((country, source, target, rx, ry))
+
+    if len(samples) < 8:
+        raise RuntimeError("Not enough countries to calibrate the Natural Earth projection")
+
+    ratio_seed = statistics.median([r for *_, rx, ry in samples for r in (rx, ry)])
+    # Keep the central 70% by scale agreement; this discards dataset-extent
+    # mismatches without hand-maintaining a country exception list.
+    ranked = sorted(samples, key=lambda row: abs(((row[3] + row[4]) / 2) - ratio_seed))
+    keep = ranked[: max(8, int(len(ranked) * 0.70))]
+    scale = statistics.median([r for *_, rx, ry in keep for r in (rx, ry)])
+
+    x_offsets, y_offsets = [], []
+    residual_rows = []
+    for country, source, target, rx, ry in keep:
+        sx0, sy0, sx1, sy1 = source
+        tx0, ty0, tx1, ty1 = target
+        scx, scy = (sx0 + sx1) / 2, (sy0 + sy1) / 2
+        tcx, tcy = (tx0 + tx1) / 2, (ty0 + ty1) / 2
+        x_offsets.append(tcx - scx * scale)
+        y_offsets.append(tcy - scy * scale)
+    translate_x = statistics.median(x_offsets)
+    translate_y = statistics.median(y_offsets)
+
+    for country, source, target, rx, ry in keep:
+        sx0, sy0, sx1, sy1 = source
+        tx0, ty0, tx1, ty1 = target
+        pred = (
+            translate_x + sx0 * scale, translate_y + sy0 * scale,
+            translate_x + sx1 * scale, translate_y + sy1 * scale,
+        )
+        residual = max(abs(pred[i] - target[i]) for i in range(4))
+        residual_rows.append((residual, country))
+
+    median_residual = statistics.median(r for r, _ in residual_rows)
+    p90_index = min(len(residual_rows) - 1, int(len(residual_rows) * 0.90))
+    p90_residual = sorted(r for r, _ in residual_rows)[p90_index]
+    return scale, translate_x, translate_y, median_residual, p90_residual, len(keep)
 
 
 def download_country(alpha3: str):
@@ -296,6 +387,13 @@ def main():
             except Exception as exc:
                 failures[country] = str(exc)
 
+    scale, translate_x, translate_y, median_residual, p90_residual, calibration_count = calibrate_projection(downloaded, target_boxes)
+    print(
+        f"Calibrated one global Natural Earth transform from {calibration_count} countries: "
+        f"scale={scale:.4f}, translate=({translate_x:.2f}, {translate_y:.2f}); "
+        f"median bbox residual={median_residual:.2f}px, p90={p90_residual:.2f}px"
+    )
+
     shapes = {}
     parents = {}
     missing_report = {}
@@ -315,22 +413,12 @@ def main():
         if not matched:
             continue
 
-        wrap = country_lon_mode(list(matched.values()))
-        all_projected = []
         projected_by_code = {}
         for code, feature in matched.items():
-            rings = projected_rings(feature, wrap)
-            projected_by_code[code] = rings
-            all_projected.extend(p for ring in rings for p in ring)
-        if not all_projected:
-            continue
-        xs = [p[0] for p in all_projected]
-        ys = [p[1] for p in all_projected]
-        source_bbox = (min(xs), min(ys), max(xs), max(ys))
-        target_bbox = target_boxes[country_code]
+            projected_by_code[code] = projected_rings(feature)
 
         for code, rings in projected_by_code.items():
-            d = rings_to_path(rings, source_bbox, target_bbox)
+            d = rings_to_path(rings, scale, translate_x, translate_y)
             if not d:
                 continue
             shapes[code] = d
@@ -342,7 +430,8 @@ def main():
         "height": world["height"],
         "shapes": dict(sorted(shapes.items())),
         "parents": dict(sorted(parents.items())),
-        "source": "geoBoundaries gbOpen ADM1 simplified geometry (CC BY 4.0); fitted to democracy-sim country paths",
+        "source": "geoBoundaries gbOpen ADM1 simplified geometry (CC BY 4.0); globally projected with Natural Earth 1 and clipped to democracy-sim country paths",
+        "projection": {"name": "Natural Earth 1", "scale": round(scale, 6), "translate": [round(translate_x, 4), round(translate_y, 4)]},
     }
     header = """/* Generated by tools/generate-world-subdivisions.py.\n\n   Subdivision geometry: geoBoundaries gbOpen ADM1, used under CC BY 4.0.\n   This file contains geometry and opaque subdivision codes only; subdivision\n   names remain in the Returning Officer API/UI. Do not hand-edit this file. */\n"""
     OUTPUT_FILE.write_text(header + "window.WORLD_SUBDIVISIONS = " + json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + ";\n", encoding="utf-8")

@@ -916,20 +916,35 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
 .republic-subdivision-option.is-blocked{opacity:.58;cursor:not-allowed}
 .republic-subdivision-option.is-blocked:hover{background:transparent}
 
-/* Real ADM1 subdivision geometry. The generated paths are clipped to their
-   existing country outline so coastlines remain identical to world-map.js. */
+/* Real ADM1 subdivision geometry. All polygons use ONE global Natural Earth
+   transform and are clipped to the existing country outline. Internal borders
+   are deliberately quieter than international borders. At world scale we show
+   them for countries with subdivision ownership, the country currently being
+   edited, or the country under the pointer/focus; this avoids the dense mesh
+   that made Europe/Africa unreadable. */
 .wm-subdivision-country{isolation:isolate}
 .wm-subdivision{
   fill:transparent;
   fill-rule:evenodd;
-  stroke:color-mix(in srgb,var(--rule) 55%,var(--ink) 45%);
-  stroke-width:.48;
+  stroke:color-mix(in srgb,var(--rule) 68%,var(--ink) 32%);
+  stroke-width:.26;
   vector-effect:non-scaling-stroke;
   stroke-linejoin:round;
 }
-.wm-subdivision-border{pointer-events:none}
-.wm-subdivision-owned{stroke:var(--paper);stroke-width:.65}
+.wm-subdivision-border{pointer-events:none;opacity:0;transition:opacity .12s ease}
+.wm-subdivision-country.is-active .wm-subdivision-border{opacity:.56}
+.wm-subdivision-country.is-hovered .wm-subdivision-border{opacity:.42}
+.wm-subdivision-country.is-editing .wm-subdivision-border{opacity:.76}
+.wm-subdivision-country.is-dense.is-active .wm-subdivision-border{opacity:.38}
+.wm-subdivision-country.is-dense.is-hovered .wm-subdivision-border{opacity:.28}
+.wm-subdivision-country.is-dense.is-editing .wm-subdivision-border{opacity:.58}
+.wm-subdivision-owned{stroke:var(--paper);stroke-width:.42}
 .wm-subdivision-owned.wm-republic{fill:var(--indelible-fill)}
+.wm-country-outline{
+  fill:none;pointer-events:none;
+  stroke:color-mix(in srgb,var(--rule) 72%,var(--ink) 28%);
+  stroke-width:.52;vector-effect:non-scaling-stroke;stroke-linejoin:round;
+}
 .wm-key-subdivision{
   background:transparent!important;
   border:1px solid var(--ink-2);
@@ -938,6 +953,6 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
 .wm-key-subdivision::after{
   content:'';position:absolute;left:5px;top:0;bottom:0;border-left:1px solid var(--ink-2);
 }
-.wm-draft-preview.is-subdivision{stroke-width:.9;fill-opacity:.48}
+.wm-draft-preview.is-subdivision{stroke-width:.62;fill-opacity:.48}
 .wm-boundary-credit{margin:9px 0 0;font-size:10.5px}
 .territory-map-warning{margin:10px 0 0;padding:8px 10px;border:1px solid var(--rule);border-radius:8px}
