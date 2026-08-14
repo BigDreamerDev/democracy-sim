@@ -277,6 +277,21 @@ draft ──seconders──> tabled ──Speaker──> division ──Speaker�
 
 The term is `justice_terms` x `cycle_days` — two seven-day cycles, a fortnight, by default. Terms now actually expire: the tick retires any Justice past `term_ends`, on all three seats, and with `justice_auto` on it opens the next ballot in the same minute.
 
+**A declaration of extraordinary circumstances (Article 12).** The President writes the circumstances, ticks the powers claimed and picks a duration; that becomes a bill and is seconded, tabled, divided and assented like any other. `emergency_max_days` caps the length and it lapses on its own. The claimable powers are exactly:
+
+| | |
+|---|---|
+| `halt_elections` | no new poll opens and the cycle clock does not advance |
+| `extend_term` | the sitting House stays past the cycle |
+| `fast_track` | no seconders needed to table |
+| `president_may_table` | the President takes the Speaker's business |
+| `lower_quorum` | a division carries on one member |
+| `close_borders` | no foreign trade or new treaties |
+
+A claimed power grants only itself. **Three things can never be suspended, however the declaration is worded:** the House's power to end it, impeachment, and a poll that has already opened — an emergency that could switch off its own off-switch is not one. `emergency_end_share` of the House ends a declaration at once, without asking the President.
+
+**A citizens' supermajority (Article 2).** A standing motion, not a poll: any citizen opens one, signatures gather for `supermajority_days`, and the act happens the moment `supermajority_share` of **all** citizens — not of those who turn up — have signed. No officer opens it, closes it or is asked about it. It may appoint a Speaker over a deadlocked House (4.6), remove any officer (10.5), dissolve the House (10.6), end a declaration (12.3), or resolve anything else and bind every officer (2.3, 2.5).
+
 **An election.** `nominations` → `campaign` → `voting` → `closed`. Certifying vacates the previous holders and seats the winners; a parliamentary election also vacates the Speaker.
 
 **The Speaker.** Needs two thirds of the whole House. Each failed ballot lowers the bar by `speaker_relax` votes, down to a simple majority and no lower. The counter resets once a chair has been filled.
@@ -294,7 +309,9 @@ separate question from who may change it *politically* — see §7.1.
 
 **Elections:** `cycle_enabled` · `cycle_anchor` · `cycle_days` · `campaign_days` · `poll_days` · `cycle_elects` · `secret_ballot` · `enforce_term_limit` · `speaker_auto` · `speaker_threshold` · `speaker_relax` · `speaker_nomination_hours` · `speaker_poll_hours`
 
-**Direct democracy:** `petition_share` · `referendum_threshold` · `referendum_quorum` · `referendum_days` · `initiative_mode` · `initiative_threshold`
+**Direct democracy:** `petition_share` · `referendum_threshold` · `referendum_quorum` · `referendum_days` · `initiative_mode` · `initiative_threshold` · `supermajority_share` · `supermajority_days`
+
+**Emergency:** `emergency_max_days` · `emergency_end_share`
 
 **Court:** `justice_terms` · `justice_auto` · `justice_nomination_hours` · `justice_poll_hours`
 

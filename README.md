@@ -7,7 +7,6 @@ A small parliamentary democracy for one group chat. Static front end on GitHub P
 - **[constitution.md](constitution.md)** — the founding document, to paste in at startup
 - **[CLAUDE.md](CLAUDE.md)** — conventions, architecture and traps, for anyone (or anything) editing the code
 - **[docs-src/](docs-src/README.md)** — the documentation index: reference, diplomacy, and the foreign-power runbook
-- **[INSTALL-ACTS.md](INSTALL-ACTS.md)** — adding the Supreme Court and the economy
 
 Look at it without deploying: `cd server && npm install && npm run dev`.
 
@@ -24,7 +23,7 @@ republic/
 │   ├── server.js
 │   ├── schema.sql
 │   ├── package.json
-│   └── test/            npm test — five suites, each on a fresh database
+│   └── test/            npm test — 22 suites, each on a fresh database
 ├── constitution.md      paste into the admin page at startup
 ├── flag.png             the flag as designed, for reference
 ├── render.yaml          optional Render blueprint
@@ -114,7 +113,7 @@ A veto can be overridden by the Speaker if the original division cleared the ove
 
 Assume every player reads the source, because the front end is public and so is this repo. Nothing in `docs/` is trusted: hiding a button hides a button, and every rule is enforced again on the server.
 
-**Run the tests before you trust any of this.** `cd server && npm install @electric-sql/pglite && npm test` boots the real server against a real Postgres and runs two suites: the legislative cycle, assertions of players actively trying to cheat — forged tokens, spoofed voter IDs, concurrent ballot floods, SQL injection, privilege escalation, mid-poll sockpuppets.
+**Run the tests before you trust any of this.** `cd server && npm install && npm test` boots the real server against a real Postgres and runs 22 suites. `test/attack.mjs` is the one to read: it asserts against players actively trying to cheat — forged tokens, spoofed voter IDs, concurrent ballot floods, SQL injection, privilege escalation, mid-poll sockpuppets.
 
 **What holds, and why**
 

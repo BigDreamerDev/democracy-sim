@@ -8,7 +8,6 @@ Which document you want, and why there is more than one.
 |---|---|
 | Play the game | [../HANDBOOK.md](../HANDBOOK.md) |
 | Deploy it from nothing | [../SETUP.md](../SETUP.md) |
-| Deploy a change to a running instance | [../DEPLOY.md](../DEPLOY.md) |
 | Ship from a phone or an iPad | [../PHONE.md](../PHONE.md) |
 | Look at it without deploying | `cd server && npm install && npm run dev` |
 | Find an endpoint, a setting, or a lifecycle | [REFERENCE.md](REFERENCE.md) |
@@ -16,10 +15,14 @@ Which document you want, and why there is more than one.
 | Understand diplomacy and the world map | [DIPLOMACY.md](DIPLOMACY.md), §5 of [REFERENCE.md](REFERENCE.md) |
 | Run a foreign power's LLM cabinet | [MULTI-AGENT-DIPLOMACY.md](MULTI-AGENT-DIPLOMACY.md), [RUNBOOK-FOREIGN-POWER.md](RUNBOOK-FOREIGN-POWER.md) |
 | Change the code | [../CLAUDE.md](../CLAUDE.md) — conventions and traps, first |
-| Pick up where the last session left off | [../HANDOVER.md](../HANDOVER.md) |
 
 Diplomacy is in this build now, forward-ported from the older tree along with
 its documents. It is off until `diplomacy_enabled` is set to `true`.
+
+There are no per-release notes here on purpose. A document that describes one
+push is stale the moment the next one lands, and four of them were removed after
+they had gone quietly wrong about how many test suites there are. What shipped is
+in the git history; what the system does is in REFERENCE.md.
 
 ## Three invariants
 
