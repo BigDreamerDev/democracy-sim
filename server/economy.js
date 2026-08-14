@@ -20,7 +20,7 @@ module.exports.mount = function mount(app, ctx) {
     'services'
   ]);
   const goodsMode = () => String(ctx.CONFIG.goods_economy_enabled) === 'true';
-  const { q, log, auth, admin, wrap, num, bool, loadConfig, officesOf, citizenCount, slowWrites } = ctx;
+  const { q, tx, log, auth, admin, wrap, num, bool, loadConfig, officesOf, citizenCount, slowWrites } = ctx;
 
   const money = n => Math.round(Number(n) || 0);
 
@@ -44,24 +44,54 @@ module.exports.mount = function mount(app, ctx) {
   const escrowAcc = () => accountFor('escrow', null);
 
   /* The only way money ever moves. Balances and the ledger are written together,
-     and a payment that would overdraw simply does not happen. */
-  async function pay(fromAcc, toAcc, amount, kind, note = '') {
+     and a payment that would overdraw simply does not happen.
+
+     Both halves of that sentence need a transaction to be true. The balance is
+     read, compared and written, so without a row lock two payments of the whole
+     balance can both read it, both pass the check and both go through — and
+     unlike the stockpile there is no CHECK constraint to catch the result,
+     because the Fed and the Treasury are supposed to go negative. FOR UPDATE
+     makes the second payment wait for the first to commit and then see the
+     balance it actually left behind.
+
+     `run` is an existing transaction runner, for callers that need this to be
+     part of a larger atomic step. Left out, it opens its own. */
+  async function pay(fromAcc, toAcc, amount, kind, note = '', run = null) {
     const amt = money(amount);
     if (amt <= 0) throw Object.assign(new Error('Amount must be positive.'), { code: 'AMOUNT' });
+    if (!run) return tx(r => pay(fromAcc, toAcc, amount, kind, note, r));
     if (fromAcc) {
-      const bal = (await q('SELECT balance FROM accounts WHERE id=$1', [fromAcc])).rows[0]?.balance ?? 0;
+      const bal = (await run('SELECT balance FROM accounts WHERE id=$1 FOR UPDATE', [fromAcc])).rows[0]?.balance ?? 0;
       if (Number(bal) < amt)
         throw Object.assign(new Error('There is not enough in that account.'), { code: 'FUNDS' });
-      await q('UPDATE accounts SET balance = balance - $1 WHERE id=$2', [amt, fromAcc]);
+      await run('UPDATE accounts SET balance = balance - $1 WHERE id=$2', [amt, fromAcc]);
     }
-    if (toAcc) await q('UPDATE accounts SET balance = balance + $1 WHERE id=$2', [amt, toAcc]);
-    await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
+    if (toAcc) await run('UPDATE accounts SET balance = balance + $1 WHERE id=$2', [amt, toAcc]);
+    await run('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
       fromAcc || null,
       toAcc || null,
       amt,
       kind,
       note.slice(0, 300)
     ]);
+    return amt;
+  }
+
+  /* The same movement, for the payers who are allowed to go below zero: the Fed
+     issuing, the Treasury paying the dividend, a guarantee, an army's wages.
+     pay() refuses an overdraft by design and those callers used to write both
+     balances by hand — four separate places doing it, each of them three
+     unprotected statements. They all come through here now, so there is one
+     place where money moves without a funds check and it is still atomic and
+     still writes the ledger. */
+  async function settle(fromAcc, toAcc, amount, kind, note = '', run = null) {
+    const amt = money(amount);
+    if (amt <= 0) throw Object.assign(new Error('Amount must be positive.'), { code: 'AMOUNT' });
+    if (!run) return tx(r => settle(fromAcc, toAcc, amount, kind, note, r));
+    if (fromAcc) await run('UPDATE accounts SET balance = balance - $1::bigint WHERE id=$2', [amt, fromAcc]);
+    if (toAcc) await run('UPDATE accounts SET balance = balance + $1::bigint WHERE id=$2', [amt, toAcc]);
+    await run('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)',
+      [fromAcc || null, toAcc || null, amt, kind, String(note).slice(0, 300)]);
     return amt;
   }
 
@@ -185,15 +215,7 @@ module.exports.mount = function mount(app, ctx) {
       const acc = await accountFor('citizen', c.id);
       // The Treasury may run a deficit on the dividend: the floor is not conditional
       // on the state being solvent, or it is not a floor.
-      await q('UPDATE accounts SET balance = balance + $1 WHERE id=$2', [amount, acc.id]);
-      await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
-        t.id,
-        acc.id,
-        amount,
-        'dividend',
-        `cycle ${cycleNo}`
-      ]);
-      await q('UPDATE accounts SET balance = balance - $1 WHERE id=$2', [amount, t.id]);
+      await settle(t.id, acc.id, amount, 'dividend', `cycle ${cycleNo}`);
       paid++;
     }
     await q('INSERT INTO payruns(kind,cycle_no,detail) VALUES($1,$2,$3)', [
@@ -228,15 +250,7 @@ module.exports.mount = function mount(app, ctx) {
       const amount = rates[o.office] || 0;
       if (amount <= 0) continue;
       const acc = await accountFor('citizen', o.user_id);
-      await q('UPDATE accounts SET balance = balance + $1 WHERE id=$2', [amount, acc.id]);
-      await q('UPDATE accounts SET balance = balance - $1 WHERE id=$2', [amount, t.id]);
-      await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
-        t.id,
-        acc.id,
-        amount,
-        'salary',
-        `${o.office}, cycle ${cycleNo}`
-      ]);
+      await settle(t.id, acc.id, amount, 'salary', `${o.office}, cycle ${cycleNo}`);
       paid++;
       total += amount;
     }
@@ -733,19 +747,14 @@ module.exports.mount = function mount(app, ctx) {
       const cycles = Math.max(1, Math.min(12, parseInt(req.body?.cycles, 10) || 4));
       const acc = await accountFor('citizen', req.user.id);
       // The bank may lend beyond its deposits: it is the state's bank, not a vault.
-      await q('UPDATE accounts SET balance = balance - $1 WHERE id=$2', [amt, (await bank()).id]);
-      await q('UPDATE accounts SET balance = balance + $1 WHERE id=$2', [amt, acc.id]);
-      await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
-        (await bank()).id,
-        acc.id,
-        amt,
-        'loan',
-        `${cycles} cycles at ${Math.round(rate * 100)}%`
-      ]);
-      const { rows } = await q(
-        'INSERT INTO loans(user_id,principal,outstanding,rate,due_cycle) VALUES($1,$2,$2,$3,$4) RETURNING *',
-        [req.user.id, amt, rate, (Number(req.body?.cycle_no) || 0) + cycles]
-      );
+      const bankId = (await bank()).id;
+      const rows = await tx(async run => {
+        await settle(bankId, acc.id, amt, 'loan', `${cycles} cycles at ${Math.round(rate * 100)}%`, run);
+        return (await run(
+          'INSERT INTO loans(user_id,principal,outstanding,rate,due_cycle) VALUES($1,$2,$2,$3,$4) RETURNING *',
+          [req.user.id, amt, rate, (Number(req.body?.cycle_no) || 0) + cycles]
+        )).rows;
+      });
       log(req.user.id, 'bank.borrow', `${amt} over ${cycles} cycles`);
       res.json(rows[0]);
     })
@@ -797,16 +806,11 @@ module.exports.mount = function mount(app, ctx) {
     for (const d of (await q('SELECT * FROM deposits WHERE amount > 0')).rows) {
       const interest = money(Number(d.amount) * dRate);
       if (interest <= 0) continue;
-      await q('UPDATE deposits SET amount = amount + $1 WHERE user_id=$2', [interest, d.user_id]);
-      await q('UPDATE accounts SET balance = balance - $1 WHERE id=$2', [interest, b.id]);
-      await q('UPDATE accounts SET balance = balance + $1 WHERE id=$2', [interest, b.id]);
-      await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
-        b.id,
-        b.id,
-        interest,
-        'interest',
-        `deposit interest, cycle ${cycleNo}`
-      ]);
+      await tx(async run => {
+        await run('UPDATE deposits SET amount = amount + $1 WHERE user_id=$2', [interest, d.user_id]);
+        // The bank pays itself: a record, not a movement. Still written both sides.
+        await settle(b.id, b.id, interest, 'interest', `deposit interest, cycle ${cycleNo}`, run);
+      });
       credited += interest;
     }
 
@@ -1136,7 +1140,5 @@ module.exports.mount = function mount(app, ctx) {
      economy.js leaves ctx.economy undefined and the Treasury and the Fed simply
      do not answer — which is the honest state of affairs when there is no
      currency for them to be responsible for. */
-  ctx.economy = { accountFor, pay, money, treasury, bank, escrowAcc, taxOn };
-
-  console.log('[republic] the economy is open');
+  ctx.economy = { accountFor, pay, settle, money, treasury, bank, escrowAcc, taxOn };
 };

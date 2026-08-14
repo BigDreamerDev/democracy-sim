@@ -1,4 +1,4 @@
-const B = 'http://localhost:4321';
+const B = 'http://localhost:' + (process.env.TEST_PORT || '4321');
 let fails = 0;
 const ok = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) fails++; };
 

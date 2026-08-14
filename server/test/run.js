@@ -3,11 +3,15 @@
 const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 
-const SUITES = ['functional.mjs', 'attack.mjs', 'rules.mjs', 'speaker.mjs', 'flag.mjs', 'powers.mjs', 'houserule.mjs', 'initiative.mjs', 'emergency.mjs', 'people.mjs', 'pm.mjs', 'acts.mjs', 'bank.mjs', 'money.mjs', 'justice.mjs', 'diplomacy.mjs', 'foreigntrade.mjs', 'worldmap.mjs', 'foreignoffice.mjs', 'billedit.mjs', 'war.mjs', 'conflict.mjs'];
+const SUITES = ['functional.mjs', 'attack.mjs', 'rules.mjs', 'speaker.mjs', 'flag.mjs', 'powers.mjs', 'houserule.mjs', 'initiative.mjs', 'emergency.mjs', 'people.mjs', 'pm.mjs', 'acts.mjs', 'bank.mjs', 'money.mjs', 'justice.mjs', 'diplomacy.mjs', 'foreigntrade.mjs', 'worldmap.mjs', 'foreignoffice.mjs', 'billedit.mjs', 'war.mjs', 'conflict.mjs', 'runoff.mjs'];
+
+/* TEST_PORT lets two runs happen at once on one machine without fighting over
+   the socket. Unset, everything behaves exactly as it did. */
+const PORT = process.env.TEST_PORT || '4321';
 
 const up = async () => {
   for (let i = 0; i < 90; i++) {
-    try { if ((await fetch('http://localhost:4321/api/health')).ok) return true; } catch {}
+    try { if ((await fetch(`http://localhost:${PORT}/api/health`)).ok) return true; } catch {}
     await new Promise(r => setTimeout(r, 500));
   }
   return false;

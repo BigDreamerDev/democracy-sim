@@ -2,7 +2,7 @@
    database, and builds the world it needs from nothing. No suite depends on
    another having run first, so they can run in any order or on their own. */
 
-export const B = 'http://localhost:4321';
+export const B = 'http://localhost:' + (process.env.TEST_PORT || '4321');
 
 let fails = 0;
 export const ok = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) fails++; };

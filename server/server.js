@@ -25,6 +25,53 @@ const pool = new Pool({
 });
 const q = (sql, params = []) => pool.query(sql, params);
 
+/* Everything that moves money is more than one statement, and `q` takes a fresh
+   connection out of the pool for each one. Without this, a crash or a dropped
+   connection between the debit and the credit leaves sum(accounts.balance)
+   permanently off zero — the one invariant the whole economy rests on — and no
+   suite can catch it, because a suite that completes is exactly the case that
+   cannot fail.
+
+   `fn` is handed a runner with the same shape as `q`, bound to one connection
+   inside a transaction. Pass it down to anything that writes, or the write
+   escapes the transaction and is not rolled back.
+
+   The tests run against an in-process Postgres with exactly one connection and
+   no `connect()`, so there BEGIN/COMMIT go to the pool itself and overlapping
+   transactions are queued rather than interleaved — which is what a single
+   connection would do anyway. */
+let txQueue = Promise.resolve();
+async function tx(fn) {
+  if (typeof pool.connect === 'function') {
+    const client = await pool.connect();
+    const run = (sql, params = []) => client.query(sql, params);
+    try {
+      await run('BEGIN');
+      const out = await fn(run);
+      await run('COMMIT');
+      return out;
+    } catch (err) {
+      try { await run('ROLLBACK'); } catch { /* the connection is already gone */ }
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+  const mine = txQueue.catch(() => {}).then(async () => {
+    try {
+      await q('BEGIN');
+      const out = await fn(q);
+      await q('COMMIT');
+      return out;
+    } catch (err) {
+      try { await q('ROLLBACK'); } catch { /* nothing to roll back */ }
+      throw err;
+    }
+  });
+  txQueue = mine.catch(() => {});
+  return mine;
+}
+
 const app = express();
 /* A browser only ever sends scheme + host as its Origin, so
    "https://you.github.io/your-repo" would never match anything and every request
@@ -159,6 +206,7 @@ const DEFAULTS = {
   speaker_poll_hours: '12',
   speaker_threshold: '0.667',      // Article 4: two thirds of the House
   speaker_relax: '1',              // votes the bar drops after each failed ballot; 0 to never relax
+  runoff_hours: '24',              // how long a tied seat's run-off stays open
   flag_law_ref: 'L001',            // the law the app reads the flag and its colours from
   enforce_term_limit: 'false'      // Article 7: no two consecutive cycles in office
 };
@@ -207,7 +255,7 @@ const LEGISLATABLE = new Set([
   'diplomacy_enabled', 'foreign_actions_per_cycle', 'treaty_threshold', 'recognition_threshold', 'foreign_trade_tax',
   'secret_ballot', 'cycle_enabled', 'cycle_days', 'campaign_days', 'poll_days',
   'cycle_elects', 'speaker_auto', 'speaker_threshold', 'speaker_nomination_hours',
-  'speaker_poll_hours', 'speaker_relax', 'enforce_term_limit', 'flag_law_ref',
+  'speaker_poll_hours', 'speaker_relax', 'runoff_hours', 'enforce_term_limit', 'flag_law_ref',
   'foreign_treasury_per_cycle', 'foreign_export_cap_per_cycle', 'foreign_trade_tax'
 ]);
 
@@ -871,11 +919,55 @@ async function certify(e, actorId) {
     return { seated: [{ office: 'justice', name: winners[0].display_name, votes: winners[0].votes }], term_ends: ends };
   }
 
-  await q('UPDATE offices SET active=FALSE, until=now() WHERE office=$1 AND active', [office]);
-  if (office === 'mp') await q("UPDATE offices SET active=FALSE, until=now() WHERE office='speaker' AND active");
+  /* A tie for the last seat used to be settled by `ORDER BY … u.display_name`,
+     and a display name is a field the candidate can edit from their own account
+     page at any moment, including while the poll is open. So the tiebreak went
+     to whoever renamed themselves earliest in the alphabet.
+
+     `tie` above is already the exact condition worth acting on: more candidates
+     level on the cutoff score than there are seats left at that score. A tie
+     that changes nothing — everyone level is being seated anyway — is not a tie
+     for this purpose and falls straight through.
+
+     So: seat everyone who is clearly above the cutoff, and put the contested
+     seats to a run-off between exactly the candidates who are level on it. The
+     run-off inherits this poll's `opened_at`, which is what freezes the
+     electoral roll — otherwise the gap between the tie and the run-off is an
+     open window for registering sockpuppets to decide it.
+
+     A run-off that ties again leaves the seats empty rather than running a
+     third, which is what the People's Justice ballot already does and stops an
+     evenly-split electorate from looping forever. */
+  if (tie && !e.runoff_of) {
+    const contested = results.filter(r => r.votes === cutoff);
+    const clear = winners.filter(w => w.votes > cutoff);
+    const seatsLeft = e.seats - clear.length;
+    const closes = new Date(Date.now() + num('runoff_hours') * 3600000);
+    const r = (await q(
+      `INSERT INTO elections(kind,title,seats,status,opens_at,closes_at,opened_at,runoff_of,cycle_no)
+       VALUES($1,$2,$3,'voting',now(),$4,$5,$6,$7) RETURNING id`,
+      [e.kind, `${e.title} — run-off`, seatsLeft, closes, e.opened_at, e.id, e.cycle_no])).rows[0];
+    for (const c of contested)
+      await q('INSERT INTO candidacies(election_id,user_id,statement) VALUES($1,$2,$3)',
+        [r.id, c.user_id, c.statement || '']);
+    log(actorId, 'election.runoff',
+      `${e.title}: ${contested.map(c => c.display_name).join(', ')} tied on ${cutoff} for ${seatsLeft} seat(s)`);
+  }
+
+  if (!e.runoff_of) {
+    await q('UPDATE offices SET active=FALSE, until=now() WHERE office=$1 AND active', [office]);
+    if (office === 'mp') await q("UPDATE offices SET active=FALSE, until=now() WHERE office='speaker' AND active");
+  }
   const seated = [];
-  let seat = 1;
-  for (const w of winners) {
+  /* A run-off fills the seats its parent left contested, so it must not vacate
+     and must not restart the numbering on top of members already sitting. */
+  let seat = e.runoff_of
+    ? Number((await q("SELECT COALESCE(max(seat),0)::int m FROM offices WHERE office='mp' AND active")).rows[0].m) + 1
+    : 1;
+  /* Everyone level on the cutoff is going to a run-off, so they are not seated
+     here. On a run-off that tied again, that leaves the seats empty. */
+  const toSeat = tie ? winners.filter(w => w.votes > cutoff) : winners;
+  for (const w of toSeat) {
     // Article 7.1: one seat each. Someone who already holds another office is
     // not seated in a second — they keep the one they have.
     const clash = seatClash(await officesOf(w.user_id), office);
@@ -888,6 +980,15 @@ async function certify(e, actorId) {
     seated.push({ office, name: w.display_name, votes: w.votes });
   }
   log(actorId, 'election.certify', `${e.title}: ${seated.map(x => x.name).join(', ') || 'nobody'}`);
+  if (tie)
+    return {
+      seated,
+      tie,
+      runoff: !e.runoff_of,
+      reason: e.runoff_of
+        ? 'the run-off tied as well, so the seat stays empty and the Returning Officer calls a fresh ballot'
+        : 'the last seat is tied, so it goes to a run-off between the candidates who are level'
+    };
   return { seated, tie };
 }
 
@@ -2618,7 +2719,7 @@ app.put('/api/admin/constitution', admin, wrap(async (req, res) => {
    touching anything above. Each is optional: if the file is not there, the
    Republic simply does not have that institution yet. */
 const ACT_CONTEXT = {
-  q, log, auth, admin, wrap, num, bool, loadConfig, officesOf, holds,
+  q, tx, log, auth, admin, wrap, num, bool, loadConfig, officesOf, holds,
   citizenCount, slowWrites, requireOffice, enact, canPropose, cycleNow, addEnactHook, bcrypt, crypto,
   justiceTermEnds,
   get CONFIG() { return CONFIG; }
@@ -2627,12 +2728,21 @@ const ACT_CONTEXT = {
    money.js borrows the ledger primitives off it. diplomacy.js is mounted before
    both because economy's payrun calls ctx.diplomacy?.runPayrun, and because a
    foreign power holds a real account like anyone else. */
+/* Say what happened to every one of them. A module that fails to mount answers
+   503 for the rest of the process's life, and on Render that used to be
+   invisible at boot — the same failure shape as a mismatched ALLOWED_ORIGINS,
+   where the server looks healthy while half the site does not work. */
 for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war']) {
+  const name = mod.replace('./', '');
   try {
     require(mod).mount(app, ACT_CONTEXT);
+    console.log(`[republic] ${name} mounted`);
   } catch (err) {
-    if (err.code === 'MODULE_NOT_FOUND' && String(err.message).includes(mod)) continue;
-    console.error(`[republic] ${mod} failed to mount:`, err.message);
+    if (err.code === 'MODULE_NOT_FOUND' && String(err.message).includes(mod)) {
+      console.log(`[republic] ${name} is not in this build — its endpoints will answer 404`);
+      continue;
+    }
+    console.error(`[republic] ${name} FAILED TO MOUNT — its endpoints will answer 404:`, err.message);
   }
 }
 

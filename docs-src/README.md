@@ -15,6 +15,7 @@ Which document you want, and why there is more than one.
 | Understand diplomacy and the world map | [DIPLOMACY.md](DIPLOMACY.md), §5 of [REFERENCE.md](REFERENCE.md) |
 | Run a foreign power's LLM cabinet | [MULTI-AGENT-DIPLOMACY.md](MULTI-AGENT-DIPLOMACY.md), [RUNBOOK-FOREIGN-POWER.md](RUNBOOK-FOREIGN-POWER.md) |
 | Change the code | [../CLAUDE.md](../CLAUDE.md) — conventions and traps, first |
+| See what is planned and why | [ROADMAP.md](ROADMAP.md) — none of it built yet |
 
 Diplomacy is in this build now, forward-ported from the older tree along with
 its documents. It is off until `diplomacy_enabled` is set to `true`.

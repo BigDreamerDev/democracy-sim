@@ -6,6 +6,7 @@ const SUBDIVISIONS = require('./subdivisions.json');
 module.exports.mount = function mount(app, ctx) {
   const {
     q,
+    tx,
     log,
     auth,
     admin,
@@ -330,6 +331,10 @@ module.exports.mount = function mount(app, ctx) {
      from a finite balance, topped up each cycle by `foreign_treasury_per_cycle`,
      so the ledger sums to zero again and the balance of trade is a real
      constraint rather than a statistic. */
+  /* economy.js mounts after this module, so this is a getter rather than a
+     binding — at request time it is always there, at mount time it is not. */
+  const E = () => ctx.economy;
+
   async function powerAccount(powerId) {
     const found = (await q("SELECT * FROM accounts WHERE owner_kind='power' AND owner_id=$1", [powerId]))
       .rows[0];
@@ -346,15 +351,7 @@ module.exports.mount = function mount(app, ctx) {
       if (!tr)
         tr = (await q("INSERT INTO accounts(owner_kind,owner_id) VALUES('treasury',NULL) RETURNING *"))
           .rows[0];
-      await q('UPDATE accounts SET balance=balance-$1 WHERE id=$2', [seed, tr.id]);
-      await q('UPDATE accounts SET balance=balance+$1 WHERE id=$2', [seed, acc.id]);
-      await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
-        tr.id,
-        acc.id,
-        seed,
-        'foreign_treasury',
-        `opening balance for power #${powerId}`
-      ]);
+      await E().settle(tr.id, acc.id, seed, 'foreign_treasury', `opening balance for power #${powerId}`);
       acc.balance = seed;
     }
     return acc;
@@ -1345,32 +1342,36 @@ module.exports.mount = function mount(app, ctx) {
       const price = Number(o.price),
         tax = Math.round(price * num('foreign_trade_tax')),
         total = price + tax;
-      if (Number(a.balance) < total)
-        return res.status(400).json({ error: 'There is not enough in that account.' });
-      await q('UPDATE accounts SET balance=balance-$1 WHERE id=$2', [total, a.id]);
-      if (tax) await q('UPDATE accounts SET balance=balance+$1 WHERE id=$2', [tax, t.id]);
       const pa = await powerAccount(o.power_id);
-      await q('UPDATE accounts SET balance=balance+$1 WHERE id=$2', [price, pa.id]);
-      await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
-        a.id,
-        pa.id,
-        price,
-        'foreign_import',
-        `${o.title} from power #${o.power_id}`
-      ]);
-      if (tax)
-        await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
-          a.id,
-          t.id,
-          tax,
-          'foreign_trade_tax',
-          o.title
-        ]);
-      if (o.stock !== null) await q('UPDATE foreign_offers SET stock=stock-1 WHERE id=$1', [o.id]);
-      await q(
-        `INSERT INTO foreign_trade(power_id,direction,amount,tax,citizen_id,offer_id,cycle_no) VALUES($1,'import',$2,$3,$4,$5,$6)`,
-        [o.power_id, price, tax, req.user.id, o.id, cycleNo()]
-      );
+      /* Paid, taken off the shelf and recorded together, with the buyer's
+         balance locked while it happens. Read-then-write on a balance with no
+         lock let the same citizen buy the same last unit twice from two tabs
+         and go below zero — and a citizen account has no CHECK to catch it. */
+      try {
+        await tx(async run => {
+          const bal = Number(
+            (await run('SELECT balance FROM accounts WHERE id=$1 FOR UPDATE', [a.id])).rows[0].balance
+          );
+          if (bal < total)
+            throw Object.assign(new Error('There is not enough in that account.'), { status: 400 });
+          if (o.stock !== null) {
+            const left = Number(
+              (await run('SELECT stock FROM foreign_offers WHERE id=$1 FOR UPDATE', [o.id])).rows[0].stock
+            );
+            if (left < 1) throw Object.assign(new Error('That offer is sold out.'), { status: 400 });
+            await run('UPDATE foreign_offers SET stock=stock-1 WHERE id=$1', [o.id]);
+          }
+          await E().settle(a.id, pa.id, price, 'foreign_import', `${o.title} from power #${o.power_id}`, run);
+          if (tax) await E().settle(a.id, t.id, tax, 'foreign_trade_tax', o.title, run);
+          await run(
+            `INSERT INTO foreign_trade(power_id,direction,amount,tax,citizen_id,offer_id,cycle_no) VALUES($1,'import',$2,$3,$4,$5,$6)`,
+            [o.power_id, price, tax, req.user.id, o.id, cycleNo()]
+          );
+        });
+      } catch (err) {
+        if (err.status === 400) return res.status(400).json({ error: err.message });
+        throw err;
+      }
       log(req.user.id, 'foreign.import', `${price} from power #${o.power_id}`);
       res.json({ ok: true, price, tax, total });
     })
@@ -1588,6 +1589,10 @@ module.exports.mount = function mount(app, ctx) {
         ).rows[0];
       const price = Number(l.price);
       const pa = await powerAccount(req.power.id);
+      /* Affordability is asked twice: here, unlocked, so that "you cannot afford
+         this" is the answer to something nobody could afford whatever the cap
+         says — and again under a lock inside the transaction below, which is the
+         one that actually decides. */
       if (Number(pa.balance) < price)
         return res
           .status(400)
@@ -1596,20 +1601,33 @@ module.exports.mount = function mount(app, ctx) {
         return res
           .status(429)
           .json({ error: 'That would exceed what this power may buy from the Republic in one cycle.' });
-      await q('UPDATE accounts SET balance=balance-$1 WHERE id=$2', [price, pa.id]);
-      await q('UPDATE accounts SET balance=balance+$1 WHERE id=$2', [price, a.id]);
-      await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
-        pa.id,
-        a.id,
-        price,
-        'foreign_export',
-        `${l.title} to ${req.power.name}`
-      ]);
-      if (l.stock !== null) await q('UPDATE listings SET stock=stock-1 WHERE id=$1', [l.id]);
-      await q(
-        `INSERT INTO foreign_trade(power_id,direction,amount,business_id,listing_id,cycle_no) VALUES($1,'export',$2,$3,$4,$5)`,
-        [req.power.id, price, l.business_id, l.id, cycleNo()]
-      );
+      try {
+        await tx(async run => {
+          const bal = Number(
+            (await run('SELECT balance FROM accounts WHERE id=$1 FOR UPDATE', [pa.id])).rows[0].balance
+          );
+          if (bal < price)
+            throw Object.assign(
+              new Error(`${req.power.name} holds ${bal} and cannot pay ${price}.`),
+              { status: 400 }
+            );
+          if (l.stock !== null) {
+            const left = Number(
+              (await run('SELECT stock FROM listings WHERE id=$1 FOR UPDATE', [l.id])).rows[0].stock
+            );
+            if (left < 1) throw Object.assign(new Error('That listing is sold out.'), { status: 400 });
+            await run('UPDATE listings SET stock=stock-1 WHERE id=$1', [l.id]);
+          }
+          await E().settle(pa.id, a.id, price, 'foreign_export', `${l.title} to ${req.power.name}`, run);
+          await run(
+            `INSERT INTO foreign_trade(power_id,direction,amount,business_id,listing_id,cycle_no) VALUES($1,'export',$2,$3,$4,$5)`,
+            [req.power.id, price, l.business_id, l.id, cycleNo()]
+          );
+        });
+      } catch (err) {
+        if (err.status === 400) return res.status(400).json({ error: err.message });
+        throw err;
+      }
       log(null, 'foreign.export', `${l.business_name}: ${price} to ${req.power.name}`);
       res.json({ ok: true, price });
     })
@@ -2381,20 +2399,14 @@ Do not add commentary after the JSON.`,
            tests exports, imports and the cap, never a payrun. Both sides now,
            like every other movement in the Republic. */
         const pa = await powerAccount(t.power_id);
-        await q('UPDATE accounts SET balance=balance-$1 WHERE id=$2', [tribute, tr.id]);
-        await q('UPDATE accounts SET balance=balance+$1 WHERE id=$2', [tribute, pa.id]);
-        await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
-          tr.id,
-          pa.id,
-          tribute,
-          'foreign_tribute',
-          `${t.title} — ${t.name}`
-        ]);
-        await q('INSERT INTO payruns(kind,cycle_no,detail) VALUES($1,$2,$3)', [
-          kind,
-          cycle,
-          `${tribute} to ${t.name}`
-        ]);
+        await tx(async run => {
+          await E().settle(tr.id, pa.id, tribute, 'foreign_tribute', `${t.title} — ${t.name}`, run);
+          await run('INSERT INTO payruns(kind,cycle_no,detail) VALUES($1,$2,$3)', [
+            kind,
+            cycle,
+            `${tribute} to ${t.name}`
+          ]);
+        });
         paid += tribute;
       }
       if (paid) log(actorId, 'foreign.tribute', `cycle ${cycle}: ${paid}`);
@@ -2414,15 +2426,7 @@ Do not add commentary after the JSON.`,
             .rows[0];
         for (const p of (await q('SELECT id,name FROM powers WHERE revoked_at IS NULL')).rows) {
           const acc = await powerAccount(p.id);
-          await q('UPDATE accounts SET balance=balance+$1 WHERE id=$2', [amount, acc.id]);
-          await q('UPDATE accounts SET balance=balance-$1 WHERE id=$2', [amount, tr.id]);
-          await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
-            tr.id,
-            acc.id,
-            amount,
-            'foreign_treasury',
-            `${p.name}, cycle ${cycle}`
-          ]);
+          await E().settle(tr.id, acc.id, amount, 'foreign_treasury', `${p.name}, cycle ${cycle}`);
           topped++;
         }
         await q('INSERT INTO payruns(kind,cycle_no,detail) VALUES($1,$2,$3)', [

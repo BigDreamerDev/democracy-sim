@@ -14,7 +14,7 @@ const GROQ_FREE_MODELS = new Set([
   'openai/gpt-oss-120b',
   'openai/gpt-oss-20b',
   'openai/gpt-oss-safeguard-20b',
-  'qwen/qwen3.6-27b',
+  'qwen/qwen3-32b',
   'groq/compound',
   'groq/compound-mini'
 ]);
@@ -23,9 +23,11 @@ const GEMINI_FREE_MODELS = new Set([
   'gemini-2.5-pro',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
-  'gemini-2.5-flash-lite-preview-09-2025',
-  'gemini-2.5-flash-preview-tts'
+  'gemini-2.5-flash-lite-preview-09-2025'
 ]);
+/* No TTS or image models here. Everything on this list has to return a JSON
+   object from a text prompt; a speech model accepted at configuration time
+   fails at the only moment that matters, which is a cabinet meeting. */
 
 const DEFAULTS = Object.freeze({
   groq: process.env.GROQ_FREE_MODEL || 'llama-3.1-8b-instant',
