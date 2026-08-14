@@ -510,7 +510,7 @@ module.exports.mount = function mount(app, ctx) {
       ).rows;
 
       const byPower = new Map(
-        powers.map(p => [String(p.id), { countries: new Set(), full: new Set(), subdivision_count: 0 }])
+        powers.map(p => [String(p.id), { countries: new Set(), full: new Set(), subdivisions: [], subdivision_count: 0 }])
       );
       const claimedCountries = new Set();
 
@@ -524,19 +524,25 @@ module.exports.mount = function mount(app, ctx) {
       }
 
       const foreignRows = (
-        await q(`SELECT country_code, power_id, count(*)::int AS n
+        await q(`SELECT country_code, subdivision_code, power_id
                    FROM foreign_subdivisions
-                  GROUP BY country_code, power_id
-                  ORDER BY country_code, power_id`)
+                  ORDER BY country_code, subdivision_code, power_id`)
       ).rows;
+      const foreignCounts = new Map();
       for (const row of foreignRows) {
         const state = byPower.get(String(row.power_id));
         if (!state) continue;
         state.countries.add(row.country_code);
-        state.subdivision_count += Number(row.n || 0);
+        state.subdivisions.push(row.subdivision_code);
+        state.subdivision_count += 1;
         claimedCountries.add(row.country_code);
-        const total = (SUBDIVISIONS[row.country_code] || []).length;
-        if (total && Number(row.n) >= total) state.full.add(row.country_code);
+        const key = `${row.power_id}:${row.country_code}`;
+        foreignCounts.set(key, (foreignCounts.get(key) || 0) + 1);
+      }
+      for (const [key, n] of foreignCounts) {
+        const [powerId, countryCode] = key.split(':');
+        const total = (SUBDIVISIONS[countryCode] || []).length;
+        if (total && n >= total) byPower.get(String(powerId))?.full.add(countryCode);
       }
 
       for (const power of powers) {
@@ -544,23 +550,30 @@ module.exports.mount = function mount(app, ctx) {
         power.territories = [...state.countries].sort();
         power.full_territories = [...state.full].sort();
         power.partial_territories = power.territories.filter(code => !state.full.has(code));
+        power.subdivisions = state.subdivisions.sort();
         power.subdivision_count = state.subdivision_count;
       }
 
       const republicLegacy = (await q('SELECT code FROM republic_territories ORDER BY code')).rows.map(r => r.code);
-      const republicRows = (await q(`SELECT country_code, count(*)::int AS n
+      const republicRows = (await q(`SELECT country_code, subdivision_code
                                        FROM republic_subdivisions
-                                      GROUP BY country_code ORDER BY country_code`)).rows;
+                                      ORDER BY country_code, subdivision_code`)).rows;
       const republicFull = new Set(republicLegacy);
       const republicCountries = new Set(republicLegacy);
+      const republicCounts = new Map();
+      const republicSubdivisions = [];
       let republicSubdivisionCount = 0;
       republicLegacy.forEach(code => claimedCountries.add(code));
       for (const row of republicRows) {
         republicCountries.add(row.country_code);
+        republicSubdivisions.push(row.subdivision_code);
         claimedCountries.add(row.country_code);
-        republicSubdivisionCount += Number(row.n || 0);
-        const total = (SUBDIVISIONS[row.country_code] || []).length;
-        if (total && Number(row.n) >= total) republicFull.add(row.country_code);
+        republicSubdivisionCount += 1;
+        republicCounts.set(row.country_code, (republicCounts.get(row.country_code) || 0) + 1);
+      }
+      for (const [countryCode, n] of republicCounts) {
+        const total = (SUBDIVISIONS[countryCode] || []).length;
+        if (total && n >= total) republicFull.add(countryCode);
       }
       const republicTerritories = [...republicCountries].sort();
 
@@ -570,6 +583,7 @@ module.exports.mount = function mount(app, ctx) {
           territories: republicTerritories,
           full_territories: [...republicFull].sort(),
           partial_territories: republicTerritories.filter(code => !republicFull.has(code)),
+          subdivisions: republicSubdivisions.sort(),
           subdivision_count: republicSubdivisionCount
         },
         powers,

@@ -6,8 +6,8 @@
    The cache exists so the shell opens instantly and says something sensible
    when there is no signal, not to avoid the network. */
 
-const VERSION = 'republic-v3';
-const SHELL = ['./', './index.html', './styles.css', './app.js', './acts.js', './money.js', './world-map.js', './config.js',
+const VERSION = 'republic-v4';
+const SHELL = ['./', './index.html', './styles.css', './app.js', './acts.js', './money.js', './world-map.js', './world-subdivisions.js', './config.js',
                './icons/icon-192.png', './manifest.webmanifest'];
 
 self.addEventListener('install', e => {

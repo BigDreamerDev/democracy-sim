@@ -2,3 +2,6 @@ node_modules/
 .env
 .env.*
 *.log
+
+# Local cache used by the subdivision-map generator
+.tools-cache/

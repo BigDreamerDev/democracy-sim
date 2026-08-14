@@ -852,16 +852,43 @@
 
   function worldMap(world) {
     const M = window.WORLD_MAP;
+    const S = window.WORLD_SUBDIVISIONS || { shapes: {}, parents: {} };
     if (!M || !world) return '';
 
     const republicHeld = new Set(world.republic?.territories || []);
     const republicPartial = new Set(world.republic?.partial_territories || []);
+    const republicSubs = new Set(world.republic?.subdivisions || []);
+    const subdivisionOwners = new Map();
+    const countriesWithSubdivisionOwnership = new Set();
+
+    for (const code of republicSubs) {
+      const country = S.parents?.[code];
+      if (country) countriesWithSubdivisionOwnership.add(String(country));
+      subdivisionOwners.set(code, {
+        kind: 'republic',
+        name: world.republic?.name || STATE().config.nation_name,
+        fill: 'var(--indelible-fill)'
+      });
+    }
+    for (const p of world.powers) {
+      for (const code of p.subdivisions || []) {
+        const country = S.parents?.[code];
+        if (country) countriesWithSubdivisionOwnership.add(String(country));
+        subdivisionOwners.set(code, {
+          kind: 'foreign', power: p, name: p.name,
+          fill: STANDING_FILL[p.standing] || STANDING_FILL.neutral
+        });
+      }
+    }
+
+    /* Whole-country/legacy ownership still uses the country path. If a country
+       has exact subdivision ownership, the neutral parent is drawn underneath
+       and the real subdivision polygons become authoritative. */
     const ownersByCountry = {};
     const addOwner = (code, owner) => {
       if (!ownersByCountry[code]) ownersByCountry[code] = [];
       ownersByCountry[code].push(owner);
     };
-
     for (const code of republicHeld)
       addOwner(code, {
         kind: 'republic',
@@ -873,17 +900,18 @@
       const partial = new Set(p.partial_territories || []);
       for (const code of p.territories || [])
         addOwner(code, {
-          kind: 'foreign',
-          power: p,
-          name: p.name,
+          kind: 'foreign', power: p, name: p.name,
           partial: partial.has(code),
           fill: STANDING_FILL[p.standing] || STANDING_FILL.neutral
         });
     }
 
     const splitDefs = [];
-    const shapes = Object.entries(M.shapes)
+    const countryShapes = Object.entries(M.shapes)
       .map(([code, d]) => {
+        if (countriesWithSubdivisionOwnership.has(String(code)))
+          return `<path d="${d}" class="wm-land" data-territory="${code}" />`;
+
         const owners = ownersByCountry[code] || [];
         if (!owners.length)
           return `<path d="${d}" class="wm-land" data-territory="${code}" />`;
@@ -918,10 +946,40 @@
       })
       .join('');
 
-    /* One label per power, at the centroid of its largest parent territory. The
-       underlying SVG is country-level, so two states sharing subdivisions of the
-       same parent country can share a centroid; the split fill is the authoritative
-       visual in that case. */
+    /* Each country's generated ADM1 geometry is clipped to the existing
+       country outline. That keeps the current coastline/projection intact while
+       displaying genuine internal subdivision borders. */
+    const subCodesByCountry = {};
+    for (const [subCode, parent] of Object.entries(S.parents || {})) {
+      if (!S.shapes?.[subCode] || !M.shapes?.[parent]) continue;
+      if (!subCodesByCountry[parent]) subCodesByCountry[parent] = [];
+      subCodesByCountry[parent].push(subCode);
+    }
+    const clipDefs = Object.keys(subCodesByCountry)
+      .map(code => `<clipPath id="wm-clip-${code}"><path d="${M.shapes[code]}"/></clipPath>`)
+      .join('');
+
+    const subdivisionGroups = Object.entries(subCodesByCountry).map(([country, codes]) => {
+      const paths = codes.map(code => {
+        const d = S.shapes[code];
+        const owner = subdivisionOwners.get(code);
+        if (!owner)
+          return `<path d="${d}" class="wm-subdivision wm-subdivision-border" data-subdivision="${esc(code)}"/>`;
+        if (owner.kind === 'republic')
+          return `<path d="${d}" class="wm-subdivision wm-subdivision-owned wm-republic" data-subdivision="${esc(code)}" aria-label="${esc(owner.name)} subdivision">
+                    <title>${esc(owner.name)} subdivision</title>
+                  </path>`;
+        const p = owner.power;
+        return `<path d="${d}" class="wm-subdivision wm-subdivision-owned wm-claim ${p.recognised ? 'is-recognised' : 'is-unrecognised'} ${p.standing === 'at_war' ? 'is-at-war' : ''}"
+                    style="fill:${owner.fill}" data-power="${p.id}" data-subdivision="${esc(code)}"
+                    tabindex="0" role="button"
+                    aria-label="${esc(p.name)}, ${esc(standingLabel(p.standing))}, subdivision">
+                  <title>${esc(p.name)} — ${esc(standingLabel(p.standing))}</title>
+                </path>`;
+      }).join('');
+      return `<g class="wm-subdivision-country" data-territory="${country}" clip-path="url(#wm-clip-${country})">${paths}</g>`;
+    }).join('');
+
     const republicLabel = (() => {
       const code = [...republicHeld]
         .filter(c => M.centroids[c])
@@ -944,6 +1002,7 @@
       .join('');
 
     const unclaimed = Object.keys(M.shapes).length - world.claimed;
+    const hasSubdivisionGeometry = Object.keys(S.shapes || {}).length > 0;
 
     return `<section class="card wm-card">
       <div class="dip-section-head">
@@ -951,6 +1010,7 @@
         <h2>Powers of the world</h2>
       </div>
       ${world.powers.length ? '' : '<p class="small muted">No foreign powers exist yet, so the world is empty. The Returning Officer creates them below.</p>'}
+      ${hasSubdivisionGeometry ? '' : '<p class="small muted territory-map-warning">Subdivision geometry has not been generated yet. Run <code>python tools/generate-world-subdivisions.py</code> from the repository root.</p>'}
       <div class="wm-frame">
         <svg viewBox="0 0 ${M.width} ${M.height}" class="wm-svg" role="img" aria-label="Map of the world by diplomatic standing">
           <defs>
@@ -959,8 +1019,10 @@
               <line x1="0" y1="0" x2="0" y2="6" stroke="var(--paper, #14161A)" stroke-width="2.5" opacity="0.55"/>
             </pattern>
             ${splitDefs.join('')}
+            ${clipDefs}
           </defs>
-          <g class="wm-shapes">${shapes}</g>
+          <g class="wm-shapes">${countryShapes}</g>
+          <g class="wm-subdivision-layer">${subdivisionGroups}</g>
           <g class="wm-preview-layer" aria-hidden="true"></g>
           <g class="wm-labels">${labels}</g>
         </svg>
@@ -968,14 +1030,16 @@
       <div class="wm-legend">
         ${STANDING_ORDER.map(k => `<span class="wm-key"><i style="background:${STANDING_FILL[k]}"></i>${standingLabel(k)}</span>`).join('')}
         ${(world.republic?.territories || []).length ? `<span class="wm-key"><i class="wm-key-republic"></i>${esc(world.republic?.name || STATE().config.nation_name)}</span>` : ''}
-        <span class="wm-key"><i class="wm-key-split"></i>split / partial territory</span>
+        ${hasSubdivisionGeometry ? '<span class="wm-key"><i class="wm-key-subdivision"></i>subdivision border</span>' : ''}
         <span class="wm-key" id="wm-preview-key" hidden><i class="wm-key-preview"></i>unsaved edit</span>
         <span class="wm-key"><i class="wm-key-hatch"></i>not recognised</span>
         <span class="wm-key"><i class="wm-key-land"></i>unclaimed (${unclaimed})</span>
       </div>
+      ${hasSubdivisionGeometry ? '<p class="small muted wm-boundary-credit">Subdivision boundaries: geoBoundaries gbOpen ADM1 (CC BY 4.0).</p>' : ''}
       <div id="wm-detail" class="wm-detail" hidden></div>
     </section>`;
   }
+
 
   /* Clicking a country is how you find out who it is. The panel says only what
      the map cannot: the standing in words, whether the Republic recognises them,
@@ -1018,12 +1082,21 @@
      legacy assignments until the RO deliberately edits them. */
   function setTerritoryDraftPreview(entries) {
     const M = window.WORLD_MAP;
+    const S = window.WORLD_SUBDIVISIONS || { shapes: {}, parents: {} };
     const layer = document.querySelector('.wm-preview-layer');
     const key = document.querySelector('#wm-preview-key');
     if (!M || !layer) return;
-    const rows = (entries || []).filter(x => x?.code && M.shapes[x.code]);
-    layer.innerHTML = rows.map(x => `<path d="${M.shapes[x.code]}" class="wm-draft-preview ${x.release ? 'is-release' : ''}"
-      style="--wm-preview-fill:${x.fill || STANDING_FILL.neutral}" data-territory="${esc(x.code)}">
+    const rows = (entries || []).map(x => {
+      if (x?.subdivision_code && S.shapes?.[x.subdivision_code]) {
+        const parent = x.country_code || S.parents?.[x.subdivision_code];
+        return { ...x, d: S.shapes[x.subdivision_code], parent, subdivision: true };
+      }
+      if (x?.code && M.shapes[x.code]) return { ...x, d: M.shapes[x.code], parent: x.code, subdivision: false };
+      return null;
+    }).filter(Boolean);
+    layer.innerHTML = rows.map(x => `<path d="${x.d}" class="wm-draft-preview ${x.subdivision ? 'is-subdivision' : ''} ${x.release ? 'is-release' : ''}"
+      style="--wm-preview-fill:${x.fill || STANDING_FILL.neutral};${x.subdivision && x.parent ? `clip-path:url(#wm-clip-${x.parent})` : ''}"
+      ${x.subdivision ? `data-subdivision="${esc(x.subdivision_code)}"` : `data-territory="${esc(x.code)}"`}>
       <title>${esc(x.label || 'Unsaved territory edit')}</title>
     </path>`).join('');
     if (key) key.hidden = !rows.length;
@@ -1125,21 +1198,32 @@
     const currentHas = code => legacy.has(code) || selectedFor(code).length > 0;
 
     function updateDraftPreview() {
-      const countries = new Set([
-        ...initialLegacy,
-        ...legacy,
-        ...[...initialSelected.values()].map(x => x.country_code),
-        ...[...selected.values()].map(x => x.country_code)
-      ]);
       const entries = [];
-      for (const code of countries) {
-        if (signature(code) === signature(code, initialSelected, initialLegacy)) continue;
-        const has = currentHas(code);
+      const subdivisionCodes = new Set([...initialSelected.keys(), ...selected.keys()]);
+      for (const code of subdivisionCodes) {
+        const before = initialSelected.get(code);
+        const after = selected.get(code);
+        if (!!before === !!after) continue;
+        const meta = after || before;
+        entries.push({
+          code: meta.country_code,
+          country_code: meta.country_code,
+          subdivision_code: code,
+          fill: after ? previewFill : STANDING_FILL.neutral,
+          release: !after,
+          label: after ? `Unsaved: assign this subdivision to ${ownerLabel}` : `Unsaved: release this subdivision from ${ownerLabel}`
+        });
+      }
+
+      const legacyCountries = new Set([...initialLegacy, ...legacy]);
+      for (const code of legacyCountries) {
+        const before = initialLegacy.has(code), after = legacy.has(code);
+        if (before === after) continue;
         entries.push({
           code,
-          fill: has ? previewFill : STANDING_FILL.neutral,
-          release: !has,
-          label: has ? `Unsaved: assign part of this territory to ${ownerLabel}` : `Unsaved: release ${ownerLabel} from this territory`
+          fill: after ? previewFill : STANDING_FILL.neutral,
+          release: !after,
+          label: after ? `Unsaved: assign this whole territory to ${ownerLabel}` : `Unsaved: release this whole territory from ${ownerLabel}`
         });
       }
       setTerritoryDraftPreview(entries);

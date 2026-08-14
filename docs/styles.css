@@ -915,3 +915,29 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
 .territory-preview-note{margin:6px 0 0}
 .republic-subdivision-option.is-blocked{opacity:.58;cursor:not-allowed}
 .republic-subdivision-option.is-blocked:hover{background:transparent}
+
+/* Real ADM1 subdivision geometry. The generated paths are clipped to their
+   existing country outline so coastlines remain identical to world-map.js. */
+.wm-subdivision-country{isolation:isolate}
+.wm-subdivision{
+  fill:transparent;
+  fill-rule:evenodd;
+  stroke:color-mix(in srgb,var(--rule) 55%,var(--ink) 45%);
+  stroke-width:.48;
+  vector-effect:non-scaling-stroke;
+  stroke-linejoin:round;
+}
+.wm-subdivision-border{pointer-events:none}
+.wm-subdivision-owned{stroke:var(--paper);stroke-width:.65}
+.wm-subdivision-owned.wm-republic{fill:var(--indelible-fill)}
+.wm-key-subdivision{
+  background:transparent!important;
+  border:1px solid var(--ink-2);
+  position:relative;
+}
+.wm-key-subdivision::after{
+  content:'';position:absolute;left:5px;top:0;bottom:0;border-left:1px solid var(--ink-2);
+}
+.wm-draft-preview.is-subdivision{stroke-width:.9;fill-opacity:.48}
+.wm-boundary-credit{margin:9px 0 0;font-size:10.5px}
+.territory-map-warning{margin:10px 0 0;padding:8px 10px;border:1px solid var(--rule);border-radius:8px}
