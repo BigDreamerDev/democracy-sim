@@ -132,7 +132,7 @@ module.exports.mount = function mount(app, ctx) {
        hold the other side of every mark ever issued. */
     const circulating = (await q(`
       SELECT COALESCE(sum(balance),0)::bigint s FROM accounts
-       WHERE owner_kind NOT IN ('treasury','fed')`)).rows[0].s;
+       WHERE owner_kind NOT IN ('treasury','fed','power')`)).rows[0].s;
     const flows = (await q(`
       SELECT kind, COALESCE(sum(amount),0)::bigint total, count(*)::int n
         FROM ledger WHERE from_id=$1 OR to_id=$1 GROUP BY kind ORDER BY total DESC`, [t.id])).rows;
@@ -259,7 +259,7 @@ module.exports.mount = function mount(app, ctx) {
     const f = await fedAcc();
     const circulating = (await q(`
       SELECT COALESCE(sum(balance),0)::bigint s FROM accounts
-       WHERE owner_kind NOT IN ('treasury','fed')`)).rows[0].s;
+       WHERE owner_kind NOT IN ('treasury','fed','power')`)).rows[0].s;
     let iConfirmed = false;
     if (req.user && nom)
       iConfirmed = !!(await q('SELECT 1 FROM fed_confirmations WHERE nomination_id=$1 AND user_id=$2',

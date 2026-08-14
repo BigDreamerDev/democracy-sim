@@ -213,6 +213,8 @@ module.exports.mount = function mount(app, ctx) {
       mp: money(num('salary_mp')),
       justice: money(num('salary_justice')),
       treasurer: money(num('salary_treasurer')),
+      foreign_minister: money(num('salary_foreign_minister')),
+      quartermaster: money(num('salary_quartermaster')),
       fed_chair: money(num('salary_fed_chair'))
     };
     const already = (await q('SELECT 1 FROM payruns WHERE kind=$1 AND cycle_no=$2', ['salary', cycleNo]))
@@ -305,6 +307,12 @@ module.exports.mount = function mount(app, ctx) {
       if (req.body?.interest !== false) out.interest = await runInterest(cycle, req.user.id);
       if (req.body?.banks !== false && ctx.money?.runPayrun)
         out.banks = await ctx.money.runPayrun(cycle, req.user.id);
+      // Forces eat every cycle whether or not anyone is looking at them.
+      if (req.body?.upkeep !== false && ctx.war?.runUpkeep)
+        out.upkeep = await ctx.war.runUpkeep(cycle, req.user.id);
+      /* After upkeep, so this cycle's readiness is the readiness that counts. */
+      if (req.body?.conflicts !== false && ctx.war?.runConflicts)
+        out.conflicts = await ctx.war.runConflicts(cycle, req.user.id);
       if (req.body?.diplomacy !== false && ctx.diplomacy?.runPayrun)
         out.diplomacy = await ctx.diplomacy.runPayrun(cycle, req.user.id);
       res.json(out);

@@ -40,7 +40,7 @@ feature exists in production.
 | **Prime Minister** | appointed by the President, confirmed by a House majority, removed by House no-confidence. Assents to ordinary bills. |
 | **Speaker** | two thirds of the House, bar falling one vote per failed ballot to a simple majority. Tables bills, calls and closes divisions, **holds the casting vote on ties**. |
 | **House (MPs)** | proposes, seconds, votes in divisions. `bill_proposers = mps` by default. |
-| **Justices** ×3 | one each by House, President, People. Three-cycle fixed terms, cannot be swapped out. |
+| **Justices** ×3 | House seat filled by the Speaker, President's by themselves, **People's by a ballot of every Citizen**. Fixed terms (`justice_terms` x `cycle_days`, a fortnight by default) that now actually expire — the clock retires them and opens the next ballot. |
 | **Treasurer** | appointed by the PM (or the President where there is none), dismissable by them. Names the currency, fixes the ownership cap, reports to the House. May not create money or set a tax. |
 | **Head of the Fed** | nominated by the President, confirmed by the House, **three cycles**, removable only by impeachment. Sets the rate of interest, issues and retires money, licenses and closes banks. Publishes reasons for everything. Holds no business interest. |
 | **Returning Officer** | admin. Runs invites, approvals, rules, elections, appointments. **Holds no office and cannot act in one** — deliberately removed. May edit any setting on the admin page, but `/api/admin/office` refuses `treasurer` and `fed_chair`, and on the Court they fill only the People's seat. |

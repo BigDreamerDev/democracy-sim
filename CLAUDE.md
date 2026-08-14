@@ -142,6 +142,72 @@ bank already does. The shortfall is real and shows up on closure. Do not
   edit every *setting* on the admin page, including the Fed's rates — that is the
   existing seam, it is logged, and someone has to be able to fix a typo. On the
   Court the RO fills only the People's seat, for the same reason.
+- **A `justice` election is special-cased inside `certify()` and returns early.**
+  The generic path vacates every holder of the office being elected, which for
+  `justice` would sweep the House's and the President's appointees out of a
+  ballot they had no part in. It also breaks ties by display-name order, which
+  is gameable on a seat held for a fixed term. If you touch `certify()`, the
+  `justice` branch must stay above the generic seating.
+- **`justiceTermEnds()` lives in server.js and is passed to judiciary.js on the
+  context.** Two copies of `justice_terms x cycle_days` that disagree would only
+  show up when somebody's term ended early.
+- **War is supply, not manoeuvre — by the group's decision.** There are no unit
+  positions, no orders, no deployment and no dice anywhere in `war.js`. If a
+  future change adds randomness to readiness or an outcome, it breaks the thing
+  that makes this playable asynchronously: a player who is losing must be able
+  to see it coming several cycles out. Readiness moves by fixed steps only.
+- **A conflict never resolves itself.** `runConflicts` moves pressure and
+  escalates a stage; it does not transfer territory, sign a treaty or end a war.
+  Peace is a bill, as everything else is. If a future change makes pressure
+  hitting 100 do something automatic, the House has lost a decision it should
+  have had.
+- **Procurement and wages bypass `pay()` deliberately.** The Treasury is
+  normally overdrawn from the dividend, and `pay()` refuses an overdraft, so
+  `spendFromTreasury()` writes both sides itself. It still writes the ledger, so
+  `sum(accounts.balance)` stays 0 — `war.mjs` asserts that across five payruns.
+  What limits procurement is `military_budget_per_cycle`, never the balance.
+- **Every stockpile change goes through `move()`.** It refuses to take a
+  category below zero rather than clamping, and writes a signed movement row.
+  Supplying an army from an empty store silently is the one bug that would make
+  the whole system meaningless.
+- **Bills are never deleted, only `withdrawn`.** A hole in the reference numbers
+  would be worse than a withdrawn bill in the list, and the record of what was
+  proposed and then pulled is part of the public record. Both editing and
+  withdrawing stop the moment a division is called — after that the House is
+  voting on a text and it is no longer the proposer's.
+- **Editing a bill clears its seconds.** Deliberate: a signature was for the
+  text that was signed, and collecting seconds then rewriting the body would be
+  a bait and switch.
+- **The Foreign Minister displaces the President on the channel, deliberately.**
+  `requireRepublicDiplomat` refuses the President while the office is filled. If
+  that ever looks like a bug and gets "fixed", the head of state is back to
+  negotiating the treaties they assent to.
+- **Intelligence: reading is an audit write.** `/api/intel/reports/:id/read`
+  inserts into `intel_reads` before it answers, and that register is public even
+  while the report is sealed. Do not add a read path that skips it — the
+  register is the entire reason secrecy is tolerable here. Nothing but a row in
+  `intel_clearance` grants sight of a sealed report; no office does.
+- **Real country names never reach a player.** `docs/world-map.js` carries
+  `TERRITORY_NAMES` for the Returning Officer's console only. Everywhere else a
+  territory is called whatever the power holding it is called. One leaked
+  "United States of America" on the map collapses the conceit;
+  `test/worldmap-view.js` asserts the leak cannot happen.
+- **The world map is precomputed.** Paths are projected at build time into a
+  1000x500 viewBox and rounded to a tenth of a pixel. Do not add d3-geo or a
+  TopoJSON client to the front end to "improve" it — the whole point is that
+  `docs/` stays a no-build static site. Regenerate the file instead.
+- **Tribute used to destroy money.** The diplomacy payrun debited the Treasury
+  and wrote a ledger row with `to_id NULL`, so `sum(balance)` walked negative
+  once per cycle per ratified treaty, for as long as the feature existed.
+  `foreigntrade.mjs` never ran a payrun, so it stayed green throughout. It runs
+  two now. Any new movement writes both sides, and any new suite that touches
+  money asserts the total across a payrun, not just across a request.
+- **Check offices first; `is_admin` is only ever an extra route, never a short
+  circuit.** Uzair is the Returning Officer and also plays, so one account
+  routinely holds an office too. `if (user.is_admin) return <something>` at the
+  top of a permission check silently takes away powers the office grants —
+  it did exactly that to a sitting Speaker in `mayAppoint`. Ask what office
+  someone holds, then ask whether they are also the RO.
 - **The Treasurer falls with the government; the Fed chair does not.** The
   Treasury is appointed by the Prime Minister, or by the President where there is
   none, and either may dismiss them. That asymmetry is the entire point of having
