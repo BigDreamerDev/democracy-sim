@@ -206,6 +206,17 @@ CREATE TABLE IF NOT EXISTS republic_territories (
   assigned_by INT REFERENCES users(id) ON DELETE SET NULL
 );
 
+/* Subdivision-level starting territory. `country_code` is the existing opaque
+   M49 map code; `subdivision_code` is an ISO 3166-2 code. The old whole-country
+   table stays in place so an existing deployment upgrades without losing data. */
+CREATE TABLE IF NOT EXISTS republic_subdivisions (
+  subdivision_code TEXT PRIMARY KEY,
+  country_code     TEXT NOT NULL,
+  assigned_at      TIMESTAMPTZ DEFAULT now(),
+  assigned_by      INT REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_republic_subdivisions_country ON republic_subdivisions(country_code);
+
 /* ------------------------------------------------- the intelligence service
 
    FRAMEWORK ONLY. The tables and the rules about who may see what are here;

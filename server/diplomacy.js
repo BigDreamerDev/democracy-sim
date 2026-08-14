@@ -1,6 +1,7 @@
 'use strict';
 
 const providers = require('./llm/providers');
+const SUBDIVISIONS = require('./subdivisions.json');
 
 module.exports.mount = function mount(app, ctx) {
   const {
@@ -509,9 +510,28 @@ module.exports.mount = function mount(app, ctx) {
          WHERE p.revoked_at IS NULL
          GROUP BY p.id ORDER BY p.name`)
       ).rows;
-      const republicTerritories = (await q('SELECT code FROM republic_territories ORDER BY code')).rows.map(r => r.code);
+      const legacy = (await q('SELECT code FROM republic_territories ORDER BY code')).rows.map(r => r.code);
+      const rows = (await q(`SELECT country_code, count(*)::int AS n
+                               FROM republic_subdivisions
+                              GROUP BY country_code ORDER BY country_code`)).rows;
+      const full = new Set(legacy);
+      const countries = new Set(legacy);
+      let subdivisionCount = 0;
+      for (const row of rows) {
+        countries.add(row.country_code);
+        subdivisionCount += Number(row.n || 0);
+        const total = (SUBDIVISIONS[row.country_code] || []).length;
+        if (total && Number(row.n) >= total) full.add(row.country_code);
+      }
+      const republicTerritories = [...countries].sort();
       res.json({
-        republic: { name: ctx.CONFIG.nation_name, territories: republicTerritories },
+        republic: {
+          name: ctx.CONFIG.nation_name,
+          territories: republicTerritories,
+          full_territories: [...full].sort(),
+          partial_territories: republicTerritories.filter(code => !full.has(code)),
+          subdivision_count: subdivisionCount
+        },
         powers,
         claimed: republicTerritories.length + powers.reduce((n, p) => n + p.territories.length, 0),
         enabled: bool('diplomacy_enabled')
@@ -519,33 +539,79 @@ module.exports.mount = function mount(app, ctx) {
     })
   );
 
-  /* The Returning Officer draws the borders. This is world-building, not
-     statecraft: no office may take or give territory, because nothing in the
-     Constitution says who could. If conquest ever becomes a thing the powers do,
-     it arrives as a bill like everything else. */
-  /* Starting territory for the Republic is also world-building. The Republic
-     is deliberately not inserted into `powers`: only the Returning Officer may
-     set this list, and later transfers can still be handled politically. */
+  app.get(
+    '/api/admin/republic/territories',
+    admin,
+    wrap(async (_req, res) => {
+      const rows = (await q('SELECT country_code, subdivision_code FROM republic_subdivisions ORDER BY country_code, subdivision_code')).rows;
+      const selected = rows.map(row => {
+        const meta = (SUBDIVISIONS[row.country_code] || []).find(s => s.code === row.subdivision_code) || {};
+        return { country_code: row.country_code, code: row.subdivision_code, name: meta.name || row.subdivision_code, type: meta.type || '' };
+      });
+      const legacy = (await q('SELECT code FROM republic_territories ORDER BY code')).rows.map(r => r.code);
+      res.json({ subdivisions: selected, legacy_territories: legacy });
+    })
+  );
+
+  app.get(
+    '/api/admin/republic/subdivisions/:countryCode',
+    admin,
+    wrap(async (req, res) => {
+      const countryCode = String(req.params.countryCode || '').trim();
+      res.json({ country_code: countryCode, subdivisions: SUBDIVISIONS[countryCode] || [] });
+    })
+  );
+
+  /* Starting territory for the Republic is world-building. New assignments are
+     subdivision-level; legacy whole-country rows are preserved until the RO
+     edits them, at which point the UI converts them to subdivisions. */
   app.put(
     '/api/admin/republic/territories',
     admin,
     wrap(async (req, res) => {
-      const codes = Array.isArray(req.body?.codes) ? req.body.codes.map(c => String(c).trim()).filter(Boolean) : null;
-      if (!codes) return res.status(400).json({ error: 'Send codes as an array of territory codes.' });
-      if (codes.length > 300) return res.status(400).json({ error: 'That is more of the world than exists.' });
+      /* Backwards compatibility with the first whole-country UI. */
+      if (Array.isArray(req.body?.codes) && !Array.isArray(req.body?.subdivisions)) {
+        const codes = [...new Set(req.body.codes.map(c => String(c).trim()).filter(Boolean))];
+        const taken = codes.length ? (await q('SELECT code FROM territories WHERE code = ANY($1)', [codes])).rows : [];
+        if (taken.length) return res.status(409).json({ error: `Already claimed by a foreign power: ${taken.map(t => t.code).join(', ')}.` });
+        await q('DELETE FROM republic_subdivisions');
+        await q('DELETE FROM republic_territories');
+        for (const code of codes) await q('INSERT INTO republic_territories(code,assigned_by) VALUES($1,$2)', [code, req.user.id]);
+        return res.json({ ok: true, codes });
+      }
 
-      const taken = (await q('SELECT code, power_id FROM territories WHERE code = ANY($1)', [codes])).rows;
+      const input = Array.isArray(req.body?.subdivisions) ? req.body.subdivisions : null;
+      const legacyCodes = Array.isArray(req.body?.legacy_codes)
+        ? [...new Set(req.body.legacy_codes.map(c => String(c).trim()).filter(Boolean))]
+        : [];
+      if (!input) return res.status(400).json({ error: 'Send subdivisions as an array.' });
+      if (input.length > 1500) return res.status(400).json({ error: 'Too many subdivisions in one assignment.' });
+
+      const items = [];
+      const seen = new Set();
+      for (const raw of input) {
+        const countryCode = String(raw?.country_code || '').trim();
+        const code = String(raw?.code || '').trim();
+        if (!countryCode || !code || seen.has(code)) continue;
+        const allowed = (SUBDIVISIONS[countryCode] || []).some(s => s.code === code);
+        if (!allowed) return res.status(400).json({ error: `Unknown subdivision ${code} for territory ${countryCode}.` });
+        seen.add(code);
+        items.push({ country_code: countryCode, code });
+      }
+
+      const countryCodes = [...new Set([...items.map(i => i.country_code), ...legacyCodes])];
+      const taken = countryCodes.length ? (await q('SELECT code, power_id FROM territories WHERE code = ANY($1)', [countryCodes])).rows : [];
       if (taken.length)
-        return res.status(409).json({
-          error: `Already claimed by a foreign power: ${taken.map(t => t.code).join(', ')}. Release them there first.`,
-          taken
-        });
+        return res.status(409).json({ error: `A foreign power already holds: ${taken.map(t => t.code).join(', ')}. Release it there first.`, taken });
 
+      await q('DELETE FROM republic_subdivisions');
       await q('DELETE FROM republic_territories');
-      for (const code of codes)
+      for (const code of legacyCodes)
         await q('INSERT INTO republic_territories(code,assigned_by) VALUES($1,$2) ON CONFLICT (code) DO NOTHING', [code, req.user.id]);
-      log(req.user.id, 'republic.territories', `${ctx.CONFIG.nation_name}: ${codes.length} territories`);
-      res.json({ ok: true, codes });
+      for (const item of items)
+        await q('INSERT INTO republic_subdivisions(subdivision_code,country_code,assigned_by) VALUES($1,$2,$3)', [item.code, item.country_code, req.user.id]);
+      log(req.user.id, 'republic.territories', `${ctx.CONFIG.nation_name}: ${items.length} subdivisions across ${countryCodes.length} map territories`);
+      res.json({ ok: true, subdivisions: items, legacy_codes: legacyCodes });
     })
   );
 
@@ -559,9 +625,6 @@ module.exports.mount = function mount(app, ctx) {
       if (!codes) return res.status(400).json({ error: 'Send codes as an array of territory codes.' });
       if (codes.length > 300) return res.status(400).json({ error: 'That is more of the world than exists.' });
 
-      /* Claimed by someone else is a refusal, not a silent transfer. Moving a
-         territory between powers should look like a decision, so it takes two
-         calls: release it from one, then claim it for the other. */
       const taken = (
         await q('SELECT code, power_id FROM territories WHERE code = ANY($1) AND power_id <> $2', [codes, power.id])
       ).rows;
@@ -570,10 +633,12 @@ module.exports.mount = function mount(app, ctx) {
           error: `Already claimed: ${taken.map(t => t.code).join(', ')}. Release them from the power that holds them first.`,
           taken
         });
-      const republicTaken = (await q('SELECT code FROM republic_territories WHERE code = ANY($1)', [codes])).rows;
+      const legacyTaken = (await q('SELECT code FROM republic_territories WHERE code = ANY($1)', [codes])).rows;
+      const subdivisionTaken = (await q('SELECT DISTINCT country_code AS code FROM republic_subdivisions WHERE country_code = ANY($1)', [codes])).rows;
+      const republicTaken = [...legacyTaken, ...subdivisionTaken];
       if (republicTaken.length)
         return res.status(409).json({
-          error: `Held by ${ctx.CONFIG.nation_name}: ${republicTaken.map(t => t.code).join(', ')}. Release them from the Republic first.`,
+          error: `Held wholly or partly by ${ctx.CONFIG.nation_name}: ${[...new Set(republicTaken.map(t => t.code))].join(', ')}. Release it from the Republic first.`,
           taken: republicTaken
         });
 
