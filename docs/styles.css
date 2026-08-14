@@ -774,3 +774,77 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
   .despatch-do{width:100%}
   .despatch-do .btn{flex:1}
 }
+
+/* ═══════════════════════════════════════════════════════ THE WORLD MAP
+
+   Real coastlines, invented countries. Standing is the fill and recognition is
+   the border, so the two questions the map exists to answer are answered before
+   anyone reads a word. Unclaimed land recedes: it is nobody's, and it should
+   not compete with the states that are somebody's. */
+
+.wm-card{padding-bottom:14px}
+.wm-frame{
+  margin-top:14px;border:1px solid var(--rule);border-radius:10px;
+  background:
+    radial-gradient(120% 120% at 50% 0%, color-mix(in srgb, var(--card) 92%, var(--ink) 8%), var(--card));
+  overflow:hidden;
+}
+.wm-svg{display:block;width:100%;height:auto}
+
+/* Unclaimed land. Present, and quiet. */
+.wm-land{
+  fill:color-mix(in srgb, var(--card) 78%, var(--ink) 22%);
+  stroke:var(--rule);stroke-width:.4;
+}
+
+.wm-claim{
+  stroke:var(--paper);stroke-width:.6;
+  cursor:pointer;transition:filter .12s ease, stroke-width .12s ease;
+}
+.wm-claim:hover,.wm-claim:focus-visible{filter:brightness(1.18);outline:none;stroke-width:1.2}
+.wm-claim.is-picked{stroke:var(--ink);stroke-width:1.4}
+
+/* Recognition is the border. A state the Republic has not recognised is drawn
+   with a dashed edge and hatched over — on the map because it exists, not
+   because we have said so. */
+.wm-claim.is-unrecognised{stroke-dasharray:2.5 2;stroke:var(--ink-2);opacity:.82}
+.wm-claim.is-at-war{stroke:var(--oxide);stroke-width:1}
+
+.wm-labels{pointer-events:none}
+/* Fixed light on a fixed dark halo, for the same reason the fills are fixed:
+   the label sits on a saturated data colour, not on the page, so it must not
+   follow the theme. */
+.wm-label{
+  fill:#F7F8F9;font-size:9px;font-weight:650;letter-spacing:.02em;
+  text-anchor:middle;dominant-baseline:middle;
+  paint-order:stroke;stroke:rgba(10,12,16,.72);stroke-width:2.4;
+}
+
+.wm-legend{
+  display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:12px;
+  font-size:11.5px;color:var(--ink-2);
+}
+.wm-key{display:inline-flex;align-items:center;gap:6px}
+.wm-key i{width:11px;height:11px;border-radius:3px;display:inline-block}
+.wm-key-hatch{
+  background:repeating-linear-gradient(45deg,var(--ink-3) 0 2px,transparent 2px 4px);
+  border:1px dashed var(--ink-2);
+}
+.wm-key-land{background:color-mix(in srgb, var(--card) 78%, var(--ink) 22%);border:1px solid var(--rule)}
+
+.wm-detail{margin-top:12px;padding:12px;border:1px solid var(--rule);border-radius:9px;background:var(--card)}
+.wm-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px}
+
+@media (max-width:640px){
+  .wm-label{font-size:11px}
+  .wm-legend{font-size:11px;gap:8px 12px}
+}
+
+/* The pressure bar on a conflict. Red when it is getting worse, green when it
+   is easing — the direction matters more than the number, because the number
+   only means anything next to the rate it is moving. */
+.wm-pressure{
+  margin-top:8px;height:6px;border-radius:3px;overflow:hidden;
+  background:color-mix(in srgb, var(--card) 70%, var(--ink) 30%);
+}
+.wm-pressure i{display:block;height:100%;transition:width .2s ease}

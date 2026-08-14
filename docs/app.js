@@ -1464,10 +1464,12 @@ async function viewBill(v, id) {
         : !canPropose() ? '<span class="small muted">Only the House may second a bill.</span>'
         : `<button class="btn ${b.i_seconded ? '' : 'btn-primary'}" id="second" ${b.i_seconded ? 'disabled' : ''}>${b.i_seconded ? 'You seconded this' : 'Second it'}</button>`}
       ${has('speaker') && b.seconds >= need ? '<button class="btn" data-act="table">Table it</button>' : ''}
+      ${b.author_id === ME.id ? '<button class="btn btn-sm" id="bill-edit">Edit</button><button class="btn btn-sm" id="bill-withdraw">Withdraw</button>' : ''}
     </div>`;
   } else if (b.status === 'tabled') {
     action = `<div class="row"><span class="small muted">Tabled and waiting on the Speaker to call a division.</span>
-      ${has('speaker') ? '<button class="btn btn-primary" data-act="division">Call the division</button>' : ''}</div>`;
+      ${has('speaker') ? '<button class="btn btn-primary" data-act="division">Call the division</button>' : ''}
+      ${b.author_id === ME.id ? '<button class="btn btn-sm" id="bill-edit">Edit</button><button class="btn btn-sm" id="bill-withdraw">Withdraw</button>' : ''}</div>`;
   } else if (b.status === 'division') {
     action = `${strip()}
       ${b.can_vote && !b.my_vote ? `<div class="row" style="margin-top:10px">
@@ -1564,6 +1566,28 @@ async function viewBill(v, id) {
     try { await api(`/api/bills/${id}/comments`, { method: 'POST', body: Object.fromEntries(new FormData(e.target)) }); route(); }
     catch (err) { toast(err.message, true); }
   };
+  /* A proposer can fix or pull their own bill, but only before a division —
+     after that the House is voting on a text and it stops being theirs. */
+  if ($('#bill-edit')) $('#bill-edit').onclick = async () => {
+    const title = prompt('Title', b.title);
+    if (title === null) return;
+    const body = prompt('Text of the bill', b.body);
+    if (body === null) return;
+    try {
+      const r = await api(`/api/bills/${b.id}`, { method: 'PATCH', body: { title, body } });
+      toast(r.seconds_cleared ? `Amended. ${r.seconds_cleared} second(s) cleared — a signature was for the text signed.` : 'Amended.');
+      route();
+    } catch (err) { toast(err.message, true); }
+  };
+  if ($('#bill-withdraw')) $('#bill-withdraw').onclick = async () => {
+    if (!confirm('Withdraw this bill? It stays on the public record as withdrawn.')) return;
+    try {
+      await api(`/api/bills/${b.id}/withdraw`, { method: 'POST' });
+      toast('Withdrawn.');
+      route();
+    } catch (err) { toast(err.message, true); }
+  };
+
   if ($('#second')) $('#second').onclick = async () => {
     try { await api(`/api/bills/${id}/second`, { method: 'POST' }); route(); } catch (err) { toast(err.message, true); }
   };

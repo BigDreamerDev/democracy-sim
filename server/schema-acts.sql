@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS case_votes (
 
 CREATE TABLE IF NOT EXISTS accounts (
   id         SERIAL PRIMARY KEY,
-  owner_kind TEXT NOT NULL,                     -- citizen | business | treasury
+  owner_kind TEXT NOT NULL,                     -- citizen | business | treasury | fed | bank | escrow | power
   owner_id   INT,
   balance    BIGINT DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now(),

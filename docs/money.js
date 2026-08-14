@@ -483,6 +483,240 @@
     });
   }
 
+  /* ================================================== SUPPLY AND UPKEEP
+
+     War here is logistics, by the group's decision: buy equipment, keep it
+     supplied, pay for it — no movement, no deployment, no dice. So the page is
+     a Quartermaster's page, and the number it leads with is the one a
+     quartermaster actually wants: how many cycles the store covers. */
+
+  const CAT_LABEL = {
+    food: 'Food', raw_materials: 'Raw materials', energy: 'Energy',
+    industrial_goods: 'Industrial goods', technology: 'Technology',
+    arms: 'Arms', luxury: 'Luxury', services: 'Services'
+  };
+
+  const STAGE_LABEL = { grievance: 'Grievance', ultimatum: 'Ultimatum', blockade: 'Blockade', open_war: 'Open war' };
+
+  async function viewWar(v) {
+    const [d, front] = await Promise.all([api('/api/war'), api('/api/war/conflicts').catch(() => null)]);
+    const mine = d.i_am_quartermaster;
+    const by = d.appointer === 'prime_minister' ? 'Prime Minister' : 'President';
+    const canAppoint = held(d.appointer);
+
+    /* Anything under two cycles of cover is the thing to shout about — one
+       cycle of warning is not warning. */
+    const critical = d.forecast.filter(f => f.per_cycle > 0 && f.cycles_covered !== null && f.cycles_covered < 2);
+
+    v.innerHTML = `
+      <h1 class="page">Supply</h1>
+      <p class="page-sub">What the Republic holds, what its forces eat, and what that costs. No orders are given here — this is the storehouse, not a battlefield.</p>
+
+      <div class="card">
+        <div class="grid2">
+          <div>
+            <p class="eyebrow">Quartermaster</p>
+            <strong style="font-size:1.2rem">${esc(d.quartermaster?.display_name || 'Vacant')}</strong>
+            <p class="small muted" style="margin-top:6px">Appointed by the ${esc(by)} and dismissable by them. Spends only what the House has voted.</p>
+          </div>
+          <div>
+            <p class="eyebrow">Readiness</p>
+            <span class="balance-figure">${d.readiness === null ? '—' : d.readiness + '%'}</span>
+            <p class="small muted">${
+              d.readiness === null
+                ? 'Nothing is standing.'
+                : d.readiness >= 90
+                  ? 'Fully supplied.'
+                  : 'Falling while supply is short. It recovers slower than it falls.'
+            }</p>
+          </div>
+        </div>
+        ${
+          canAppoint || (d.quartermaster && mine)
+            ? `<div class="row" style="margin-top:16px;gap:8px;flex-wrap:wrap">
+          ${canAppoint ? `<form id="qm-appoint" class="row" style="gap:8px;flex:1;min-width:240px">
+            <select name="user_id" style="flex:1"></select>
+            <button class="btn btn-sm btn-primary">${d.quartermaster ? 'Replace' : 'Appoint'}</button></form>` : ''}
+          ${d.quartermaster && (mine || canAppoint) ? `<button class="btn btn-sm" data-qm-dismiss="1">${mine ? 'Resign' : 'Dismiss'}</button>` : ''}
+        </div>`
+            : ''
+        }
+      </div>
+
+      ${frontLine(front)}
+
+      ${
+        critical.length
+          ? `<div class="card" style="border-color:var(--oxide)">
+        <h2>Running out</h2>
+        <p class="small muted">At the current establishment:</p>
+        <div class="list" style="margin-top:10px">${critical
+          .map(f => `<div class="item"><div class="item-top">
+            <span class="item-title">${esc(CAT_LABEL[f.category] || f.category)}</span>
+            <span class="money">${f.cycles_covered === 0 ? 'none left' : f.cycles_covered + ' cycle'}</span></div>
+            <p class="small muted">${f.held} held · ${f.per_cycle} needed each cycle</p></div>`)
+          .join('')}</div>
+      </div>`
+          : ''
+      }
+
+      <div class="card">
+        <h2>The storehouse</h2>
+        <div class="list" style="margin-top:12px">
+          ${d.forecast
+            .map(f => `<div class="item"><div class="item-top">
+              <span class="item-title">${esc(CAT_LABEL[f.category] || f.category)}</span>
+              <span class="money">${f.held}</span></div>
+              <p class="small muted">${f.per_cycle} a cycle · ${
+                f.cycles_covered === null ? 'not consumed' : `${f.cycles_covered} cycle${f.cycles_covered === 1 ? '' : 's'} covered`
+              }</p></div>`)
+            .join('')}
+        </div>
+        <div class="row" style="margin-top:14px;gap:18px;flex-wrap:wrap">
+          ${Object.entries(d.stockpile)
+            .filter(([c]) => !d.forecast.some(f => f.category === c))
+            .map(([c, n]) => `<span class="tag">${esc(CAT_LABEL[c] || c)} ${n}</span>`)
+            .join('')}
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>The establishment</h2>
+        <p class="small muted">Each unit of size eats, burns and wears out every cycle, and is paid. A standing army in peacetime is a bill that arrives forever.</p>
+        <div class="row" style="margin-top:12px;gap:18px;flex-wrap:wrap">
+          <span class="tag">${d.size} of size</span>
+          <span class="tag">${cash(d.wages_per_cycle)} in pay a cycle</span>
+          <span class="tag">budget ${cash(d.budget)} · ${cash(d.budget_left)} left this cycle</span>
+        </div>
+        ${
+          d.formations.length
+            ? `<div class="list" style="margin-top:14px">${d.formations
+                .map(f => `<div class="item"><div class="item-top">
+            <span class="item-title">${esc(f.name)}</span>
+            <span class="money">${Math.round(Number(f.readiness))}%</span></div>
+            <p class="small muted">${esc(f.arm)} · size ${f.size}</p>
+            ${mine ? `<div class="row" style="margin-top:8px"><button class="btn btn-sm" data-disband="${f.id}">Disband</button></div>` : ''}
+          </div>`)
+                .join('')}</div>`
+            : '<p class="small muted" style="margin-top:12px">Nothing is standing. Upkeep costs nothing, which is the cheapest defence policy there is.</p>'
+        }
+        ${
+          mine
+            ? `<form id="raise" class="stack" style="margin-top:18px">
+          <div class="grid2">
+            <label class="field"><span>Name</span><input name="name" placeholder="First Regiment" required></label>
+            <label class="field"><span>Size</span><input name="size" type="number" min="1" max="50" value="1" required></label>
+          </div>
+          <label class="field"><span>Arm</span><select name="arm"><option value="army">Army</option><option value="navy">Navy</option><option value="air">Air</option></select></label>
+          <p class="small muted">Raising costs ${d.raise_cost_arms} arms from the storehouse for every unit of size. You cannot raise what you have not equipped.</p>
+          <button class="btn btn-primary">Raise it</button>
+        </form>`
+            : ''
+        }
+      </div>
+
+      ${mine ? '<div class="card"><h2>Procurement</h2><p class="small muted">The Republic buys at the seller\'s price, from the same market citizens use. There is no requisition and no state discount — if you want cheap arms, the Republic needs an arms industry.</p><div id="procure" class="list" style="margin-top:14px"></div></div>' : ''}
+
+      <div class="card">
+        <h2>Upkeep</h2>
+        ${
+          d.runs.length
+            ? `<div class="list">${d.runs
+                .map(r => `<div class="item"><div class="item-top">
+            <span class="item-title">Cycle ${r.cycle_no}</span>
+            <span class="money">${cash(r.paid)}</span></div>
+            <p class="small muted">${esc(r.detail)}</p></div>`)
+                .join('')}</div>`
+            : '<p class="small muted">Upkeep has not run yet.</p>'
+        }
+      </div>`;
+
+    onSubmit('#qm-appoint', b => api('/api/war/quartermaster/appoint', { method: 'POST', body: { user_id: Number(b.user_id) } }));
+    onSubmit('#raise', b => api('/api/war/formations', { method: 'POST', body: { ...b, size: Number(b.size) } }));
+    onClick('data-qm-dismiss', () => api('/api/war/quartermaster/dismiss', { method: 'POST' }));
+    onClick('data-disband', id => api(`/api/war/formations/${id}/disband`, { method: 'POST' }));
+
+    const sel = document.querySelector('#qm-appoint select');
+    if (sel) {
+      try {
+        const cs = await api('/api/citizens');
+        sel.innerHTML = cs.map(c => `<option value="${c.id}">${esc(c.display_name)}${(c.offices || []).length ? ` — ${esc((c.offices || []).join(', '))}` : ''}</option>`).join('');
+      } catch {}
+    }
+    if (mine) await drawProcurement();
+  }
+
+  /* The front. A conflict here is a countdown, not a battle — so what the card
+     shows is which way it is moving and how many cycles are left before the
+     next stage. That number is what makes the House act, so it leads. */
+  function frontLine(front) {
+    if (!front || !front.conflicts?.length) return '';
+    return `<div class="card">
+      <h2>The front</h2>
+      <p class="small muted">Nothing is fought here. Each cycle a conflict moves by how well your forces are supplied against what the other side brings — and when it crosses a line, it escalates. Peace is a treaty, and a treaty is a bill.</p>
+      <div class="row" style="margin-top:10px"><span class="tag">the Republic brings ${front.ours}</span></div>
+      <div class="list" style="margin-top:12px">
+        ${front.conflicts
+          .map(c => {
+            const worsening = c.moving > 0;
+            const pct = Math.max(0, Math.min(100, Number(c.pressure)));
+            return `<div class="item">
+          <div class="item-top">
+            <span class="item-title">${esc(c.power_name)}</span>
+            <span class="tag ${c.stage === 'open_war' || c.stage === 'blockade' ? 'on-oxide' : ''}">${esc(STAGE_LABEL[c.stage] || c.stage)}</span>
+          </div>
+          <div class="wm-pressure"><i style="width:${pct}%;background:${worsening ? 'var(--oxide)' : 'var(--tally)'}"></i></div>
+          <p class="small muted" style="margin-top:6px">
+            ${esc(c.grievance || '')}
+          </p>
+          <p class="small muted" style="margin-top:4px">
+            They bring ${c.strength} against your ${front.ours} ·
+            ${
+              worsening
+                ? `worsening by ${c.moving} a cycle${c.cycles_to_next ? ` · ${c.cycles_to_next} cycle${c.cycles_to_next === 1 ? '' : 's'} to ${esc(STAGE_LABEL[c.next_stage] || c.next_stage)}` : ''}`
+                : c.moving < 0
+                  ? `easing by ${-c.moving} a cycle`
+                  : 'holding steady'
+            }
+          </p>
+        </div>`;
+          })
+          .join('')}
+      </div>
+    </div>`;
+  }
+
+  /* The market, filtered to what the storehouse can actually hold. A listing
+     with no category cannot be stored, so it is not offered. */
+  async function drawProcurement() {
+    const box = $('#procure');
+    if (!box) return;
+    let listings = [];
+    try {
+      listings = (await api('/api/economy/listings')).filter(l => l.category);
+    } catch {}
+    if (!listings.length) {
+      box.innerHTML = '<p class="small muted">Nothing on the market is categorised, so nothing can be bought into the storehouse. Businesses classify themselves on the Economy page.</p>';
+      return;
+    }
+    box.innerHTML = listings
+      .map(l => `<div class="item">
+        <div class="item-top"><span class="item-title">${esc(l.title)}</span><span class="money">${cash(l.price)}</span></div>
+        <p class="small muted">${esc(l.business_name)} · ${esc(CAT_LABEL[l.category] || l.category)}${l.stock === null ? '' : ` · ${l.stock} left`}</p>
+        <div class="row" style="margin-top:8px;gap:6px">
+          <input type="number" min="1" value="1" style="width:90px" data-units="${l.id}">
+          <button class="btn btn-sm" data-buy="${l.id}">Buy for the Republic</button>
+        </div>
+      </div>`)
+      .join('');
+    onClick('data-buy', id =>
+      api(`/api/war/procure/listing/${id}`, {
+        method: 'POST',
+        body: { units: Number(document.querySelector(`[data-units="${id}"]`)?.value || 1) }
+      })
+    );
+  }
+
   /* Registered only where the server answers, exactly as acts.js does it. */
   (async () => {
     const present = async path => {
@@ -495,6 +729,7 @@
     };
     if (await present('/api/treasury')) R.addRoute('treasury', 'Treasury', viewTreasury);
     if (await present('/api/fed')) R.addRoute('fed', 'The Fed', viewFed);
+    if (await present('/api/war')) R.addRoute('war', 'Supply', viewWar);
     R.refreshNav();
   })();
 })();

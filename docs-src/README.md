@@ -1,6 +1,6 @@
 # Documentation
 
-Seven documents, and it is not obvious which one you want. Start here.
+Which document you want, and why there is more than one.
 
 ## By what you are trying to do
 
@@ -8,38 +8,53 @@ Seven documents, and it is not obvious which one you want. Start here.
 |---|---|
 | Play the game | [../HANDBOOK.md](../HANDBOOK.md) |
 | Deploy it from nothing | [../SETUP.md](../SETUP.md) |
-| Add the Court or the economy to a running instance | [../INSTALL-ACTS.md](../INSTALL-ACTS.md) |
+| Ship from a phone or an iPad | [../PHONE.md](../PHONE.md) |
 | Look at it without deploying | `cd server && npm install && npm run dev` |
 | Find an endpoint, a setting, or a lifecycle | [REFERENCE.md](REFERENCE.md) |
+| Understand the Treasury and the Fed | [../MONEY.md](../MONEY.md) |
+| Understand diplomacy and the world map | [DIPLOMACY.md](DIPLOMACY.md), §5 of [REFERENCE.md](REFERENCE.md) |
+| Run a foreign power's LLM cabinet | [MULTI-AGENT-DIPLOMACY.md](MULTI-AGENT-DIPLOMACY.md), [RUNBOOK-FOREIGN-POWER.md](RUNBOOK-FOREIGN-POWER.md) |
 | Change the code | [../CLAUDE.md](../CLAUDE.md) — conventions and traps, first |
-| Stand up an LLM foreign power, or fix one | [RUNBOOK-FOREIGN-POWER.md](RUNBOOK-FOREIGN-POWER.md) |
-| Understand why diplomacy is shaped as it is | [DIPLOMACY.md](DIPLOMACY.md) |
-| Understand how a foreign cabinet decides | [MULTI-AGENT-DIPLOMACY.md](MULTI-AGENT-DIPLOMACY.md) |
-| Understand the Republic-facing diplomacy UI | [GOVERNMENT-DIPLOMACY-UI.md](GOVERNMENT-DIPLOMACY-UI.md) |
-| Understand strategic goods | [STRATEGIC-GOODS.md](STRATEGIC-GOODS.md) |
-| Know what changed in the last consolidation | [../CONSOLIDATION.md](../CONSOLIDATION.md) |
 
-## The four diplomacy documents, and why there are four
+Diplomacy is in this build now, forward-ported from the older tree along with
+its documents. It is off until `diplomacy_enabled` is set to `true`.
 
-They answer different questions and are meant to be read in this order:
+There are no per-release notes here on purpose. A document that describes one
+push is stale the moment the next one lands, and four of them were removed after
+they had gone quietly wrong about how many test suites there are. What shipped is
+in the git history; what the system does is in REFERENCE.md.
 
-1. **DIPLOMACY.md** — the contract. *What may a foreign power do, and what may it never do?* The one rule everything else follows from: a foreign power's proposals arrive as bills, so our constitution decides, not the agent. Read this before changing anything about diplomacy.
-2. **MULTI-AGENT-DIPLOMACY.md** — the cabinet. *How does a power make up its mind?* Ministers, proposal and vote rounds, decision methods.
-3. **GOVERNMENT-DIPLOMACY-UI.md** — our side. *How do the President, the Speaker and the Returning Officer act?*
-4. **RUNBOOK-FOREIGN-POWER.md** — operations. *How do I run one, and what do I do at 11pm when it stops working?*
+## Three invariants
 
-`STRATEGIC-GOODS.md` is orthogonal to all four and gated behind `goods_economy_enabled`, off by default.
+If any of them breaks, stop and read the tests before anything else.
 
-## Two invariants
+**The ledger sums to zero.** `SELECT sum(balance) FROM accounts` is always `0`.
+Money is moved between accounts, never created. This holds through the Fed's
+issuance too: issuing pays the Treasury from the Fed's own account, which goes
+negative by exactly that much. That negative balance *is* the money supply, which
+is also why the sum tells you nothing about how much money exists — read
+`circulating` for that. Asserted by `test/money.mjs`.
 
-If either breaks, stop and read the tests before anything else.
+**Shares are conserved.** A business's holdings always total exactly
+`shares_issued`. Asserted by `test/bank.mjs`.
 
-**The ledger sums to zero.** `GET /api/economy` → `supply` is always `0`, including across foreign trade. Money is moved between accounts, never created — foreign powers hold real accounts funded by transfer from our Treasury. Asserted by `test/foreigntrade.mjs`.
+**One person, one vote.** Held by database constraints, not application code.
+Asserted by `test/attack.mjs`, which is the reason anyone can trust a result.
 
-**One person, one vote.** Held by database constraints, not application code. Asserted by `test/attack.mjs`, which is the reason anyone can trust a result.
+## One principle worth stating separately
+
+**The Returning Officer runs the machinery and holds no office.** They may edit
+any setting on the admin page; they may not act in an office, and they may not
+seat or unseat a Treasurer or a head of the Fed, both of which have routes of
+their own that mean something. §7.1 of REFERENCE.md has the detail.
 
 ## Keeping these honest
 
-Outdated documentation is worse than none. Two of these have already been wrong in ways that caused real bugs: `DIPLOMACY.md` described foreign trade as opening the closed ledger, and the implementation followed it and minted money; `REFERENCE.md` then asserted an invariant that was false for weeks.
+Outdated documentation is worse than none. It has already caused a real bug here
+once: a document described foreign trade as opening the closed ledger, the
+implementation followed it, and money was minted at the border for weeks while
+REFERENCE.md asserted an invariant that was false.
 
-When you change behaviour, change the document in the same commit, and prefer linking over restating. Every number in these files should exist in exactly one of them.
+When you change behaviour, change the document in the same commit, and prefer
+linking over restating. Every number in these files should exist in exactly one
+of them.

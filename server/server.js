@@ -113,6 +113,20 @@ const DEFAULTS = {
 
   // The Treasury and the Fed
   salary_treasurer: '110',
+  salary_foreign_minister: '110',
+  salary_quartermaster: '110',
+
+  // War: supply, upkeep and readiness. No movement, no dice.
+  military_budget_per_cycle: '600',  // most the Quartermaster may spend in one cycle
+  upkeep_food: '2',                  // per unit of formation size, per cycle
+  upkeep_energy: '1',
+  upkeep_arms: '1',
+  upkeep_pay: '10',                  // wages per unit of size, paid to citizens
+  raise_cost_arms: '5',              // arms drawn from the stockpile to raise one unit
+  readiness_fall: '15',              // per cycle when supply is short
+  readiness_rise: '5',               // per cycle when it is not — recovery is slower on purpose
+  strength_per_size: '4',            // what one fully-ready unit of size is worth against a power
+  conflict_step: '10',               // most a conflict can move in one cycle, either way
   salary_fed_chair: '110',
   fed_terms: '3',                  // Article 21.9: cycles the head of the Fed serves
   reserve_ratio: '0.2',            // what a licensed bank must hold against its deposits
@@ -187,7 +201,9 @@ const LEGISLATABLE = new Set([
   'salary_mp', 'salary_justice', 'tax_free_allowance', 'tax_rate',
   'tax_upper_threshold', 'tax_rate_upper', 'registration_fee',
   'ownership_cap', 'goods_economy_enabled',
-  'salary_treasurer', 'salary_fed_chair', 'fed_terms', 'bank_charter_fee', 'deposit_guarantee',
+  'salary_treasurer', 'salary_foreign_minister', 'salary_quartermaster', 'salary_fed_chair',
+  'military_budget_per_cycle', 'upkeep_food', 'upkeep_energy', 'upkeep_arms', 'upkeep_pay',
+  'raise_cost_arms', 'readiness_fall', 'readiness_rise', 'strength_per_size', 'conflict_step', 'fed_terms', 'bank_charter_fee', 'deposit_guarantee',
   'diplomacy_enabled', 'foreign_actions_per_cycle', 'treaty_threshold', 'recognition_threshold', 'foreign_trade_tax',
   'secret_ballot', 'cycle_enabled', 'cycle_days', 'campaign_days', 'poll_days',
   'cycle_elects', 'speaker_auto', 'speaker_threshold', 'speaker_nomination_hours',
@@ -361,6 +377,9 @@ async function bootstrap() {
   // and `accounts` — the private banks hang off both.
   const moneySchema = path.join(__dirname, 'schema-money.sql');
   if (fs.existsSync(moneySchema)) await pool.query(fs.readFileSync(moneySchema, 'utf8'));
+  // Supply, procurement and upkeep. After diplomacy: foreign offers are bought from.
+  const warSchema = path.join(__dirname, 'schema-war.sql');
+  if (fs.existsSync(warSchema)) await pool.query(fs.readFileSync(warSchema, 'utf8'));
   for (const [k, v] of Object.entries(DEFAULTS)) {
     await q('INSERT INTO config(key,value) VALUES($1,$2) ON CONFLICT (key) DO NOTHING', [k, v]);
   }
@@ -1384,6 +1403,79 @@ app.post('/api/initiatives', auth, slowWrites, wrap(async (req, res) => {
     [`B${String(n).padStart(3, '0')}`, title.trim().slice(0, 200), k, body, target_law_id || null, req.user.id]);
   log(req.user.id, 'initiative.propose', rows[0].ref);
   res.json(rows[0]);
+}));
+
+/* Editing and withdrawing a draft.
+
+   `withdrawn` has been in the schema comment and in the front end's status
+   colours since the beginning, and nothing ever set it — so a typo in a bill
+   was permanent and the only remedy was to propose a second bill correcting the
+   first. That is a real cost in a chamber of nineteen people who are mostly
+   drafting on a phone.
+
+   Two rules keep this from becoming a way to cheat:
+
+   1. **Only before the division.** Once the Speaker has called a division,
+      people are voting on a text, and changing or vanishing it under them would
+      make every vote a vote on something unknown. Draft and tabled only.
+   2. **An edit clears the seconds.** Signatures are for the text that was
+      signed. Editing after two members have seconded it and then sending a
+      different bill to the Speaker is a bait and switch, so the seconds go and
+      the proposer has to earn them again. */
+
+const BILL_EDITABLE = ['draft', 'tabled', 'petition'];
+
+app.patch('/api/bills/:id', auth, wrap(async (req, res) => {
+  await loadConfig();
+  const b = (await q('SELECT * FROM bills WHERE id=$1', [req.params.id])).rows[0];
+  if (!b) return res.status(404).json({ error: 'No such bill.' });
+  if (b.author_id !== req.user.id)
+    return res.status(403).json({ error: 'A bill belongs to whoever proposed it. Only they may change its text.' });
+  if (!BILL_EDITABLE.includes(b.status))
+    return res.status(400).json({
+      error: `${b.ref} is ${b.status}. A bill can only be changed before the Speaker calls a division — after that, people are voting on a text.`
+    });
+
+  const title = req.body?.title === undefined ? b.title : String(req.body.title).trim().slice(0, 200);
+  const body = req.body?.body === undefined ? b.body : String(req.body.body);
+  const kind = req.body?.kind === undefined ? b.kind : req.body.kind;
+  if (!title || !body) return res.status(400).json({ error: 'A bill needs a title and a text.' });
+  if (kind !== b.kind && !['law', 'amendment', 'repeal', 'motion', 'constitutional', 'rule', 'treaty', 'recognition'].includes(kind))
+    return res.status(400).json({ error: 'Unknown kind of bill.' });
+  if (kind === 'impeachment' || b.kind === 'impeachment')
+    return res.status(400).json({ error: 'An impeachment names an officer, so it is withdrawn and re-proposed rather than edited.' });
+  if (kind === 'rule') {
+    const { errors } = parseRuleChanges(body);
+    if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+  }
+
+  const seconds = (await q('SELECT count(*)::int n FROM bill_seconds WHERE bill_id=$1', [b.id])).rows[0].n;
+  const changed = title !== b.title || body !== b.body || kind !== b.kind;
+  if (!changed) return res.json({ ...b, seconds_cleared: 0 });
+
+  await q('UPDATE bills SET title=$2, body=$3, kind=$4 WHERE id=$1', [b.id, title, body, kind]);
+  // Signatures were for the text that was signed.
+  if (seconds) await q('DELETE FROM bill_seconds WHERE bill_id=$1', [b.id]);
+  log(req.user.id, 'bill.amend', `${b.ref}${seconds ? ` — ${seconds} second(s) cleared` : ''}`);
+  const row = (await q('SELECT * FROM bills WHERE id=$1', [b.id])).rows[0];
+  res.json({ ...row, seconds_cleared: seconds });
+}));
+
+app.post('/api/bills/:id/withdraw', auth, wrap(async (req, res) => {
+  const b = (await q('SELECT * FROM bills WHERE id=$1', [req.params.id])).rows[0];
+  if (!b) return res.status(404).json({ error: 'No such bill.' });
+  if (b.author_id !== req.user.id)
+    return res.status(403).json({ error: 'Only the member who proposed a bill may withdraw it. Nobody can pull someone else\'s.' });
+  if (!BILL_EDITABLE.includes(b.status))
+    return res.status(400).json({
+      error: `${b.ref} is ${b.status} and cannot be withdrawn — once a division is called the House decides its fate, not the proposer.`
+    });
+  /* The bill is kept, not deleted. The record of what was proposed and then
+     pulled is part of the public record, and a hole in the reference numbers
+     would be worse than a withdrawn bill sitting in the list. */
+  await q("UPDATE bills SET status='withdrawn', resolved_at=now(), result='withdrawn by the proposer' WHERE id=$1", [b.id]);
+  log(req.user.id, 'bill.withdraw', b.ref);
+  res.json({ ok: true, ref: b.ref });
 }));
 
 app.post('/api/bills/:id/sign', auth, wrap(async (req, res) => {
@@ -2432,6 +2524,8 @@ app.put('/api/admin/config', admin, wrap(async (req, res) => {
    Fed chair the House never confirmed has quietly taken the House's power, and
    an RO who can unseat one has taken a power the constitution gives nobody. */
 const RO_MAY_NOT_FILL = {
+  quartermaster: 'The Quartermaster is appointed by the Prime Minister, or by the President where there is none, through /api/war/quartermaster/appoint. The Returning Officer holds no office and does not appoint to one.',
+  foreign_minister: 'The Foreign Minister is appointed by the Prime Minister, or by the President where there is none, through /api/diplomacy/foreign-office/appoint. The Returning Officer holds no office and does not appoint to one.',
   treasurer: 'The Treasurer is appointed by the Prime Minister, or by the President where there is none, through /api/treasury/appoint. The Returning Officer holds no office and does not appoint to one.',
   fed_chair: 'The head of the Fed is nominated by the President and confirmed by the House. Once confirmed, only impeachment or their own resignation removes them — Article 21.10 and 21.11. There is no administrative route in or out.'
 };
@@ -2529,7 +2623,11 @@ const ACT_CONTEXT = {
   justiceTermEnds,
   get CONFIG() { return CONFIG; }
 };
-for (const mod of ['./judiciary', './economy', './money']) {
+/* Order matters twice over. economy.js sets ctx.economy as its last act and
+   money.js borrows the ledger primitives off it. diplomacy.js is mounted before
+   both because economy's payrun calls ctx.diplomacy?.runPayrun, and because a
+   foreign power holds a real account like anyone else. */
+for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war']) {
   try {
     require(mod).mount(app, ACT_CONTEXT);
   } catch (err) {

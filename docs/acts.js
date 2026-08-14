@@ -817,21 +817,281 @@
       };
   }
 
+  /* ------------------------------------------------------------ the world
+
+     Real coastlines, invented countries. The shapes are precomputed SVG paths in
+     world-map.js; this only decides what colour each one is and what happens when
+     you touch it.
+
+     Two things are readable at a glance, because those are the two the map is
+     for. STANDING is the fill, on one scale from allied to at war, so the
+     temperature of the world is legible without reading a single label.
+     RECOGNITION is the border: a recognised power is drawn solid, an
+     unrecognised one hatched and dashed — it is on the map because it exists,
+     not because the Republic says it does. Unclaimed land is flat and unlabelled;
+     it is nobody's, and naming it would invent a state that has no account, no
+     standing and no cabinet.
+
+     Real country names are never rendered here. A territory is called whatever
+     the power holding it is called, and nothing else. */
+  /* Fixed colours, not theme variables. This is a data scale — allied through
+     at war — and it has to mean the same thing in light mode and dark, or a
+     player who switches themes learns the map twice. They run cool to warm so
+     the ordering survives most colour blindness; the at-war border and the
+     legend carry the rest. */
+  const STANDING_FILL = {
+    allied:   '#2C6A4F',
+    friendly: '#5E9078',
+    neutral:  '#8B909B',
+    strained: '#B8863C',
+    hostile:  '#A8362B',
+    at_war:   '#7E241C'
+  };
+  const STANDING_ORDER = ['allied', 'friendly', 'neutral', 'strained', 'hostile', 'at_war'];
+  const standingLabel = s => (s === 'at_war' ? 'at war' : String(s || 'neutral'));
+
+  function worldMap(world) {
+    const M = window.WORLD_MAP;
+    if (!M) return '';
+    if (!world) return '';
+    const held = {};
+    for (const p of world.powers) for (const code of p.territories || []) held[code] = p;
+
+    const shapes = Object.entries(M.shapes)
+      .map(([code, d]) => {
+        const p = held[code];
+        if (!p)
+          return `<path d="${d}" class="wm-land" />`;
+        const fill = STANDING_FILL[p.standing] || STANDING_FILL.neutral;
+        return `<path d="${d}" class="wm-claim ${p.recognised ? 'is-recognised' : 'is-unrecognised'} ${p.standing === 'at_war' ? 'is-at-war' : ''}"
+                      style="fill:${fill}" data-power="${p.id}"
+                      tabindex="0" role="button"
+                      aria-label="${esc(p.name)}, ${esc(standingLabel(p.standing))}, ${p.recognised ? 'recognised' : 'unrecognised'}">
+                  <title>${esc(p.name)} — ${esc(standingLabel(p.standing))}, ${p.recognised ? 'recognised' : 'not recognised'}</title>
+                </path>`;
+      })
+      .join('');
+
+    /* One label per power, at the centroid of its largest territory, so a power
+       holding six islands is named once rather than six times. */
+    const labels = world.powers
+      .filter(p => (p.territories || []).length)
+      .map(p => {
+        const code = p.territories
+          .filter(c => M.centroids[c])
+          .sort((a, b) => (M.shapes[b] || '').length - (M.shapes[a] || '').length)[0];
+        if (!code) return '';
+        const [x, y] = M.centroids[code];
+        return `<text class="wm-label" x="${x}" y="${y}" data-power="${p.id}">${esc(p.name)}</text>`;
+      })
+      .join('');
+
+    const unclaimed = Object.keys(M.shapes).length - world.claimed;
+
+    return `<section class="card wm-card">
+      <div class="dip-section-head">
+        <span class="dip-section-kicker">The world · standing and recognition</span>
+        <h2>Powers of the world</h2>
+      </div>
+      ${
+        world.powers.length
+          ? ''
+          : '<p class="small muted">No foreign powers exist yet, so the world is empty. The Returning Officer creates them below.</p>'
+      }
+      <div class="wm-frame">
+        <svg viewBox="0 0 ${M.width} ${M.height}" class="wm-svg" role="img" aria-label="Map of the world by diplomatic standing">
+          <defs>
+            <pattern id="wm-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <rect width="6" height="6" fill="none"/>
+              <line x1="0" y1="0" x2="0" y2="6" stroke="var(--paper, #14161A)" stroke-width="2.5" opacity="0.55"/>
+            </pattern>
+          </defs>
+          <g class="wm-shapes">${shapes}</g>
+          <g class="wm-labels">${labels}</g>
+        </svg>
+      </div>
+      <div class="wm-legend">
+        ${STANDING_ORDER.map(
+          k => `<span class="wm-key"><i style="background:${STANDING_FILL[k]}"></i>${standingLabel(k)}</span>`
+        ).join('')}
+        <span class="wm-key"><i class="wm-key-hatch"></i>not recognised</span>
+        <span class="wm-key"><i class="wm-key-land"></i>unclaimed (${unclaimed})</span>
+      </div>
+      <div id="wm-detail" class="wm-detail" hidden></div>
+    </section>`;
+  }
+
+  /* Clicking a country is how you find out who it is. The panel says only what
+     the map cannot: the standing in words, whether the Republic recognises them,
+     and how much of the world they hold. */
+  function bindWorldMap(world) {
+    if (!world) return;
+    const detail = document.querySelector('#wm-detail');
+    if (!detail) return;
+    const byId = Object.fromEntries(world.powers.map(p => [String(p.id), p]));
+    const show = id => {
+      const p = byId[String(id)];
+      if (!p) return;
+      document.querySelectorAll('.wm-claim').forEach(n => n.classList.toggle('is-picked', n.dataset.power === String(p.id)));
+      detail.hidden = false;
+      detail.innerHTML = `<div class="item-top">
+          <span class="item-title"><span class="wm-dot" style="background:${esc(p.colour || '#5B2E9E')}"></span>${esc(p.name)}</span>
+          <span><span class="tag">${esc(standingLabel(p.standing))}</span>${
+            p.recognised ? '<span class="tag on-green">recognised</span>' : '<span class="tag">unrecognised</span>'
+          }</span>
+        </div>
+        <p class="small muted" style="margin-top:6px">${
+          p.adjective ? esc(p.adjective) + '. ' : ''
+        }Holds ${p.territories.length} territor${p.territories.length === 1 ? 'y' : 'ies'}.${
+          p.recognised
+            ? ''
+            : ' The Republic has not recognised this state — recognition is a bill, and the House votes on it.'
+        }</p>`;
+    };
+    document.querySelectorAll('[data-power]').forEach(n => {
+      n.onclick = () => show(n.dataset.power);
+      n.onkeydown = ev => {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); show(n.dataset.power); }
+      };
+    });
+  }
+
+  /* Handing out the world. This is the one place real country names appear, and
+     only the Returning Officer sees it: somebody has to know which shape they
+     are giving away. Nothing player-facing ever renders them.
+
+     A territory already held by another power is refused rather than moved, so
+     redrawing a border takes two deliberate acts instead of one careless one. */
+  function territoryPicker(powerId, world) {
+    const M = window.WORLD_MAP, N = window.TERRITORY_NAMES;
+    if (!M || !N || !world) return '';
+    const heldBy = {};
+    for (const p of world.powers) for (const code of p.territories || []) heldBy[code] = p;
+    const mine = new Set((world.powers.find(p => String(p.id) === String(powerId))?.territories) || []);
+
+    const options = Object.keys(M.shapes)
+      .sort((a, b) => String(N[a] || a).localeCompare(String(N[b] || b)))
+      .map(code => {
+        const owner = heldBy[code];
+        const taken = owner && String(owner.id) !== String(powerId);
+        return `<option value="${code}" ${mine.has(code) ? 'selected' : ''} ${taken ? 'disabled' : ''}>${esc(
+          N[code] || code
+        )}${taken ? ` — held by ${esc(owner.name)}` : ''}</option>`;
+      })
+      .join('');
+
+    return `<h3>Territory</h3>
+      <p class="small muted">Real coastlines, invented countries. Pick the shapes this power holds; the map calls them by the power's name and never by the name below. Land held by another power is greyed out — release it there first.</p>
+      <form id="ro-territories" class="stack">
+        <label class="field"><span>Territories (${mine.size} selected)</span>
+          <select name="codes" multiple size="12" style="font-family:inherit">${options}</select></label>
+        <div class="row"><button class="btn btn-sm btn-primary">Set territory</button>
+          <button class="btn btn-sm" type="button" id="ro-territories-clear">Release all</button></div>
+      </form>`;
+  }
+
+  function bindTerritoryPicker(powerId, refresh) {
+    const form = document.querySelector('#ro-territories');
+    if (!form) return;
+    const put = async codes => {
+      try {
+        await api(`/api/admin/foreign/powers/${powerId}/territories`, { method: 'PUT', body: { codes } });
+        toast(codes.length ? `${codes.length} territories set.` : 'Territory released.');
+        refresh();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    };
+    form.onsubmit = ev => {
+      ev.preventDefault();
+      put([...ev.target.codes.selectedOptions].map(o => o.value));
+    };
+    const clear = document.querySelector('#ro-territories-clear');
+    if (clear) clear.onclick = () => put([]);
+  }
+
+  /* The Foreign Office. Appointed by the government, dismissable by it, and
+     holding no power to bind — which is what the note under the name says,
+     because a player looking at a minister needs to know that immediately. */
+  function foreignOffice(fo, canAppoint, isMinister, powers) {
+    if (!fo) return '';
+    const by = fo.appointer === 'prime_minister' ? 'Prime Minister' : 'President';
+    return `<section class="card">
+      <div class="dip-section-head">
+        <span class="dip-section-kicker">The Foreign Office</span>
+        <h2>Foreign Minister</h2>
+      </div>
+      <p style="font-size:1.1rem;font-weight:650;margin:10px 0 4px">${esc(fo.minister?.display_name || 'Vacant')}</p>
+      <p class="small muted">Appointed by the ${esc(by)} and dismissable by them. Holds the channel to foreign governments, and binds nothing: treaties, recognition and emergencies all arrive as bills, and the House votes on every one.${
+        fo.minister ? '' : ' While the office is empty the President speaks for the Republic.'
+      }</p>
+      ${
+        canAppoint || isMinister
+          ? `<div class="row" style="margin-top:14px;gap:8px;flex-wrap:wrap">
+        ${
+          canAppoint
+            ? `<form id="fo-appoint" class="row" style="gap:8px;flex:1;min-width:240px">
+          <select name="user_id" style="flex:1"></select>
+          <button class="btn btn-sm btn-primary">${fo.minister ? 'Replace' : 'Appoint'}</button>
+        </form>`
+            : ''
+        }
+        ${fo.minister ? `<button class="btn btn-sm" data-fo-dismiss="1">${isMinister ? 'Resign' : 'Dismiss'}</button>` : ''}
+      </div>`
+          : ''
+      }
+    </section>`;
+  }
+
+  async function bindForeignOffice() {
+    const form = document.querySelector('#fo-appoint');
+    if (form) {
+      try {
+        const cs = await api('/api/citizens');
+        form.user_id.innerHTML = cs
+          .map(c => `<option value="${c.id}">${esc(c.display_name)}${(c.offices || []).length ? ` — ${esc((c.offices || []).join(', '))}` : ''}</option>`)
+          .join('');
+      } catch {}
+      form.onsubmit = async ev => {
+        ev.preventDefault();
+        try {
+          await api('/api/diplomacy/foreign-office/appoint', { method: 'POST', body: { user_id: Number(ev.target.user_id.value) } });
+          viewDiplomacy();
+        } catch (err) { toast(err.message, true); }
+      };
+    }
+    document.querySelectorAll('[data-fo-dismiss]').forEach(b => {
+      b.onclick = async () => {
+        try {
+          await api('/api/diplomacy/foreign-office/dismiss', { method: 'POST' });
+          viewDiplomacy();
+        } catch (err) { toast(err.message, true); }
+      };
+    });
+  }
+
   async function viewDiplomacy() {
     const box = document.querySelector('#view');
     const me = ME();
     const isPresident = !!me?.offices?.includes('president');
     const isSpeaker = !!me?.offices?.includes('speaker');
-    const canDiplomat = isPresident || isSpeaker;
-    const [powers, dispatches, treaties, offers, conflicts, balance, adminPowers] = await Promise.all([
+    const isMinister = !!me?.offices?.includes('foreign_minister');
+    const [powers, dispatches, treaties, offers, conflicts, balance, adminPowers, world, fo] = await Promise.all([
       api('/api/diplomacy/powers'),
       api('/api/diplomacy/dispatches'),
       api('/api/diplomacy/treaties'),
       api('/api/diplomacy/offers'),
       api('/api/diplomacy/conflicts'),
       api('/api/diplomacy/balance'),
-      me?.is_admin ? api('/api/admin/foreign/powers') : Promise.resolve([])
+      me?.is_admin ? api('/api/admin/foreign/powers') : Promise.resolve([]),
+      api('/api/diplomacy/map').catch(() => null),
+      api('/api/diplomacy/foreign-office').catch(() => null)
     ]);
+    /* The channel belongs to the Foreign Minister. The President keeps it only
+       while that office is empty — they assent to treaties, and negotiating
+       what you then assent to is one person doing both halves. */
+    const canDiplomat = isMinister || (isPresident && !fo?.minister) || isSpeaker;
+    const canAppointMinister = !!me?.offices?.includes(fo?.appointer || 'president');
     const standing = p =>
       `<span class="tag">${esc(p.standing)}</span>${p.recognised ? '<span class="tag on-green">recognised</span>' : '<span class="tag">unrecognised</span>'}`;
     const kindLabel = k =>
@@ -861,7 +1121,11 @@
 
     box.innerHTML = `<div class="diplomacy-office">
       <header class="dip-head"><div><p class="dip-head-code">FOREIGN OFFICE · PUBLIC CHANNEL</p><h1>Diplomacy</h1><p class="muted">Foreign powers speak to the Republic publicly. Official government messages and Returning Officer actions are entered in the public record.</p></div><div class="dip-signal" aria-hidden="true"><span></span><span></span><span></span></div></header>
+      ${worldMap(world)}
+
       ${messageForm}
+
+      ${foreignOffice(fo, canAppointMinister, isMinister, powers)}
 
       <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Recognised contacts</span><h2>Powers</h2></div><div class="list dip-powers">${powers.length ? powers.map(p => `<div class="item"><div class="item-top"><span class="item-title"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${esc(p.colour)};margin-right:7px"></span>${esc(p.name)}</span><span>${standing(p)}</span></div>${me && !p.recognised ? `<button class="btn btn-sm" data-recognise="${p.id}">Move recognition</button>` : ''}</div>`).join('') : '<p class="muted">No foreign powers.</p>'}</div></section>
 
@@ -903,6 +1167,9 @@
           : ''
       }
     </div>`;
+
+    bindWorldMap(world);
+    bindForeignOffice();
 
     if (document.querySelector('#official-foreign-message'))
       document.querySelector('#official-foreign-message').onsubmit = async ev => {
@@ -1017,8 +1284,11 @@
           <h3>LLM government</h3><form id="ro-government" class="stack"><div class="grid2"><label class="field"><span>Decision method</span><select name="decision_method">${['executive', 'cabinet', 'weighted', 'consensus'].map(x => `<option value="${x}" ${g.decision_method === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label><label class="field"><span>Decision threshold</span><input name="decision_threshold" type="number" min="0" max="1" step="0.05" value="${g.decision_threshold ?? 0.5}"></label></div><label class="field"><span>Max deliberation rounds</span><input name="max_rounds" type="number" min="1" max="4" value="${g.max_rounds ?? 1}"></label><button class="btn">Save government</button></form>
           <h3>Ministers</h3><div class="list">${agents.length ? agents.map(a => `<div class="item"><div class="item-top"><span class="item-title">${esc(a.display_name)} · ${esc(a.role)}</span><span class="tag">${esc(a.model_provider)} / ${esc(a.model_name)}</span></div><p class="small muted">weight ${a.vote_weight} · ${a.active ? 'active' : 'inactive'}</p><button class="btn btn-sm" data-agent-toggle="${a.id}" data-agent-active="${a.active ? '1' : '0'}">${a.active ? 'Deactivate' : 'Activate'}</button></div>`).join('') : '<p class="muted">No ministers configured.</p>'}</div>
           <form id="ro-new-agent" class="stack"><div class="grid2"><label class="field"><span>Role</span><input name="role" placeholder="foreign_minister" required></label><label class="field"><span>Character name</span><input name="display_name" required></label></div><div class="grid2"><label class="field"><span>Free provider</span><select name="model_provider"><option value="groq">groq</option><option value="gemini">gemini</option><option value="openrouter">openrouter</option><option value="mock">mock</option></select></label><label class="field"><span>Model</span><input name="model_name" value="llama-3.1-8b-instant"></label></div><label class="field"><span>Role instructions</span><textarea name="system_prompt" rows="4"></textarea></label><button class="btn">Add minister</button></form>
+          ${territoryPicker(id, world)}
           <div class="row"><button class="btn btn-primary" id="ro-run-turn">Run foreign government turn</button><button class="btn" id="ro-load-turns">View recent turns</button></div><div id="ro-turns"></div>
         </div>`;
+        bindTerritoryPicker(id, viewDiplomacy);
+
         document.querySelector('#ro-power-edit').onsubmit = async ev => {
           ev.preventDefault();
           try {

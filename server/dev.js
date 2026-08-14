@@ -67,7 +67,7 @@ const call = async (p, { method = 'GET', body, token } = {}) => {
   try { return JSON.parse(t); } catch { return t; }
 };
 
-const PEOPLE = ['Ana', 'Bilal', 'Cleo', 'Dev', 'Esme', 'Farid', 'Gia', 'Hugo', 'Iris', 'Jonah'];
+const PEOPLE = ['Ana', 'Bilal', 'Cleo', 'Dev', 'Esme', 'Farid', 'Gia', 'Hugo', 'Iris', 'Jonah', 'Kira'];
 const PW = 'preview123';
 
 async function seed() {
@@ -102,7 +102,7 @@ async function seed() {
   for (const p of ['Bilal', 'Cleo']) await call('/api/parties/1/join', { method: 'POST', token: tok[p] });
   for (const p of ['Esme', 'Farid']) await call('/api/parties/2/join', { method: 'POST', token: tok[p] });
 
-  await call('/api/admin/config', { method: 'PUT', body: { seats: '5', quorum: '2', nation_name: 'McServerLandia', motto: 'Founded by group chat.', dividend: '2000' }, token: T });
+  await call('/api/admin/config', { method: 'PUT', body: { seats: '5', quorum: '2', nation_name: 'McServerLandia', motto: 'Founded by group chat.', dividend: '2000', goods_economy_enabled: 'true' }, token: T });
 
   // A general election, run and certified.
   const el = await call('/api/elections', { method: 'POST', body: { kind: 'parliament', title: 'General election — cycle 1' }, token: T });
@@ -111,10 +111,14 @@ async function seed() {
   }
   await call(`/api/elections/${el.id}/status`, { method: 'POST', body: { status: 'voting' }, token: T });
   const cands = (await call(`/api/elections/${el.id}`, { token: T })).candidates;
+  /* Who votes for whom. Shorter than PEOPLE on purpose — anyone past the end of
+     the plan spreads across the field, so adding a name to PEOPLE does not
+     break the seed. It did once. */
   const plan = [0, 0, 0, 1, 1, 2, 3, 4, 5, 1];
-  PEOPLE.forEach((p, i) => plan[i] !== undefined && cands[plan[i]]);
   for (let i = 0; i < PEOPLE.length; i++) {
-    await call(`/api/elections/${el.id}/vote`, { method: 'POST', body: { candidacy_id: cands[plan[i]].id }, token: tok[PEOPLE[i]] });
+    const pick = cands[plan[i] ?? i % cands.length];
+    if (!pick) continue;
+    await call(`/api/elections/${el.id}/vote`, { method: 'POST', body: { candidacy_id: pick.id }, token: tok[PEOPLE[i]] });
   }
   await call(`/api/elections/${el.id}/status`, { method: 'POST', body: { status: 'closed' }, token: T });
 
@@ -220,6 +224,58 @@ async function seed() {
     });
   }
 
+  /* Three foreign powers with real territory, so the map has a world on it.
+     Real coastlines, invented countries: the codes below are shapes, and the
+     names are the only names a player ever sees for them. Standings are spread
+     across the scale on purpose — a map where everyone is neutral proves
+     nothing about whether the colours read. */
+  await call('/api/admin/config', { method: 'PUT', body: { diplomacy_enabled: 'true' }, token: T });
+  const POWERS = [
+    { name: 'Valtia', adjective: 'Valtish', colour: '#3F7D5C', standing: 'allied',
+      codes: ['578', '752', '246'], recognise: true },
+    { name: 'Korrin', adjective: 'Korrine', colour: '#B4543F', standing: 'hostile',
+      codes: ['076', '032', '604'], recognise: false, strength: 45 },
+    { name: 'The Meridian League', adjective: 'Meridian', colour: '#5B2E9E', standing: 'neutral',
+      codes: ['356', '586', '524'], recognise: true }
+  ];
+  for (const p of POWERS) {
+    const made = await call('/api/admin/foreign/powers', {
+      method: 'POST',
+      body: { name: p.name, adjective: p.adjective, colour: p.colour, standing: p.standing },
+      token: T
+    });
+    const pid = made?.id || made?.power?.id;
+    if (!pid) continue;
+    await call(`/api/admin/foreign/powers/${pid}/territories`, { method: 'PUT', body: { codes: p.codes }, token: T });
+    if (p.strength) await call(`/api/admin/foreign/powers/${pid}`, { method: 'PATCH', body: { strength: p.strength }, token: T });
+  }
+
+  /* A Foreign Minister, so the channel abroad has an owner in the preview.
+     free[4] holds no other office; the President appoints because the seeded
+     world has no Prime Minister. */
+  if (free[4]) {
+    await call('/api/diplomacy/foreign-office/appoint', { method: 'POST', body: { user_id: free[4].id }, token: pres });
+  }
+
+  /* A Quartermaster with a small standing force, so the Supply page has
+     something on it and the upkeep history is not empty. */
+  if (free[5]) {
+    await call('/api/war/quartermaster/appoint', { method: 'POST', body: { user_id: free[5].id }, token: pres });
+    const qmTok = tok[free[5].display_name];
+    const works = await call('/api/economy/businesses', {
+      method: 'POST',
+      body: { name: 'Holt & Sons Ironworks', form: 'company', description: 'Rifles, shot and shovels.', good_category: 'arms' },
+      token: tok[PEOPLE[9]]
+    });
+    if (works?.id) {
+      const lot = await call(`/api/economy/businesses/${works.id}/listings`, {
+        method: 'POST', body: { title: 'Rifles, crated', price: 12, stock: 300, unit: 'crate' }, token: tok[PEOPLE[9]]
+      });
+      if (lot?.id) await call(`/api/war/procure/listing/${lot.id}`, { method: 'POST', body: { units: 30 }, token: qmTok });
+      await call('/api/war/formations', { method: 'POST', body: { name: 'First Regiment', arm: 'army', size: 3 }, token: qmTok });
+    }
+  }
+
   // An election in progress, so the ballot has something to show.
   const next = await call('/api/elections', { method: 'POST', body: { kind: 'president', title: 'Presidential election — cycle 2' }, token: T });
   for (const p of [PEOPLE[0], PEOPLE[3], PEOPLE[6]]) {
@@ -241,6 +297,8 @@ async function seed() {
     ${mps[1].display_name.toLowerCase().padEnd(10)} an ordinary MP — votes in divisions
     ${(free[2]?.display_name || '—').toLowerCase().padEnd(10)} the Treasurer — names the money, reports to the House
     ${(free[3]?.display_name || '—').toLowerCase().padEnd(10)} the head of the Fed — rates, issuance, bank licences
+    ${(free[4]?.display_name || '—').toLowerCase().padEnd(10)} the Foreign Minister — holds the channel abroad
+    ${(free[5]?.display_name || '—').toLowerCase().padEnd(10)} the Quartermaster — buys equipment, keeps the forces supplied
     ${PEOPLE[9].toLowerCase().padEnd(10)} an ordinary citizen — no office at all, but owns a bank
 
   Nothing here touches your live Republic. Ctrl+C and it is gone.
