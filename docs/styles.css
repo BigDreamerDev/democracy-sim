@@ -883,3 +883,35 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
   .republic-territory-grid{grid-template-columns:1fr}
   .republic-subdivision-list{max-height:300px}
 }
+
+/* Subdivision territory ownership and Returning Officer live preview. The map
+   still uses country geometry, so partial/split ownership is intentionally
+   shown as a parent-country treatment rather than pretending we have internal
+   border paths that are not in world-map.js. */
+.wm-claim.is-partial{
+  fill-opacity:.58;stroke-dasharray:2.5 1.8;stroke-width:1.1;
+}
+.wm-split{
+  stroke:var(--paper);stroke-width:1.05;stroke-dasharray:2.5 1.8;
+}
+.wm-draft-preview{
+  fill:var(--wm-preview-fill, #8B909B);
+  fill-opacity:.42;
+  stroke:var(--ink);stroke-width:1.35;stroke-dasharray:3 2;
+  filter:saturate(.45) brightness(1.05);
+  pointer-events:none;
+}
+.wm-draft-preview.is-release{
+  fill:#8B909B;fill-opacity:.38;filter:grayscale(1);
+}
+.wm-key-preview{
+  background:#8B909B;border:1px dashed var(--ink);
+  opacity:.68;
+}
+.wm-key-split{
+  background:linear-gradient(90deg,#5E9078 0 50%,#B8863C 50% 100%);
+  border:1px dashed var(--paper);
+}
+.territory-preview-note{margin:6px 0 0}
+.republic-subdivision-option.is-blocked{opacity:.58;cursor:not-allowed}
+.republic-subdivision-option.is-blocked:hover{background:transparent}

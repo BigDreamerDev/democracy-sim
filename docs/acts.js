@@ -852,34 +852,76 @@
 
   function worldMap(world) {
     const M = window.WORLD_MAP;
-    if (!M) return '';
-    if (!world) return '';
-    const held = {};
-    for (const p of world.powers) for (const code of p.territories || []) held[code] = p;
+    if (!M || !world) return '';
+
     const republicHeld = new Set(world.republic?.territories || []);
     const republicPartial = new Set(world.republic?.partial_territories || []);
+    const ownersByCountry = {};
+    const addOwner = (code, owner) => {
+      if (!ownersByCountry[code]) ownersByCountry[code] = [];
+      ownersByCountry[code].push(owner);
+    };
 
+    for (const code of republicHeld)
+      addOwner(code, {
+        kind: 'republic',
+        name: world.republic?.name || STATE().config.nation_name,
+        partial: republicPartial.has(code),
+        fill: 'var(--indelible-fill)'
+      });
+    for (const p of world.powers) {
+      const partial = new Set(p.partial_territories || []);
+      for (const code of p.territories || [])
+        addOwner(code, {
+          kind: 'foreign',
+          power: p,
+          name: p.name,
+          partial: partial.has(code),
+          fill: STANDING_FILL[p.standing] || STANDING_FILL.neutral
+        });
+    }
+
+    const splitDefs = [];
     const shapes = Object.entries(M.shapes)
       .map(([code, d]) => {
-        if (republicHeld.has(code))
-          return `<path d="${d}" class="wm-republic ${republicPartial.has(code) ? 'is-partial' : ''}" aria-label="${esc(world.republic?.name || STATE().config.nation_name)}${republicPartial.has(code) ? ' — partial territory' : ''}">
-                    <title>${esc(world.republic?.name || STATE().config.nation_name)}${republicPartial.has(code) ? ' — partial territory' : ''}</title>
+        const owners = ownersByCountry[code] || [];
+        if (!owners.length)
+          return `<path d="${d}" class="wm-land" data-territory="${code}" />`;
+
+        if (owners.length > 1) {
+          const gid = `wm-split-${String(code).replace(/[^A-Za-z0-9_-]/g, '-')}`;
+          const step = 100 / owners.length;
+          const stops = owners.map((owner, i) => {
+            const from = (i * step).toFixed(2), to = ((i + 1) * step).toFixed(2);
+            return `<stop offset="${from}%" style="stop-color:${owner.fill}"/><stop offset="${to}%" style="stop-color:${owner.fill}"/>`;
+          }).join('');
+          splitDefs.push(`<linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0">${stops}</linearGradient>`);
+          const names = owners.map(o => o.name).join(' / ');
+          return `<path d="${d}" class="wm-split is-partial" data-territory="${code}" style="fill:url(#${gid})" aria-label="Split territory — ${esc(names)}">
+                    <title>Split territory — ${esc(names)}</title>
                   </path>`;
-        const p = held[code];
-        if (!p)
-          return `<path d="${d}" class="wm-land" />`;
-        const fill = STANDING_FILL[p.standing] || STANDING_FILL.neutral;
-        return `<path d="${d}" class="wm-claim ${p.recognised ? 'is-recognised' : 'is-unrecognised'} ${p.standing === 'at_war' ? 'is-at-war' : ''}"
-                      style="fill:${fill}" data-power="${p.id}"
+        }
+
+        const owner = owners[0];
+        if (owner.kind === 'republic')
+          return `<path d="${d}" class="wm-republic ${owner.partial ? 'is-partial' : ''}" data-territory="${code}" aria-label="${esc(owner.name)}${owner.partial ? ' — partial territory' : ''}">
+                    <title>${esc(owner.name)}${owner.partial ? ' — partial territory' : ''}</title>
+                  </path>`;
+
+        const p = owner.power;
+        return `<path d="${d}" class="wm-claim ${owner.partial ? 'is-partial' : ''} ${p.recognised ? 'is-recognised' : 'is-unrecognised'} ${p.standing === 'at_war' ? 'is-at-war' : ''}"
+                      style="fill:${owner.fill}" data-power="${p.id}" data-territory="${code}"
                       tabindex="0" role="button"
-                      aria-label="${esc(p.name)}, ${esc(standingLabel(p.standing))}, ${p.recognised ? 'recognised' : 'unrecognised'}">
-                  <title>${esc(p.name)} — ${esc(standingLabel(p.standing))}, ${p.recognised ? 'recognised' : 'not recognised'}</title>
+                      aria-label="${esc(p.name)}, ${esc(standingLabel(p.standing))}, ${p.recognised ? 'recognised' : 'unrecognised'}${owner.partial ? ', partial territory' : ''}">
+                  <title>${esc(p.name)} — ${esc(standingLabel(p.standing))}, ${p.recognised ? 'recognised' : 'not recognised'}${owner.partial ? ', partial territory' : ''}</title>
                 </path>`;
       })
       .join('');
 
-    /* One label per power, at the centroid of its largest territory, so a power
-       holding six islands is named once rather than six times. */
+    /* One label per power, at the centroid of its largest parent territory. The
+       underlying SVG is country-level, so two states sharing subdivisions of the
+       same parent country can share a centroid; the split fill is the authoritative
+       visual in that case. */
     const republicLabel = (() => {
       const code = [...republicHeld]
         .filter(c => M.centroids[c])
@@ -908,11 +950,7 @@
         <span class="dip-section-kicker">The world · standing and recognition</span>
         <h2>Powers of the world</h2>
       </div>
-      ${
-        world.powers.length
-          ? ''
-          : '<p class="small muted">No foreign powers exist yet, so the world is empty. The Returning Officer creates them below.</p>'
-      }
+      ${world.powers.length ? '' : '<p class="small muted">No foreign powers exist yet, so the world is empty. The Returning Officer creates them below.</p>'}
       <div class="wm-frame">
         <svg viewBox="0 0 ${M.width} ${M.height}" class="wm-svg" role="img" aria-label="Map of the world by diplomatic standing">
           <defs>
@@ -920,16 +958,18 @@
               <rect width="6" height="6" fill="none"/>
               <line x1="0" y1="0" x2="0" y2="6" stroke="var(--paper, #14161A)" stroke-width="2.5" opacity="0.55"/>
             </pattern>
+            ${splitDefs.join('')}
           </defs>
           <g class="wm-shapes">${shapes}</g>
+          <g class="wm-preview-layer" aria-hidden="true"></g>
           <g class="wm-labels">${labels}</g>
         </svg>
       </div>
       <div class="wm-legend">
-        ${STANDING_ORDER.map(
-          k => `<span class="wm-key"><i style="background:${STANDING_FILL[k]}"></i>${standingLabel(k)}</span>`
-        ).join('')}
+        ${STANDING_ORDER.map(k => `<span class="wm-key"><i style="background:${STANDING_FILL[k]}"></i>${standingLabel(k)}</span>`).join('')}
         ${(world.republic?.territories || []).length ? `<span class="wm-key"><i class="wm-key-republic"></i>${esc(world.republic?.name || STATE().config.nation_name)}</span>` : ''}
+        <span class="wm-key"><i class="wm-key-split"></i>split / partial territory</span>
+        <span class="wm-key" id="wm-preview-key" hidden><i class="wm-key-preview"></i>unsaved edit</span>
         <span class="wm-key"><i class="wm-key-hatch"></i>not recognised</span>
         <span class="wm-key"><i class="wm-key-land"></i>unclaimed (${unclaimed})</span>
       </div>
@@ -972,106 +1012,151 @@
     });
   }
 
-  /* Handing out the world. This is the one place real country names appear, and
-     only the Returning Officer sees it: somebody has to know which shape they
-     are giving away. Nothing player-facing ever renders them.
-
-     A territory already held by another power is refused rather than moved, so
-     redrawing a border takes two deliberate acts instead of one careless one. */
-  function territoryPicker(powerId, world) {
-    const M = window.WORLD_MAP, N = window.TERRITORY_NAMES;
-    if (!M || !N || !world) return '';
-    const heldBy = {};
-    for (const p of world.powers) for (const code of p.territories || []) heldBy[code] = p;
-    const mine = new Set((world.powers.find(p => String(p.id) === String(powerId))?.territories) || []);
-
-    const options = Object.keys(M.shapes)
-      .sort((a, b) => String(N[a] || a).localeCompare(String(N[b] || b)))
-      .map(code => {
-        const owner = heldBy[code];
-        const taken = owner && String(owner.id) !== String(powerId);
-        return `<option value="${code}" ${mine.has(code) ? 'selected' : ''} ${taken ? 'disabled' : ''}>${esc(
-          N[code] || code
-        )}${taken ? ` — held by ${esc(owner.name)}` : ''}</option>`;
-      })
-      .join('');
-
-    return `<h3>Territory</h3>
-      <p class="small muted">Real coastlines, invented countries. Pick the shapes this power holds; the map calls them by the power's name and never by the name below. Land held by another power is greyed out — release it there first.</p>
-      <form id="ro-territories" class="stack">
-        <label class="field"><span>Territories (${mine.size} selected)</span>
-          <select name="codes" multiple size="12" style="font-family:inherit">${options}</select></label>
-        <div class="row"><button class="btn btn-sm btn-primary">Set territory</button>
-          <button class="btn btn-sm" type="button" id="ro-territories-clear">Release all</button></div>
-      </form>`;
+  /* Handing out the world. Real country names stay inside this Returning
+     Officer console. Both the Republic and foreign powers now use the same
+     country -> top-level subdivision editor; old whole-country rows are kept as
+     legacy assignments until the RO deliberately edits them. */
+  function setTerritoryDraftPreview(entries) {
+    const M = window.WORLD_MAP;
+    const layer = document.querySelector('.wm-preview-layer');
+    const key = document.querySelector('#wm-preview-key');
+    if (!M || !layer) return;
+    const rows = (entries || []).filter(x => x?.code && M.shapes[x.code]);
+    layer.innerHTML = rows.map(x => `<path d="${M.shapes[x.code]}" class="wm-draft-preview ${x.release ? 'is-release' : ''}"
+      style="--wm-preview-fill:${x.fill || STANDING_FILL.neutral}" data-territory="${esc(x.code)}">
+      <title>${esc(x.label || 'Unsaved territory edit')}</title>
+    </path>`).join('');
+    if (key) key.hidden = !rows.length;
   }
 
-  function republicTerritoryPicker(world, adminState) {
+  function territoryEditorHtml({ prefix, title, kicker, description, adminState }) {
     const M = window.WORLD_MAP, N = window.TERRITORY_NAMES;
-    if (!M || !N || !world) return '';
-    const heldBy = {};
-    for (const p of world.powers) for (const code of p.territories || []) heldBy[code] = p;
+    if (!M || !N) return '';
     const selected = adminState?.subdivisions || [];
     const legacy = new Set(adminState?.legacy_territories || []);
+    const blockedCountries = new Map((adminState?.blocked_countries || []).map(x => [String(x.code), x]));
+    const blockedCounts = {};
+    for (const item of adminState?.blocked_subdivisions || [])
+      blockedCounts[item.country_code] = (blockedCounts[item.country_code] || 0) + 1;
     const counts = {};
     for (const item of selected) counts[item.country_code] = (counts[item.country_code] || 0) + 1;
-    const nation = STATE().config.nation_name;
+
     const countries = Object.keys(M.shapes)
       .sort((a, b) => String(N[a] || a).localeCompare(String(N[b] || b)))
       .map(code => {
-        const owner = heldBy[code];
-        const suffix = legacy.has(code) ? ' — whole country (legacy)' : counts[code] ? ` — ${counts[code]} selected` : owner ? ` — held by ${owner.name}` : '';
-        return `<option value="${code}" data-label="${esc(N[code] || code)}" ${owner ? 'disabled' : ''}>${esc(N[code] || code)}${esc(suffix)}</option>`;
+        const blocked = blockedCountries.get(code);
+        let suffix = '';
+        if (legacy.has(code)) suffix = ' — whole country (legacy)';
+        else if (counts[code]) suffix = ` — ${counts[code]} selected`;
+        if (blocked) suffix += `${suffix ? ';' : ' —'} held by ${blocked.owner_name || 'another state'}`;
+        else if (blockedCounts[code]) suffix += `${suffix ? ';' : ' —'} ${blockedCounts[code]} unavailable`;
+        return `<option value="${code}" data-label="${esc(N[code] || code)}" ${blocked ? 'disabled' : ''}>${esc(N[code] || code)}${esc(suffix)}</option>`;
       }).join('');
 
-    return `<div class="card dip-ro-console republic-territory-editor">
-      <div class="dip-section-head"><span class="dip-section-kicker">Initial world setup</span><h3>${esc(nation)} territory</h3></div>
-      <p class="small muted">Choose one country, then pick only the top-level subdivisions you want. Foreign-held countries are unavailable.</p>
+    return `<div class="territory-editor" data-territory-editor="${prefix}">
+      <div class="dip-section-head"><span class="dip-section-kicker">${esc(kicker)}</span><h3>${esc(title)}</h3></div>
+      <p class="small muted">${esc(description)}</p>
       <div class="republic-territory-grid">
         <div class="stack">
-          <label class="field"><span>1. Country</span><select id="ro-republic-country"><option value="">Choose a country…</option>${countries}</select></label>
-          <label class="field"><span>2. Find subdivision</span><input id="ro-republic-subdivision-search" type="search" placeholder="Search this country…" disabled></label>
+          <label class="field"><span>1. Country</span><select id="${prefix}-country"><option value="">Choose a country…</option>${countries}</select></label>
+          <label class="field"><span>2. Find subdivision</span><input id="${prefix}-subdivision-search" type="search" placeholder="Search this country…" disabled></label>
           <div class="row republic-territory-actions">
-            <button class="btn btn-sm" type="button" id="ro-republic-select-visible" disabled>Select visible</button>
-            <button class="btn btn-sm" type="button" id="ro-republic-clear-country" disabled>Clear country</button>
+            <button class="btn btn-sm" type="button" id="${prefix}-select-visible" disabled>Select visible</button>
+            <button class="btn btn-sm" type="button" id="${prefix}-clear-country" disabled>Clear country</button>
           </div>
-          <div id="ro-republic-subdivision-list" class="republic-subdivision-list"><p class="small muted">Choose a country to see its subdivisions.</p></div>
+          <div id="${prefix}-subdivision-list" class="republic-subdivision-list"><p class="small muted">Choose a country to see its subdivisions.</p></div>
         </div>
         <div class="republic-territory-summary-wrap">
-          <div class="item-top"><strong>Selected territory</strong><span class="tag" id="ro-republic-selected-count">${selected.length}</span></div>
-          <div id="ro-republic-territory-summary" class="republic-territory-summary"></div>
+          <div class="item-top"><strong>Selected territory</strong><span class="tag" id="${prefix}-selected-count">${selected.length + legacy.size}</span></div>
+          <p class="small muted territory-preview-note">Unsaved changes appear on the map above with a faded overlay.</p>
+          <div id="${prefix}-territory-summary" class="republic-territory-summary"></div>
         </div>
       </div>
       <div class="row republic-territory-save">
-        <button class="btn btn-primary" type="button" id="ro-republic-territories-save">Save Republic territory</button>
-        <button class="btn" type="button" id="ro-republic-territories-clear">Release all</button>
+        <button class="btn btn-primary" type="button" id="${prefix}-territories-save">Save territory</button>
+        <button class="btn" type="button" id="${prefix}-territories-clear">Release all</button>
       </div>
     </div>`;
   }
 
-  function bindRepublicTerritoryPicker(adminState, refresh) {
-    const countryEl = document.querySelector('#ro-republic-country');
+  function republicTerritoryPicker(world, adminState) {
+    return `<div class="card dip-ro-console republic-territory-editor">${territoryEditorHtml({
+      prefix: 'ro-republic',
+      title: `${STATE().config.nation_name} territory`,
+      kicker: 'Initial world setup',
+      description: 'Choose a country, then assign only the top-level subdivisions the Republic starts with. Subdivisions already held elsewhere are disabled; whole-country foreign claims block the country.',
+      adminState
+    })}</div>`;
+  }
+
+  function territoryPicker(powerId, world, adminState) {
+    const power = world?.powers?.find(p => String(p.id) === String(powerId));
+    return territoryEditorHtml({
+      prefix: 'ro-foreign',
+      title: `${power?.name || 'Foreign power'} territory`,
+      kicker: 'Foreign borders',
+      description: 'Choose a country, then assign top-level subdivisions to this power. Land held by the Republic or another foreign power is unavailable until it is released there first.',
+      adminState
+    });
+  }
+
+  function bindSubdivisionTerritoryEditor({ prefix, adminState, ownerLabel, previewFill, saveUrl, refresh }) {
+    const countryEl = document.querySelector(`#${prefix}-country`);
     if (!countryEl) return;
     const N = window.TERRITORY_NAMES || {};
-    const listEl = document.querySelector('#ro-republic-subdivision-list');
-    const searchEl = document.querySelector('#ro-republic-subdivision-search');
-    const selectVisible = document.querySelector('#ro-republic-select-visible');
-    const clearCountry = document.querySelector('#ro-republic-clear-country');
-    const summaryEl = document.querySelector('#ro-republic-territory-summary');
-    const countEl = document.querySelector('#ro-republic-selected-count');
+    const listEl = document.querySelector(`#${prefix}-subdivision-list`);
+    const searchEl = document.querySelector(`#${prefix}-subdivision-search`);
+    const selectVisible = document.querySelector(`#${prefix}-select-visible`);
+    const clearCountry = document.querySelector(`#${prefix}-clear-country`);
+    const summaryEl = document.querySelector(`#${prefix}-territory-summary`);
+    const countEl = document.querySelector(`#${prefix}-selected-count`);
     const selected = new Map((adminState?.subdivisions || []).map(x => [x.code, { ...x }]));
     const legacy = new Set(adminState?.legacy_territories || []);
+    const blockedCountries = new Map((adminState?.blocked_countries || []).map(x => [String(x.code), x]));
+    const blockedSubdivisions = new Map((adminState?.blocked_subdivisions || []).map(x => [String(x.code), x]));
     const loaded = new Map();
 
+    const initialSelected = new Map([...selected].map(([k, v]) => [k, { ...v }]));
+    const initialLegacy = new Set(legacy);
     const countryName = code => N[code] || code;
-    const selectedFor = country => [...selected.values()].filter(x => x.country_code === country);
+    const selectedFor = (country, source = selected) => [...source.values()].filter(x => x.country_code === country);
+    const signature = (country, source = selected, legacySource = legacy) =>
+      legacySource.has(country) ? 'WHOLE' : selectedFor(country, source).map(x => x.code).sort().join('|');
+    const currentHas = code => legacy.has(code) || selectedFor(code).length > 0;
+
+    function updateDraftPreview() {
+      const countries = new Set([
+        ...initialLegacy,
+        ...legacy,
+        ...[...initialSelected.values()].map(x => x.country_code),
+        ...[...selected.values()].map(x => x.country_code)
+      ]);
+      const entries = [];
+      for (const code of countries) {
+        if (signature(code) === signature(code, initialSelected, initialLegacy)) continue;
+        const has = currentHas(code);
+        entries.push({
+          code,
+          fill: has ? previewFill : STANDING_FILL.neutral,
+          release: !has,
+          label: has ? `Unsaved: assign part of this territory to ${ownerLabel}` : `Unsaved: release ${ownerLabel} from this territory`
+        });
+      }
+      setTerritoryDraftPreview(entries);
+    }
 
     function updateCountryLabels() {
+      const blockedCounts = {};
+      for (const item of blockedSubdivisions.values()) blockedCounts[item.country_code] = (blockedCounts[item.country_code] || 0) + 1;
       for (const option of countryEl.options) {
         if (!option.value) continue;
         const base = option.dataset.label || countryName(option.value);
         const n = selectedFor(option.value).length;
-        option.textContent = base + (legacy.has(option.value) ? ' — whole country (legacy)' : n ? ` — ${n} selected` : option.disabled ? ' — held by foreign power' : '');
+        const blocked = blockedCountries.get(option.value);
+        let suffix = legacy.has(option.value) ? ' — whole country (legacy)' : n ? ` — ${n} selected` : '';
+        if (blocked) suffix += `${suffix ? ';' : ' —'} held by ${blocked.owner_name || 'another state'}`;
+        else if (blockedCounts[option.value]) suffix += `${suffix ? ';' : ' —'} ${blockedCounts[option.value]} unavailable`;
+        option.textContent = base + suffix;
       }
     }
 
@@ -1086,15 +1171,19 @@
       if (!groups.size) {
         summaryEl.innerHTML = '<p class="small muted">Nothing selected yet.</p>';
       } else {
-        summaryEl.innerHTML = [...groups.entries()].sort((a,b)=>countryName(a[0]).localeCompare(countryName(b[0]))).map(([code, items]) => `<div class="republic-summary-country">
-          <div class="item-top"><strong>${esc(countryName(code))}</strong><button class="btn btn-sm" type="button" data-republic-remove-country="${code}">Clear</button></div>
-          <p class="small muted">${legacy.has(code) ? 'Whole country (legacy assignment)' : items.sort((a,b)=>a.name.localeCompare(b.name)).map(x=>esc(x.name)).join(', ')}</p>
-        </div>`).join('');
-        summaryEl.querySelectorAll('[data-republic-remove-country]').forEach(btn => btn.onclick = () => {
-          const code = btn.dataset.republicRemoveCountry;
+        summaryEl.innerHTML = [...groups.entries()]
+          .sort((a, b) => countryName(a[0]).localeCompare(countryName(b[0])))
+          .map(([code, items]) => `<div class="republic-summary-country">
+            <div class="item-top"><strong>${esc(countryName(code))}</strong><button class="btn btn-sm" type="button" data-territory-remove-country="${code}">Clear</button></div>
+            <p class="small muted">${legacy.has(code) ? 'Whole country (legacy assignment)' : items.sort((a,b)=>a.name.localeCompare(b.name)).map(x=>esc(x.name)).join(', ')}</p>
+          </div>`).join('');
+        summaryEl.querySelectorAll('[data-territory-remove-country]').forEach(btn => btn.onclick = () => {
+          const code = btn.dataset.territoryRemoveCountry;
           for (const [key, item] of [...selected]) if (item.country_code === code) selected.delete(key);
           legacy.delete(code);
-          updateCountryLabels(); renderSummary();
+          updateCountryLabels();
+          renderSummary();
+          updateDraftPreview();
           if (countryEl.value === code) renderCountry(code);
         });
       }
@@ -1106,17 +1195,22 @@
       const term = String(searchEl.value || '').trim().toLowerCase();
       const visible = rows.filter(x => !term || `${x.name} ${x.type} ${x.code}`.toLowerCase().includes(term));
       if (!rows.length) {
-        listEl.innerHTML = '<p class="small muted">No top-level subdivision data is available for this country.</p>';
+        listEl.innerHTML = '<p class="small muted">No top-level subdivision data is available for this country. An existing whole-country legacy assignment is preserved until you release it.</p>';
         return;
       }
-      listEl.innerHTML = visible.length ? visible.map(x => `<label class="republic-subdivision-option">
-        <input type="checkbox" value="${esc(x.code)}" ${selected.has(x.code) ? 'checked' : ''}>
-        <span><strong>${esc(x.name)}</strong>${x.type ? `<small>${esc(x.type)}</small>` : ''}</span>
-      </label>`).join('') : '<p class="small muted">No subdivisions match that search.</p>';
-      listEl.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.onchange = () => {
+      listEl.innerHTML = visible.length ? visible.map(x => {
+        const blocked = blockedSubdivisions.get(String(x.code));
+        const checked = selected.has(x.code);
+        return `<label class="republic-subdivision-option ${blocked ? 'is-blocked' : ''}">
+          <input type="checkbox" value="${esc(x.code)}" ${checked ? 'checked' : ''} ${blocked && !checked ? 'disabled' : ''}>
+          <span><strong>${esc(x.name)}</strong><small>${esc([x.type, blocked ? `Held by ${blocked.owner_name || 'another state'}` : ''].filter(Boolean).join(' · '))}</small></span>
+        </label>`;
+      }).join('') : '<p class="small muted">No subdivisions match that search.</p>';
+      listEl.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach(cb => cb.onchange = () => {
         const meta = rows.find(x => x.code === cb.value);
         if (cb.checked) selected.set(meta.code, { country_code: code, ...meta }); else selected.delete(cb.value);
         renderSummary();
+        updateDraftPreview();
       });
     }
 
@@ -1131,63 +1225,91 @@
       listEl.innerHTML = '<p class="small muted">Loading subdivisions…</p>';
       try {
         if (!loaded.has(code)) {
-          const data = await api(`/api/admin/republic/subdivisions/${encodeURIComponent(code)}`);
+          const data = await api(`/api/admin/territories/subdivisions/${encodeURIComponent(code)}`);
           loaded.set(code, data.subdivisions || []);
         }
-        if (legacy.has(code)) {
-          for (const meta of loaded.get(code)) selected.set(meta.code, { country_code: code, ...meta });
+        if (legacy.has(code) && loaded.get(code).length) {
+          for (const meta of loaded.get(code)) {
+            if (!blockedSubdivisions.has(String(meta.code)))
+              selected.set(meta.code, { country_code: code, ...meta });
+          }
           legacy.delete(code);
           renderSummary();
+          updateDraftPreview();
         }
         renderCountry(code);
-      } catch (err) { listEl.innerHTML = `<p class="small muted">${esc(err.message)}</p>`; }
+      } catch (err) {
+        listEl.innerHTML = `<p class="small muted">${esc(err.message)}</p>`;
+      }
     }
 
     countryEl.onchange = () => loadCountry(countryEl.value);
     searchEl.oninput = () => renderCountry(countryEl.value);
     selectVisible.onclick = () => {
       const code = countryEl.value, rows = loaded.get(code) || [], term = String(searchEl.value || '').trim().toLowerCase();
-      rows.filter(x => !term || `${x.name} ${x.type} ${x.code}`.toLowerCase().includes(term)).forEach(meta => selected.set(meta.code, { country_code: code, ...meta }));
-      renderCountry(code); renderSummary();
+      rows
+        .filter(x => !blockedSubdivisions.has(String(x.code)))
+        .filter(x => !term || `${x.name} ${x.type} ${x.code}`.toLowerCase().includes(term))
+        .forEach(meta => selected.set(meta.code, { country_code: code, ...meta }));
+      renderCountry(code);
+      renderSummary();
+      updateDraftPreview();
     };
     clearCountry.onclick = () => {
       const code = countryEl.value;
       for (const [key, item] of [...selected]) if (item.country_code === code) selected.delete(key);
-      legacy.delete(code); renderCountry(code); renderSummary();
+      legacy.delete(code);
+      renderCountry(code);
+      renderSummary();
+      updateDraftPreview();
     };
-    document.querySelector('#ro-republic-territories-save').onclick = async () => {
+    document.querySelector(`#${prefix}-territories-save`).onclick = async () => {
       try {
-        await api('/api/admin/republic/territories', { method: 'PUT', body: { subdivisions: [...selected.values()].map(x => ({ country_code: x.country_code, code: x.code })), legacy_codes: [...legacy] } });
-        toast(`${selected.size} Republic subdivisions saved.`); refresh();
+        await api(saveUrl, {
+          method: 'PUT',
+          body: {
+            subdivisions: [...selected.values()].map(x => ({ country_code: x.country_code, code: x.code })),
+            legacy_codes: [...legacy]
+          }
+        });
+        toast(`${selected.size} subdivisions saved for ${ownerLabel}.`);
+        setTerritoryDraftPreview([]);
+        refresh();
       } catch (err) { toast(err.message, true); }
     };
-    document.querySelector('#ro-republic-territories-clear').onclick = async () => {
+    document.querySelector(`#${prefix}-territories-clear`).onclick = async () => {
       try {
-        await api('/api/admin/republic/territories', { method: 'PUT', body: { subdivisions: [], legacy_codes: [] } });
-        toast('Republic territory released.'); refresh();
+        await api(saveUrl, { method: 'PUT', body: { subdivisions: [], legacy_codes: [] } });
+        toast(`${ownerLabel} territory released.`);
+        setTerritoryDraftPreview([]);
+        refresh();
       } catch (err) { toast(err.message, true); }
     };
+
     renderSummary();
+    updateDraftPreview();
   }
 
-  function bindTerritoryPicker(powerId, refresh) {
-    const form = document.querySelector('#ro-territories');
-    if (!form) return;
-    const put = async codes => {
-      try {
-        await api(`/api/admin/foreign/powers/${powerId}/territories`, { method: 'PUT', body: { codes } });
-        toast(codes.length ? `${codes.length} territories set.` : 'Territory released.');
-        refresh();
-      } catch (err) {
-        toast(err.message, true);
-      }
-    };
-    form.onsubmit = ev => {
-      ev.preventDefault();
-      put([...ev.target.codes.selectedOptions].map(o => o.value));
-    };
-    const clear = document.querySelector('#ro-territories-clear');
-    if (clear) clear.onclick = () => put([]);
+  function bindRepublicTerritoryPicker(adminState, refresh) {
+    bindSubdivisionTerritoryEditor({
+      prefix: 'ro-republic',
+      adminState,
+      ownerLabel: STATE().config.nation_name,
+      previewFill: 'var(--indelible-fill)',
+      saveUrl: '/api/admin/republic/territories',
+      refresh
+    });
+  }
+
+  function bindTerritoryPicker(powerId, power, adminState, refresh) {
+    bindSubdivisionTerritoryEditor({
+      prefix: 'ro-foreign',
+      adminState,
+      ownerLabel: power?.name || 'foreign power',
+      previewFill: STANDING_FILL[power?.standing] || STANDING_FILL.neutral,
+      saveUrl: `/api/admin/foreign/powers/${powerId}/territories`,
+      refresh
+    });
   }
 
   /* The Foreign Office. Appointed by the government, dismissable by it, and
@@ -1458,7 +1580,10 @@
       panel.innerHTML = '<p class="muted">Loading…</p>';
       try {
         const p = adminPowers.find(x => String(x.id) === String(id));
-        const detail = await api(`/api/admin/foreign/powers/${id}/government`);
+        const [detail, territoryAdmin] = await Promise.all([
+          api(`/api/admin/foreign/powers/${id}/government`),
+          api(`/api/admin/foreign/powers/${id}/territories`)
+        ]);
         const g = detail.government || {};
         const agents = detail.agents || [];
         panel.innerHTML = `<div class="stack" style="margin-top:12px">
@@ -1467,10 +1592,10 @@
           <h3>LLM government</h3><form id="ro-government" class="stack"><div class="grid2"><label class="field"><span>Decision method</span><select name="decision_method">${['executive', 'cabinet', 'weighted', 'consensus'].map(x => `<option value="${x}" ${g.decision_method === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label><label class="field"><span>Decision threshold</span><input name="decision_threshold" type="number" min="0" max="1" step="0.05" value="${g.decision_threshold ?? 0.5}"></label></div><label class="field"><span>Max deliberation rounds</span><input name="max_rounds" type="number" min="1" max="4" value="${g.max_rounds ?? 1}"></label><button class="btn">Save government</button></form>
           <h3>Ministers</h3><div class="list">${agents.length ? agents.map(a => `<div class="item"><div class="item-top"><span class="item-title">${esc(a.display_name)} · ${esc(a.role)}</span><span class="tag">${esc(a.model_provider)} / ${esc(a.model_name)}</span></div><p class="small muted">weight ${a.vote_weight} · ${a.active ? 'active' : 'inactive'}</p><button class="btn btn-sm" data-agent-toggle="${a.id}" data-agent-active="${a.active ? '1' : '0'}">${a.active ? 'Deactivate' : 'Activate'}</button></div>`).join('') : '<p class="muted">No ministers configured.</p>'}</div>
           <form id="ro-new-agent" class="stack"><div class="grid2"><label class="field"><span>Role</span><input name="role" placeholder="foreign_minister" required></label><label class="field"><span>Character name</span><input name="display_name" required></label></div><div class="grid2"><label class="field"><span>Free provider</span><select name="model_provider"><option value="groq">groq</option><option value="gemini">gemini</option><option value="openrouter">openrouter</option><option value="mock">mock</option></select></label><label class="field"><span>Model</span><input name="model_name" value="llama-3.1-8b-instant"></label></div><label class="field"><span>Role instructions</span><textarea name="system_prompt" rows="4"></textarea></label><button class="btn">Add minister</button></form>
-          ${territoryPicker(id, world)}
+          ${territoryPicker(id, world, territoryAdmin)}
           <div class="row"><button class="btn btn-primary" id="ro-run-turn">Run foreign government turn</button><button class="btn" id="ro-load-turns">View recent turns</button></div><div id="ro-turns"></div>
         </div>`;
-        bindTerritoryPicker(id, viewDiplomacy);
+        bindTerritoryPicker(id, p, territoryAdmin, viewDiplomacy);
 
         document.querySelector('#ro-power-edit').onsubmit = async ev => {
           ev.preventDefault();

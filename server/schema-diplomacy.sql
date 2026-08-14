@@ -217,6 +217,21 @@ CREATE TABLE IF NOT EXISTS republic_subdivisions (
 );
 CREATE INDEX IF NOT EXISTS idx_republic_subdivisions_country ON republic_subdivisions(country_code);
 
+/* Foreign powers can also hold subdivisions. Whole-country rows in `territories`
+   remain as a backwards-compatible legacy representation. ISO subdivision codes
+   are globally unique, so the primary key also prevents two powers owning the
+   same subdivision. Cross-checks against Republic ownership live in the admin
+   assignment routes. */
+CREATE TABLE IF NOT EXISTS foreign_subdivisions (
+  subdivision_code TEXT PRIMARY KEY,
+  country_code     TEXT NOT NULL,
+  power_id         INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  assigned_at      TIMESTAMPTZ DEFAULT now(),
+  assigned_by      INT REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_foreign_subdivisions_country ON foreign_subdivisions(country_code);
+CREATE INDEX IF NOT EXISTS idx_foreign_subdivisions_power ON foreign_subdivisions(power_id);
+
 /* ------------------------------------------------- the intelligence service
 
    FRAMEWORK ONLY. The tables and the rules about who may see what are here;

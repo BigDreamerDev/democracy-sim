@@ -503,39 +503,99 @@ module.exports.mount = function mount(app, ctx) {
     wrap(async (_req, res) => {
       await loadConfig();
       const powers = (
-        await q(`
-        SELECT p.id, p.name, p.adjective, p.colour, p.standing, p.recognised,
-               COALESCE(array_agg(t.code ORDER BY t.code) FILTER (WHERE t.code IS NOT NULL), '{}') AS territories
-          FROM powers p LEFT JOIN territories t ON t.power_id = p.id
-         WHERE p.revoked_at IS NULL
-         GROUP BY p.id ORDER BY p.name`)
+        await q(`SELECT id, name, adjective, colour, standing, recognised
+                   FROM powers
+                  WHERE revoked_at IS NULL
+                  ORDER BY name`)
       ).rows;
-      const legacy = (await q('SELECT code FROM republic_territories ORDER BY code')).rows.map(r => r.code);
-      const rows = (await q(`SELECT country_code, count(*)::int AS n
-                               FROM republic_subdivisions
-                              GROUP BY country_code ORDER BY country_code`)).rows;
-      const full = new Set(legacy);
-      const countries = new Set(legacy);
-      let subdivisionCount = 0;
-      for (const row of rows) {
-        countries.add(row.country_code);
-        subdivisionCount += Number(row.n || 0);
-        const total = (SUBDIVISIONS[row.country_code] || []).length;
-        if (total && Number(row.n) >= total) full.add(row.country_code);
+
+      const byPower = new Map(
+        powers.map(p => [String(p.id), { countries: new Set(), full: new Set(), subdivision_count: 0 }])
+      );
+      const claimedCountries = new Set();
+
+      const foreignLegacy = (await q('SELECT code, power_id FROM territories ORDER BY code')).rows;
+      for (const row of foreignLegacy) {
+        const state = byPower.get(String(row.power_id));
+        if (!state) continue;
+        state.countries.add(row.code);
+        state.full.add(row.code);
+        claimedCountries.add(row.code);
       }
-      const republicTerritories = [...countries].sort();
+
+      const foreignRows = (
+        await q(`SELECT country_code, power_id, count(*)::int AS n
+                   FROM foreign_subdivisions
+                  GROUP BY country_code, power_id
+                  ORDER BY country_code, power_id`)
+      ).rows;
+      for (const row of foreignRows) {
+        const state = byPower.get(String(row.power_id));
+        if (!state) continue;
+        state.countries.add(row.country_code);
+        state.subdivision_count += Number(row.n || 0);
+        claimedCountries.add(row.country_code);
+        const total = (SUBDIVISIONS[row.country_code] || []).length;
+        if (total && Number(row.n) >= total) state.full.add(row.country_code);
+      }
+
+      for (const power of powers) {
+        const state = byPower.get(String(power.id));
+        power.territories = [...state.countries].sort();
+        power.full_territories = [...state.full].sort();
+        power.partial_territories = power.territories.filter(code => !state.full.has(code));
+        power.subdivision_count = state.subdivision_count;
+      }
+
+      const republicLegacy = (await q('SELECT code FROM republic_territories ORDER BY code')).rows.map(r => r.code);
+      const republicRows = (await q(`SELECT country_code, count(*)::int AS n
+                                       FROM republic_subdivisions
+                                      GROUP BY country_code ORDER BY country_code`)).rows;
+      const republicFull = new Set(republicLegacy);
+      const republicCountries = new Set(republicLegacy);
+      let republicSubdivisionCount = 0;
+      republicLegacy.forEach(code => claimedCountries.add(code));
+      for (const row of republicRows) {
+        republicCountries.add(row.country_code);
+        claimedCountries.add(row.country_code);
+        republicSubdivisionCount += Number(row.n || 0);
+        const total = (SUBDIVISIONS[row.country_code] || []).length;
+        if (total && Number(row.n) >= total) republicFull.add(row.country_code);
+      }
+      const republicTerritories = [...republicCountries].sort();
+
       res.json({
         republic: {
           name: ctx.CONFIG.nation_name,
           territories: republicTerritories,
-          full_territories: [...full].sort(),
-          partial_territories: republicTerritories.filter(code => !full.has(code)),
-          subdivision_count: subdivisionCount
+          full_territories: [...republicFull].sort(),
+          partial_territories: republicTerritories.filter(code => !republicFull.has(code)),
+          subdivision_count: republicSubdivisionCount
         },
         powers,
-        claimed: republicTerritories.length + powers.reduce((n, p) => n + p.territories.length, 0),
+        claimed: claimedCountries.size,
         enabled: bool('diplomacy_enabled')
       });
+    })
+  );
+
+  app.get(
+    '/api/admin/territories/subdivisions/:countryCode',
+    admin,
+    wrap(async (req, res) => {
+      const countryCode = String(req.params.countryCode || '').trim();
+      res.json({ country_code: countryCode, subdivisions: SUBDIVISIONS[countryCode] || [] });
+    })
+  );
+
+  /* Kept as an alias so clients using the first Republic-subdivision patch do
+     not break after the generic Returning Officer route was introduced. */
+  app.get(
+    '/api/admin/republic/subdivisions/:countryCode',
+    admin,
+    wrap(async (req, res) => {
+      const countryCode = String(req.params.countryCode || '').trim();
+      res.json({ country_code: countryCode, subdivisions: SUBDIVISIONS[countryCode] || [] });
     })
   );
 
@@ -549,16 +609,26 @@ module.exports.mount = function mount(app, ctx) {
         return { country_code: row.country_code, code: row.subdivision_code, name: meta.name || row.subdivision_code, type: meta.type || '' };
       });
       const legacy = (await q('SELECT code FROM republic_territories ORDER BY code')).rows.map(r => r.code);
-      res.json({ subdivisions: selected, legacy_territories: legacy });
-    })
-  );
-
-  app.get(
-    '/api/admin/republic/subdivisions/:countryCode',
-    admin,
-    wrap(async (req, res) => {
-      const countryCode = String(req.params.countryCode || '').trim();
-      res.json({ country_code: countryCode, subdivisions: SUBDIVISIONS[countryCode] || [] });
+      const blockedSubdivisions = (
+        await q(`SELECT fs.country_code, fs.subdivision_code AS code, fs.power_id AS owner_id, p.name AS owner_name
+                   FROM foreign_subdivisions fs
+                   JOIN powers p ON p.id=fs.power_id
+                  WHERE p.revoked_at IS NULL
+                  ORDER BY fs.country_code, fs.subdivision_code`)
+      ).rows;
+      const blockedCountries = (
+        await q(`SELECT t.code, t.power_id AS owner_id, p.name AS owner_name
+                   FROM territories t
+                   JOIN powers p ON p.id=t.power_id
+                  WHERE p.revoked_at IS NULL
+                  ORDER BY t.code`)
+      ).rows;
+      res.json({
+        subdivisions: selected,
+        legacy_territories: legacy,
+        blocked_subdivisions: blockedSubdivisions,
+        blocked_countries: blockedCountries
+      });
     })
   );
 
@@ -572,8 +642,11 @@ module.exports.mount = function mount(app, ctx) {
       /* Backwards compatibility with the first whole-country UI. */
       if (Array.isArray(req.body?.codes) && !Array.isArray(req.body?.subdivisions)) {
         const codes = [...new Set(req.body.codes.map(c => String(c).trim()).filter(Boolean))];
-        const taken = codes.length ? (await q('SELECT code FROM territories WHERE code = ANY($1)', [codes])).rows : [];
-        if (taken.length) return res.status(409).json({ error: `Already claimed by a foreign power: ${taken.map(t => t.code).join(', ')}.` });
+        const wholeTaken = codes.length ? (await q('SELECT code FROM territories WHERE code = ANY($1)', [codes])).rows : [];
+        const subTaken = codes.length ? (await q('SELECT DISTINCT country_code AS code FROM foreign_subdivisions WHERE country_code = ANY($1)', [codes])).rows : [];
+        const taken = [...wholeTaken, ...subTaken];
+        if (taken.length)
+          return res.status(409).json({ error: `Already claimed wholly or partly by a foreign power: ${[...new Set(taken.map(t => t.code))].join(', ')}.` });
         await q('DELETE FROM republic_subdivisions');
         await q('DELETE FROM republic_territories');
         for (const code of codes) await q('INSERT INTO republic_territories(code,assigned_by) VALUES($1,$2)', [code, req.user.id]);
@@ -600,9 +673,26 @@ module.exports.mount = function mount(app, ctx) {
       }
 
       const countryCodes = [...new Set([...items.map(i => i.country_code), ...legacyCodes])];
-      const taken = countryCodes.length ? (await q('SELECT code, power_id FROM territories WHERE code = ANY($1)', [countryCodes])).rows : [];
-      if (taken.length)
-        return res.status(409).json({ error: `A foreign power already holds: ${taken.map(t => t.code).join(', ')}. Release it there first.`, taken });
+      const wholeTaken = countryCodes.length
+        ? (await q('SELECT code, power_id FROM territories WHERE code = ANY($1)', [countryCodes])).rows
+        : [];
+      if (wholeTaken.length)
+        return res.status(409).json({ error: `A foreign power holds the whole of: ${wholeTaken.map(t => t.code).join(', ')}. Release it there first.`, taken: wholeTaken });
+
+      const itemCodes = items.map(i => i.code);
+      const exactTaken = itemCodes.length
+        ? (await q(`SELECT fs.country_code, fs.subdivision_code AS code, fs.power_id, p.name
+                      FROM foreign_subdivisions fs JOIN powers p ON p.id=fs.power_id
+                     WHERE fs.subdivision_code = ANY($1)`, [itemCodes])).rows
+        : [];
+      if (exactTaken.length)
+        return res.status(409).json({ error: `Foreign powers already hold: ${exactTaken.map(t => t.code).join(', ')}. Release those subdivisions first.`, taken: exactTaken });
+
+      if (legacyCodes.length) {
+        const foreignSubCountries = (await q('SELECT DISTINCT country_code AS code FROM foreign_subdivisions WHERE country_code = ANY($1)', [legacyCodes])).rows;
+        if (foreignSubCountries.length)
+          return res.status(409).json({ error: `Foreign powers already hold subdivisions in: ${foreignSubCountries.map(t => t.code).join(', ')}. Release them first.` });
+      }
 
       await q('DELETE FROM republic_subdivisions');
       await q('DELETE FROM republic_territories');
@@ -615,38 +705,130 @@ module.exports.mount = function mount(app, ctx) {
     })
   );
 
+  app.get(
+    '/api/admin/foreign/powers/:id/territories',
+    admin,
+    wrap(async (req, res) => {
+      const power = (await q('SELECT id, name FROM powers WHERE id=$1 AND revoked_at IS NULL', [req.params.id])).rows[0];
+      if (!power) return res.status(404).json({ error: 'No such active power.' });
+      const rows = (await q('SELECT country_code, subdivision_code FROM foreign_subdivisions WHERE power_id=$1 ORDER BY country_code, subdivision_code', [power.id])).rows;
+      const selected = rows.map(row => {
+        const meta = (SUBDIVISIONS[row.country_code] || []).find(s => s.code === row.subdivision_code) || {};
+        return { country_code: row.country_code, code: row.subdivision_code, name: meta.name || row.subdivision_code, type: meta.type || '' };
+      });
+      const legacy = (await q('SELECT code FROM territories WHERE power_id=$1 ORDER BY code', [power.id])).rows.map(r => r.code);
+      const blockedForeign = (
+        await q(`SELECT fs.country_code, fs.subdivision_code AS code, fs.power_id AS owner_id, p.name AS owner_name
+                   FROM foreign_subdivisions fs JOIN powers p ON p.id=fs.power_id
+                  WHERE fs.power_id<>$1 AND p.revoked_at IS NULL
+                  ORDER BY fs.country_code, fs.subdivision_code`, [power.id])
+      ).rows;
+      const blockedRepublic = (await q('SELECT country_code, subdivision_code AS code FROM republic_subdivisions ORDER BY country_code, subdivision_code')).rows
+        .map(r => ({ ...r, owner_id: null, owner_name: ctx.CONFIG.nation_name }));
+      const blockedForeignCountries = (
+        await q(`SELECT t.code, t.power_id AS owner_id, p.name AS owner_name
+                   FROM territories t JOIN powers p ON p.id=t.power_id
+                  WHERE t.power_id<>$1 AND p.revoked_at IS NULL
+                  ORDER BY t.code`, [power.id])
+      ).rows;
+      const blockedRepublicCountries = (await q('SELECT code FROM republic_territories ORDER BY code')).rows
+        .map(r => ({ ...r, owner_id: null, owner_name: ctx.CONFIG.nation_name }));
+      res.json({
+        power_id: power.id,
+        subdivisions: selected,
+        legacy_territories: legacy,
+        blocked_subdivisions: [...blockedForeign, ...blockedRepublic],
+        blocked_countries: [...blockedForeignCountries, ...blockedRepublicCountries]
+      });
+    })
+  );
+
   app.put(
     '/api/admin/foreign/powers/:id/territories',
     admin,
     wrap(async (req, res) => {
       const power = (await q('SELECT * FROM powers WHERE id=$1 AND revoked_at IS NULL', [req.params.id])).rows[0];
       if (!power) return res.status(404).json({ error: 'No such active power.' });
-      const codes = Array.isArray(req.body?.codes) ? req.body.codes.map(c => String(c).trim()).filter(Boolean) : null;
-      if (!codes) return res.status(400).json({ error: 'Send codes as an array of territory codes.' });
-      if (codes.length > 300) return res.status(400).json({ error: 'That is more of the world than exists.' });
 
-      const taken = (
-        await q('SELECT code, power_id FROM territories WHERE code = ANY($1) AND power_id <> $2', [codes, power.id])
-      ).rows;
-      if (taken.length)
-        return res.status(409).json({
-          error: `Already claimed: ${taken.map(t => t.code).join(', ')}. Release them from the power that holds them first.`,
-          taken
-        });
-      const legacyTaken = (await q('SELECT code FROM republic_territories WHERE code = ANY($1)', [codes])).rows;
-      const subdivisionTaken = (await q('SELECT DISTINCT country_code AS code FROM republic_subdivisions WHERE country_code = ANY($1)', [codes])).rows;
-      const republicTaken = [...legacyTaken, ...subdivisionTaken];
-      if (republicTaken.length)
-        return res.status(409).json({
-          error: `Held wholly or partly by ${ctx.CONFIG.nation_name}: ${[...new Set(republicTaken.map(t => t.code))].join(', ')}. Release it from the Republic first.`,
-          taken: republicTaken
-        });
+      /* Backwards compatibility with the original whole-country foreign-power UI. */
+      if (Array.isArray(req.body?.codes) && !Array.isArray(req.body?.subdivisions)) {
+        const codes = [...new Set(req.body.codes.map(c => String(c).trim()).filter(Boolean))];
+        if (codes.length > 300) return res.status(400).json({ error: 'That is more of the world than exists.' });
+        const taken = codes.length ? (await q('SELECT code, power_id FROM territories WHERE code = ANY($1) AND power_id <> $2', [codes, power.id])).rows : [];
+        if (taken.length)
+          return res.status(409).json({ error: `Already claimed: ${taken.map(t => t.code).join(', ')}. Release them from the power that holds them first.`, taken });
+        const republicWhole = codes.length ? (await q('SELECT code FROM republic_territories WHERE code = ANY($1)', [codes])).rows : [];
+        const republicSubs = codes.length ? (await q('SELECT DISTINCT country_code AS code FROM republic_subdivisions WHERE country_code = ANY($1)', [codes])).rows : [];
+        const otherForeignSubs = codes.length ? (await q('SELECT DISTINCT country_code AS code FROM foreign_subdivisions WHERE country_code = ANY($1) AND power_id<>$2', [codes, power.id])).rows : [];
+        const blocked = [...republicWhole, ...republicSubs, ...otherForeignSubs];
+        if (blocked.length)
+          return res.status(409).json({ error: `Those countries are already held wholly or partly: ${[...new Set(blocked.map(t => t.code))].join(', ')}.` });
+        await q('DELETE FROM foreign_subdivisions WHERE power_id=$1', [power.id]);
+        await q('DELETE FROM territories WHERE power_id=$1', [power.id]);
+        for (const code of codes) await q('INSERT INTO territories(code,power_id) VALUES($1,$2)', [code, power.id]);
+        log(req.user.id, 'foreign.territories', `${power.name}: ${codes.length} whole territories`);
+        return res.json({ ok: true, power_id: power.id, codes });
+      }
 
+      const input = Array.isArray(req.body?.subdivisions) ? req.body.subdivisions : null;
+      const legacyCodes = Array.isArray(req.body?.legacy_codes)
+        ? [...new Set(req.body.legacy_codes.map(c => String(c).trim()).filter(Boolean))]
+        : [];
+      if (!input) return res.status(400).json({ error: 'Send subdivisions as an array.' });
+      if (input.length > 1500) return res.status(400).json({ error: 'Too many subdivisions in one assignment.' });
+
+      const items = [];
+      const seen = new Set();
+      for (const raw of input) {
+        const countryCode = String(raw?.country_code || '').trim();
+        const code = String(raw?.code || '').trim();
+        if (!countryCode || !code || seen.has(code)) continue;
+        const allowed = (SUBDIVISIONS[countryCode] || []).some(s => s.code === code);
+        if (!allowed) return res.status(400).json({ error: `Unknown subdivision ${code} for territory ${countryCode}.` });
+        seen.add(code);
+        items.push({ country_code: countryCode, code });
+      }
+
+      const countryCodes = [...new Set([...items.map(i => i.country_code), ...legacyCodes])];
+      const otherWhole = countryCodes.length
+        ? (await q('SELECT code, power_id FROM territories WHERE code = ANY($1) AND power_id<>$2', [countryCodes, power.id])).rows
+        : [];
+      if (otherWhole.length)
+        return res.status(409).json({ error: `Another foreign power holds the whole of: ${otherWhole.map(t => t.code).join(', ')}.`, taken: otherWhole });
+      const republicWhole = countryCodes.length ? (await q('SELECT code FROM republic_territories WHERE code = ANY($1)', [countryCodes])).rows : [];
+      if (republicWhole.length)
+        return res.status(409).json({ error: `${ctx.CONFIG.nation_name} holds the whole of: ${republicWhole.map(t => t.code).join(', ')}.` });
+
+      const itemCodes = items.map(i => i.code);
+      const foreignExact = itemCodes.length
+        ? (await q(`SELECT fs.country_code, fs.subdivision_code AS code, fs.power_id, p.name
+                      FROM foreign_subdivisions fs JOIN powers p ON p.id=fs.power_id
+                     WHERE fs.subdivision_code = ANY($1) AND fs.power_id<>$2`, [itemCodes, power.id])).rows
+        : [];
+      if (foreignExact.length)
+        return res.status(409).json({ error: `Other foreign powers already hold: ${foreignExact.map(t => t.code).join(', ')}.`, taken: foreignExact });
+      const republicExact = itemCodes.length
+        ? (await q('SELECT country_code, subdivision_code AS code FROM republic_subdivisions WHERE subdivision_code = ANY($1)', [itemCodes])).rows
+        : [];
+      if (republicExact.length)
+        return res.status(409).json({ error: `${ctx.CONFIG.nation_name} already holds: ${republicExact.map(t => t.code).join(', ')}.` });
+
+      if (legacyCodes.length) {
+        const republicPartial = (await q('SELECT DISTINCT country_code AS code FROM republic_subdivisions WHERE country_code = ANY($1)', [legacyCodes])).rows;
+        const foreignPartial = (await q('SELECT DISTINCT country_code AS code FROM foreign_subdivisions WHERE country_code = ANY($1) AND power_id<>$2', [legacyCodes, power.id])).rows;
+        const blocked = [...republicPartial, ...foreignPartial];
+        if (blocked.length)
+          return res.status(409).json({ error: `Other states already hold subdivisions in: ${[...new Set(blocked.map(t => t.code))].join(', ')}.` });
+      }
+
+      await q('DELETE FROM foreign_subdivisions WHERE power_id=$1', [power.id]);
       await q('DELETE FROM territories WHERE power_id=$1', [power.id]);
-      for (const code of codes)
+      for (const code of legacyCodes)
         await q('INSERT INTO territories(code,power_id) VALUES($1,$2) ON CONFLICT (code) DO NOTHING', [code, power.id]);
-      log(req.user.id, 'foreign.territories', `${power.name}: ${codes.length} territories`);
-      res.json({ ok: true, power_id: power.id, codes });
+      for (const item of items)
+        await q('INSERT INTO foreign_subdivisions(subdivision_code,country_code,power_id,assigned_by) VALUES($1,$2,$3,$4)', [item.code, item.country_code, power.id, req.user.id]);
+      log(req.user.id, 'foreign.territories', `${power.name}: ${items.length} subdivisions across ${countryCodes.length} map territories`);
+      res.json({ ok: true, power_id: power.id, subdivisions: items, legacy_codes: legacyCodes });
     })
   );
 
