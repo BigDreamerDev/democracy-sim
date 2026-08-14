@@ -856,9 +856,14 @@
     if (!world) return '';
     const held = {};
     for (const p of world.powers) for (const code of p.territories || []) held[code] = p;
+    const republicHeld = new Set(world.republic?.territories || []);
 
     const shapes = Object.entries(M.shapes)
       .map(([code, d]) => {
+        if (republicHeld.has(code))
+          return `<path d="${d}" class="wm-republic" aria-label="${esc(world.republic?.name || STATE().config.nation_name)}">
+                    <title>${esc(world.republic?.name || STATE().config.nation_name)}</title>
+                  </path>`;
         const p = held[code];
         if (!p)
           return `<path d="${d}" class="wm-land" />`;
@@ -874,7 +879,16 @@
 
     /* One label per power, at the centroid of its largest territory, so a power
        holding six islands is named once rather than six times. */
-    const labels = world.powers
+    const republicLabel = (() => {
+      const code = [...republicHeld]
+        .filter(c => M.centroids[c])
+        .sort((a, b) => (M.shapes[b] || '').length - (M.shapes[a] || '').length)[0];
+      if (!code) return '';
+      const [x, y] = M.centroids[code];
+      return `<text class="wm-label" x="${x}" y="${y}">${esc(world.republic?.name || STATE().config.nation_name)}</text>`;
+    })();
+
+    const labels = republicLabel + world.powers
       .filter(p => (p.territories || []).length)
       .map(p => {
         const code = p.territories
@@ -914,6 +928,7 @@
         ${STANDING_ORDER.map(
           k => `<span class="wm-key"><i style="background:${STANDING_FILL[k]}"></i>${standingLabel(k)}</span>`
         ).join('')}
+        ${(world.republic?.territories || []).length ? `<span class="wm-key"><i class="wm-key-republic"></i>${esc(world.republic?.name || STATE().config.nation_name)}</span>` : ''}
         <span class="wm-key"><i class="wm-key-hatch"></i>not recognised</span>
         <span class="wm-key"><i class="wm-key-land"></i>unclaimed (${unclaimed})</span>
       </div>
@@ -988,6 +1003,56 @@
         <div class="row"><button class="btn btn-sm btn-primary">Set territory</button>
           <button class="btn btn-sm" type="button" id="ro-territories-clear">Release all</button></div>
       </form>`;
+  }
+
+  function republicTerritoryPicker(world) {
+    const M = window.WORLD_MAP, N = window.TERRITORY_NAMES;
+    if (!M || !N || !world) return '';
+    const heldBy = {};
+    for (const p of world.powers) for (const code of p.territories || []) heldBy[code] = p;
+    const mine = new Set(world.republic?.territories || []);
+    const nation = STATE().config.nation_name;
+
+    const options = Object.keys(M.shapes)
+      .sort((a, b) => String(N[a] || a).localeCompare(String(N[b] || b)))
+      .map(code => {
+        const owner = heldBy[code];
+        return `<option value="${code}" ${mine.has(code) ? 'selected' : ''} ${owner ? 'disabled' : ''}>${esc(
+          N[code] || code
+        )}${owner ? ` — held by ${esc(owner.name)}` : ''}</option>`;
+      })
+      .join('');
+
+    return `<div class="card dip-ro-console">
+      <div class="dip-section-head"><span class="dip-section-kicker">Initial world setup</span><h3>${esc(nation)} territory</h3></div>
+      <p class="small muted">Only the Returning Officer can set the Republic's starting territory. Foreign-held land is greyed out; release it from that power first.</p>
+      <form id="ro-republic-territories" class="stack">
+        <label class="field"><span>Territories (${mine.size} selected)</span>
+          <select name="codes" multiple size="12" style="font-family:inherit">${options}</select></label>
+        <div class="row"><button class="btn btn-sm btn-primary">Set Republic territory</button>
+          <button class="btn btn-sm" type="button" id="ro-republic-territories-clear">Release all</button></div>
+      </form>
+    </div>`;
+  }
+
+  function bindRepublicTerritoryPicker(refresh) {
+    const form = document.querySelector('#ro-republic-territories');
+    if (!form) return;
+    const put = async codes => {
+      try {
+        await api('/api/admin/republic/territories', { method: 'PUT', body: { codes } });
+        toast(codes.length ? `${codes.length} Republic territories set.` : 'Republic territory released.');
+        refresh();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    };
+    form.onsubmit = ev => {
+      ev.preventDefault();
+      put([...ev.target.codes.selectedOptions].map(o => o.value));
+    };
+    const clear = document.querySelector('#ro-republic-territories-clear');
+    if (clear) clear.onclick = () => put([]);
   }
 
   function bindTerritoryPicker(powerId, refresh) {
@@ -1161,6 +1226,7 @@
       ${
         me?.is_admin
           ? `<section class="dip-ro"><div class="dip-ro-head"><span class="dip-section-kicker">Restricted operations console</span><h2>Returning Officer — foreign powers</h2></div><p class="small muted">Operational control of foreign powers and their LLM governments. Recognition and treaties still follow the Republic's political rules. Every change made here is written to the public record.</p>
+        ${republicTerritoryPicker(world)}
         <div class="card dip-ro-console"><label class="field"><span>Manage power</span><select id="ro-power-select">${adminPowers.map(p => `<option value="${p.id}">${esc(p.name)}${p.revoked_at ? ' (revoked)' : ''}</option>`).join('')}</select></label><div id="ro-power-panel"></div></div>
         <details class="card dip-ro-create"><summary><strong>Create a foreign power</strong></summary><form id="newpower" class="stack" style="margin-top:12px"><div class="grid2"><label class="field"><span>Power name</span><input name="name" required></label><label class="field"><span>Adjective</span><input name="adjective"></label></div><div class="grid2"><label class="field"><span>Colour</span><input name="colour" type="color" value="#5B2E9E"></label><label class="field"><span>Standing</span><select name="standing"><option>neutral</option><option>friendly</option><option>allied</option><option>strained</option><option>hostile</option><option>at_war</option></select></label></div><button class="btn btn-primary">Create power</button><div id="newpowerkey"></div></form></details>
       </section>`
@@ -1170,6 +1236,7 @@
 
     bindWorldMap(world);
     bindForeignOffice();
+    if (me?.is_admin) bindRepublicTerritoryPicker(viewDiplomacy);
 
     if (document.querySelector('#official-foreign-message'))
       document.querySelector('#official-foreign-message').onsubmit = async ev => {

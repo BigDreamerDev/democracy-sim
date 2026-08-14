@@ -797,6 +797,11 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
   stroke:var(--rule);stroke-width:.4;
 }
 
+.wm-republic{
+  fill:var(--indelible-fill);
+  stroke:var(--paper);stroke-width:.8;
+}
+
 .wm-claim{
   stroke:var(--paper);stroke-width:.6;
   cursor:pointer;transition:filter .12s ease, stroke-width .12s ease;
@@ -848,3 +853,5 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
   background:color-mix(in srgb, var(--card) 70%, var(--ink) 30%);
 }
 .wm-pressure i{display:block;height:100%;transition:width .2s ease}
+
+.wm-key-republic{background:var(--indelible-fill)!important}

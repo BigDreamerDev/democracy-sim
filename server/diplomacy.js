@@ -509,9 +509,11 @@ module.exports.mount = function mount(app, ctx) {
          WHERE p.revoked_at IS NULL
          GROUP BY p.id ORDER BY p.name`)
       ).rows;
+      const republicTerritories = (await q('SELECT code FROM republic_territories ORDER BY code')).rows.map(r => r.code);
       res.json({
+        republic: { name: ctx.CONFIG.nation_name, territories: republicTerritories },
         powers,
-        claimed: powers.reduce((n, p) => n + p.territories.length, 0),
+        claimed: republicTerritories.length + powers.reduce((n, p) => n + p.territories.length, 0),
         enabled: bool('diplomacy_enabled')
       });
     })
@@ -521,6 +523,32 @@ module.exports.mount = function mount(app, ctx) {
      statecraft: no office may take or give territory, because nothing in the
      Constitution says who could. If conquest ever becomes a thing the powers do,
      it arrives as a bill like everything else. */
+  /* Starting territory for the Republic is also world-building. The Republic
+     is deliberately not inserted into `powers`: only the Returning Officer may
+     set this list, and later transfers can still be handled politically. */
+  app.put(
+    '/api/admin/republic/territories',
+    admin,
+    wrap(async (req, res) => {
+      const codes = Array.isArray(req.body?.codes) ? req.body.codes.map(c => String(c).trim()).filter(Boolean) : null;
+      if (!codes) return res.status(400).json({ error: 'Send codes as an array of territory codes.' });
+      if (codes.length > 300) return res.status(400).json({ error: 'That is more of the world than exists.' });
+
+      const taken = (await q('SELECT code, power_id FROM territories WHERE code = ANY($1)', [codes])).rows;
+      if (taken.length)
+        return res.status(409).json({
+          error: `Already claimed by a foreign power: ${taken.map(t => t.code).join(', ')}. Release them there first.`,
+          taken
+        });
+
+      await q('DELETE FROM republic_territories');
+      for (const code of codes)
+        await q('INSERT INTO republic_territories(code,assigned_by) VALUES($1,$2) ON CONFLICT (code) DO NOTHING', [code, req.user.id]);
+      log(req.user.id, 'republic.territories', `${ctx.CONFIG.nation_name}: ${codes.length} territories`);
+      res.json({ ok: true, codes });
+    })
+  );
+
   app.put(
     '/api/admin/foreign/powers/:id/territories',
     admin,
@@ -541,6 +569,12 @@ module.exports.mount = function mount(app, ctx) {
         return res.status(409).json({
           error: `Already claimed: ${taken.map(t => t.code).join(', ')}. Release them from the power that holds them first.`,
           taken
+        });
+      const republicTaken = (await q('SELECT code FROM republic_territories WHERE code = ANY($1)', [codes])).rows;
+      if (republicTaken.length)
+        return res.status(409).json({
+          error: `Held by ${ctx.CONFIG.nation_name}: ${republicTaken.map(t => t.code).join(', ')}. Release them from the Republic first.`,
+          taken: republicTaken
         });
 
       await q('DELETE FROM territories WHERE power_id=$1', [power.id]);

@@ -196,6 +196,16 @@ CREATE TABLE IF NOT EXISTS territories (
 
 CREATE INDEX IF NOT EXISTS idx_territories_power ON territories(power_id);
 
+/* The Republic is not a foreign power and therefore must never be represented
+   by a row in `powers`. Starting territory assigned by the Returning Officer is
+   kept separately. A code may appear in only one of the two territory tables;
+   the admin routes enforce that cross-table rule. */
+CREATE TABLE IF NOT EXISTS republic_territories (
+  code        TEXT PRIMARY KEY,
+  assigned_at TIMESTAMPTZ DEFAULT now(),
+  assigned_by INT REFERENCES users(id) ON DELETE SET NULL
+);
+
 /* ------------------------------------------------- the intelligence service
 
    FRAMEWORK ONLY. The tables and the rules about who may see what are here;
