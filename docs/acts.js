@@ -1394,14 +1394,30 @@
         listEl.innerHTML = '<p class="small muted">No top-level subdivision data is available for this country. An existing whole-country legacy assignment is preserved until you release it.</p>';
         return;
       }
+      /* The name table and the geometry do not always agree: the source draws
+         some countries at a different granularity than ISO does, so a handful of
+         named subdivisions have no shape. Selecting one used to be silent — it
+         simply drew nothing, which is most of what "the map is broken" meant.
+         Say so instead, and refuse the selection rather than accept a holding
+         nobody can see on the map. */
+      const unmapped = x => !SUBDIV.shapes[String(x.code)];
       listEl.innerHTML = visible.length ? visible.map(x => {
         const blocked = blockedSubdivisions.get(String(x.code));
         const checked = selected.has(x.code);
-        return `<label class="republic-subdivision-option ${blocked ? 'is-blocked' : ''}">
-          <input type="checkbox" value="${esc(x.code)}" ${checked ? 'checked' : ''} ${blocked && !checked ? 'disabled' : ''}>
-          <span><strong>${esc(x.name)}</strong><small>${esc([x.type, blocked ? `Held by ${blocked.owner_name || 'another state'}` : ''].filter(Boolean).join(' · '))}</small></span>
+        const bare = unmapped(x) && !checked;
+        return `<label class="republic-subdivision-option ${blocked ? 'is-blocked' : ''} ${bare ? 'is-unmapped' : ''}">
+          <input type="checkbox" value="${esc(x.code)}" ${checked ? 'checked' : ''} ${(blocked || bare) && !checked ? 'disabled' : ''}>
+          <span><strong>${esc(x.name)}</strong><small>${esc([
+            x.type,
+            blocked ? `Held by ${blocked.owner_name || 'another state'}` : '',
+            bare ? 'No mapped border — cannot be assigned' : ''
+          ].filter(Boolean).join(' · '))}</small></span>
         </label>`;
       }).join('') : '<p class="small muted">No subdivisions match that search.</p>';
+      const bareCount = visible.filter(unmapped).length;
+      if (bareCount)
+        listEl.insertAdjacentHTML('afterbegin',
+          `<p class="small muted">${bareCount} of ${visible.length} have no mapped border and cannot be assigned. The map only hands out what it can draw.</p>`);
       listEl.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach(cb => cb.onchange = () => {
         const meta = rows.find(x => x.code === cb.value);
         if (cb.checked) selected.set(meta.code, { country_code: code, ...meta }); else selected.delete(cb.value);

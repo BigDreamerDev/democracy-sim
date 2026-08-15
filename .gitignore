@@ -5,3 +5,7 @@ node_modules/
 
 # Local cache used by the subdivision-map generator
 .tools-cache/
+
+# Agent worktrees and abandoned patch attempts
+.claude/worktrees/
+*.patch

@@ -370,6 +370,51 @@ def download_country(alpha3: str):
     return data
 
 
+def adopt_source_regions(jobs, downloaded, subdivisions):
+    """Where the source draws a country differently from ISO, follow the source.
+
+    geoBoundaries ADM1 is not always ISO 3166-2. Italy's ADM1 is five NUTS-1
+    macro-regions with an empty `shapeISO`; the ISO list is twenty regions. None
+    of them match, so Italy produced no geometry at all — while the Returning
+    Officer's editor went on offering all twenty, because that list comes from
+    the name table. Selecting one drew nothing, which is exactly the "missing
+    subdivisions" complaint: nine countries, China, Italy and Poland among them.
+
+    The editor may only offer what can actually be drawn, so when a country
+    matches nothing we adopt the source's own regions as its subdivisions and
+    rewrite the name table for that country. Countries that match normally are
+    untouched, and a country that matches only partly keeps its ISO list — a
+    half-adopted country would renumber ids that are already in the database.
+    """
+    revised = []
+    for country_code, alpha3, expected in jobs:
+        data = downloaded.get(country_code)
+        features = (data or {}).get("features") or []
+        if not features:
+            revised.append((country_code, alpha3, expected))
+            continue
+        matched, _ = match_features(expected, features)
+        if matched:
+            revised.append((country_code, alpha3, expected))
+            continue
+
+        adopted = []
+        for n, feature in enumerate(features, start=1):
+            name = str((feature.get("properties") or {}).get("shapeName") or "").strip()
+            if not name:
+                continue
+            # Namespaced so it can never collide with a real ISO 3166-2 code.
+            adopted.append({"code": f"{alpha3}-SRC{n:02d}", "name": name, "type": "Region"})
+        if not adopted:
+            revised.append((country_code, alpha3, expected))
+            continue
+
+        print(f"  {country_code}: ISO list matched nothing; adopting {len(adopted)} source regions")
+        subdivisions[country_code] = adopted
+        revised.append((country_code, alpha3, adopted))
+    return revised
+
+
 def match_features(expected, features):
     expected_by_code = {x["code"].upper(): x for x in expected}
     by_name = {}
@@ -611,6 +656,16 @@ def build_from_source():
     missing_report = {}
     matched_total = 0
     expected_total = 0
+
+    jobs = adopt_source_regions(jobs, downloaded, subdivisions)
+    # Adoption rewrites the name table for those countries, so the ids and the
+    # table the server reads are both refreshed before anything is drawn.
+    ids = assign_ids(ids, [e["code"] for entries in subdivisions.values() for e in entries])
+    write_ids(ids, subdivisions)
+    SUBDIVISIONS_FILE.write_text(
+        json.dumps({k: subdivisions[k] for k in sorted(subdivisions)}, indent=1, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
     for country_code, alpha3, expected in jobs:
         expected_total += len(expected)
