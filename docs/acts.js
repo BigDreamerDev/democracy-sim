@@ -2266,6 +2266,202 @@
     }
   }
 
+  /* --------------------------------------------------------- intelligence */
+
+  const intelLabel = value => {
+    const text = String(value || '').replaceAll('_', ' ');
+    return text ? text[0].toUpperCase() + text.slice(1) : '';
+  };
+  const intelOpName = kind => intelLabel(kind);
+
+  function intelGateNeeds(tier, progress, gates) {
+    const gate = gates?.[tier];
+    if (!gate || tier <= 1) return [];
+    const needs = [];
+    const tradecraft = Number(progress?.tradecraft || 0);
+    const budget = Number(progress?.committed_budget || 0);
+    const completed = tier === 2 ? Number(progress?.successful_tier1 || 0) : Number(progress?.successful_tier2 || 0);
+    if (tradecraft < Number(gate.tradecraft || 0)) needs.push(`${Number(gate.tradecraft) - tradecraft} tradecraft`);
+    if (budget < Number(gate.budget || 0)) needs.push(`${cash(Number(gate.budget) - budget)} committed budget`);
+    if (completed < Number(gate.completed || 0))
+      needs.push(`${Number(gate.completed) - completed} successful tier ${tier - 1} mission${Number(gate.completed) - completed === 1 ? '' : 's'}`);
+    return needs;
+  }
+
+  async function viewIntel(v, recentOperation = null) {
+    const me = ME();
+    const [agency, dashboard, operations, powers] = await Promise.all([
+      api('/api/intel/agency'),
+      api('/api/intel'),
+      api('/api/intel/operations'),
+      api('/api/diplomacy/powers').catch(() => [])
+    ]);
+    const service = agency.service;
+    const progress = agency.progress || {
+      tier: Number(agency.tier || 0),
+      tradecraft: Number(service?.tradecraft || 0),
+      committed_budget: Number(service?.committed_budget || 0),
+      successful_tier1: 0,
+      successful_tier2: 0
+    };
+    const gates = progress.gates || agency.gates || {};
+    const ops = agency.ops || {};
+    const cleared = !!dashboard.cleared;
+    const isRO = !!me?.is_admin;
+    const canCharter = !!me &&
+      (STATE()?.config?.bill_proposers === 'citizens' || (me.offices || []).some(o => o === 'mp' || o === 'speaker'));
+    const [assets, citizens] = await Promise.all([
+      cleared && service ? api('/api/intel/assets') : Promise.resolve([]),
+      isRO && service ? api('/api/citizens') : Promise.resolve([])
+    ]);
+    const completedFor = tier => tier === 2 ? Number(progress.successful_tier1 || 0) : tier === 3 ? Number(progress.successful_tier2 || 0) : 0;
+    const tierCards = [1, 2, 3].map(tier => {
+      const gate = gates[tier] || {};
+      const open = !!service && Number(progress.tier || 0) >= tier;
+      return `<div class="item">
+        <div class="item-top"><span class="item-title">Tier ${tier} · ${esc(gate.name || '')}</span><span class="tag ${open ? 'on-green' : ''}">${open ? 'Open' : 'Locked'}</span></div>
+        <div class="item-meta">Tradecraft ${Number(progress.tradecraft || 0).toLocaleString()} / ${Number(gate.tradecraft || 0).toLocaleString()} · committed budget ${cash(progress.committed_budget)} / ${cash(gate.budget)} · qualifying missions ${completedFor(tier)} / ${Number(gate.completed || 0)}</div>
+        ${!open && service ? `<p class="small muted">Still needed: ${esc(intelGateNeeds(tier, progress, gates).join(' · ') || 'open the previous tier')}</p>` : tier === 1 ? '<p class="small muted">Collection opens with the charter.</p>' : ''}
+      </div>`;
+    }).join('');
+    const operationCatalogue = Object.entries(ops).map(([kind, op]) => {
+      const open = !!service && Number(progress.tier || 0) >= Number(op.tier || 0);
+      const locked = !service ? 'charter the service first' : intelGateNeeds(Number(op.tier), progress, gates).join(' · ') || 'open the previous tier';
+      return `<div class="item"><div class="item-top"><span class="item-title">${esc(intelOpName(kind))}</span><span class="tag ${open ? 'on-green' : ''}">Tier ${Number(op.tier || 0)}${open ? '' : ' · Locked'}</span></div>
+        <div class="item-meta">${cash(op.costUnit)} per score point · base difficulty ${Number(op.difficulty || 0)}${op.needsAsset ? ' · asset required' : ''}</div>
+        ${open ? '' : `<p class="small muted">Needs ${esc(locked)}.</p>`}</div>`;
+    }).join('');
+    const opOptions = Object.entries(ops).map(([kind, op]) => {
+      const open = !!service && Number(progress.tier || 0) >= Number(op.tier || 0);
+      const locked = intelGateNeeds(Number(op.tier), progress, gates).join(', ') || 'previous tier';
+      return `<option value="${esc(kind)}" ${open ? '' : 'disabled'}>${esc(intelOpName(kind))} · Tier ${Number(op.tier || 0)}${open ? '' : ` · Locked: ${esc(locked)}`}</option>`;
+    }).join('');
+    const powerOptions = powers.map(p => `<option value="${Number(p.id)}">${esc(p.name)}</option>`).join('');
+    const assetRows = assets.length ? assets.map(a => `<div class="item"><div class="item-top"><span class="item-title">${esc(a.codename)}</span><span class="tag ${a.status === 'active' ? 'on-green' : a.status === 'blown' ? 'on-oxide' : ''}">${esc(intelLabel(a.status))}</span></div><div class="item-meta">${esc(a.power_name)} · experience ${Number(a.experience || 0)} · recruited cycle ${Number(a.recruited_cycle || 0)}${a.target_agent_id ? ` · foreign seat #${Number(a.target_agent_id)}` : ''}</div>${a.status === 'active' ? `<button class="btn btn-sm" data-intel-extract="${Number(a.id)}">Extract asset</button>` : ''}</div>`).join('') : '<div class="empty">No assets are on the register.</div>';
+    const operationRows = operations.length ? operations.map(o => `<div class="item"><div class="item-top"><span class="item-title">${esc(intelOpName(o.kind))} · ${esc(o.power_name || 'Domestic')}</span><span class="tag ${o.outcome === 'success' ? 'on-green' : 'on-oxide'}">${esc(intelLabel(o.outcome))}</span></div><div class="item-meta">Tier ${Number(o.tier || 0)} · score ${Number(o.score || 0)} / threshold ${Number(o.threshold || 0)}</div></div>`).join('') : '<div class="empty">No intelligence operation has been recorded.</div>';
+    const reportRows = cleared ? (dashboard.reports || []).map(r => `<div class="item"><div class="item-top"><span class="item-title"><span class="ref">${esc(r.ref)}</span> ${esc(r.subject)}</span><span class="tag ${r.sealed ? 'on-violet' : 'on-green'}">${r.sealed ? 'Sealed' : 'Declassified'}</span></div><div class="item-meta">Filed cycle ${Number(r.filed_cycle || 0)} · ${esc(r.confidence || 'unknown')} confidence · ${esc(r.sourcing || 'source not stated')}${r.declassifies_at_cycle ? ` · declassifies cycle ${Number(r.declassifies_at_cycle)}` : ''}</div>${r.sealed ? `<p class="small muted">Opening this report is logged in the public read register.</p><button class="btn btn-sm" data-intel-read="${Number(r.id)}">Read sealed report</button><div id="intel-report-${Number(r.id)}"></div>` : `<div class="prose" style="margin-top:10px">${esc(r.body || '').replace(/\n/g, '<br>')}</div>`}</div>`).join('') : '';
+    const clearanceRows = isRO ? (dashboard.clearances || []).map(c => `<div class="item"><div class="item-top"><span class="item-title">${esc(c.display_name)}</span><button class="btn btn-sm" data-intel-revoke="${Number(c.user_id)}">Revoke</button></div><div class="item-meta">${esc(c.reason || '')} · since ${when(c.since)}${c.until ? ` · until ${when(c.until)}` : ''}</div></div>`).join('') : '';
+
+    v.innerHTML = `
+      <h1 class="page">Intelligence</h1>
+      <p class="page-sub">The gate is public. Operations stay on the record. Report bodies stay sealed until their clock runs out.</p>
+
+      ${service ? `<div class="card"><div class="item-top"><div><p class="eyebrow">Chartered intelligence service</p><h2 style="margin-top:4px">Tier ${Number(progress.tier || 0)} · ${esc(gates[progress.tier]?.name || '')}</h2></div><span class="tag on-green">active</span></div><div class="prose">${esc(service.charter || '').replace(/\n/g, '<br>')}</div><p class="small muted" style="margin-top:12px">Reports declassify after ${Number(service.declassify_after_cycles || 0)} cycle(s) · ordinary budget ${cash(service.budget_per_cycle)} per cycle.</p></div>` : `<div class="card"><h2>No intelligence service has been chartered</h2><p class="small muted">The service comes into existence only after the House enacts its charter as a motion.</p></div>`}
+
+      ${!service && canCharter ? `<div class="card"><h2>Charter an intelligence service</h2><p class="small muted">This files a motion. It does not create the service until the bill is enacted.</p><form id="intel-charter" class="stack"><label class="field"><span>Title</span><input name="title" required value="Establishment of an Intelligence Service"></label><label class="field"><span>Charter</span><textarea name="charter" required minlength="20" rows="7" placeholder="Set out the service's purpose and limits."></textarea></label><div class="grid2"><label class="field"><span>Declassify reports after</span><input name="declassify_after_cycles" type="number" min="1" value="3" required><span class="small muted">cycles</span></label><label class="field"><span>Budget per cycle</span><input name="budget_per_cycle" type="number" min="0" value="0" required></label></div><button class="btn btn-primary">File charter motion</button></form></div>` : !service ? `<div class="card"><p class="small muted">Only someone who may propose a bill can file the charter motion.</p></div>` : ''}
+
+      <div class="card"><h2>Tier gates</h2><p class="small muted">All figures are public. Every requirement in a gate must be met at the same time.</p><div class="list" style="margin-top:12px">${tierCards}</div></div>
+
+      <div class="card"><h2>Operations catalogue</h2><div class="list">${operationCatalogue}</div></div>
+
+      ${isRO && service ? `<div class="grid2"><div class="card"><p class="eyebrow">Returning Officer</p><h2>Clearance register</h2><p class="small muted">Clearance is a row in this register, not an office.</p><form id="intel-clearance" class="stack"><label class="field"><span>Citizen</span><select name="user_id" required>${citizens.map(c => `<option value="${Number(c.id)}">${esc(c.display_name)}</option>`).join('')}</select></label><label class="field"><span>Reason</span><input name="reason" maxlength="500" required></label><label class="field"><span>Expiry (optional)</span><input name="until" type="datetime-local"></label><button class="btn btn-primary">Grant clearance</button></form><div class="list" style="margin-top:14px">${clearanceRows || '<div class="empty">No clearances are active.</div>'}</div></div><div class="card"><p class="eyebrow">Returning Officer</p><h2>Foreign counter-intelligence</h2><p class="small muted">This is a published defensive rating, not a secret dial.</p><form id="intel-counter" class="stack"><label class="field"><span>Foreign power</span><select name="power_id" required>${powerOptions}</select></label><label class="field"><span>Counter-intelligence rating</span><input name="counter_intel" type="number" min="0" max="500" required></label><button class="btn btn-primary">Record rating</button></form></div></div>` : ''}
+
+      ${cleared && service ? `<div class="card"><h2>Assets</h2><div class="list">${assetRows}</div></div><div class="card"><h2>Order an operation</h2><p class="small muted">The result is deterministic from the published inputs. Higher committed budget adds score at the operation's published cost per point.</p><form id="intel-operation" class="stack"><label class="field"><span>Operation</span><select name="kind" id="intel-kind" required>${opOptions}</select></label><div class="grid2"><label class="field" id="intel-power-wrap"><span>Target power</span><select name="power_id" id="intel-power">${powerOptions}</select></label><label class="field"><span>Budget</span><input name="budget" type="number" min="1" required></label></div><label class="field" id="intel-asset-wrap"><span>Asset (optional unless the operation requires one)</span><select name="asset_id" id="intel-asset"><option value="">Choose automatically</option></select></label><div class="grid2"><label class="field"><span>Codename (optional)</span><input name="codename" maxlength="60"></label><label class="field"><span>Notes (optional)</span><textarea name="notes" maxlength="1500" rows="3"></textarea></label></div><p class="small"><strong>Committed operation budgets are spent whether the mission succeeds or fails; they cannot be recovered.</strong></p><button class="btn btn-primary">Order operation</button></form>${recentOperation ? `<div id="intel-op-result" class="item" style="margin-top:14px"><div class="item-top"><span class="item-title">${esc(intelOpName(recentOperation.kind))} recorded</span><span class="tag ${recentOperation.outcome === 'success' ? 'on-green' : 'on-oxide'}">${esc(intelLabel(recentOperation.outcome))}</span></div><div class="item-meta">Score ${Number(recentOperation.score || 0)} / threshold ${Number(recentOperation.threshold || 0)}</div></div>` : '<div id="intel-op-result"></div>'}</div><div class="card"><h2>Reports</h2><p class="small muted">A sealed report opens only to a cleared citizen. Reading it is itself logged and public.</p><div class="list">${reportRows || '<div class="empty">No reports have been filed.</div>'}</div></div>` : ''}
+
+      <div class="card"><h2>Public operations register</h2><div class="list">${operationRows}</div></div>`;
+
+    if ($('#intel-charter')) $('#intel-charter').onsubmit = e => {
+      e.preventDefault();
+      busy(e.submitter || e.target.querySelector('button'), async () => {
+        const f = Object.fromEntries(new FormData(e.target));
+        f.declassify_after_cycles = Number(f.declassify_after_cycles);
+        f.budget_per_cycle = Number(f.budget_per_cycle);
+        try {
+          const bill = await api('/api/intel/establish', { method: 'POST', body: f });
+          toast(`Filed as ${bill.ref}. The House decides.`);
+          location.hash = `#/bill/${bill.id}`;
+        } catch (err) { toast(err.message, true); }
+      });
+    };
+
+    if ($('#intel-clearance')) $('#intel-clearance').onsubmit = e => {
+      e.preventDefault();
+      busy(e.submitter || e.target.querySelector('button'), async () => {
+        const f = Object.fromEntries(new FormData(e.target));
+        f.user_id = Number(f.user_id);
+        if (!f.until) delete f.until;
+        try {
+          await api('/api/intel/clearance', { method: 'POST', body: f });
+          toast('Clearance recorded.');
+          await viewIntel(v);
+        } catch (err) { toast(err.message, true); }
+      });
+    };
+
+    document.querySelectorAll('[data-intel-revoke]').forEach(btn => btn.onclick = () => busy(btn, async () => {
+      if (!confirm('Revoke this clearance? Sealed access ends immediately.')) return;
+      try {
+        await api(`/api/intel/clearance/${btn.dataset.intelRevoke}`, { method: 'DELETE' });
+        toast('Clearance revoked.');
+        await viewIntel(v);
+      } catch (err) { toast(err.message, true); }
+    }));
+
+    if ($('#intel-counter')) $('#intel-counter').onsubmit = e => {
+      e.preventDefault();
+      busy(e.submitter || e.target.querySelector('button'), async () => {
+        const f = Object.fromEntries(new FormData(e.target));
+        try {
+          await api(`/api/intel/powers/${Number(f.power_id)}/counter-intel`, { method: 'PUT', body: { counter_intel: Number(f.counter_intel) } });
+          toast('Counter-intelligence rating recorded.');
+          e.target.reset();
+        } catch (err) { toast(err.message, true); }
+      });
+    };
+
+    const syncOperation = () => {
+      if (!$('#intel-kind')) return;
+      const op = ops[$('#intel-kind').value] || {};
+      $('#intel-power-wrap').hidden = op.needsPower === false;
+      const target = Number($('#intel-power')?.value || 0);
+      const matching = assets.filter(a => a.status === 'active' && (!target || Number(a.power_id) === target));
+      $('#intel-asset').innerHTML = '<option value="">Choose automatically</option>' + matching.map(a => `<option value="${Number(a.id)}">${esc(a.codename)} · ${esc(a.power_name)}</option>`).join('');
+      $('#intel-asset-wrap').hidden = !op.needsAsset;
+    };
+    if ($('#intel-kind')) {
+      $('#intel-kind').onchange = syncOperation;
+      $('#intel-power').onchange = syncOperation;
+      syncOperation();
+      $('#intel-operation').onsubmit = e => {
+        e.preventDefault();
+        busy(e.submitter || e.target.querySelector('button'), async () => {
+          const f = Object.fromEntries(new FormData(e.target));
+          const op = ops[f.kind] || {};
+          f.budget = Number(f.budget);
+          if (op.needsPower === false) delete f.power_id; else f.power_id = Number(f.power_id);
+          if (f.asset_id) f.asset_id = Number(f.asset_id); else delete f.asset_id;
+          if (!f.codename) delete f.codename;
+          if (!f.notes) delete f.notes;
+          try {
+            const r = await api('/api/intel/operations', { method: 'POST', body: f });
+            toast('Operation recorded.');
+            await viewIntel(v, r.operation);
+          } catch (err) { toast(err.message, true); }
+        });
+      };
+    }
+
+    document.querySelectorAll('[data-intel-extract]').forEach(btn => btn.onclick = () => busy(btn, async () => {
+      if (!confirm('Extract this asset? They will no longer be available for operations.')) return;
+      try {
+        await api(`/api/intel/assets/${btn.dataset.intelExtract}/extract`, { method: 'POST' });
+        toast('Asset extracted.');
+        await viewIntel(v);
+      } catch (err) { toast(err.message, true); }
+    }));
+
+    document.querySelectorAll('[data-intel-read]').forEach(btn => btn.onclick = () => busy(btn, async () => {
+      try {
+        const r = await api(`/api/intel/reports/${btn.dataset.intelRead}/read`, { method: 'POST' });
+        const out = document.querySelector(`#intel-report-${btn.dataset.intelRead}`);
+        out.innerHTML = `<div class="prose" style="margin-top:10px">${esc(r.body || '').replace(/\n/g, '<br>')}</div>`;
+        btn.hidden = true;
+        toast('Report opened. The read is on the public register.');
+      } catch (err) { toast(err.message, true); }
+    }));
+  }
+
+
   /* Register only what the server actually has.
 
      The server mounts judiciary.js and economy.js by name and carries on
@@ -2287,6 +2483,9 @@
     }
     if (await present('/api/diplomacy/powers')) {
       R.addRoute('diplomacy', 'Diplomacy', viewDiplomacy);
+    }
+    if (await present('/api/intel/agency')) {
+      R.addRoute('intel', 'Intelligence', viewIntel);
     }
     R.refreshNav();
   })();

@@ -1920,7 +1920,12 @@ const CONFIG_FIELDS = [
   ['foreign_actions_per_cycle', 'Foreign actions allowed per cycle'],
   ['treaty_threshold', 'Treaty ratification threshold (0–1)'],
   ['recognition_threshold', 'Foreign recognition threshold (0–1)'],
-  ['foreign_trade_tax', 'Tax on foreign imports (0–1)']
+  ['foreign_trade_tax', 'Tax on foreign imports (0–1)'],
+  ['offshore_enabled', 'Enable offshore banking & forex (true / false)'],
+  ['offshore_fee', 'Offshore deposit fee (0–1)'],
+  ['offshore_minimum', 'Minimum offshore deposit'],
+  ['forex_spread', 'Foreign exchange spread (0–1)'],
+  ['forex_step', 'Maximum forex movement per cycle (0–1)']
 ];
 
 async function viewAdmin(v) {
