@@ -57,12 +57,9 @@ module.exports.mount = function mount(app, ctx) {
      account is allowed to go below zero — that is the issuance — so this cannot
      go through pay(), which refuses an overdraft by design. Both sides are
      still written, and the ledger still records it, so the books balance. */
-  async function issue(toAccId, amount, note) {
+  async function issue(toAccId, amount, note, run = null) {
     const f = await fedAcc();
-    await q('UPDATE accounts SET balance = balance - $1::bigint WHERE id=$2', [amount, f.id]);
-    await q('UPDATE accounts SET balance = balance + $1::bigint WHERE id=$2', [amount, toAccId]);
-    await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)',
-      [f.id, toAccId, amount, 'issue', String(note).slice(0, 300)]);
+    await E().settle(f.id, toAccId, amount, 'issue', note, run);
   }
 
   const nextRef = async (table, prefix) => {
@@ -550,11 +547,8 @@ module.exports.mount = function mount(app, ctx) {
       if (top > 0) {
         /* The guarantee is the Treasury's, and the Treasury is allowed to run a
            deficit — a guarantee contingent on the state being in surplus is not
-           a guarantee. Balances are moved directly for that reason. */
-        await q('UPDATE accounts SET balance = balance - $1::bigint WHERE id=$2', [top, t.id]);
-        await q('UPDATE accounts SET balance = balance + $1::bigint WHERE id=$2', [top, to]);
-        await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)',
-          [t.id, to, top, 'guarantee', `${b.name} wound up`]);
+           a guarantee. settle() is the movement that permits that. */
+        await E().settle(t.id, to, top, 'guarantee', `${b.name} wound up`);
         guaranteed += top;
       }
     }

@@ -20,9 +20,32 @@ module.exports.mount = function mount(app, ctx) {
     'services'
   ]);
   const goodsMode = () => String(ctx.CONFIG.goods_economy_enabled) === 'true';
-  const { q, log, auth, admin, wrap, num, bool, loadConfig, officesOf, citizenCount, slowWrites } = ctx;
+  const { q, tx, log, auth, admin, wrap, num, bool, loadConfig, officesOf, citizenCount, slowWrites,
+    requireScope, attribute } = ctx;
 
   const money = n => Math.round(Number(n) || 0);
+
+  /* A spending cap belongs to the key, not the citizen — the citizen's own
+     balance is the real limit when they act directly. Sums what that key has
+     actually moved (api_key_charges, written by chargeKey below) inside the
+     trailing window, so the cap can't be bypassed by pacing requests across a
+     restart the way an in-memory counter could be. Refuses BEFORE pay() runs,
+     the same "check first" shape pay() itself uses for an overdraft. */
+  async function checkKeyCap(req, amount) {
+    const key = req.apiKey;
+    if (!key || key.cap_amount == null) return;
+    const { rows } = await q(
+      `SELECT COALESCE(sum(amount),0)::bigint spent FROM api_key_charges
+        WHERE key_id=$1 AND at > now() - ($2 || ' milliseconds')::interval`,
+      [key.id, String(key.cap_window_ms)]);
+    const spent = Number(rows[0].spent);
+    if (spent + money(amount) > Number(key.cap_amount))
+      throw Object.assign(
+        new Error(`This key's spending cap is ${key.cap_amount} per ${Math.round(key.cap_window_ms / 3600000)}h; it has ${spent} spent already.`),
+        { code: 'AMOUNT' });
+  }
+  const chargeKey = (req, amount) =>
+    req.apiKey ? q('INSERT INTO api_key_charges(key_id,amount) VALUES($1,$2)', [req.apiKey.id, money(amount)]).catch(() => {}) : null;
 
   /* ------------------------------------------------------------- accounts */
 
@@ -44,18 +67,30 @@ module.exports.mount = function mount(app, ctx) {
   const escrowAcc = () => accountFor('escrow', null);
 
   /* The only way money ever moves. Balances and the ledger are written together,
-     and a payment that would overdraw simply does not happen. */
-  async function pay(fromAcc, toAcc, amount, kind, note = '') {
+     and a payment that would overdraw simply does not happen.
+
+     Both halves of that sentence need a transaction to be true. The balance is
+     read, compared and written, so without a row lock two payments of the whole
+     balance can both read it, both pass the check and both go through — and
+     unlike the stockpile there is no CHECK constraint to catch the result,
+     because the Fed and the Treasury are supposed to go negative. FOR UPDATE
+     makes the second payment wait for the first to commit and then see the
+     balance it actually left behind.
+
+     `run` is an existing transaction runner, for callers that need this to be
+     part of a larger atomic step. Left out, it opens its own. */
+  async function pay(fromAcc, toAcc, amount, kind, note = '', run = null) {
     const amt = money(amount);
     if (amt <= 0) throw Object.assign(new Error('Amount must be positive.'), { code: 'AMOUNT' });
+    if (!run) return tx(r => pay(fromAcc, toAcc, amount, kind, note, r));
     if (fromAcc) {
-      const bal = (await q('SELECT balance FROM accounts WHERE id=$1', [fromAcc])).rows[0]?.balance ?? 0;
+      const bal = (await run('SELECT balance FROM accounts WHERE id=$1 FOR UPDATE', [fromAcc])).rows[0]?.balance ?? 0;
       if (Number(bal) < amt)
         throw Object.assign(new Error('There is not enough in that account.'), { code: 'FUNDS' });
-      await q('UPDATE accounts SET balance = balance - $1 WHERE id=$2', [amt, fromAcc]);
+      await run('UPDATE accounts SET balance = balance - $1 WHERE id=$2', [amt, fromAcc]);
     }
-    if (toAcc) await q('UPDATE accounts SET balance = balance + $1 WHERE id=$2', [amt, toAcc]);
-    await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
+    if (toAcc) await run('UPDATE accounts SET balance = balance + $1 WHERE id=$2', [amt, toAcc]);
+    await run('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
       fromAcc || null,
       toAcc || null,
       amt,
@@ -65,10 +100,59 @@ module.exports.mount = function mount(app, ctx) {
     return amt;
   }
 
+  /* The same movement, for the payers who are allowed to go below zero: the Fed
+     issuing, the Treasury paying the dividend, a guarantee, an army's wages.
+     pay() refuses an overdraft by design and those callers used to write both
+     balances by hand — four separate places doing it, each of them three
+     unprotected statements. They all come through here now, so there is one
+     place where money moves without a funds check and it is still atomic and
+     still writes the ledger. */
+  async function settle(fromAcc, toAcc, amount, kind, note = '', run = null) {
+    const amt = money(amount);
+    if (amt <= 0) throw Object.assign(new Error('Amount must be positive.'), { code: 'AMOUNT' });
+    if (!run) return tx(r => settle(fromAcc, toAcc, amount, kind, note, r));
+    if (fromAcc) await run('UPDATE accounts SET balance = balance - $1::bigint WHERE id=$2', [amt, fromAcc]);
+    if (toAcc) await run('UPDATE accounts SET balance = balance + $1::bigint WHERE id=$2', [amt, toAcc]);
+    await run('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)',
+      [fromAcc || null, toAcc || null, amt, kind, String(note).slice(0, 300)]);
+    return amt;
+  }
+
   const payErr = (res, err) => {
     if (err.code === 'FUNDS' || err.code === 'AMOUNT') return res.status(400).json({ error: err.message });
     throw err;
   };
+
+  async function addInventoryItem(ownerId, item, run = q) {
+    const category = GOOD_CATEGORIES.has(item?.good_category) ? item.good_category : null;
+    if (!category) return null;
+    const sourceKind = ['domestic_listing', 'foreign_offer'].includes(item?.source_kind)
+      ? item.source_kind
+      : null;
+    const sourceId = String(item?.source_id || '');
+    if (!sourceKind || !/^[1-9]\d*$/.test(sourceId)) return null;
+    return (
+      await run(
+        `INSERT INTO inventory_items(owner_id,title,description,good_category,unit,quantity,source_kind,source_id,source_name)
+         VALUES($1,$2,$3,$4,$5,1,$6,$7,$8)
+         ON CONFLICT (owner_id,source_kind,source_id) DO UPDATE
+           SET quantity=inventory_items.quantity+1,
+               title=EXCLUDED.title, description=EXCLUDED.description, good_category=EXCLUDED.good_category,
+               unit=EXCLUDED.unit, source_name=EXCLUDED.source_name, updated_at=now()
+         RETURNING *`,
+        [
+          ownerId,
+          String(item.title || 'Strategic good').slice(0, 120),
+          String(item.description || '').slice(0, 4000),
+          category,
+          String(item.unit || 'unit').slice(0, 80),
+          sourceKind,
+          sourceId,
+          String(item.source_name || '').slice(0, 160)
+        ]
+      )
+    ).rows[0];
+  }
 
   app.get(
     '/api/economy/me',
@@ -102,6 +186,20 @@ module.exports.mount = function mount(app, ctx) {
         businesses: mine,
         currency: ctx.CONFIG.currency_name || 'Mark'
       });
+    })
+  );
+
+  app.get(
+    '/api/economy/inventory',
+    auth,
+    wrap(async (req, res) => {
+      const { rows } = await q(
+        `SELECT * FROM inventory_items
+          WHERE owner_id=$1 AND quantity > 0
+          ORDER BY good_category, title, id`,
+        [req.user.id]
+      );
+      res.json(rows);
     })
   );
 
@@ -142,9 +240,12 @@ module.exports.mount = function mount(app, ctx) {
     })
   );
 
+  // The trace this codebase's traps ask for: a key with only the implicit
+  // read scope reaches requireScope('economy:pay') and is refused with a 403
+  // before a single query runs — pay() below is never called for it.
   app.post(
     '/api/economy/transfer',
-    auth,
+    requireScope('economy:pay'),
     slowWrites,
     wrap(async (req, res) => {
       const to = (
@@ -157,8 +258,10 @@ module.exports.mount = function mount(app, ctx) {
       const from = await accountFor('citizen', req.user.id);
       const dest = await accountFor('citizen', to.id);
       try {
+        await checkKeyCap(req, req.body?.amount);
         const amt = await pay(from.id, dest.id, req.body?.amount, 'transfer', String(req.body?.note || ''));
-        log(req.user.id, 'money.transfer', `${amt} to ${to.display_name}`);
+        await chargeKey(req, amt);
+        log(req.user.id, 'money.transfer', attribute(`${amt} to ${to.display_name}`, req));
         res.json({ ok: true });
       } catch (err) {
         return payErr(res, err);
@@ -180,20 +283,17 @@ module.exports.mount = function mount(app, ctx) {
 
     const t = await treasury();
     const citizens = (await q('SELECT id FROM users WHERE is_active AND approved')).rows;
+    // A citizen who has renounced draws no dividend — offshore.js clears their
+    // offices the moment they defect, and the dividend goes the same way, or a
+    // foreign subject would be paid by a Treasury they no longer answer to.
+    const defected = new Set(ctx.offshore?.defectors ? await ctx.offshore.defectors() : []);
     let paid = 0;
     for (const c of citizens) {
+      if (defected.has(c.id)) continue;
       const acc = await accountFor('citizen', c.id);
       // The Treasury may run a deficit on the dividend: the floor is not conditional
       // on the state being solvent, or it is not a floor.
-      await q('UPDATE accounts SET balance = balance + $1 WHERE id=$2', [amount, acc.id]);
-      await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
-        t.id,
-        acc.id,
-        amount,
-        'dividend',
-        `cycle ${cycleNo}`
-      ]);
-      await q('UPDATE accounts SET balance = balance - $1 WHERE id=$2', [amount, t.id]);
+      await settle(t.id, acc.id, amount, 'dividend', `cycle ${cycleNo}`);
       paid++;
     }
     await q('INSERT INTO payruns(kind,cycle_no,detail) VALUES($1,$2,$3)', [
@@ -228,15 +328,7 @@ module.exports.mount = function mount(app, ctx) {
       const amount = rates[o.office] || 0;
       if (amount <= 0) continue;
       const acc = await accountFor('citizen', o.user_id);
-      await q('UPDATE accounts SET balance = balance + $1 WHERE id=$2', [amount, acc.id]);
-      await q('UPDATE accounts SET balance = balance - $1 WHERE id=$2', [amount, t.id]);
-      await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
-        t.id,
-        acc.id,
-        amount,
-        'salary',
-        `${o.office}, cycle ${cycleNo}`
-      ]);
+      await settle(t.id, acc.id, amount, 'salary', `${o.office}, cycle ${cycleNo}`);
       paid++;
       total += amount;
     }
@@ -272,13 +364,19 @@ module.exports.mount = function mount(app, ctx) {
     const t = await treasury();
     const accs = (
       await q(`
-      SELECT a.id, a.balance, u.display_name FROM accounts a
+      SELECT a.id, a.balance, u.id AS user_id, u.display_name FROM accounts a
         JOIN users u ON u.id = a.owner_id
        WHERE a.owner_kind='citizen' AND u.is_active AND u.approved AND a.balance > 0`)
     ).rows;
+    // A defector's domestic account is frozen at the database — the ledger trigger
+    // refuses any row that pays FROM it — so trying to collect tax from one would
+    // throw mid-loop and take the rest of the payrun down with it. Their holdings
+    // sit exactly where they were left; the House can move them by bill.
+    const defected = new Set(ctx.offshore?.defectors ? await ctx.offshore.defectors() : []);
     let taken = 0,
       from = 0;
     for (const a of accs) {
+      if (defected.has(a.user_id)) continue;
       const due = Math.min(taxOn(a.balance), Number(a.balance));
       if (due <= 0) continue;
       await pay(a.id, t.id, due, 'tax', `cycle ${cycleNo}`);
@@ -315,6 +413,11 @@ module.exports.mount = function mount(app, ctx) {
         out.conflicts = await ctx.war.runConflicts(cycle, req.user.id);
       if (req.body?.diplomacy !== false && ctx.diplomacy?.runPayrun)
         out.diplomacy = await ctx.diplomacy.runPayrun(cycle, req.user.id);
+      // Havens freeze or thaw, and one fixing per power for this cycle. After
+      // diplomacy and war, so this cycle's trade and pressure are the numbers
+      // the fixing reads.
+      if (req.body?.offshore !== false && ctx.offshore?.runPayrun)
+        out.offshore = await ctx.offshore.runPayrun(cycle, req.user.id);
       res.json(out);
     })
   );
@@ -549,17 +652,52 @@ module.exports.mount = function mount(app, ctx) {
     '/api/economy/orders/:id/confirm',
     auth,
     wrap(async (req, res) => {
-      const o = (await q('SELECT * FROM orders WHERE id=$1', [req.params.id])).rows[0];
+      const o = (
+        await q(
+          `SELECT o.*, l.title, l.description, l.unit,
+                  COALESCE(l.good_category,b.good_category) AS good_category, b.name AS source_name
+             FROM orders o
+             LEFT JOIN listings l ON l.id=o.listing_id
+             LEFT JOIN businesses b ON b.id=o.business_id
+            WHERE o.id=$1`,
+          [req.params.id]
+        )
+      ).rows[0];
       if (!o) return res.status(404).json({ error: 'No such order.' });
       if (o.buyer_id !== req.user.id)
         return res.status(403).json({ error: 'Only the buyer confirms delivery.' });
       if (o.status !== 'escrow') return res.status(400).json({ error: 'That order is already settled.' });
       const held = await escrowAcc();
       const seller = await accountFor('business', o.business_id);
-      await pay(held.id, seller.id, o.price, 'purchase', `order ${o.id} delivered`);
-      await q("UPDATE orders SET status='delivered', settled_at=now() WHERE id=$1", [o.id]);
+      let inventoryItem = null;
+      try {
+        await tx(async run => {
+          const locked = (await run('SELECT status FROM orders WHERE id=$1 FOR UPDATE', [o.id])).rows[0];
+          if (locked?.status !== 'escrow')
+            throw Object.assign(new Error('That order is already settled.'), { status: 400 });
+          await pay(held.id, seller.id, o.price, 'purchase', `order ${o.id} delivered`, run);
+          await run("UPDATE orders SET status='delivered', settled_at=now() WHERE id=$1", [o.id]);
+          if (o.good_category && o.listing_id)
+            inventoryItem = await addInventoryItem(
+              req.user.id,
+              {
+                title: o.title,
+                description: o.description,
+                good_category: o.good_category,
+                unit: o.unit,
+                source_kind: 'domestic_listing',
+                source_id: o.listing_id,
+                source_name: o.source_name
+              },
+              run
+            );
+        });
+      } catch (err) {
+        if (err.status === 400) return res.status(400).json({ error: err.message });
+        throw err;
+      }
       log(req.user.id, 'economy.delivered', `order ${o.id}`);
-      res.json({ ok: true });
+      res.json({ ok: true, inventory_item: inventoryItem });
     })
   );
 
@@ -733,19 +871,14 @@ module.exports.mount = function mount(app, ctx) {
       const cycles = Math.max(1, Math.min(12, parseInt(req.body?.cycles, 10) || 4));
       const acc = await accountFor('citizen', req.user.id);
       // The bank may lend beyond its deposits: it is the state's bank, not a vault.
-      await q('UPDATE accounts SET balance = balance - $1 WHERE id=$2', [amt, (await bank()).id]);
-      await q('UPDATE accounts SET balance = balance + $1 WHERE id=$2', [amt, acc.id]);
-      await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
-        (await bank()).id,
-        acc.id,
-        amt,
-        'loan',
-        `${cycles} cycles at ${Math.round(rate * 100)}%`
-      ]);
-      const { rows } = await q(
-        'INSERT INTO loans(user_id,principal,outstanding,rate,due_cycle) VALUES($1,$2,$2,$3,$4) RETURNING *',
-        [req.user.id, amt, rate, (Number(req.body?.cycle_no) || 0) + cycles]
-      );
+      const bankId = (await bank()).id;
+      const rows = await tx(async run => {
+        await settle(bankId, acc.id, amt, 'loan', `${cycles} cycles at ${Math.round(rate * 100)}%`, run);
+        return (await run(
+          'INSERT INTO loans(user_id,principal,outstanding,rate,due_cycle) VALUES($1,$2,$2,$3,$4) RETURNING *',
+          [req.user.id, amt, rate, (Number(req.body?.cycle_no) || 0) + cycles]
+        )).rows;
+      });
       log(req.user.id, 'bank.borrow', `${amt} over ${cycles} cycles`);
       res.json(rows[0]);
     })
@@ -797,16 +930,11 @@ module.exports.mount = function mount(app, ctx) {
     for (const d of (await q('SELECT * FROM deposits WHERE amount > 0')).rows) {
       const interest = money(Number(d.amount) * dRate);
       if (interest <= 0) continue;
-      await q('UPDATE deposits SET amount = amount + $1 WHERE user_id=$2', [interest, d.user_id]);
-      await q('UPDATE accounts SET balance = balance - $1 WHERE id=$2', [interest, b.id]);
-      await q('UPDATE accounts SET balance = balance + $1 WHERE id=$2', [interest, b.id]);
-      await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)', [
-        b.id,
-        b.id,
-        interest,
-        'interest',
-        `deposit interest, cycle ${cycleNo}`
-      ]);
+      await tx(async run => {
+        await run('UPDATE deposits SET amount = amount + $1 WHERE user_id=$2', [interest, d.user_id]);
+        // The bank pays itself: a record, not a movement. Still written both sides.
+        await settle(b.id, b.id, interest, 'interest', `deposit interest, cycle ${cycleNo}`, run);
+      });
       credited += interest;
     }
 
@@ -1136,7 +1264,5 @@ module.exports.mount = function mount(app, ctx) {
      economy.js leaves ctx.economy undefined and the Treasury and the Fed simply
      do not answer — which is the honest state of affairs when there is no
      currency for them to be responsible for. */
-  ctx.economy = { accountFor, pay, money, treasury, bank, escrowAcc, taxOn };
-
-  console.log('[republic] the economy is open');
+  ctx.economy = { accountFor, pay, settle, money, treasury, bank, escrowAcc, taxOn, addInventoryItem };
 };

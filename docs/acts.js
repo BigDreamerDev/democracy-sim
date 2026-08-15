@@ -262,12 +262,13 @@
   /* ----------------------------------------------------------- the economy */
 
   async function viewEconomy(v) {
-    const [e, me, market, orders, bank] = await Promise.all([
+    const [e, me, market, orders, bank, inventory] = await Promise.all([
       api('/api/economy'),
       api('/api/economy/me'),
       api('/api/economy/market'),
       api('/api/economy/orders'),
-      api('/api/economy/bank')
+      api('/api/economy/bank'),
+      api('/api/economy/inventory')
     ]);
 
     v.innerHTML = `
@@ -380,6 +381,18 @@
             : '<div class="empty">Nothing is for sale yet. Found a business and list something.</div>'
         }
       </div>
+
+      ${String(STATE().config.goods_economy_enabled) === 'true' || inventory.length ? `<div class="card">
+        <h2>Your strategic goods</h2>
+        <p class="small muted">Domestic goods enter your inventory when you confirm delivery. Foreign-market goods enter it as soon as the purchase is paid.</p>
+        ${inventory.length ? `<div class="list">${inventory.map(i => {
+          const category = String(i.good_category || '').replaceAll('_', ' ');
+          const label = category ? category.charAt(0).toUpperCase() + category.slice(1) : 'Strategic good';
+          const qty = Number(i.quantity) || 0;
+          const unit = esc(i.unit || 'unit');
+          return `<div class="item"><div class="item-top"><span class="item-title">${esc(i.title)} <span class="tag">${esc(label)}</span></span><span class="result-count">${qty.toLocaleString()} × ${unit}</span></div>${i.description ? `<div class="small" style="margin-top:4px">${esc(i.description)}</div>` : ''}<div class="item-meta">${i.source_name ? `From ${esc(i.source_name)} · ` : ''}${when(i.updated_at || i.acquired_at)}</div></div>`;
+        }).join('')}</div>` : '<p class="small muted">You do not own any strategic goods yet.</p>'}
+      </div>` : ''}
 
       <div class="card">
         <h2>Your orders</h2>
@@ -850,6 +863,156 @@
   const STANDING_ORDER = ['allied', 'friendly', 'neutral', 'strained', 'hostile', 'at_war'];
   const standingLabel = s => (s === 'at_war' ? 'at war' : String(s || 'neutral'));
 
+  /* Nation export: SVG straight from the server, PNG drawn from that same SVG
+     on a canvas in the browser. `worldexport.js` deliberately has no
+     rasteriser — the browser already owns one — so the PNG button never
+     touches a new endpoint, it just paints what the SVG button downloads. */
+  function triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function exportFilename() {
+    return (STATE()?.config?.nation_name || 'republic')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'republic';
+  }
+
+  async function fetchExportSvgText() {
+    const svgText = await api('/api/world/export.svg?borders=1');
+    if (typeof svgText !== 'string' || !svgText.startsWith('<svg'))
+      throw new Error('The world export did not come back as an SVG.');
+    return svgText;
+  }
+
+  async function downloadWorldSvg() {
+    try {
+      const svgText = await fetchExportSvgText();
+      triggerDownload(new Blob([svgText], { type: 'image/svg+xml' }), `${exportFilename()}.svg`);
+    } catch (err) { toast(err.message, true); }
+  }
+
+  async function downloadWorldPng() {
+    try {
+      const svgText = await fetchExportSvgText();
+      const svgUrl = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
+      try {
+        const img = new Image();
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error('The exported SVG could not be drawn to a canvas.'));
+          img.src = svgUrl;
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width || 800;
+        canvas.height = img.naturalHeight || img.height || 800;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        if (!pngBlob) throw new Error('The canvas could not produce a PNG.');
+        triggerDownload(pngBlob, `${exportFilename()}.png`);
+      } finally {
+        URL.revokeObjectURL(svgUrl);
+      }
+    } catch (err) { toast(err.message, true); }
+  }
+
+  function exportButtonsHtml() {
+    return `<div class="row wm-export-row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button type="button" class="btn btn-sm" data-export-svg="1">Download SVG</button>
+      <button type="button" class="btn btn-sm" data-export-png="1">Download PNG</button>
+    </div>`;
+  }
+
+  function bindExportButtons() {
+    document.querySelectorAll('[data-export-svg]').forEach(b => (b.onclick = downloadWorldSvg));
+    document.querySelectorAll('[data-export-png]').forEach(b => (b.onclick = downloadWorldPng));
+  }
+
+  /* Subdivision geometry, fetched when it is actually needed.
+
+     It used to be one 2.9 MB script tag in index.html, parsed on every page
+     load by every user whether or not they ever opened the map, and precached
+     by the service worker with `addAll` — which is all-or-nothing, so one
+     failed fetch left the worker permanently uninstalled. Now the geometry is
+     one file per territory and a session downloads only the territories it
+     looks at.
+
+     `window.WORLD_SUBDIVISIONS` keeps the same `{ shapes, parents }` shape the
+     rest of this file already expects, so everything downstream is unchanged;
+     it simply starts empty and fills in. */
+  const SUBDIV = (window.WORLD_SUBDIVISIONS = window.WORLD_SUBDIVISIONS || {
+    shapes: {}, parents: {}, meta: null, loaded: new Set(), detail: new Set()
+  });
+
+  async function subdivIndex() {
+    if (SUBDIV.meta) return SUBDIV.meta;
+    const [meta, parents] = await Promise.all([
+      fetch('subdiv/index.json').then(r => r.json()),
+      fetch('subdiv/parents.json').then(r => r.json())
+    ]);
+    Object.assign(SUBDIV.parents, parents);
+    SUBDIV.meta = meta;
+    return meta;
+  }
+
+  /* `codes` are opaque subdivision ids handed out by the API. The parents index
+     is the only way to know which territory file holds each one — the client
+     cannot work it out without downloading everything, which is the whole point
+     of the split. Anything whose parent we do not recognise is skipped rather
+     than guessed at. */
+  async function loadSubdivisions(codes, { detail = false } = {}) {
+    if (!codes || !codes.length) return SUBDIV;
+    await subdivIndex();
+    const want = new Set();
+    for (const c of codes) {
+      const t = SUBDIV.parents[c];
+      if (!t) continue;
+      const done = detail ? SUBDIV.detail : SUBDIV.loaded;
+      if (!done.has(t)) want.add(t);
+    }
+    await Promise.all([...want].map(async t => {
+      try {
+        const j = await fetch(`subdiv/${t}${detail ? '.d' : ''}.json`).then(r => r.ok ? r.json() : null);
+        if (!j) return;
+        Object.assign(SUBDIV.shapes, j.shapes || {});
+        (detail ? SUBDIV.detail : SUBDIV.loaded).add(t);
+      } catch { /* a territory that will not load simply does not draw */ }
+    }));
+    return SUBDIV;
+  }
+
+  /* One whole territory, by its own code. The picker needs every subdivision of
+     the country being edited, not just the ones already owned, so it cannot go
+     through the parents index. Detail geometry, because this is the view where
+     somebody is choosing individual subdivisions and needs to tell them apart. */
+  async function loadTerritoryShapes(territory) {
+    const t = String(territory);
+    if (SUBDIV.detail.has(t)) return SUBDIV;
+    await subdivIndex();
+    const j = await fetch(`subdiv/${t}.d.json`).then(r => r.ok ? r.json() : null);
+    if (j) {
+      Object.assign(SUBDIV.shapes, j.shapes || {});
+      for (const c of Object.keys(j.shapes || {})) SUBDIV.parents[c] = t;
+      SUBDIV.detail.add(t);
+      SUBDIV.loaded.add(t);
+    }
+    return SUBDIV;
+  }
+
+  /* Every subdivision the map is about to mention, so one pass fetches the lot
+     rather than one request per territory as the renderer walks them. */
+  function subdivisionCodesIn(world) {
+    const out = [];
+    for (const c of world?.republic?.subdivisions || []) out.push(c);
+    for (const p of world?.powers || []) for (const c of p.subdivisions || []) out.push(c);
+    return out;
+  }
+
   function worldMap(world) {
     const M = window.WORLD_MAP;
     const S = window.WORLD_SUBDIVISIONS || { shapes: {}, parents: {} };
@@ -1046,6 +1209,7 @@
         <span class="wm-key"><i class="wm-key-hatch"></i>not recognised</span>
         <span class="wm-key"><i class="wm-key-land"></i>unclaimed (${unclaimed})</span>
       </div>
+      ${exportButtonsHtml()}
       ${hasSubdivisionGeometry ? '<p class="small muted wm-boundary-credit">Subdivision boundaries: geoBoundaries gbOpen ADM1 (CC BY 4.0).</p>' : ''}
       <div id="wm-detail" class="wm-detail" hidden></div>
     </section>`;
@@ -1314,14 +1478,30 @@
         listEl.innerHTML = '<p class="small muted">No top-level subdivision data is available for this country. An existing whole-country legacy assignment is preserved until you release it.</p>';
         return;
       }
+      /* The name table and the geometry do not always agree: the source draws
+         some countries at a different granularity than ISO does, so a handful of
+         named subdivisions have no shape. Selecting one used to be silent — it
+         simply drew nothing, which is most of what "the map is broken" meant.
+         Say so instead, and refuse the selection rather than accept a holding
+         nobody can see on the map. */
+      const unmapped = x => !SUBDIV.shapes[String(x.code)];
       listEl.innerHTML = visible.length ? visible.map(x => {
         const blocked = blockedSubdivisions.get(String(x.code));
         const checked = selected.has(x.code);
-        return `<label class="republic-subdivision-option ${blocked ? 'is-blocked' : ''}">
-          <input type="checkbox" value="${esc(x.code)}" ${checked ? 'checked' : ''} ${blocked && !checked ? 'disabled' : ''}>
-          <span><strong>${esc(x.name)}</strong><small>${esc([x.type, blocked ? `Held by ${blocked.owner_name || 'another state'}` : ''].filter(Boolean).join(' · '))}</small></span>
+        const bare = unmapped(x) && !checked;
+        return `<label class="republic-subdivision-option ${blocked ? 'is-blocked' : ''} ${bare ? 'is-unmapped' : ''}">
+          <input type="checkbox" value="${esc(x.code)}" ${checked ? 'checked' : ''} ${(blocked || bare) && !checked ? 'disabled' : ''}>
+          <span><strong>${esc(x.name)}</strong><small>${esc([
+            x.type,
+            blocked ? `Held by ${blocked.owner_name || 'another state'}` : '',
+            bare ? 'No mapped border — cannot be assigned' : ''
+          ].filter(Boolean).join(' · '))}</small></span>
         </label>`;
       }).join('') : '<p class="small muted">No subdivisions match that search.</p>';
+      const bareCount = visible.filter(unmapped).length;
+      if (bareCount)
+        listEl.insertAdjacentHTML('afterbegin',
+          `<p class="small muted">${bareCount} of ${visible.length} have no mapped border and cannot be assigned. The map only hands out what it can draw.</p>`);
       listEl.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach(cb => cb.onchange = () => {
         const meta = rows.find(x => x.code === cb.value);
         if (cb.checked) selected.set(meta.code, { country_code: code, ...meta }); else selected.delete(cb.value);
@@ -1342,7 +1522,14 @@
       listEl.innerHTML = '<p class="small muted">Loading subdivisions…</p>';
       try {
         if (!loaded.has(code)) {
-          const data = await api(`/api/admin/territories/subdivisions/${encodeURIComponent(code)}`);
+          /* Names come from the server, which is the only place they exist;
+             geometry comes from that territory's own file. Both are needed
+             before the picker can draw a preview, and neither is worth having
+             until the Returning Officer opens this country. */
+          const [data] = await Promise.all([
+            api(`/api/admin/territories/subdivisions/${encodeURIComponent(code)}`),
+            loadTerritoryShapes(code).catch(() => {})
+          ]);
           loaded.set(code, data.subdivisions || []);
         }
         if (legacy.has(code) && loaded.get(code).length) {
@@ -1429,6 +1616,157 @@
     });
   }
 
+  /* The procedural world generator. Power is set before any land is handed
+     out, so what this form actually chooses is a spread of strength around
+     the Republic's own — the map is only asked afterwards to make that real.
+     Nothing exists until the Returning Officer commits a preview; discard as
+     many as it takes. */
+  function worldgenNationRow(n) {
+    return `<div class="item">
+      <div class="item-top">
+        <span class="item-title">${esc(n.name)}</span>
+        <span class="tag${n.satisfied ? ' on-green' : ''}">${esc(n.target_multiple)}x target · ${esc(n.achieved_multiple)}x achieved</span>
+      </div>
+      <p class="small muted">${n.subdivision_count} subdivision(s) · strength ${n.strength}${n.name_degraded ? ' · name drawn from the reserve list' : ''}</p>
+      <p class="small muted">${esc(n.stopped_because || '')}</p>
+    </div>`;
+  }
+
+  function worldgenPlanHtml(plan) {
+    if (!plan) return '';
+    const nations = plan.nations || [];
+    return `<div class="stack" id="worldgen-plan" style="margin-top:14px">
+      <p class="small muted">Seed <code>${esc(plan.seed)}</code> · ${nations.length} power(s) · Republic strength ${esc(plan.republic_strength)} (${esc(plan.republic_strength_source || '')}) · ${esc(plan.claimed_by_generation)} of ${esc(plan.unclaimed_before)} unclaimed pieces used, ${esc(plan.unclaimed_after)} left.</p>
+      <img class="worldgen-preview-img" alt="Preview of a generated world" data-preview-for="${plan.id}">
+      ${(plan.warnings || []).length ? `<div class="list">${plan.warnings.map(w => `<p class="small muted">${esc(w)}</p>`).join('')}</div>` : ''}
+      <div class="list">${nations.map(worldgenNationRow).join('')}</div>
+      <p class="small muted">${esc(plan.recognition || '')}</p>
+      ${plan.status === 'preview' || !plan.status
+        ? `<div class="row" style="gap:8px">
+        <button class="btn btn-primary btn-sm" data-worldgen-commit="${plan.id}">Commit this world</button>
+        <button class="btn btn-sm" data-worldgen-discard="${plan.id}">Discard</button>
+      </div>`
+        : `<p class="small muted">This generation is ${esc(plan.status)}.</p>`}
+      <div id="worldgen-commit-result"></div>
+    </div>`;
+  }
+
+  async function loadWorldgenPreview(id) {
+    const img = document.querySelector(`img[data-preview-for="${id}"]`);
+    if (!img) return;
+    try {
+      const svgText = await api(`/api/world/generations/${id}/preview.svg`);
+      if (typeof svgText !== 'string' || !svgText.startsWith('<svg')) throw new Error('no preview');
+      const url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
+      if (img.dataset.blobUrl) URL.revokeObjectURL(img.dataset.blobUrl);
+      img.dataset.blobUrl = url;
+      img.src = url;
+    } catch { /* the image tag simply stays broken; the numbers above still tell the story */ }
+  }
+
+  function worldgenSectionHtml(gens) {
+    const rows = gens?.generations || [];
+    return `<details class="card dip-ro-create dip-ro-worldgen"><summary><strong>Generate a world</strong></summary>
+      <div class="stack" style="margin-top:12px">
+        <p class="small muted">The Republic's own strength is read first, and every neighbour is set as a multiple of it — only then is the map asked to satisfy those numbers. Every power arrives unrecognised. Nothing goes live until you commit; throw a preview away and try another seed as often as you like.</p>
+        <form id="worldgen-generate" class="stack">
+          <div class="grid2">
+            <label class="field"><span>Seed (optional)</span><input name="seed" placeholder="random"></label>
+            <label class="field"><span>Number of powers</span><input name="powers" type="number" min="1" max="24" value="8"></label>
+          </div>
+          <div class="grid2">
+            <label class="field"><span>Fill share (0.2–0.95)</span><input name="fill_share" type="number" step="0.01" min="0.2" max="0.95" value="0.72"></label>
+            <label class="field"><span>Reach (40–400)</span><input name="reach" type="number" min="40" max="400" value="170"></label>
+          </div>
+          <label class="field"><span>Republic strength override (optional)</span><input name="republic_strength" type="number" min="1" placeholder="read from war.js if left blank"></label>
+          <button class="btn btn-primary">Generate preview</button>
+        </form>
+        <div id="worldgen-active"></div>
+        <h3 class="small muted" style="margin-top:6px">Past generations</h3>
+        <div class="list" id="worldgen-list">${
+          rows.length
+            ? rows.map(g => `<div class="item">
+          <div class="item-top"><span class="item-title">Seed ${esc(g.seed)}</span><span class="tag${g.status === 'committed' ? ' on-green' : ''}">${esc(g.status)}</span></div>
+          <p class="small muted">${esc(g.powers)} power(s) · Republic strength ${esc(g.republic_strength)}${g.created_by_name ? ` · ${esc(g.created_by_name)}` : ''}${g.committed_at ? ` · committed ${esc(g.committed_at)}` : ''}</p>
+          ${g.status === 'preview' ? `<div class="row" style="gap:8px"><button type="button" class="btn btn-sm" data-worldgen-view="${g.id}">Open preview</button></div>` : ''}
+        </div>`).join('')
+            : '<p class="muted">No generations yet.</p>'
+        }</div>
+      </div>
+    </details>`;
+  }
+
+  function bindWorldgenPlanButtons() {
+    document.querySelectorAll('[data-worldgen-commit]').forEach(b => {
+      b.onclick = async () => {
+        if (!confirm('Commit this world? Its powers become real and the generation cannot be discarded afterward.')) return;
+        try {
+          const r = await api(`/api/world/generations/${b.dataset.worldgenCommit}/commit`, { method: 'POST' });
+          const out = document.querySelector('#worldgen-commit-result');
+          if (out) {
+            out.innerHTML = `<p class="small"><strong>Committed. Each key is shown once — save it now.</strong></p>` +
+              (r.powers || []).map(p => `<p class="small">${esc(p.name)} · ${esc(p.subdivisions)} subdivision(s)</p><textarea readonly>${esc(p.key)}</textarea>`).join('');
+          }
+          toast(`${(r.powers || []).length} power(s) committed.`);
+        } catch (err) { toast(err.message, true); }
+      };
+    });
+    document.querySelectorAll('[data-worldgen-discard]').forEach(b => {
+      b.onclick = async () => {
+        if (!confirm('Discard this preview?')) return;
+        try {
+          await api(`/api/world/generations/${b.dataset.worldgenDiscard}/discard`, { method: 'POST' });
+          toast('Preview discarded.');
+          viewDiplomacy();
+        } catch (err) { toast(err.message, true); }
+      };
+    });
+  }
+
+  function bindWorldgenSection() {
+    const form = document.querySelector('#worldgen-generate');
+    if (form) {
+      form.onsubmit = async ev => {
+        ev.preventDefault();
+        const fd = Object.fromEntries(new FormData(ev.target));
+        const body = {
+          seed: fd.seed || undefined,
+          powers: fd.powers || undefined,
+          fill_share: fd.fill_share || undefined,
+          reach: fd.reach || undefined,
+          republic_strength: fd.republic_strength || undefined
+        };
+        const active = document.querySelector('#worldgen-active');
+        if (active) active.innerHTML = '<p class="small muted">Generating…</p>';
+        try {
+          const plan = await api('/api/world/generate', { method: 'POST', body });
+          if (active) active.innerHTML = worldgenPlanHtml(plan);
+          bindWorldgenPlanButtons();
+          loadWorldgenPreview(plan.id);
+          toast(`Preview generated: ${(plan.nations || []).length} power(s).`);
+        } catch (err) {
+          if (active) active.innerHTML = '';
+          toast(err.message, true);
+        }
+      };
+    }
+    document.querySelectorAll('[data-worldgen-view]').forEach(b => {
+      b.onclick = async () => {
+        const active = document.querySelector('#worldgen-active');
+        if (active) active.innerHTML = '<p class="small muted">Loading…</p>';
+        try {
+          const plan = await api(`/api/world/generations/${b.dataset.worldgenView}`);
+          if (active) {
+            active.innerHTML = worldgenPlanHtml(plan);
+            active.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+          bindWorldgenPlanButtons();
+          loadWorldgenPreview(plan.id);
+        } catch (err) { toast(err.message, true); }
+      };
+    });
+  }
+
   /* The Foreign Office. Appointed by the government, dismissable by it, and
      holding no power to bind — which is what the note under the name says,
      because a player looking at a minister needs to know that immediately. */
@@ -1444,6 +1782,7 @@
       <p class="small muted">Appointed by the ${esc(by)} and dismissable by them. Holds the channel to foreign governments, and binds nothing: treaties, recognition and emergencies all arrive as bills, and the House votes on every one.${
         fo.minister ? '' : ' While the office is empty the President speaks for the Republic.'
       }</p>
+      ${exportButtonsHtml()}
       ${
         canAppoint || isMinister
           ? `<div class="row" style="margin-top:14px;gap:8px;flex-wrap:wrap">
@@ -1495,7 +1834,7 @@
     const isPresident = !!me?.offices?.includes('president');
     const isSpeaker = !!me?.offices?.includes('speaker');
     const isMinister = !!me?.offices?.includes('foreign_minister');
-    const [powers, dispatches, treaties, offers, conflicts, balance, adminPowers, world, fo, republicTerritoryAdmin] = await Promise.all([
+    const [powers, dispatches, treaties, offers, conflicts, balance, adminPowers, world, fo, republicTerritoryAdmin, govCatalogue, worldgenGens] = await Promise.all([
       api('/api/diplomacy/powers'),
       api('/api/diplomacy/dispatches'),
       api('/api/diplomacy/treaties'),
@@ -1505,8 +1844,16 @@
       me?.is_admin ? api('/api/admin/foreign/powers') : Promise.resolve([]),
       api('/api/diplomacy/map').catch(() => null),
       api('/api/diplomacy/foreign-office').catch(() => null),
-      me?.is_admin ? api('/api/admin/republic/territories').catch(() => ({ subdivisions: [], legacy_territories: [] })) : Promise.resolve(null)
+      me?.is_admin ? api('/api/admin/republic/territories').catch(() => ({ subdivisions: [], legacy_territories: [] })) : Promise.resolve(null),
+      /* Catches rather than throws: an older server has no archetypes route and
+         the whole Diplomacy page should not go blank because of it. */
+      me?.is_admin ? api('/api/admin/foreign/archetypes').catch(() => ({ archetypes: [], strengths: {}, default_agent: null })) : Promise.resolve(null),
+      /* Same reasoning: an older server has no world generator at all. */
+      me?.is_admin ? api('/api/world/generations').catch(() => ({ generations: [] })) : Promise.resolve(null)
     ]);
+    /* Before the map is drawn, not while. The renderer is synchronous and
+       returns a string, so anything it needs has to be in hand first. */
+    await loadSubdivisions(subdivisionCodesIn(world)).catch(() => {});
     /* The channel belongs to the Foreign Minister. The President keeps it only
        while that office is empty — they assent to treaties, and negotiating
        what you then assent to is one person doing both halves. */
@@ -1522,6 +1869,18 @@
         ultimatum: 'Ultimatum',
         other: 'Other'
       })[k] || 'Dispatch';
+    const goodLabel = k =>
+      ({
+        food: 'Food',
+        raw_materials: 'Raw materials',
+        energy: 'Energy',
+        industrial_goods: 'Industrial goods',
+        technology: 'Technology',
+        arms: 'Arms',
+        luxury: 'Luxury',
+        services: 'Services'
+      })[k] || '';
+    const foreignTradeTax = Number(STATE().config.foreign_trade_tax) || 0;
     const activeAdminPowers = adminPowers.filter(p => !p.revoked_at);
     const messageForm =
       canDiplomat && powers.length
@@ -1563,7 +1922,19 @@
 
       <div class="dip-grid">
         <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Ratification desk</span><h2>Treaties</h2></div><div class="list">${treaties.length ? treaties.map(t => `<div class="item"><div class="item-top"><span class="item-title">${esc(t.title)}</span><span class="tag">${esc(t.republic_status)}</span></div><p class="small muted">${esc(t.power_name)} · ${esc(t.bill_ref || '')}</p></div>`).join('') : '<p class="muted">No treaties.</p>'}</div></section>
-        <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Commercial attaché</span><h2>Foreign market</h2></div><div class="list">${offers.length ? offers.map(o => `<div class="item"><div class="item-top"><span class="item-title">${esc(o.title)} · ${esc(o.power_name)}</span><span class="money">${o.price}</span></div>${me ? `<button class="btn btn-sm" data-foreign-buy="${o.id}">Buy</button>` : ''}</div>`).join('') : '<p class="muted">No foreign offers.</p>'}</div></section>
+        <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Commercial attaché</span><h2>Foreign market</h2></div><div class="list">${offers.length ? offers.map(o => {
+          const price = Number(o.price) || 0;
+          const tax = Math.round(price * foreignTradeTax);
+          const total = price + tax;
+          const category = goodLabel(o.good_category);
+          const stock = o.stock === null || o.stock === undefined ? 'No stock limit' : `${Number(o.stock).toLocaleString()} in stock`;
+          const unit = o.unit ? ` · per ${esc(o.unit)}` : '';
+          return `<div class="item"><div class="item-top"><span class="item-title">${esc(o.title)} · ${esc(o.power_name)}</span><span class="money">${cash(total)}</span></div>
+            ${(category || o.unit || (o.stock !== null && o.stock !== undefined)) ? `<p class="small muted">${category ? `<span class="tag">${esc(category)}</span> ` : ''}${esc(stock)}${unit}</p>` : ''}
+            ${o.description ? `<p>${esc(o.description)}</p>` : ''}
+            <p class="small muted">${cash(price)} price${tax ? ` + ${cash(tax)} import tariff` : ' · no import tariff'} · <strong>${cash(total)} total</strong></p>
+            ${me ? `<button class="btn btn-sm" data-foreign-buy="${o.id}">Buy</button>` : ''}</div>`;
+        }).join('') : '<p class="muted">No foreign offers.</p>'}</div></section>
       </div>
 
       <div class="dip-grid">
@@ -1583,7 +1954,8 @@
           ? `<section class="dip-ro"><div class="dip-ro-head"><span class="dip-section-kicker">Restricted operations console</span><h2>Returning Officer — foreign powers</h2></div><p class="small muted">Operational control of foreign powers and their LLM governments. Recognition and treaties still follow the Republic's political rules. Every change made here is written to the public record.</p>
         ${republicTerritoryPicker(world, republicTerritoryAdmin)}
         <div class="card dip-ro-console"><label class="field"><span>Manage power</span><select id="ro-power-select">${adminPowers.map(p => `<option value="${p.id}">${esc(p.name)}${p.revoked_at ? ' (revoked)' : ''}</option>`).join('')}</select></label><div id="ro-power-panel"></div></div>
-        <details class="card dip-ro-create"><summary><strong>Create a foreign power</strong></summary><form id="newpower" class="stack" style="margin-top:12px"><div class="grid2"><label class="field"><span>Power name</span><input name="name" required></label><label class="field"><span>Adjective</span><input name="adjective"></label></div><div class="grid2"><label class="field"><span>Colour</span><input name="colour" type="color" value="#5B2E9E"></label><label class="field"><span>Standing</span><select name="standing"><option>neutral</option><option>friendly</option><option>allied</option><option>strained</option><option>hostile</option><option>at_war</option></select></label></div><button class="btn btn-primary">Create power</button><div id="newpowerkey"></div></form></details>
+        <details class="card dip-ro-create" open><summary><strong>Create a foreign power</strong></summary><form id="newpower" class="stack" style="margin-top:12px"><p class="small muted">A name, a government and a rough strength is the whole of it. The cabinet, its ministers and their instructions come with the archetype, and the models are configured for you${govCatalogue?.default_agent ? ` — this server will use <strong>${esc(govCatalogue.default_agent.provider)}</strong>` : ''}. Everything below the button is optional.</p><div class="grid2"><label class="field"><span>Power name</span><input name="name" required></label><label class="field"><span>Government</span><select name="archetype" id="newpower-archetype">${(govCatalogue?.archetypes || []).map(a => `<option value="${esc(a.id)}">${esc(a.label)}</option>`).join('')}<option value="">(no government — configure by hand)</option></select></label></div><label class="field"><span>Rough strength</span><select name="strength">${Object.entries(govCatalogue?.strengths || {}).map(([k, v]) => `<option value="${esc(k)}" ${k === 'matched' ? 'selected' : ''}>${esc(k)} (${v})</option>`).join('')}</select></label><p class="small muted" id="newpower-blurb"></p><button class="btn btn-primary">Create power</button><details><summary class="small muted">Appearance and standing</summary><div class="grid2" style="margin-top:8px"><label class="field"><span>Adjective</span><input name="adjective"></label><label class="field"><span>Colour</span><input name="colour" type="color" value="#5B2E9E"></label></div><label class="field"><span>Standing</span><select name="standing"><option>neutral</option><option>friendly</option><option>allied</option><option>strained</option><option>hostile</option><option>at_war</option></select></label></details><div id="newpowerkey"></div></form></details>
+        ${worldgenGens ? worldgenSectionHtml(worldgenGens) : ''}
       </section>`
           : ''
       }
@@ -1591,7 +1963,9 @@
 
     bindWorldMap(world);
     bindForeignOffice();
+    bindExportButtons();
     if (me?.is_admin) bindRepublicTerritoryPicker(republicTerritoryAdmin, viewDiplomacy);
+    if (me?.is_admin) bindWorldgenSection();
 
     if (document.querySelector('#official-foreign-message'))
       document.querySelector('#official-foreign-message').onsubmit = async ev => {
@@ -1649,7 +2023,7 @@
         (btn.onclick = async () => {
           try {
             const r = await api(`/api/diplomacy/offers/${btn.dataset.foreignBuy}/buy`, { method: 'POST' });
-            toast(`Bought for ${r.total}.`);
+            toast(`Bought for ${r.total}.${r.inventory ? ' Added to your strategic goods inventory.' : ''}`);
             viewDiplomacy();
           } catch (err) {
             toast(err.message, true);
@@ -1675,7 +2049,23 @@
           }
         })
     );
-    if (document.querySelector('#newpower'))
+    /* What the chosen government actually is, before it is created. The point
+       of archetypes is that they change mechanics, so the mechanics are what
+       this shows: who decides, how fast, and what it will refuse. */
+    const archetypeSummary = a =>
+      a
+        ? `<strong>${esc(a.label)}</strong> — ${esc(a.blurb)}<br>Decides by <strong>${esc(a.decision_method)}</strong> · ${a.actions_per_cycle} action(s) per cycle · ${a.cabinet.length} ministers · under pressure it <strong>${esc(a.posture === 'escalate' ? 'escalates' : a.posture === 'stall' ? 'stalls' : a.posture === 'trade' ? 'trades' : 'measures')}</strong>.<br>Will never: ${a.refusals.map(r => esc(r.why)).join(' ')}`
+        : 'No government. You will have to add ministers and instructions by hand before this power does anything.';
+    if (document.querySelector('#newpower')) {
+      const arSel = document.querySelector('#newpower-archetype'),
+        arBlurb = document.querySelector('#newpower-blurb');
+      const showBlurb = () => {
+        arBlurb.innerHTML = archetypeSummary((govCatalogue?.archetypes || []).find(a => a.id === arSel.value));
+      };
+      if (arSel && arBlurb) {
+        arSel.onchange = showBlurb;
+        showBlurb();
+      }
       document.querySelector('#newpower').onsubmit = async ev => {
         ev.preventDefault();
         try {
@@ -1684,12 +2074,37 @@
             body: Object.fromEntries(new FormData(ev.target))
           });
           document.querySelector('#newpowerkey').innerHTML =
-            `<p class="small"><strong>Save this key now; it is shown once.</strong></p><textarea readonly>${esc(r.key)}</textarea>`;
+            `${r.government ? `<p class="small">Installed a <strong>${esc(r.government.label || r.government.archetype)}</strong>: ${r.government.ministers} ministers deciding by ${esc(r.government.decision_method)}, running on <strong>${esc(r.government.provider)}/${esc(r.government.model)}</strong>. It is ready to run a turn now.</p>` : ''}<p class="small"><strong>Save this key now; it is shown once.</strong></p><textarea readonly>${esc(r.key)}</textarea>`;
           toast('Foreign power created and recorded.');
         } catch (err) {
           toast(err.message, true);
         }
       };
+    }
+
+    /* What each minister proposed, who voted for it and what carried.
+       Debugging a cabinet you cannot see is guesswork — and until this existed,
+       a turn that did nothing and a turn where everything was refused by the
+       archetype looked identical from here. */
+    function deliberationHtml(d) {
+      if (!d || !d.turn) return '<p class="muted">This government has not met yet.</p>';
+      const t = d.turn,
+        refused = t.result?.refused || [];
+      if (!d.proposals.length)
+        return `<p class="muted">Turn #${t.id} · cycle ${t.cycle_number}: no minister put a usable proposal to the cabinet.</p>${refused.length ? `<ul class="small muted">${refused.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}`;
+      return `<p class="small muted">Turn #${t.id} · cycle ${t.cycle_number} · ${d.proposals.length} proposal(s), voting round ${d.last_round}${t.result?.status ? ` · outcome <strong>${esc(t.result.status)}</strong>` : ''}${t.result?.error ? ` — ${esc(t.result.error)}` : ''}</p>
+        <div class="list">${d.proposals
+          .map(
+            p => `<div class="item"${p.carried ? ' style="border-left:3px solid var(--accent,#5B2E9E)"' : ''}>
+              <div class="item-top"><span class="item-title">${esc(p.display_name)} · ${esc(String(p.role).replace(/_/g, ' '))}</span><span class="tag${p.carried ? ' on-green' : ''}">${esc(p.action_kind)}${p.carried ? ' · carried' : ''}</span></div>
+              <p class="small">${esc(p.rationale || '')}</p>
+              <p class="small muted">priority ${p.priority} · ${p.votes} vote(s), weight ${p.weight}${p.voters.length ? ` — ${p.voters.map(v => esc(v.display_name)).join(', ')}` : ' — nobody'}</p>
+              ${p.voters.filter(v => v.reasoning).map(v => `<p class="small muted">${esc(v.display_name)}: ${esc(v.reasoning)}</p>`).join('')}
+            </div>`
+          )
+          .join('')}</div>
+        ${refused.length ? `<p class="small muted">Refused by this government: </p><ul class="small muted">${refused.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}`;
+    }
 
     async function loadRoPower(id) {
       const panel = document.querySelector('#ro-power-panel');
@@ -1697,19 +2112,24 @@
       panel.innerHTML = '<p class="muted">Loading…</p>';
       try {
         const p = adminPowers.find(x => String(x.id) === String(id));
-        const [detail, territoryAdmin] = await Promise.all([
+        const [detail, territoryAdmin, delib] = await Promise.all([
           api(`/api/admin/foreign/powers/${id}/government`),
-          api(`/api/admin/foreign/powers/${id}/territories`)
+          api(`/api/admin/foreign/powers/${id}/territories`),
+          api(`/api/admin/foreign/powers/${id}/deliberation`).catch(() => null)
         ]);
         const g = detail.government || {};
         const agents = detail.agents || [];
         panel.innerHTML = `<div class="stack" style="margin-top:12px">
           <form id="ro-power-edit" class="stack"><div class="grid2"><label class="field"><span>Adjective</span><input name="adjective" value="${esc(p?.adjective || '')}"></label><label class="field"><span>Colour</span><input name="colour" type="color" value="${esc(p?.colour || '#5B2E9E')}"></label></div><label class="field"><span>Standing</span><select name="standing">${['allied', 'friendly', 'neutral', 'strained', 'hostile', 'at_war'].map(x => `<option value="${x}" ${p?.standing === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label><button class="btn">Save power settings</button></form>
           <div class="row"><button class="btn btn-sm" id="ro-rotate-key">Rotate foreign API key</button>${p?.revoked_at ? '' : `<button class="btn btn-sm" id="ro-revoke-power">Revoke power</button>`}</div><div id="ro-key-output"></div>
-          <h3>LLM government</h3><form id="ro-government" class="stack"><div class="grid2"><label class="field"><span>Decision method</span><select name="decision_method">${['executive', 'cabinet', 'weighted', 'consensus'].map(x => `<option value="${x}" ${g.decision_method === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label><label class="field"><span>Decision threshold</span><input name="decision_threshold" type="number" min="0" max="1" step="0.05" value="${g.decision_threshold ?? 0.5}"></label></div><label class="field"><span>Max deliberation rounds</span><input name="max_rounds" type="number" min="1" max="4" value="${g.max_rounds ?? 1}"></label><button class="btn">Save government</button></form>
+          <h3>Government</h3>
+          <p class="small muted">${archetypeSummary(detail.archetype)}</p>
+          <form id="ro-archetype" class="row"><select name="archetype">${(govCatalogue?.archetypes || []).map(a => `<option value="${esc(a.id)}" ${detail.archetype?.id === a.id ? 'selected' : ''}>${esc(a.label)}</option>`).join('')}</select><button class="btn btn-sm">${detail.archetype ? 'Replace government' : 'Install a government'}</button></form>
+          <details><summary class="small muted">Decision machinery by hand</summary><form id="ro-government" class="stack" style="margin-top:8px"><div class="grid2"><label class="field"><span>Decision method</span><select name="decision_method">${['executive', 'cabinet', 'weighted', 'consensus'].map(x => `<option value="${x}" ${g.decision_method === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label><label class="field"><span>Decision threshold</span><input name="decision_threshold" type="number" min="0" max="1" step="0.05" value="${g.decision_threshold ?? 0.5}"></label></div><label class="field"><span>Max deliberation rounds</span><input name="max_rounds" type="number" min="1" max="4" value="${g.max_rounds ?? 1}"></label><button class="btn">Save government</button></form></details>
           <h3>Ministers</h3><div class="list">${agents.length ? agents.map(a => `<div class="item"><div class="item-top"><span class="item-title">${esc(a.display_name)} · ${esc(a.role)}</span><span class="tag">${esc(a.model_provider)} / ${esc(a.model_name)}</span></div><p class="small muted">weight ${a.vote_weight} · ${a.active ? 'active' : 'inactive'}</p><button class="btn btn-sm" data-agent-toggle="${a.id}" data-agent-active="${a.active ? '1' : '0'}">${a.active ? 'Deactivate' : 'Activate'}</button></div>`).join('') : '<p class="muted">No ministers configured.</p>'}</div>
-          <form id="ro-new-agent" class="stack"><div class="grid2"><label class="field"><span>Role</span><input name="role" placeholder="foreign_minister" required></label><label class="field"><span>Character name</span><input name="display_name" required></label></div><div class="grid2"><label class="field"><span>Free provider</span><select name="model_provider"><option value="groq">groq</option><option value="gemini">gemini</option><option value="openrouter">openrouter</option><option value="mock">mock</option></select></label><label class="field"><span>Model</span><input name="model_name" value="llama-3.1-8b-instant"></label></div><label class="field"><span>Role instructions</span><textarea name="system_prompt" rows="4"></textarea></label><button class="btn">Add minister</button></form>
+          <details><summary class="small muted">Add a minister by hand, or change models</summary><form id="ro-new-agent" class="stack" style="margin-top:8px"><div class="grid2"><label class="field"><span>Role</span><input name="role" placeholder="foreign_minister" required></label><label class="field"><span>Character name</span><input name="display_name" required></label></div><div class="grid2"><label class="field"><span>Free provider</span><select name="model_provider"><option value="groq">groq</option><option value="gemini">gemini</option><option value="openrouter">openrouter</option><option value="mock">mock</option></select></label><label class="field"><span>Model</span><input name="model_name" value="llama-3.1-8b-instant"></label></div><div class="row"><button class="btn btn-sm" type="button" id="ro-test-key">Test this model now</button></div><div id="ro-test-result"></div><label class="field"><span>Role instructions</span><textarea name="system_prompt" rows="4"></textarea></label><button class="btn">Add minister</button></form></details>
           ${territoryPicker(id, world, territoryAdmin)}
+          <h3>The last deliberation</h3><div id="ro-delib">${deliberationHtml(delib)}</div>
           <div class="row"><button class="btn btn-primary" id="ro-run-turn">Run foreign government turn</button><button class="btn" id="ro-load-turns">View recent turns</button></div><div id="ro-turns"></div>
         </div>`;
         bindTerritoryPicker(id, p, territoryAdmin, viewDiplomacy);
@@ -1723,6 +2143,21 @@
             });
             toast('Power settings recorded.');
             viewDiplomacy();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        };
+        document.querySelector('#ro-archetype').onsubmit = async ev => {
+          ev.preventDefault();
+          const archetype = new FormData(ev.target).get('archetype');
+          if (!confirm('Install this government? Its ministers replace any of the same names, and its decision method replaces the current one.')) return;
+          try {
+            const r = await api(`/api/admin/foreign/powers/${id}/archetype`, {
+              method: 'POST',
+              body: { archetype }
+            });
+            toast(`${r.ministers} ministers installed on ${r.provider}/${r.model}.`);
+            loadRoPower(id);
           } catch (err) {
             toast(err.message, true);
           }
@@ -1750,6 +2185,24 @@
             mock: 'mock'
           };
         provider.onchange = () => (model.value = defaults[provider.value] || '');
+        /* Say plainly whether the key works, at the moment it is chosen. The
+           old failure mode was a minister saved happily and a turn that failed
+           a cycle later with "every configured free LLM provider failed". */
+        document.querySelector('#ro-test-key').onclick = async () => {
+          const out = document.querySelector('#ro-test-result');
+          out.innerHTML = '<p class="small muted">Calling the provider…</p>';
+          try {
+            const r = await api('/api/admin/foreign/llm-test', {
+              method: 'POST',
+              body: { model_provider: provider.value, model_name: model.value }
+            });
+            out.innerHTML = r.ok
+              ? `<p class="small"><span class="tag on-green">works</span> ${esc(r.provider)}/${esc(r.model)} answered in ${r.ms ?? 0}ms.</p>`
+              : `<p class="small"><span class="tag">failed</span> ${esc(r.error || 'no reason given')}</p><p class="small muted">${esc(r.hint || '')}</p>`;
+          } catch (err) {
+            out.innerHTML = `<p class="small"><span class="tag">failed</span> ${esc(err.message)}</p>`;
+          }
+        };
         af.onsubmit = async ev => {
           ev.preventDefault();
           try {
@@ -1804,11 +2257,16 @@
           try {
             const r = await api(`/api/admin/foreign/powers/${id}/run-turn`, { method: 'POST' });
             toast(
-              r.chosen
-                ? `Government chose ${r.chosen.action_kind}; action recorded.`
-                : 'Government took no action; turn recorded.'
+              r.already_ran
+                ? 'This government has already met this cycle.'
+                : r.chosen
+                  ? `Government chose ${r.chosen.action_kind}; action recorded.`
+                  : 'Government took no action; turn recorded.'
             );
-            viewDiplomacy();
+            /* Redraw the deliberation in place rather than the whole page: what
+               the cabinet just argued about is the thing you came to read. */
+            const d = await api(`/api/admin/foreign/powers/${id}/deliberation`).catch(() => null);
+            document.querySelector('#ro-delib').innerHTML = deliberationHtml(d);
           } catch (err) {
             toast(err.message, true);
           }
@@ -1817,7 +2275,19 @@
           try {
             const turns = await api(`/api/admin/foreign/powers/${id}/turns`);
             document.querySelector('#ro-turns').innerHTML =
-              `<div class="list">${turns.length ? turns.map(t => `<div class="item"><div class="item-top"><span class="item-title">Turn #${t.id} · cycle ${t.cycle_number}</span><span class="tag">${esc(t.status)}</span></div><p class="small muted">chosen proposal ${t.chosen_proposal_id || 'none'} · ${esc(t.created_at || '')}</p></div>`).join('') : '<p class="muted">No turns.</p>'}</div>`;
+              `<div class="list">${turns.length ? turns.map(t => `<div class="item"><div class="item-top"><span class="item-title">Turn #${t.id} · cycle ${t.cycle_number}</span><span class="tag">${esc(t.result?.status || t.status)}</span></div><p class="small muted">${t.proposal_count ?? 0} proposal(s) · chosen ${t.chosen_proposal_id || 'none'} · ${esc(t.created_at || '')}</p><button class="btn btn-sm" data-show-turn="${t.id}">Show the deliberation</button></div>`).join('') : '<p class="muted">No turns.</p>'}</div>`;
+            document.querySelectorAll('[data-show-turn]').forEach(
+              b =>
+                (b.onclick = async () => {
+                  try {
+                    document.querySelector('#ro-delib').innerHTML = deliberationHtml(
+                      await api(`/api/admin/foreign/turns/${b.dataset.showTurn}`)
+                    );
+                  } catch (err) {
+                    toast(err.message, true);
+                  }
+                })
+            );
           } catch (err) {
             toast(err.message, true);
           }
@@ -1832,6 +2302,202 @@
       if (sel.value) loadRoPower(sel.value);
     }
   }
+
+  /* --------------------------------------------------------- intelligence */
+
+  const intelLabel = value => {
+    const text = String(value || '').replaceAll('_', ' ');
+    return text ? text[0].toUpperCase() + text.slice(1) : '';
+  };
+  const intelOpName = kind => intelLabel(kind);
+
+  function intelGateNeeds(tier, progress, gates) {
+    const gate = gates?.[tier];
+    if (!gate || tier <= 1) return [];
+    const needs = [];
+    const tradecraft = Number(progress?.tradecraft || 0);
+    const budget = Number(progress?.committed_budget || 0);
+    const completed = tier === 2 ? Number(progress?.successful_tier1 || 0) : Number(progress?.successful_tier2 || 0);
+    if (tradecraft < Number(gate.tradecraft || 0)) needs.push(`${Number(gate.tradecraft) - tradecraft} tradecraft`);
+    if (budget < Number(gate.budget || 0)) needs.push(`${cash(Number(gate.budget) - budget)} committed budget`);
+    if (completed < Number(gate.completed || 0))
+      needs.push(`${Number(gate.completed) - completed} successful tier ${tier - 1} mission${Number(gate.completed) - completed === 1 ? '' : 's'}`);
+    return needs;
+  }
+
+  async function viewIntel(v, recentOperation = null) {
+    const me = ME();
+    const [agency, dashboard, operations, powers] = await Promise.all([
+      api('/api/intel/agency'),
+      api('/api/intel'),
+      api('/api/intel/operations'),
+      api('/api/diplomacy/powers').catch(() => [])
+    ]);
+    const service = agency.service;
+    const progress = agency.progress || {
+      tier: Number(agency.tier || 0),
+      tradecraft: Number(service?.tradecraft || 0),
+      committed_budget: Number(service?.committed_budget || 0),
+      successful_tier1: 0,
+      successful_tier2: 0
+    };
+    const gates = progress.gates || agency.gates || {};
+    const ops = agency.ops || {};
+    const cleared = !!dashboard.cleared;
+    const isRO = !!me?.is_admin;
+    const canCharter = !!me &&
+      (STATE()?.config?.bill_proposers === 'citizens' || (me.offices || []).some(o => o === 'mp' || o === 'speaker'));
+    const [assets, citizens] = await Promise.all([
+      cleared && service ? api('/api/intel/assets') : Promise.resolve([]),
+      isRO && service ? api('/api/citizens') : Promise.resolve([])
+    ]);
+    const completedFor = tier => tier === 2 ? Number(progress.successful_tier1 || 0) : tier === 3 ? Number(progress.successful_tier2 || 0) : 0;
+    const tierCards = [1, 2, 3].map(tier => {
+      const gate = gates[tier] || {};
+      const open = !!service && Number(progress.tier || 0) >= tier;
+      return `<div class="item">
+        <div class="item-top"><span class="item-title">Tier ${tier} · ${esc(gate.name || '')}</span><span class="tag ${open ? 'on-green' : ''}">${open ? 'Open' : 'Locked'}</span></div>
+        <div class="item-meta">Tradecraft ${Number(progress.tradecraft || 0).toLocaleString()} / ${Number(gate.tradecraft || 0).toLocaleString()} · committed budget ${cash(progress.committed_budget)} / ${cash(gate.budget)} · qualifying missions ${completedFor(tier)} / ${Number(gate.completed || 0)}</div>
+        ${!open && service ? `<p class="small muted">Still needed: ${esc(intelGateNeeds(tier, progress, gates).join(' · ') || 'open the previous tier')}</p>` : tier === 1 ? '<p class="small muted">Collection opens with the charter.</p>' : ''}
+      </div>`;
+    }).join('');
+    const operationCatalogue = Object.entries(ops).map(([kind, op]) => {
+      const open = !!service && Number(progress.tier || 0) >= Number(op.tier || 0);
+      const locked = !service ? 'charter the service first' : intelGateNeeds(Number(op.tier), progress, gates).join(' · ') || 'open the previous tier';
+      return `<div class="item"><div class="item-top"><span class="item-title">${esc(intelOpName(kind))}</span><span class="tag ${open ? 'on-green' : ''}">Tier ${Number(op.tier || 0)}${open ? '' : ' · Locked'}</span></div>
+        <div class="item-meta">${cash(op.costUnit)} per score point · base difficulty ${Number(op.difficulty || 0)}${op.needsAsset ? ' · asset required' : ''}</div>
+        ${open ? '' : `<p class="small muted">Needs ${esc(locked)}.</p>`}</div>`;
+    }).join('');
+    const opOptions = Object.entries(ops).map(([kind, op]) => {
+      const open = !!service && Number(progress.tier || 0) >= Number(op.tier || 0);
+      const locked = intelGateNeeds(Number(op.tier), progress, gates).join(', ') || 'previous tier';
+      return `<option value="${esc(kind)}" ${open ? '' : 'disabled'}>${esc(intelOpName(kind))} · Tier ${Number(op.tier || 0)}${open ? '' : ` · Locked: ${esc(locked)}`}</option>`;
+    }).join('');
+    const powerOptions = powers.map(p => `<option value="${Number(p.id)}">${esc(p.name)}</option>`).join('');
+    const assetRows = assets.length ? assets.map(a => `<div class="item"><div class="item-top"><span class="item-title">${esc(a.codename)}</span><span class="tag ${a.status === 'active' ? 'on-green' : a.status === 'blown' ? 'on-oxide' : ''}">${esc(intelLabel(a.status))}</span></div><div class="item-meta">${esc(a.power_name)} · experience ${Number(a.experience || 0)} · recruited cycle ${Number(a.recruited_cycle || 0)}${a.target_agent_id ? ` · foreign seat #${Number(a.target_agent_id)}` : ''}</div>${a.status === 'active' ? `<button class="btn btn-sm" data-intel-extract="${Number(a.id)}">Extract asset</button>` : ''}</div>`).join('') : '<div class="empty">No assets are on the register.</div>';
+    const operationRows = operations.length ? operations.map(o => `<div class="item"><div class="item-top"><span class="item-title">${esc(intelOpName(o.kind))} · ${esc(o.power_name || 'Domestic')}</span><span class="tag ${o.outcome === 'success' ? 'on-green' : 'on-oxide'}">${esc(intelLabel(o.outcome))}</span></div><div class="item-meta">Tier ${Number(o.tier || 0)} · score ${Number(o.score || 0)} / threshold ${Number(o.threshold || 0)}</div></div>`).join('') : '<div class="empty">No intelligence operation has been recorded.</div>';
+    const reportRows = cleared ? (dashboard.reports || []).map(r => `<div class="item"><div class="item-top"><span class="item-title"><span class="ref">${esc(r.ref)}</span> ${esc(r.subject)}</span><span class="tag ${r.sealed ? 'on-violet' : 'on-green'}">${r.sealed ? 'Sealed' : 'Declassified'}</span></div><div class="item-meta">Filed cycle ${Number(r.filed_cycle || 0)} · ${esc(r.confidence || 'unknown')} confidence · ${esc(r.sourcing || 'source not stated')}${r.declassifies_at_cycle ? ` · declassifies cycle ${Number(r.declassifies_at_cycle)}` : ''}</div>${r.sealed ? `<p class="small muted">Opening this report is logged in the public read register.</p><button class="btn btn-sm" data-intel-read="${Number(r.id)}">Read sealed report</button><div id="intel-report-${Number(r.id)}"></div>` : `<div class="prose" style="margin-top:10px">${esc(r.body || '').replace(/\n/g, '<br>')}</div>`}</div>`).join('') : '';
+    const clearanceRows = isRO ? (dashboard.clearances || []).map(c => `<div class="item"><div class="item-top"><span class="item-title">${esc(c.display_name)}</span><button class="btn btn-sm" data-intel-revoke="${Number(c.user_id)}">Revoke</button></div><div class="item-meta">${esc(c.reason || '')} · since ${when(c.since)}${c.until ? ` · until ${when(c.until)}` : ''}</div></div>`).join('') : '';
+
+    v.innerHTML = `
+      <h1 class="page">Intelligence</h1>
+      <p class="page-sub">The gate is public. Operations stay on the record. Report bodies stay sealed until their clock runs out.</p>
+
+      ${service ? `<div class="card"><div class="item-top"><div><p class="eyebrow">Chartered intelligence service</p><h2 style="margin-top:4px">Tier ${Number(progress.tier || 0)} · ${esc(gates[progress.tier]?.name || '')}</h2></div><span class="tag on-green">active</span></div><div class="prose">${esc(service.charter || '').replace(/\n/g, '<br>')}</div><p class="small muted" style="margin-top:12px">Reports declassify after ${Number(service.declassify_after_cycles || 0)} cycle(s) · ordinary budget ${cash(service.budget_per_cycle)} per cycle.</p></div>` : `<div class="card"><h2>No intelligence service has been chartered</h2><p class="small muted">The service comes into existence only after the House enacts its charter as a motion.</p></div>`}
+
+      ${!service && canCharter ? `<div class="card"><h2>Charter an intelligence service</h2><p class="small muted">This files a motion. It does not create the service until the bill is enacted.</p><form id="intel-charter" class="stack"><label class="field"><span>Title</span><input name="title" required value="Establishment of an Intelligence Service"></label><label class="field"><span>Charter</span><textarea name="charter" required minlength="20" rows="7" placeholder="Set out the service's purpose and limits."></textarea></label><div class="grid2"><label class="field"><span>Declassify reports after</span><input name="declassify_after_cycles" type="number" min="1" value="3" required><span class="small muted">cycles</span></label><label class="field"><span>Budget per cycle</span><input name="budget_per_cycle" type="number" min="0" value="0" required></label></div><button class="btn btn-primary">File charter motion</button></form></div>` : !service ? `<div class="card"><p class="small muted">Only someone who may propose a bill can file the charter motion.</p></div>` : ''}
+
+      <div class="card"><h2>Tier gates</h2><p class="small muted">All figures are public. Every requirement in a gate must be met at the same time.</p><div class="list" style="margin-top:12px">${tierCards}</div></div>
+
+      <div class="card"><h2>Operations catalogue</h2><div class="list">${operationCatalogue}</div></div>
+
+      ${isRO && service ? `<div class="grid2"><div class="card"><p class="eyebrow">Returning Officer</p><h2>Clearance register</h2><p class="small muted">Clearance is a row in this register, not an office.</p><form id="intel-clearance" class="stack"><label class="field"><span>Citizen</span><select name="user_id" required>${citizens.map(c => `<option value="${Number(c.id)}">${esc(c.display_name)}</option>`).join('')}</select></label><label class="field"><span>Reason</span><input name="reason" maxlength="500" required></label><label class="field"><span>Expiry (optional)</span><input name="until" type="datetime-local"></label><button class="btn btn-primary">Grant clearance</button></form><div class="list" style="margin-top:14px">${clearanceRows || '<div class="empty">No clearances are active.</div>'}</div></div><div class="card"><p class="eyebrow">Returning Officer</p><h2>Foreign counter-intelligence</h2><p class="small muted">This is a published defensive rating, not a secret dial.</p><form id="intel-counter" class="stack"><label class="field"><span>Foreign power</span><select name="power_id" required>${powerOptions}</select></label><label class="field"><span>Counter-intelligence rating</span><input name="counter_intel" type="number" min="0" max="500" required></label><button class="btn btn-primary">Record rating</button></form></div></div>` : ''}
+
+      ${cleared && service ? `<div class="card"><h2>Assets</h2><div class="list">${assetRows}</div></div><div class="card"><h2>Order an operation</h2><p class="small muted">The result is deterministic from the published inputs. Higher committed budget adds score at the operation's published cost per point.</p><form id="intel-operation" class="stack"><label class="field"><span>Operation</span><select name="kind" id="intel-kind" required>${opOptions}</select></label><div class="grid2"><label class="field" id="intel-power-wrap"><span>Target power</span><select name="power_id" id="intel-power">${powerOptions}</select></label><label class="field"><span>Budget</span><input name="budget" type="number" min="1" required></label></div><label class="field" id="intel-asset-wrap"><span>Asset (optional unless the operation requires one)</span><select name="asset_id" id="intel-asset"><option value="">Choose automatically</option></select></label><div class="grid2"><label class="field"><span>Codename (optional)</span><input name="codename" maxlength="60"></label><label class="field"><span>Notes (optional)</span><textarea name="notes" maxlength="1500" rows="3"></textarea></label></div><p class="small"><strong>Committed operation budgets are spent whether the mission succeeds or fails; they cannot be recovered.</strong></p><button class="btn btn-primary">Order operation</button></form>${recentOperation ? `<div id="intel-op-result" class="item" style="margin-top:14px"><div class="item-top"><span class="item-title">${esc(intelOpName(recentOperation.kind))} recorded</span><span class="tag ${recentOperation.outcome === 'success' ? 'on-green' : 'on-oxide'}">${esc(intelLabel(recentOperation.outcome))}</span></div><div class="item-meta">Score ${Number(recentOperation.score || 0)} / threshold ${Number(recentOperation.threshold || 0)}</div></div>` : '<div id="intel-op-result"></div>'}</div><div class="card"><h2>Reports</h2><p class="small muted">A sealed report opens only to a cleared citizen. Reading it is itself logged and public.</p><div class="list">${reportRows || '<div class="empty">No reports have been filed.</div>'}</div></div>` : ''}
+
+      <div class="card"><h2>Public operations register</h2><div class="list">${operationRows}</div></div>`;
+
+    if ($('#intel-charter')) $('#intel-charter').onsubmit = e => {
+      e.preventDefault();
+      busy(e.submitter || e.target.querySelector('button'), async () => {
+        const f = Object.fromEntries(new FormData(e.target));
+        f.declassify_after_cycles = Number(f.declassify_after_cycles);
+        f.budget_per_cycle = Number(f.budget_per_cycle);
+        try {
+          const bill = await api('/api/intel/establish', { method: 'POST', body: f });
+          toast(`Filed as ${bill.ref}. The House decides.`);
+          location.hash = `#/bill/${bill.id}`;
+        } catch (err) { toast(err.message, true); }
+      });
+    };
+
+    if ($('#intel-clearance')) $('#intel-clearance').onsubmit = e => {
+      e.preventDefault();
+      busy(e.submitter || e.target.querySelector('button'), async () => {
+        const f = Object.fromEntries(new FormData(e.target));
+        f.user_id = Number(f.user_id);
+        if (!f.until) delete f.until;
+        try {
+          await api('/api/intel/clearance', { method: 'POST', body: f });
+          toast('Clearance recorded.');
+          await viewIntel(v);
+        } catch (err) { toast(err.message, true); }
+      });
+    };
+
+    document.querySelectorAll('[data-intel-revoke]').forEach(btn => btn.onclick = () => busy(btn, async () => {
+      if (!confirm('Revoke this clearance? Sealed access ends immediately.')) return;
+      try {
+        await api(`/api/intel/clearance/${btn.dataset.intelRevoke}`, { method: 'DELETE' });
+        toast('Clearance revoked.');
+        await viewIntel(v);
+      } catch (err) { toast(err.message, true); }
+    }));
+
+    if ($('#intel-counter')) $('#intel-counter').onsubmit = e => {
+      e.preventDefault();
+      busy(e.submitter || e.target.querySelector('button'), async () => {
+        const f = Object.fromEntries(new FormData(e.target));
+        try {
+          await api(`/api/intel/powers/${Number(f.power_id)}/counter-intel`, { method: 'PUT', body: { counter_intel: Number(f.counter_intel) } });
+          toast('Counter-intelligence rating recorded.');
+          e.target.reset();
+        } catch (err) { toast(err.message, true); }
+      });
+    };
+
+    const syncOperation = () => {
+      if (!$('#intel-kind')) return;
+      const op = ops[$('#intel-kind').value] || {};
+      $('#intel-power-wrap').hidden = op.needsPower === false;
+      const target = Number($('#intel-power')?.value || 0);
+      const matching = assets.filter(a => a.status === 'active' && (!target || Number(a.power_id) === target));
+      $('#intel-asset').innerHTML = '<option value="">Choose automatically</option>' + matching.map(a => `<option value="${Number(a.id)}">${esc(a.codename)} · ${esc(a.power_name)}</option>`).join('');
+      $('#intel-asset-wrap').hidden = !op.needsAsset;
+    };
+    if ($('#intel-kind')) {
+      $('#intel-kind').onchange = syncOperation;
+      $('#intel-power').onchange = syncOperation;
+      syncOperation();
+      $('#intel-operation').onsubmit = e => {
+        e.preventDefault();
+        busy(e.submitter || e.target.querySelector('button'), async () => {
+          const f = Object.fromEntries(new FormData(e.target));
+          const op = ops[f.kind] || {};
+          f.budget = Number(f.budget);
+          if (op.needsPower === false) delete f.power_id; else f.power_id = Number(f.power_id);
+          if (f.asset_id) f.asset_id = Number(f.asset_id); else delete f.asset_id;
+          if (!f.codename) delete f.codename;
+          if (!f.notes) delete f.notes;
+          try {
+            const r = await api('/api/intel/operations', { method: 'POST', body: f });
+            toast('Operation recorded.');
+            await viewIntel(v, r.operation);
+          } catch (err) { toast(err.message, true); }
+        });
+      };
+    }
+
+    document.querySelectorAll('[data-intel-extract]').forEach(btn => btn.onclick = () => busy(btn, async () => {
+      if (!confirm('Extract this asset? They will no longer be available for operations.')) return;
+      try {
+        await api(`/api/intel/assets/${btn.dataset.intelExtract}/extract`, { method: 'POST' });
+        toast('Asset extracted.');
+        await viewIntel(v);
+      } catch (err) { toast(err.message, true); }
+    }));
+
+    document.querySelectorAll('[data-intel-read]').forEach(btn => btn.onclick = () => busy(btn, async () => {
+      try {
+        const r = await api(`/api/intel/reports/${btn.dataset.intelRead}/read`, { method: 'POST' });
+        const out = document.querySelector(`#intel-report-${btn.dataset.intelRead}`);
+        out.innerHTML = `<div class="prose" style="margin-top:10px">${esc(r.body || '').replace(/\n/g, '<br>')}</div>`;
+        btn.hidden = true;
+        toast('Report opened. The read is on the public register.');
+      } catch (err) { toast(err.message, true); }
+    }));
+  }
+
 
   /* Register only what the server actually has.
 
@@ -1854,6 +2520,9 @@
     }
     if (await present('/api/diplomacy/powers')) {
       R.addRoute('diplomacy', 'Diplomacy', viewDiplomacy);
+    }
+    if (await present('/api/intel/agency')) {
+      R.addRoute('intel', 'Intelligence', viewIntel);
     }
     R.refreshNav();
   })();

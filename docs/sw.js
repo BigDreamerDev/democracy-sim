@@ -6,12 +6,22 @@
    The cache exists so the shell opens instantly and says something sensible
    when there is no signal, not to avoid the network. */
 
-const VERSION = 'republic-v5';
-const SHELL = ['./', './index.html', './styles.css', './app.js', './acts.js', './money.js', './world-map.js', './world-subdivisions.js', './config.js',
+const VERSION = 'republic-v6';
+const SHELL = ['./', './index.html', './styles.css', './app.js', './acts.js', './money.js', './world-map.js', './config.js',
                './icons/icon-192.png', './manifest.webmanifest'];
 
+/* Cached one at a time, and a failure is allowed. `addAll` rejects the whole
+   install if any single request fails, which meant one flaky fetch left the
+   worker permanently uninstalled and the offline shell silently gone — and it
+   retried on every load. The subdivision geometry is deliberately not in here:
+   it is fetched per territory when the map is opened, and precaching megabytes
+   the session may never look at was most of what made the map feel broken. */
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(VERSION)
+      .then(c => Promise.all(SHELL.map(u => c.add(u).catch(() => {}))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', e => {

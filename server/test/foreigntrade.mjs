@@ -6,7 +6,7 @@
    again. */
 import { call, ok, report, setup } from './world.mjs';
 
-const B = 'http://localhost:4321';
+const B = 'http://localhost:' + (process.env.TEST_PORT || '4321');
 const w = await setup({ citizens: 10 });
 const T = w.admin.token;
 const supply = async () => Number((await call('/api/economy')).d.supply);

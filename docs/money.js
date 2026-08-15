@@ -717,6 +717,260 @@
     );
   }
 
+  /* ============================================ OFFSHORE, FOREX, DEFECTION
+
+     Three features on one page because they share one idea: money, and a
+     citizen, that have moved somewhere the Republic cannot see or reach at
+     will. Nothing here creates or destroys a mark — a deposit, a conversion
+     and a renunciation each move something that already existed, and the
+     server is what enforces that, not this file. */
+
+  const canProposeHere = () =>
+    STATE()?.config?.bill_proposers === 'citizens' || (ME()?.offices || []).some(o => o === 'mp' || o === 'speaker');
+
+  function defectionCard(d) {
+    if (d.my_defection) {
+      const x = d.my_defection;
+      return `<div class="card" style="border-color:var(--oxide)">
+        <h2>You have renounced the Republic</h2>
+        <p class="small muted">To ${esc(x.power_name || 'a foreign power')}${x.renounced_cycle ? `, cycle ${x.renounced_cycle}` : ''}.</p>
+        <p style="margin-top:8px">${esc(x.reasons)}</p>
+        <p class="small muted" style="margin-top:8px">${cash(x.sequestered)} of domestic holdings froze at the moment you left, and stays frozen until the House passes a bill of readmission. What you hold offshore is untouched — that was the point of holding it there.</p>
+      </div>`;
+    }
+    return `<div class="card">
+      <h2>Renounce the Republic</h2>
+      <p class="small muted">You lose the vote, the dividend and any office at once — Article 1.2 ties citizenship to membership of the Group. Domestic holdings freeze exactly where they sit, pending a bill; what you hold offshore stays yours. There is a route back, and it costs a share of what was frozen.</p>
+      ${
+        d.powers.length
+          ? `<form id="renounce" class="stack" style="margin-top:12px">
+        <label class="field"><span>Join</span><select name="power_id" required>${d.powers.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
+        <label class="field"><span>Why, in a sentence — leaving is a public act</span><textarea name="reasons" rows="2" required></textarea></label>
+        <button class="btn" style="border-color:var(--oxide)">Renounce</button>
+      </form>`
+          : '<p class="small muted" style="margin-top:10px">No foreign power exists to join yet.</p>'
+      }
+    </div>`;
+  }
+
+  function powerCard(p) {
+    const acc = p.my_account;
+    return `<div class="item">
+      <div class="item-top">
+        <span class="item-title">${esc(p.name)}${p.discloses ? ' <span class="tag">discloses by treaty</span>' : ''}</span>
+        ${p.currency ? `<span class="money">1 = ${Number(p.currency.rate).toFixed(3)} ${esc(p.currency.code)}</span>` : '<span class="small muted">no currency yet</span>'}
+      </div>
+      <p class="small muted">Standing: ${esc(p.standing)}</p>
+      <div class="grid2" style="margin-top:10px;gap:14px">
+        <div>
+          <p class="eyebrow">Offshore account</p>
+          ${
+            acc
+              ? `<p>${cash(acc.balance)}${acc.frozen ? ' <span class="tag on-oxide">frozen</span>' : ''}</p>
+                 ${acc.frozen ? `<p class="small" style="margin-top:4px;color:var(--oxide)">${esc(acc.frozen_reason)}</p>` : ''}
+                 ${
+                   acc.frozen
+                     ? ''
+                     : `<div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap">
+                   <input type="number" min="1" placeholder="Amount" style="width:110px" data-off-amt="${p.id}">
+                   <button class="btn btn-sm" data-off-deposit="${p.id}">Deposit</button>
+                   <button class="btn btn-sm" data-off-withdraw="${p.id}">Withdraw</button>
+                 </div>`
+                 }`
+              : `<button class="btn btn-sm" data-off-open="${p.id}">Open an account</button>`
+          }
+        </div>
+        <div>
+          <p class="eyebrow">Foreign exchange</p>
+          ${
+            p.currency
+              ? `<p>Holding ${p.my_units} ${esc(p.currency.code)}</p>
+             <div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap">
+               <input type="number" min="1" placeholder="Marks to convert" style="width:130px" data-fx-buy-amt="${p.id}">
+               <button class="btn btn-sm" data-fx-buy="${p.id}">Buy ${esc(p.currency.code)}</button>
+             </div>
+             <div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap">
+               <input type="number" min="1" placeholder="${esc(p.currency.code)} to sell" style="width:130px" data-fx-sell-amt="${p.id}">
+               <button class="btn btn-sm" data-fx-sell="${p.id}">Sell for ${esc(STATE()?.config?.currency_name || 'marks')}</button>
+             </div>`
+              : '<p class="small muted">No currency yet.</p>'
+          }
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function houseCard(d) {
+    const live = d.defections.filter(x => x.status === 'defected');
+    return `<div class="card">
+      <h2>What the House can do about it</h2>
+      <p class="small muted">An inquiry directs the intelligence service to find out who holds what abroad — a sealed report, cleared to whoever the bill names. A seizure takes what a citizen holds abroad, and can come back empty-handed if the haven has frozen the account first.</p>
+
+      <form id="inquiry" class="stack" style="margin-top:12px">
+        <div class="grid2">
+          <label class="field"><span>Haven</span>
+            <select name="power_id"><option value="">Any haven</option>${d.powers.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
+          <label class="field"><span>Clear to read it — citizen IDs, comma-separated</span><input name="clear_ids" placeholder="e.g. 3, 7"></label>
+        </div>
+        <button class="btn btn-sm">Move an inquiry</button>
+      </form>
+
+      <form id="seizure" class="stack" style="margin-top:16px">
+        <div class="grid2">
+          <label class="field"><span>Citizen (user id)</span><input name="user_id" type="number" min="1" required></label>
+          <label class="field"><span>Haven</span>
+            <select name="power_id"><option value="">Any haven</option>${d.powers.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
+        </div>
+        <button class="btn btn-sm">Move a seizure</button>
+      </form>
+
+      ${
+        live.length
+          ? `<div style="margin-top:16px">
+        <p class="eyebrow">Move a readmission</p>
+        <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">
+          ${live.map(x => `<button class="btn btn-sm" data-readmit="${x.id}">${esc(x.display_name)}, back from ${esc(x.power_name || 'abroad')}</button>`).join('')}
+        </div>
+      </div>`
+          : ''
+      }
+    </div>`;
+  }
+
+  async function viewOffshore(v) {
+    const d = await api('/api/offshore');
+
+    if (!d.enabled) {
+      v.innerHTML = `
+        <h1 class="page">Offshore &amp; Forex</h1>
+        <p class="page-sub">Switched off. The Returning Officer turns this on from the admin page.</p>`;
+      return;
+    }
+
+    v.innerHTML = `
+      <h1 class="page">Offshore &amp; Forex</h1>
+      <p class="page-sub">Banking abroad is opaque, not secret: the House can find it by inquiry, take it by bill, or compel a haven to publish it by treaty. A power that has soured on the Republic can freeze what it holds — usually the moment you wanted it.</p>
+
+      ${defectionCard(d)}
+
+      <div class="card">
+        <h2>Foreign currencies</h2>
+        <p class="small muted">Rates move once a cycle, for three published reasons: the balance of trade, conflict pressure, and what the Fed has issued. Nothing here is random.</p>
+        <div class="list" style="margin-top:12px">
+          ${d.powers.map(powerCard).join('') || '<p class="small muted">No foreign power exists yet.</p>'}
+        </div>
+      </div>
+
+      ${
+        d.disclosed.length
+          ? `<div class="card">
+        <h2>Disclosed holdings</h2>
+        <p class="small muted">These havens have agreed, by treaty, to publish what they hold. That is what a citizen who opened an account here was afraid of.</p>
+        <div class="list" style="margin-top:10px">${d.disclosed
+          .map(h => `<div class="item"><div class="item-top"><span class="item-title">${esc(h.display_name)}</span><span class="money">${cash(h.balance)}</span></div></div>`)
+          .join('')}</div>
+      </div>`
+          : ''
+      }
+
+      <div class="card">
+        <h2>Fixings</h2>
+        <p class="small muted">Every move a rate has ever made, with the inputs that caused it — the arithmetic behind next cycle's rate is here before the payrun runs.</p>
+        ${
+          d.fixings.length
+            ? `<div class="list" style="margin-top:10px">${d.fixings
+                .map(
+                  f => `<div class="item">
+          <div class="item-top"><span class="item-title">${esc(f.power_name || '—')} · cycle ${f.cycle_no}</span>
+            <span class="money">${Number(f.rate_before).toFixed(3)} → ${Number(f.rate_after).toFixed(3)}</span></div>
+          <p class="small muted">${esc(f.note)}</p></div>`
+                )
+                .join('')}</div>`
+            : '<p class="small muted" style="margin-top:10px">No fixing has run yet.</p>'
+        }
+      </div>
+
+      ${
+        d.my_trades.length
+          ? `<div class="card">
+        <h2>Your conversions</h2>
+        <div class="list" style="margin-top:10px">${d.my_trades
+          .map(
+            t => `<div class="item"><div class="item-top">
+          <span class="item-title">${t.side === 'buy' ? 'Bought' : 'Sold'} ${t.units} at ${Number(t.rate).toFixed(3)}</span>
+          <span class="money">${cash(t.marks)}</span></div>
+          <p class="small muted">${t.spread ? `${t.spread} spread · ` : ''}${when(t.at)}</p></div>`
+          )
+          .join('')}</div>
+      </div>`
+          : ''
+      }
+
+      ${canProposeHere() ? houseCard(d) : ''}
+
+      <div class="card">
+        <h2>Renunciations</h2>
+        <p class="small muted">Who has gone, to whom, and what froze when they left. Leaving is a public act.</p>
+        ${
+          d.defections.length
+            ? `<div class="list" style="margin-top:10px">${d.defections
+                .map(
+                  x => `<div class="item">
+          <div class="item-top"><span class="item-title">${esc(x.display_name)}</span>
+            <span class="tag ${x.status === 'defected' ? 'on-oxide' : ''}">${x.status === 'defected' ? 'gone' : 'returned'}</span></div>
+          <p class="small muted">To ${esc(x.power_name || 'a foreign power')}${x.renounced_cycle ? `, cycle ${x.renounced_cycle}` : ''} · ${cash(x.sequestered)} froze on the way out</p>
+        </div>`
+                )
+                .join('')}</div>`
+            : '<p class="small muted" style="margin-top:10px">Nobody has renounced the Republic.</p>'
+        }
+      </div>`;
+
+    onSubmit('#renounce', b => api('/api/defection', { method: 'POST', body: b }));
+
+    const offAmt = id => Number(document.querySelector(`[data-off-amt="${id}"]`)?.value || 0);
+    onClick('data-off-open', id => api('/api/offshore/open', { method: 'POST', body: { power_id: Number(id) } }));
+    onClick('data-off-deposit', id =>
+      api('/api/offshore/deposit', { method: 'POST', body: { power_id: Number(id), amount: offAmt(id) } })
+    );
+    onClick('data-off-withdraw', id =>
+      api('/api/offshore/withdraw', { method: 'POST', body: { power_id: Number(id), amount: offAmt(id) } })
+    );
+
+    onClick('data-fx-buy', id =>
+      api('/api/forex/buy', {
+        method: 'POST',
+        body: { power_id: Number(id), amount: Number(document.querySelector(`[data-fx-buy-amt="${id}"]`)?.value || 0) }
+      })
+    );
+    onClick('data-fx-sell', id =>
+      api('/api/forex/sell', {
+        method: 'POST',
+        body: { power_id: Number(id), units: Number(document.querySelector(`[data-fx-sell-amt="${id}"]`)?.value || 0) }
+      })
+    );
+
+    onSubmit('#inquiry', b =>
+      api('/api/offshore/inquiry', {
+        method: 'POST',
+        body: {
+          power_id: b.power_id ? Number(b.power_id) : null,
+          clear: String(b.clear_ids || '')
+            .split(',')
+            .map(s => Number(s.trim()))
+            .filter(Boolean)
+        }
+      })
+    );
+    onSubmit('#seizure', b =>
+      api('/api/offshore/seizure', {
+        method: 'POST',
+        body: { user_id: Number(b.user_id), power_id: b.power_id ? Number(b.power_id) : null }
+      })
+    );
+    onClick('data-readmit', id => api(`/api/defections/${id}/readmit`, { method: 'POST' }));
+  }
+
   /* Registered only where the server answers, exactly as acts.js does it. */
   (async () => {
     const present = async path => {
@@ -730,6 +984,7 @@
     if (await present('/api/treasury')) R.addRoute('treasury', 'Treasury', viewTreasury);
     if (await present('/api/fed')) R.addRoute('fed', 'The Fed', viewFed);
     if (await present('/api/war')) R.addRoute('war', 'Supply', viewWar);
+    if (await present('/api/offshore')) R.addRoute('offshore', 'Offshore & Forex', viewOffshore);
     R.refreshNav();
   })();
 })();

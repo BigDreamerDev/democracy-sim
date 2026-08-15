@@ -129,6 +129,55 @@ CREATE TABLE IF NOT EXISTS foreign_agents (
   UNIQUE (power_id, role)
 );
 
+/* A defector may hold one of a foreign government's own seats, played by
+   themselves rather than a model. NULL for every seat still LLM-controlled,
+   which is most of them, always. The partial unique index is the one-person-
+   one-seat rule — held at the database, the same discipline "one person, one
+   vote" gets in schema.sql, so nothing here has to trust application code to
+   stop a citizen claiming a second crown while they already sit as somebody's
+   minister. */
+ALTER TABLE foreign_agents ADD COLUMN IF NOT EXISTS user_id INT REFERENCES users(id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_foreign_agent_human_seat ON foreign_agents(user_id) WHERE user_id IS NOT NULL;
+
+/* What a human-controlled seat submitted for the cycle currently being
+   decided. One row per agent per cycle, so resubmitting before the turn runs
+   simply replaces it. runGovernmentTurn reads this instead of calling a model
+   for any agent with user_id set, and defaults to 'nothing' when nobody
+   submitted before the turn ran — an AFK defector must not freeze a
+   government the way an empty stockpile must not silently arm nobody. */
+CREATE TABLE IF NOT EXISTS foreign_agent_submissions (
+  agent_id     BIGINT NOT NULL REFERENCES foreign_agents(id),
+  cycle_number INT NOT NULL,
+  action_kind  TEXT NOT NULL,
+  payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  rationale    TEXT DEFAULT '',
+  submitted_at TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (agent_id, cycle_number)
+);
+
+/* A defector's request to hold a seat, queued when every cabinet role of
+   their power's archetype is already claimed by another citizen. Nothing
+   here resolves a queued petition automatically — same principle as a
+   conflict never resolving itself: a foreign cabinet filling up around a
+   petitioner is a fact for the RO to see, not an event for the server to
+   decide on its own. */
+CREATE TABLE IF NOT EXISTS foreign_role_petitions (
+  id            BIGSERIAL PRIMARY KEY,
+  power_id      INT NOT NULL REFERENCES powers(id),
+  user_id       INT NOT NULL REFERENCES users(id),
+  /* No FK to defections(id): that table belongs to schema-offshore.sql, which
+     bootstrap() loads AFTER this file (offshore hangs off a foreign power and
+     everything above it, diplomacy included). A forward reference here would
+     break boot on a fresh database. The id is recorded for audit; nothing
+     enforces it points at a real row. */
+  defection_id  BIGINT NOT NULL,
+  mode          TEXT NOT NULL DEFAULT 'cabinet', -- 'cabinet' | 'succession'
+  desired_role  TEXT,
+  status        TEXT NOT NULL DEFAULT 'pending',
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  resolved_at   TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS foreign_government_turns (
   id                 BIGSERIAL PRIMARY KEY,
   power_id           INT NOT NULL REFERENCES powers(id),
@@ -140,6 +189,11 @@ CREATE TABLE IF NOT EXISTS foreign_government_turns (
   completed_at       TIMESTAMPTZ,
   UNIQUE (power_id, cycle_number)
 );
+
+/* What the chosen action actually did, and what the government refused on the
+   way there. Without it the Returning Officer can see that a turn happened and
+   not what came of it, which is the whole of debugging a cabinet. */
+ALTER TABLE foreign_government_turns ADD COLUMN IF NOT EXISTS result JSONB;
 
 CREATE TABLE IF NOT EXISTS foreign_agent_proposals (
   id          BIGSERIAL PRIMARY KEY,
@@ -207,8 +261,17 @@ CREATE TABLE IF NOT EXISTS republic_territories (
 );
 
 /* Subdivision-level starting territory. `country_code` is the existing opaque
-   M49 map code; `subdivision_code` is an ISO 3166-2 code. The old whole-country
-   table stays in place so an existing deployment upgrades without losing data. */
+   M49 map code; `subdivision_code` is an opaque subdivision id (`s0001`), NOT
+   an ISO 3166-2 code — an ISO code names a real place on its own, and these
+   rows are read straight out onto a public map. The pairing lives in
+   server/subdivision-codes.json and never leaves the Returning Officer's
+   routes.
+
+   Deployments written before that change hold ISO codes here. They are
+   renumbered by ensureOpaqueSubdivisionCodes() in diplomacy.js, on the first
+   read after boot, because the mapping is a JSON file this schema cannot see.
+   The old whole-country table stays in place so an existing deployment upgrades
+   without losing data. */
 CREATE TABLE IF NOT EXISTS republic_subdivisions (
   subdivision_code TEXT PRIMARY KEY,
   country_code     TEXT NOT NULL,
@@ -218,9 +281,9 @@ CREATE TABLE IF NOT EXISTS republic_subdivisions (
 CREATE INDEX IF NOT EXISTS idx_republic_subdivisions_country ON republic_subdivisions(country_code);
 
 /* Foreign powers can also hold subdivisions. Whole-country rows in `territories`
-   remain as a backwards-compatible legacy representation. ISO subdivision codes
-   are globally unique, so the primary key also prevents two powers owning the
-   same subdivision. Cross-checks against Republic ownership live in the admin
+   remain as a backwards-compatible legacy representation. Subdivision ids are
+   globally unique, so the primary key also prevents two powers owning the same
+   subdivision. Cross-checks against Republic ownership live in the admin
    assignment routes. */
 CREATE TABLE IF NOT EXISTS foreign_subdivisions (
   subdivision_code TEXT PRIMARY KEY,

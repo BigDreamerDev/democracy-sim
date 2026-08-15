@@ -33,7 +33,7 @@
    argument afterwards is about the decision rather than about the dice. */
 
 module.exports.mount = function mount(app, ctx) {
-  const { q, log, auth, wrap, num, bool, loadConfig, officesOf, holds, slowWrites, cycleNow } = ctx;
+  const { q, tx, log, auth, wrap, num, bool, loadConfig, officesOf, holds, slowWrites, cycleNow } = ctx;
 
   const E = () => ctx.economy;
   const money = n => Math.round(Number(n) || 0);
@@ -63,12 +63,9 @@ module.exports.mount = function mount(app, ctx) {
      is the thing the House is supposed to be arguing about anyway. So both
      sides are written directly and the ledger still records it: what limits
      procurement is the budget the House voted, not the bank balance. */
-  async function spendFromTreasury(toAccId, amount, kind, note) {
+  async function spendFromTreasury(toAccId, amount, kind, note, run = null) {
     const t = await treasury();
-    await q('UPDATE accounts SET balance = balance - $1::bigint WHERE id=$2', [amount, t.id]);
-    await q('UPDATE accounts SET balance = balance + $1::bigint WHERE id=$2', [amount, toAccId]);
-    await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)',
-      [t.id, toAccId, amount, kind, String(note).slice(0, 300)]);
+    await E().settle(t.id, toAccId, amount, kind, note, run);
   }
 
   /* ------------------------------------------------------ the stockpile */
@@ -84,14 +81,19 @@ module.exports.mount = function mount(app, ctx) {
      record. A movement that would take a category below zero is refused rather
      than clamped — silently supplying an army from an empty store is exactly
      the bug that would make the whole system meaningless. */
-  async function move(category, quantity, kind, note, byId) {
+  async function move(category, quantity, kind, note, byId, run = null) {
     if (!CATEGORIES.includes(category)) throw Object.assign(new Error('Unknown category.'), { status: 400 });
-    await q('INSERT INTO stockpile(category,quantity) VALUES($1,0) ON CONFLICT (category) DO NOTHING', [category]);
-    const have = Number((await q('SELECT quantity FROM stockpile WHERE category=$1', [category])).rows[0].quantity);
+    if (!run) return tx(r => move(category, quantity, kind, note, byId, r));
+    await run('INSERT INTO stockpile(category,quantity) VALUES($1,0) ON CONFLICT (category) DO NOTHING', [category]);
+    /* Locked, because this is a read, a comparison and a write. Two draws on the
+       last of a category would otherwise both see enough and both take it, and
+       the CHECK (quantity >= 0) on the table would turn the loser into a 500
+       rather than the honest refusal below. */
+    const have = Number((await run('SELECT quantity FROM stockpile WHERE category=$1 FOR UPDATE', [category])).rows[0].quantity);
     if (have + quantity < 0)
       throw Object.assign(new Error(`The Republic holds ${have} ${category} and cannot draw ${-quantity}.`), { status: 400 });
-    await q('UPDATE stockpile SET quantity = quantity + $2::bigint, updated_at=now() WHERE category=$1', [category, quantity]);
-    await q('INSERT INTO stockpile_movements(category,quantity,kind,note,cycle_no,by_id) VALUES($1,$2,$3,$4,$5,$6)',
+    await run('UPDATE stockpile SET quantity = quantity + $2::bigint, updated_at=now() WHERE category=$1', [category, quantity]);
+    await run('INSERT INTO stockpile_movements(category,quantity,kind,note,cycle_no,by_id) VALUES($1,$2,$3,$4,$5,$6)',
       [category, quantity, kind, String(note).slice(0, 300), cycleNo(), byId || null]);
     return have + quantity;
   }
@@ -217,17 +219,29 @@ module.exports.mount = function mount(app, ctx) {
       return res.status(400).json({ error: `That costs ${cost} with duty and ${left} is left of this cycle's military budget.` });
 
     const powerAcc = await E().accountFor('power', o.power_id);
-    await spendFromTreasury(powerAcc.id, gross, 'procurement', `${units} x ${o.title} from ${o.power_name} [cycle ${cycleNo()}]`);
-    /* The duty is the Republic charging itself, so it moves no money. It is
-       recorded so that the cost against the budget is the true one — a state
-       that exempted itself from its own tariff would be lying in its accounts. */
-    if (tax > 0) {
-      const t = await treasury();
-      await q('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)',
-        [t.id, t.id, tax, 'duty', `duty on ${o.title} [cycle ${cycleNo()}]`]);
-    }
-    if (o.stock !== null) await q('UPDATE foreign_offers SET stock = stock - $1 WHERE id=$2', [units, o.id]);
-    const held = await move(o.good_category, units, 'procurement', `${o.title} from ${o.power_name}`, req.user.id);
+    const t = await treasury();
+    /* Paid for, taken off the seller's shelf and put in the store as one act.
+       This used to pay first and store afterwards, so a second request for the
+       last few units — one double-click on a slow morning — would pass the stock
+       check above, pay, and then break on `CHECK (stock >= 0)`. The Treasury was
+       debited twice and one lot of goods arrived. */
+    const held = await tx(async run => {
+      if (o.stock !== null) {
+        const left = Number((await run('SELECT stock FROM foreign_offers WHERE id=$1 FOR UPDATE', [o.id])).rows[0].stock);
+        if (left < units) throw Object.assign(new Error(`Only ${left} left.`), { status: 400 });
+        await run('UPDATE foreign_offers SET stock = stock - $1 WHERE id=$2', [units, o.id]);
+      }
+      const inStore = await move(o.good_category, units, 'procurement', `${o.title} from ${o.power_name}`, req.user.id, run);
+      await spendFromTreasury(powerAcc.id, gross, 'procurement', `${units} x ${o.title} from ${o.power_name} [cycle ${cycleNo()}]`, run);
+      /* The duty is the Republic charging itself, so it moves no money. It is
+         recorded so that the cost against the budget is the true one — a state
+         that exempted itself from its own tariff would be lying in its accounts. */
+      if (tax > 0) {
+        await run('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)',
+          [t.id, t.id, tax, 'duty', `duty on ${o.title} [cycle ${cycleNo()}]`]);
+      }
+      return inStore;
+    });
     log(req.user.id, 'war.procure.foreign', `${units} x ${o.title} from ${o.power_name} for ${cost}`);
     res.json({ ok: true, category: o.good_category, units, cost, duty: tax, held, budget_left: await budgetLeft() });
   }));

@@ -285,6 +285,15 @@ async function seed() {
   const nc = (await call(`/api/elections/${next.id}`, { token: T })).candidates;
   for (const p of PEOPLE.slice(0, 4)) await call(`/api/elections/${next.id}/vote`, { method: 'POST', body: { candidacy_id: nc[0].id }, token: tok[p] });
 
+  /* Re-read the roll instead of indexing `free`, which was computed before any
+     office was granted. Indexing it for "somebody with no office" printed a
+     name that had since become the Foreign Minister, so the preview listed the
+     same person twice and had no working login for the view with no office —
+     the view most players have, and the one most often broken. */
+  const noOffice = (await call('/api/citizens')).find(
+    c => !(c.offices || []).length && c.display_name !== 'Returning Officer'
+  );
+
   console.log(`
 ────────────────────────────────────────────────────────
   Preview running:  http://localhost:${PORT}
@@ -299,7 +308,7 @@ async function seed() {
     ${(free[3]?.display_name || '—').toLowerCase().padEnd(10)} the head of the Fed — rates, issuance, bank licences
     ${(free[4]?.display_name || '—').toLowerCase().padEnd(10)} the Foreign Minister — holds the channel abroad
     ${(free[5]?.display_name || '—').toLowerCase().padEnd(10)} the Quartermaster — buys equipment, keeps the forces supplied
-    ${PEOPLE[9].toLowerCase().padEnd(10)} an ordinary citizen — no office at all, but owns a bank
+    ${(noOffice?.display_name || '—').toLowerCase().padEnd(10)} an ordinary citizen — no office at all, which is most people
 
   Nothing here touches your live Republic. Ctrl+C and it is gone.
 ────────────────────────────────────────────────────────

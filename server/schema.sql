@@ -220,6 +220,12 @@ CREATE TABLE IF NOT EXISTS petitions (
 ALTER TABLE bills     ADD COLUMN IF NOT EXISTS origin TEXT DEFAULT 'house';   -- house | initiative
 ALTER TABLE elections ADD COLUMN IF NOT EXISTS target_bill_id INT;            -- a referendum on a proposal
 
+-- A tie for the last seat is settled by a run-off between exactly the tied
+-- candidates, not by whoever sorts first. Set on the run-off, pointing at the
+-- ballot that tied, so certifying it knows not to vacate the seats the parent
+-- already filled.
+ALTER TABLE elections ADD COLUMN IF NOT EXISTS runoff_of INT;
+
 CREATE TABLE IF NOT EXISTS bill_petitions (
   bill_id INT REFERENCES bills(id) ON DELETE CASCADE,
   user_id INT REFERENCES users(id) ON DELETE CASCADE,

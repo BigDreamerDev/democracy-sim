@@ -25,6 +25,53 @@ const pool = new Pool({
 });
 const q = (sql, params = []) => pool.query(sql, params);
 
+/* Everything that moves money is more than one statement, and `q` takes a fresh
+   connection out of the pool for each one. Without this, a crash or a dropped
+   connection between the debit and the credit leaves sum(accounts.balance)
+   permanently off zero — the one invariant the whole economy rests on — and no
+   suite can catch it, because a suite that completes is exactly the case that
+   cannot fail.
+
+   `fn` is handed a runner with the same shape as `q`, bound to one connection
+   inside a transaction. Pass it down to anything that writes, or the write
+   escapes the transaction and is not rolled back.
+
+   The tests run against an in-process Postgres with exactly one connection and
+   no `connect()`, so there BEGIN/COMMIT go to the pool itself and overlapping
+   transactions are queued rather than interleaved — which is what a single
+   connection would do anyway. */
+let txQueue = Promise.resolve();
+async function tx(fn) {
+  if (typeof pool.connect === 'function') {
+    const client = await pool.connect();
+    const run = (sql, params = []) => client.query(sql, params);
+    try {
+      await run('BEGIN');
+      const out = await fn(run);
+      await run('COMMIT');
+      return out;
+    } catch (err) {
+      try { await run('ROLLBACK'); } catch { /* the connection is already gone */ }
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+  const mine = txQueue.catch(() => {}).then(async () => {
+    try {
+      await q('BEGIN');
+      const out = await fn(q);
+      await q('COMMIT');
+      return out;
+    } catch (err) {
+      try { await q('ROLLBACK'); } catch { /* nothing to roll back */ }
+      throw err;
+    }
+  });
+  txQueue = mine.catch(() => {});
+  return mine;
+}
+
 const app = express();
 /* A browser only ever sends scheme + host as its Origin, so
    "https://you.github.io/your-repo" would never match anything and every request
@@ -143,6 +190,19 @@ const DEFAULTS = {
   recognition_threshold: '0.5',
   foreign_trade_tax: '0.1',
 
+  // Offshore money, forex and defection
+  offshore_enabled: 'false',
+  offshore_fee: '0.05',             // the haven's cut of a deposit, rounded up in its favour
+  offshore_minimum: '50',           // least a haven will take in a single deposit
+  forex_spread: '0.03',             // the power's cut of a conversion, either direction
+  forex_step: '0.05',               // most a rate may move in one cycle, as a fraction of itself
+  forex_weight_trade: '0.4',        // how much the balance of trade moves the rate
+  forex_weight_pressure: '0.4',     // how much conflict pressure moves the rate
+  forex_weight_issuance: '0.2',     // how much fresh issuance moves the rate
+  forex_trade_scale: '2000',        // trade balance that produces a full-strength signal
+  forex_issuance_scale: '5000',     // issuance since the last fixing that produces a full-strength signal
+  defection_return_share: '0.3',    // the Treasury's cut of frozen holdings on readmission
+
   secret_ballot: 'true',           // hide who voted for whom in elections
   allow_open_signup: 'false',      // if true, no invite code needed
   require_approval: 'true',        // new accounts stay inert until an admin approves them
@@ -159,6 +219,7 @@ const DEFAULTS = {
   speaker_poll_hours: '12',
   speaker_threshold: '0.667',      // Article 4: two thirds of the House
   speaker_relax: '1',              // votes the bar drops after each failed ballot; 0 to never relax
+  runoff_hours: '24',              // how long a tied seat's run-off stays open
   flag_law_ref: 'L001',            // the law the app reads the flag and its colours from
   enforce_term_limit: 'false'      // Article 7: no two consecutive cycles in office
 };
@@ -207,8 +268,11 @@ const LEGISLATABLE = new Set([
   'diplomacy_enabled', 'foreign_actions_per_cycle', 'treaty_threshold', 'recognition_threshold', 'foreign_trade_tax',
   'secret_ballot', 'cycle_enabled', 'cycle_days', 'campaign_days', 'poll_days',
   'cycle_elects', 'speaker_auto', 'speaker_threshold', 'speaker_nomination_hours',
-  'speaker_poll_hours', 'speaker_relax', 'enforce_term_limit', 'flag_law_ref',
-  'foreign_treasury_per_cycle', 'foreign_export_cap_per_cycle', 'foreign_trade_tax'
+  'speaker_poll_hours', 'speaker_relax', 'runoff_hours', 'enforce_term_limit', 'flag_law_ref',
+  'foreign_treasury_per_cycle', 'foreign_export_cap_per_cycle', 'foreign_trade_tax',
+  'offshore_enabled', 'offshore_fee', 'offshore_minimum', 'forex_spread', 'forex_step',
+  'forex_weight_trade', 'forex_weight_pressure', 'forex_weight_issuance',
+  'forex_trade_scale', 'forex_issuance_scale', 'defection_return_share'
 ]);
 
 /* ------------------------------------------------------------------ the flag
@@ -373,6 +437,10 @@ async function bootstrap() {
   if (fs.existsSync(extra)) await pool.query(fs.readFileSync(extra, 'utf8'));
   const diplomacySchema = path.join(__dirname, 'schema-diplomacy.sql');
   if (fs.existsSync(diplomacySchema)) await pool.query(fs.readFileSync(diplomacySchema, 'utf8'));
+  // Intelligence collection and operations. After diplomacy: it extends
+  // intel_service/intel_reports and hangs new tables off powers/foreign_agents.
+  const intelSchema = path.join(__dirname, 'schema-intel.sql');
+  if (fs.existsSync(intelSchema)) await pool.query(fs.readFileSync(intelSchema, 'utf8'));
   // The Treasury and the Fed. Loaded after schema-acts.sql, which owns `cases`
   // and `accounts` — the private banks hang off both.
   const moneySchema = path.join(__dirname, 'schema-money.sql');
@@ -380,6 +448,18 @@ async function bootstrap() {
   // Supply, procurement and upkeep. After diplomacy: foreign offers are bought from.
   const warSchema = path.join(__dirname, 'schema-war.sql');
   if (fs.existsSync(warSchema)) await pool.query(fs.readFileSync(warSchema, 'utf8'));
+  // The generated world. After diplomacy, whose `powers` table world_powers hangs off.
+  const worldgenSchema = path.join(__dirname, 'schema-worldgen.sql');
+  if (fs.existsSync(worldgenSchema)) await pool.query(fs.readFileSync(worldgenSchema, 'utf8'));
+  // Offshore money, forex and defection. Last: it hangs off a foreign power and
+  // its defection triggers attach to every ballot box every schema above defines.
+  const offshoreSchema = path.join(__dirname, 'schema-offshore.sql');
+  if (fs.existsSync(offshoreSchema)) await pool.query(fs.readFileSync(offshoreSchema, 'utf8'));
+  // Delegated credentials for third-party apps. Independent of every schema
+  // above — it only references users(id) — so it can load anywhere, but goes
+  // last because it is the newest and least tangled with anything else here.
+  const apikeysSchema = path.join(__dirname, 'schema-apikeys.sql');
+  if (fs.existsSync(apikeysSchema)) await pool.query(fs.readFileSync(apikeysSchema, 'utf8'));
   for (const [k, v] of Object.entries(DEFAULTS)) {
     await q('INSERT INTO config(key,value) VALUES($1,$2) ON CONFLICT (key) DO NOTHING', [k, v]);
   }
@@ -407,10 +487,40 @@ function sign(user) {
   return jwt.sign({ id: user.id, tv: user.token_version || 0 }, JWT_SECRET, { expiresIn: '60d' });
 }
 
+/* An API key is distinguished from a JWT by prefix alone (`rk_`), never by
+   length or shape guessing, so the two token kinds are never ambiguous here.
+   The secret half is never stored — only an HMAC of it, keyed on the same
+   JWT_SECRET the server already refuses to boot without. That is checked on
+   every request, so it has to be fast; bcrypt would not be, and does not need
+   to be here the way it does for a password, because the key itself is 192
+   bits of randomness nobody is guessing offline. */
 async function attach(req, _res, next) {
   const h = req.headers.authorization || '';
   const t = h.startsWith('Bearer ') ? h.slice(7) : null;
-  if (t) {
+  if (t && t.startsWith('rk_')) {
+    try {
+      const hash = crypto.createHmac('sha256', JWT_SECRET).update(t).digest('hex');
+      const { rows } = await q(
+        `SELECT k.id AS key_id, k.label, k.scopes, k.cap_amount, k.cap_window_ms, k.revoked_at,
+                u.id, u.username, u.display_name, u.bio, u.is_admin, u.is_active, u.approved, u.token_version
+           FROM api_keys k JOIN users u ON u.id = k.user_id
+          WHERE k.key_hash = $1`, [hash]);
+      const row = rows[0];
+      if (row && !row.revoked_at && row.is_active && row.approved) {
+        req.user = {
+          id: row.id, username: row.username, display_name: row.display_name, bio: row.bio,
+          is_admin: row.is_admin, is_active: row.is_active, approved: row.approved, token_version: row.token_version
+        };
+        req.apiKey = {
+          id: row.key_id, label: row.label, scopes: String(row.scopes || '').split(',').filter(Boolean),
+          cap_amount: row.cap_amount, cap_window_ms: row.cap_window_ms
+        };
+        // Best-effort: a citizen glancing at "last used" should never be able
+        // to stall a request that would otherwise be fine.
+        q('UPDATE api_keys SET last_used_at=now() WHERE id=$1', [row.key_id]).catch(() => {});
+      }
+    } catch { /* invalid key — treated as anonymous */ }
+  } else if (t) {
     try {
       const p = jwt.verify(t, JWT_SECRET);
       const { rows } = await q(
@@ -423,8 +533,39 @@ async function attach(req, _res, next) {
 }
 app.use(attach);
 
-const auth = (req, res, next) => req.user ? next() : res.status(401).json({ error: 'Sign in to do that.' });
-const admin = (req, res, next) => req.user?.is_admin ? next() : res.status(403).json({ error: 'Admins only.' });
+const auth = (req, res, next) => {
+  if (!req.user) return res.status(401).json({ error: 'Sign in to do that.' });
+  /* A key carries the implicit read scope and nothing more unless a route
+     opts it in explicitly with requireScope. That has to hold for every
+     write route in the app, not just the ones built with keys in mind — so
+     the block lives here, in the gate almost every write route already
+     calls, rather than as something each route has to remember to add. A
+     route that wants to accept a scoped key for a write uses requireScope()
+     in place of this. */
+  if (req.apiKey && !['GET', 'HEAD'].includes(req.method))
+    return res.status(403).json({ error: 'This API key cannot make changes. It needs a route with an explicit scope.' });
+  next();
+};
+const admin = (req, res, next) => {
+  if (!req.user?.is_admin) return res.status(403).json({ error: 'Admins only.' });
+  // The Returning Officer's own powers are never delegable to an app acting
+  // on someone's behalf — there is no scope for them, on purpose.
+  if (req.apiKey) return res.status(403).json({ error: 'API keys cannot act as the Returning Officer.' });
+  next();
+};
+
+/* For the handful of routes that should accept a suitably-scoped key instead
+   of blocking every key outright — today that is only economy:pay. A full
+   JWT session carries every scope implicitly: a signed-in citizen isn't
+   limited by a key's restrictions, only a delegated app is. */
+function requireScope(scope) {
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Sign in to do that.' });
+    if (req.apiKey && !req.apiKey.scopes.includes(scope))
+      return res.status(403).json({ error: `This API key is missing the "${scope}" scope.` });
+    next();
+  };
+}
 
 /* Article 7.1 is "one seat", and Article 4.1 makes the Speaker a member of the
    House — so mp and speaker are one seat held together, not two. */
@@ -441,6 +582,9 @@ const holds = async (userId, office) => (await officesOf(userId)).includes(offic
 function requireOffice(office) {
   return async (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Sign in to do that.' });
+    // No office comes with a key scope. Holding an office through a delegated
+    // app would mean the app, not the citizen, casts the Speaker's vote.
+    if (req.apiKey) return res.status(403).json({ error: 'API keys cannot act in an office.' });
     /* The Returning Officer runs the elections. They are not the President, the
        Speaker, or the House, and they do not act in those offices — an admin who
        can assent to their own bills makes every result look arranged.
@@ -456,10 +600,33 @@ function requireOffice(office) {
   };
 }
 
-const log = (actor, action, detail = '') =>
-  q('INSERT INTO audit(actor_id,action,detail) VALUES($1,$2,$3)', [actor, action, detail]).catch(() => {});
+/* A key acting for a citizen is exactly the case the public record has to
+   show plainly — "every admin action writes to the public record" only means
+   something if a delegated app can't quietly blend into an ordinary action by
+   the citizen it's acting for. Routes that accept a scoped key fold this into
+   the detail string log() already takes, rather than widening log()'s
+   signature for one caller shape. */
+const attribute = (detail, req) => req?.apiKey ? `${detail} (via app:${req.apiKey.label})` : detail;
+
+/* The public event feed taps this, not the audit table directly, so a
+   listener never sees a row before it's actually committed and never has to
+   poll. One process, one emitter — a restart just drops SSE connections,
+   which publicapi.js documents as expected client-reconnect behaviour. */
+const events = new (require('events').EventEmitter)();
+events.setMaxListeners(0);
+
+const log = (actor, action, detail = '') => {
+  events.emit('audit', { actor_id: actor, action, detail, at: new Date().toISOString() });
+  return q('INSERT INTO audit(actor_id,action,detail) VALUES($1,$2,$3)', [actor, action, detail]).catch(() => {});
+};
 
 const wrap = fn => (req, res) => fn(req, res).catch(err => {
+  /* RP001 is the Republic's own SQLSTATE: a rule the database itself holds —
+     one person one vote, a defector's frozen domestic account — raised with
+     the sentence a citizen should actually read. It is not a bug, so it does
+     not get a stack trace and a 500; it gets exactly the same shape as any
+     other refusal. See schema-offshore.sql for the triggers that raise it. */
+  if (err.code === 'RP001') return res.status(400).json({ error: err.message });
   console.error(err);
   res.status(500).json({ error: 'Something broke on the server. Try again.' });
 });
@@ -538,6 +705,75 @@ app.post('/api/me/password', auth, wrap(async (req, res) => {
     [await bcrypt.hash(String(nextPw), 10), req.user.id]);
   log(req.user.id, 'password.change', '');
   res.json({ ok: true, token: sign(upd[0]) });
+}));
+
+/* ------------------------------------------------------------- API keys */
+
+// The only scope beyond the implicit read every key gets. Keep this list
+// short on purpose — a third-party app should never be able to acquire a
+// capability nobody thought to name here.
+const KEY_SCOPES = new Set(['economy:pay']);
+const KEY_MIN_WINDOW_MS = 60 * 60 * 1000;        // an hour
+const KEY_MAX_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+const keyOut = k => ({
+  id: k.id, label: k.label, scopes: String(k.scopes || '').split(',').filter(Boolean),
+  cap_amount: k.cap_amount, cap_window_ms: k.cap_window_ms,
+  created_at: k.created_at, last_used_at: k.last_used_at, revoked_at: k.revoked_at
+});
+
+// A route built for a citizen's own JWT session, not for a key to use on
+// itself — auth() already refuses any apiKey a non-GET request here, which is
+// exactly right: an app cannot mint or revoke its own credentials.
+app.post('/api/me/keys', auth, wrap(async (req, res) => {
+  const { label, scopes, cap_amount, cap_window_ms } = req.body || {};
+  if (!label || !String(label).trim()) return res.status(400).json({ error: 'Give the key a label so you know what it is for later.' });
+  const wantScopes = Array.isArray(scopes) ? scopes.filter(s => KEY_SCOPES.has(s)) : [];
+  if (Array.isArray(scopes) && wantScopes.length !== scopes.length)
+    return res.status(400).json({ error: `Unknown scope. Valid scopes: ${[...KEY_SCOPES].join(', ')}.` });
+  let cap = null, window = null;
+  if (cap_amount != null) {
+    cap = Math.round(Number(cap_amount));
+    if (!(cap > 0)) return res.status(400).json({ error: 'A spending cap must be a positive amount.' });
+    window = Math.round(Number(cap_window_ms) || 24 * 60 * 60 * 1000);
+    window = Math.min(KEY_MAX_WINDOW_MS, Math.max(KEY_MIN_WINDOW_MS, window));
+  }
+  const raw = 'rk_' + crypto.randomBytes(24).toString('hex');
+  const hash = crypto.createHmac('sha256', JWT_SECRET).update(raw).digest('hex');
+  const { rows } = await q(
+    `INSERT INTO api_keys(user_id,label,key_hash,scopes,cap_amount,cap_window_ms)
+     VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [req.user.id, String(label).trim().slice(0, 80), hash, wantScopes.join(','), cap, window]);
+  log(req.user.id, 'apikey.create', `"${rows[0].label}"${wantScopes.length ? ' scopes: ' + wantScopes.join(',') : ''}`);
+  // The only moment the raw key is ever readable again by anyone, including us.
+  res.json({ key: raw, ...keyOut(rows[0]) });
+}));
+
+app.get('/api/me/keys', auth, wrap(async (req, res) => {
+  const { rows } = await q('SELECT * FROM api_keys WHERE user_id=$1 ORDER BY created_at DESC', [req.user.id]);
+  res.json(rows.map(keyOut));
+}));
+
+app.post('/api/me/keys/:id/revoke', auth, wrap(async (req, res) => {
+  const { rows } = await q(
+    'UPDATE api_keys SET revoked_at=now() WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL RETURNING label',
+    [req.params.id, req.user.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'No such key.' });
+  log(req.user.id, 'apikey.revoke', `"${rows[0].label}"`);
+  res.json({ ok: true });
+}));
+
+// Abuse response, same precedent as an admin resetting a password: the
+// citizen who created the key normally revokes it, but a compromised or
+// misbehaving app is exactly the case the Returning Officer has to be able to
+// cut off even if the citizen is unreachable.
+app.post('/api/admin/keys/:id/revoke', admin, wrap(async (req, res) => {
+  const { rows } = await q(
+    'UPDATE api_keys SET revoked_at=now() WHERE id=$1 AND revoked_at IS NULL RETURNING label,user_id',
+    [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'No such key.' });
+  log(req.user.id, 'apikey.revoke', `"${rows[0].label}" — revoked by the Returning Officer for user #${rows[0].user_id}`);
+  res.json({ ok: true });
 }));
 
 /* ----------------------------------------------------------- state feed */
@@ -871,11 +1107,55 @@ async function certify(e, actorId) {
     return { seated: [{ office: 'justice', name: winners[0].display_name, votes: winners[0].votes }], term_ends: ends };
   }
 
-  await q('UPDATE offices SET active=FALSE, until=now() WHERE office=$1 AND active', [office]);
-  if (office === 'mp') await q("UPDATE offices SET active=FALSE, until=now() WHERE office='speaker' AND active");
+  /* A tie for the last seat used to be settled by `ORDER BY … u.display_name`,
+     and a display name is a field the candidate can edit from their own account
+     page at any moment, including while the poll is open. So the tiebreak went
+     to whoever renamed themselves earliest in the alphabet.
+
+     `tie` above is already the exact condition worth acting on: more candidates
+     level on the cutoff score than there are seats left at that score. A tie
+     that changes nothing — everyone level is being seated anyway — is not a tie
+     for this purpose and falls straight through.
+
+     So: seat everyone who is clearly above the cutoff, and put the contested
+     seats to a run-off between exactly the candidates who are level on it. The
+     run-off inherits this poll's `opened_at`, which is what freezes the
+     electoral roll — otherwise the gap between the tie and the run-off is an
+     open window for registering sockpuppets to decide it.
+
+     A run-off that ties again leaves the seats empty rather than running a
+     third, which is what the People's Justice ballot already does and stops an
+     evenly-split electorate from looping forever. */
+  if (tie && !e.runoff_of) {
+    const contested = results.filter(r => r.votes === cutoff);
+    const clear = winners.filter(w => w.votes > cutoff);
+    const seatsLeft = e.seats - clear.length;
+    const closes = new Date(Date.now() + num('runoff_hours') * 3600000);
+    const r = (await q(
+      `INSERT INTO elections(kind,title,seats,status,opens_at,closes_at,opened_at,runoff_of,cycle_no)
+       VALUES($1,$2,$3,'voting',now(),$4,$5,$6,$7) RETURNING id`,
+      [e.kind, `${e.title} — run-off`, seatsLeft, closes, e.opened_at, e.id, e.cycle_no])).rows[0];
+    for (const c of contested)
+      await q('INSERT INTO candidacies(election_id,user_id,statement) VALUES($1,$2,$3)',
+        [r.id, c.user_id, c.statement || '']);
+    log(actorId, 'election.runoff',
+      `${e.title}: ${contested.map(c => c.display_name).join(', ')} tied on ${cutoff} for ${seatsLeft} seat(s)`);
+  }
+
+  if (!e.runoff_of) {
+    await q('UPDATE offices SET active=FALSE, until=now() WHERE office=$1 AND active', [office]);
+    if (office === 'mp') await q("UPDATE offices SET active=FALSE, until=now() WHERE office='speaker' AND active");
+  }
   const seated = [];
-  let seat = 1;
-  for (const w of winners) {
+  /* A run-off fills the seats its parent left contested, so it must not vacate
+     and must not restart the numbering on top of members already sitting. */
+  let seat = e.runoff_of
+    ? Number((await q("SELECT COALESCE(max(seat),0)::int m FROM offices WHERE office='mp' AND active")).rows[0].m) + 1
+    : 1;
+  /* Everyone level on the cutoff is going to a run-off, so they are not seated
+     here. On a run-off that tied again, that leaves the seats empty. */
+  const toSeat = tie ? winners.filter(w => w.votes > cutoff) : winners;
+  for (const w of toSeat) {
     // Article 7.1: one seat each. Someone who already holds another office is
     // not seated in a second — they keep the one they have.
     const clash = seatClash(await officesOf(w.user_id), office);
@@ -888,6 +1168,15 @@ async function certify(e, actorId) {
     seated.push({ office, name: w.display_name, votes: w.votes });
   }
   log(actorId, 'election.certify', `${e.title}: ${seated.map(x => x.name).join(', ') || 'nobody'}`);
+  if (tie)
+    return {
+      seated,
+      tie,
+      runoff: !e.runoff_of,
+      reason: e.runoff_of
+        ? 'the run-off tied as well, so the seat stays empty and the Returning Officer calls a fresh ballot'
+        : 'the last seat is tied, so it goes to a run-off between the candidates who are level'
+    };
   return { seated, tie };
 }
 
@@ -1289,6 +1578,14 @@ app.post('/api/admin/cycle', admin, wrap(async (req, res) => {
 /* Who may put a bill before the House, and who may second one. Defaults to the
    House alone; a rule bill can open it to every citizen. */
 async function canPropose(userId) {
+  // A defector holds no seat and no signature, and offices.js already clears
+  // their seats the moment they renounce — but when bill_proposers is opened to
+  // every citizen, that check never runs, so a foreign subject could still
+  // author a Republic bill. offshore.js is optional, so ask only if it mounted.
+  if (ACT_CONTEXT.offshore?.defectors) {
+    const defected = await ACT_CONTEXT.offshore.defectors();
+    if (defected.includes(userId)) return false;
+  }
   if (CONFIG.bill_proposers === 'citizens') return true;
   const u = (await q('SELECT is_admin FROM users WHERE id=$1', [userId])).rows[0];
   return (await officesOf(userId)).some(o => o === 'mp' || o === 'speaker');
@@ -2618,21 +2915,40 @@ app.put('/api/admin/constitution', admin, wrap(async (req, res) => {
    touching anything above. Each is optional: if the file is not there, the
    Republic simply does not have that institution yet. */
 const ACT_CONTEXT = {
-  q, log, auth, admin, wrap, num, bool, loadConfig, officesOf, holds,
-  citizenCount, slowWrites, requireOffice, enact, canPropose, cycleNow, addEnactHook, bcrypt, crypto,
+  q, tx, log, auth, admin, wrap, num, bool, loadConfig, officesOf, holds,
+  citizenCount, slowWrites, requireOffice, requireScope, attribute, events, enact, canPropose, cycleNow, addEnactHook, bcrypt, crypto,
   justiceTermEnds,
   get CONFIG() { return CONFIG; }
 };
 /* Order matters twice over. economy.js sets ctx.economy as its last act and
-   money.js borrows the ledger primitives off it. diplomacy.js is mounted before
-   both because economy's payrun calls ctx.diplomacy?.runPayrun, and because a
-   foreign power holds a real account like anyone else. */
-for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war']) {
+   money.js and offshore.js borrow the ledger primitives off it. diplomacy.js is
+   mounted before all three because economy's payrun calls ctx.diplomacy?.runPayrun,
+   and because a foreign power holds a real account like anyone else. worldexport,
+   worldgen and offshore go last, in that order: worldexport only reads territory
+   tables diplomacy's schema owns; worldgen reads ctx.diplomacy and ctx.war at
+   request time, never at mount time, to measure a generated power against the
+   same strength a real conflict would use; offshore reads ctx.war?.blockadedPowers
+   and ctx.intel the same way. All three are optional like everything else here —
+   a missing atlas, diplomacy schema or war module and they answer 503 instead of
+   inventing a number. intelligence.js mounts right after war.js: it extends
+   ctx.intel (which diplomacy.js set) rather than replacing it, and a coup or
+   removal is exactly the kind of write worldgen and offshore need to already see
+   coming. */
+/* Say what happened to every one of them. A module that fails to mount answers
+   503 for the rest of the process's life, and on Render that used to be
+   invisible at boot — the same failure shape as a mismatched ALLOWED_ORIGINS,
+   where the server looks healthy while half the site does not work. */
+for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war', './intelligence', './worldexport', './worldgen', './offshore', './publicapi']) {
+  const name = mod.replace('./', '');
   try {
     require(mod).mount(app, ACT_CONTEXT);
+    console.log(`[republic] ${name} mounted`);
   } catch (err) {
-    if (err.code === 'MODULE_NOT_FOUND' && String(err.message).includes(mod)) continue;
-    console.error(`[republic] ${mod} failed to mount:`, err.message);
+    if (err.code === 'MODULE_NOT_FOUND' && String(err.message).includes(mod)) {
+      console.log(`[republic] ${name} is not in this build — its endpoints will answer 404`);
+      continue;
+    }
+    console.error(`[republic] ${name} FAILED TO MOUNT — its endpoints will answer 404:`, err.message);
   }
 }
 
