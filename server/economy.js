@@ -111,6 +111,10 @@ module.exports.mount = function mount(app, ctx) {
     const amt = money(amount);
     if (amt <= 0) throw Object.assign(new Error('Amount must be positive.'), { code: 'AMOUNT' });
     if (!run) return tx(r => settle(fromAcc, toAcc, amount, kind, note, r));
+    if (fromAcc && ctx.budget?.authoriseTreasurySpend) {
+      const authorised = await ctx.budget.authoriseTreasurySpend(fromAcc, amt, kind, note, run);
+      note = authorised?.note ?? note;
+    }
     if (fromAcc) await run('UPDATE accounts SET balance = balance - $1::bigint WHERE id=$2', [amt, fromAcc]);
     if (toAcc) await run('UPDATE accounts SET balance = balance + $1::bigint WHERE id=$2', [amt, toAcc]);
     await run('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)',
@@ -315,7 +319,8 @@ module.exports.mount = function mount(app, ctx) {
       treasurer: money(num('salary_treasurer')),
       foreign_minister: money(num('salary_foreign_minister')),
       quartermaster: money(num('salary_quartermaster')),
-      fed_chair: money(num('salary_fed_chair'))
+      fed_chair: money(num('salary_fed_chair')),
+      intel_director: money(num('salary_intel_director'))
     };
     const already = (await q('SELECT 1 FROM payruns WHERE kind=$1 AND cycle_no=$2', ['salary', cycleNo]))
       .rows[0];
@@ -343,11 +348,11 @@ module.exports.mount = function mount(app, ctx) {
 
   /* Part 6: taxation is progressive. Everything up to the allowance is untaxed;
      the rate applies only to the balance above it, and rises with a second band. */
-  function taxOn(balance) {
-    const free = money(num('tax_free_allowance'));
-    const base = Number(num('tax_rate')) || 0;
-    const upper = Number(num('tax_rate_upper')) || base;
-    const threshold = money(num('tax_upper_threshold'));
+  function taxOn(balance, policy = null) {
+    const free = money(policy?.tax_free_allowance ?? num('tax_free_allowance'));
+    const base = Number(policy?.tax_rate ?? num('tax_rate')) || 0;
+    const upper = Number(policy?.tax_rate_upper ?? num('tax_rate_upper')) || base;
+    const threshold = money(policy?.tax_upper_threshold ?? num('tax_upper_threshold'));
     const b = Number(balance);
     if (b <= free) return 0;
     if (threshold > free && b > threshold) {
@@ -373,11 +378,12 @@ module.exports.mount = function mount(app, ctx) {
     // throw mid-loop and take the rest of the payrun down with it. Their holdings
     // sit exactly where they were left; the House can move them by bill.
     const defected = new Set(ctx.offshore?.defectors ? await ctx.offshore.defectors() : []);
+    const policy = ctx.budget?.taxPolicy ? await ctx.budget.taxPolicy(cycleNo) : null;
     let taken = 0,
       from = 0;
     for (const a of accs) {
       if (defected.has(a.user_id)) continue;
-      const due = Math.min(taxOn(a.balance), Number(a.balance));
+      const due = Math.min(taxOn(a.balance, policy), Number(a.balance));
       if (due <= 0) continue;
       await pay(a.id, t.id, due, 'tax', `cycle ${cycleNo}`);
       taken += due;
@@ -398,6 +404,7 @@ module.exports.mount = function mount(app, ctx) {
     wrap(async (req, res) => {
       const cycle = Number(req.body?.cycle_no);
       if (!Number.isFinite(cycle)) return res.status(400).json({ error: 'Say which cycle this is for.' });
+      if (ctx.budget?.activate) await ctx.budget.activate(cycle);
       const out = {};
       if (req.body?.tax !== false) out.tax = await runTax(cycle, req.user.id);
       if (req.body?.dividend !== false) out.dividend = await runDividend(cycle, req.user.id);
@@ -413,6 +420,8 @@ module.exports.mount = function mount(app, ctx) {
         out.conflicts = await ctx.war.runConflicts(cycle, req.user.id);
       if (req.body?.diplomacy !== false && ctx.diplomacy?.runPayrun)
         out.diplomacy = await ctx.diplomacy.runPayrun(cycle, req.user.id);
+      if (req.body?.intelligence !== false && ctx.intel?.runPayrun)
+        out.intelligence = await ctx.intel.runPayrun(cycle, req.user.id);
       // Havens freeze or thaw, and one fixing per power for this cycle. After
       // diplomacy and war, so this cycle's trade and pressure are the numbers
       // the fixing reads.

@@ -175,7 +175,9 @@ const DEFAULTS = {
   strength_per_size: '4',            // what one fully-ready unit of size is worth against a power
   conflict_step: '10',               // most a conflict can move in one cycle, either way
   salary_fed_chair: '110',
+  salary_intel_director: '120',
   fed_terms: '3',                  // Article 21.9: cycles the head of the Fed serves
+  intel_director_terms: '4',       // Section 2.4: cycles the Director of Intelligence serves
   reserve_ratio: '0.2',            // what a licensed bank must hold against its deposits
   bank_charter_fee: '250',         // least capital a citizen may open a bank with
   deposit_guarantee: '300',        // what the Treasury makes good per depositor if a bank fails
@@ -260,17 +262,16 @@ const LEGISLATABLE = new Set([
   'emergency_max_days', 'emergency_end_share',
   'supermajority_share', 'supermajority_days',
   'currency_name', 'currency_symbol', 'dividend', 'salary_president', 'salary_speaker',
-  'salary_mp', 'salary_justice', 'tax_free_allowance', 'tax_rate',
-  'tax_upper_threshold', 'tax_rate_upper', 'registration_fee',
+  'salary_mp', 'salary_justice', 'registration_fee',
   'ownership_cap', 'goods_economy_enabled',
-  'salary_treasurer', 'salary_foreign_minister', 'salary_quartermaster', 'salary_fed_chair',
-  'military_budget_per_cycle', 'upkeep_food', 'upkeep_energy', 'upkeep_arms', 'upkeep_pay',
-  'raise_cost_arms', 'readiness_fall', 'readiness_rise', 'strength_per_size', 'conflict_step', 'fed_terms', 'bank_charter_fee', 'deposit_guarantee',
-  'diplomacy_enabled', 'foreign_actions_per_cycle', 'treaty_threshold', 'recognition_threshold', 'foreign_trade_tax',
+  'salary_treasurer', 'salary_foreign_minister', 'salary_quartermaster', 'salary_fed_chair', 'salary_intel_director',
+  'upkeep_food', 'upkeep_energy', 'upkeep_arms', 'upkeep_pay',
+  'raise_cost_arms', 'readiness_fall', 'readiness_rise', 'strength_per_size', 'conflict_step', 'fed_terms', 'intel_director_terms', 'bank_charter_fee', 'deposit_guarantee',
+  'diplomacy_enabled', 'foreign_actions_per_cycle', 'treaty_threshold', 'recognition_threshold',
   'secret_ballot', 'cycle_enabled', 'cycle_days', 'campaign_days', 'poll_days',
   'cycle_elects', 'speaker_auto', 'speaker_threshold', 'speaker_nomination_hours',
   'speaker_poll_hours', 'speaker_relax', 'runoff_hours', 'enforce_term_limit', 'flag_law_ref',
-  'foreign_treasury_per_cycle', 'foreign_export_cap_per_cycle', 'foreign_trade_tax',
+  'foreign_treasury_per_cycle', 'foreign_export_cap_per_cycle',
   'offshore_enabled', 'offshore_fee', 'offshore_minimum', 'forex_spread', 'forex_step',
   'forex_weight_trade', 'forex_weight_pressure', 'forex_weight_issuance',
   'forex_trade_scale', 'forex_issuance_scale', 'defection_return_share'
@@ -438,6 +439,8 @@ async function bootstrap() {
   if (fs.existsSync(extra)) await pool.query(fs.readFileSync(extra, 'utf8'));
   const diplomacySchema = path.join(__dirname, 'schema-diplomacy.sql');
   if (fs.existsSync(diplomacySchema)) await pool.query(fs.readFileSync(diplomacySchema, 'utf8'));
+  const budgetSchema = path.join(__dirname, 'schema-budget.sql');
+  if (fs.existsSync(budgetSchema)) await pool.query(fs.readFileSync(budgetSchema, 'utf8'));
   // Intelligence collection and operations. After diplomacy: it extends
   // intel_service/intel_reports and hangs new tables off powers/foreign_agents.
   const intelSchema = path.join(__dirname, 'schema-intel.sql');
@@ -1316,6 +1319,7 @@ async function tick() {
     /* Retire first, then call the ballot, so a term that ends on this tick puts
        the election in the same minute rather than sixty seconds later. */
     await retireExpiredJustices();
+    if (ACT_CONTEXT.intel?.retireExpiredDirector) await ACT_CONTEXT.intel.retireExpiredDirector();
     if (!halted && bool('justice_auto')) await ensureJusticeElection();
   } catch (err) {
     console.error('[republic] tick failed:', err.message);
@@ -1727,6 +1731,7 @@ app.patch('/api/bills/:id', auth, wrap(async (req, res) => {
   await loadConfig();
   const b = (await q('SELECT * FROM bills WHERE id=$1', [req.params.id])).rows[0];
   if (!b) return res.status(404).json({ error: 'No such bill.' });
+  if (b.kind === 'budget') return res.status(400).json({ error: 'A Presidential Budget is a structured fiscal proposal. Replace it after the House rejects it rather than editing its bill text.' });
   if (b.author_id !== req.user.id)
     return res.status(403).json({ error: 'A bill belongs to whoever proposed it. Only they may change its text.' });
   if (!BILL_EDITABLE.includes(b.status))
@@ -1762,6 +1767,7 @@ app.patch('/api/bills/:id', auth, wrap(async (req, res) => {
 app.post('/api/bills/:id/withdraw', auth, wrap(async (req, res) => {
   const b = (await q('SELECT * FROM bills WHERE id=$1', [req.params.id])).rows[0];
   if (!b) return res.status(404).json({ error: 'No such bill.' });
+  if (b.kind === 'budget') return res.status(400).json({ error: 'The President has placed this budget before the House. The House now decides it.' });
   if (b.author_id !== req.user.id)
     return res.status(403).json({ error: 'Only the member who proposed a bill may withdraw it. Nobody can pull someone else\'s.' });
   if (!BILL_EDITABLE.includes(b.status))
@@ -1897,6 +1903,8 @@ app.post('/api/bills/:id/close', requireOffice('speaker'), wrap(async (req, res)
     const gone = (await q(
       'UPDATE offices SET active=FALSE, until=now() WHERE user_id=$1 AND active RETURNING office',
       [b.target_user_id])).rows.map(r => r.office);
+    if (gone.includes('intel_director') && ACT_CONTEXT.intel?.directorRemoved)
+      await ACT_CONTEXT.intel.directorRemoved(b.target_user_id);
     await q("UPDATE bills SET status='enacted', result=$1, resolved_at=now() WHERE id=$2", [result, b.id]);
     log(req.user.id, 'bill.impeach', `${b.ref}: ${t?.display_name} removed from ${gone.join(', ') || 'nothing'} (${result})`);
     return res.json({ carried, result, share, impeached: t?.display_name, removed_from: gone });
@@ -1911,6 +1919,21 @@ app.post('/api/bills/:id/close', requireOffice('speaker'), wrap(async (req, res)
     await q("UPDATE bills SET status='tied', result=$1 WHERE id=$2", [result, b.id]);
     log(req.user.id, 'bill.tied', `${b.ref} tied ${result} — to the Speaker's casting vote`);
     return res.json({ tied: true, result });
+  }
+
+  /* A Presidential Budget is complete when the House carries it. Sending the
+     House's approval back to the executive for assent would let the proposer
+     veto the chamber's amendments to their own fiscal plan. */
+  if (b.kind === 'budget') {
+    if (!carried) {
+      await q("UPDATE bills SET status='failed', result=$1, resolved_at=now() WHERE id=$2", [result, b.id]);
+      if (ACT_CONTEXT.budget?.billRejected) await ACT_CONTEXT.budget.billRejected(b.id);
+      log(req.user.id, 'budget.reject', `${b.ref} lost (${result})`);
+      return res.json({ carried: false, result, share });
+    }
+    await q('UPDATE bills SET result=$1, resolved_at=now() WHERE id=$2', [result, b.id]);
+    await enact(b, req.user.id);
+    return res.json({ carried: true, result, share, enacted: true });
   }
 
   await q('UPDATE bills SET status=$1, result=$2, resolved_at=now() WHERE id=$3',
@@ -2005,7 +2028,7 @@ async function enact(b, actorId, overridden = false) {
     await q('UPDATE laws SET repealed_at=now(), repealed_by=$1 WHERE id=$2', [b.id, b.target_law_id]);
   } else if (b.kind === 'amendment' && b.target_law_id) {
     await q('UPDATE laws SET body=$1, title=$2 WHERE id=$3', [b.body, b.title, b.target_law_id]);
-  } else if (b.kind !== 'motion') {
+  } else if (b.kind !== 'motion' && b.kind !== 'budget') {
     const n = (await q('SELECT count(*)::int n FROM laws')).rows[0].n + 1;
     await q('INSERT INTO laws(ref,title,body,bill_id) VALUES($1,$2,$3,$4)',
       [`L${String(n).padStart(3, '0')}`, b.title, b.body, b.id]);
@@ -2212,6 +2235,7 @@ app.post('/api/bills/:id/casting-vote', requireOffice('speaker'), wrap(async (re
     return res.status(400).json({ error: 'Cast aye or no. There is no abstaining from a casting vote.' });
   if (vote === 'no') {
     await q("UPDATE bills SET status='failed', casting_vote='no', resolved_at=now() WHERE id=$1", [b.id]);
+    if (b.kind === 'budget' && ACT_CONTEXT.budget?.billRejected) await ACT_CONTEXT.budget.billRejected(b.id);
     log(req.user.id, 'bill.casting', `${b.ref} lost on the Speaker's casting vote`);
     return res.json({ carried: false });
   }
@@ -2221,6 +2245,12 @@ app.post('/api/bills/:id/casting-vote', requireOffice('speaker'), wrap(async (re
     await q("UPDATE bills SET status='enacted', casting_vote='aye', resolved_at=now() WHERE id=$1", [b.id]);
     log(req.user.id, 'bill.casting', `${b.ref} carried on the casting vote`);
     return res.json({ carried: true, removed_from: gone });
+  }
+  if (b.kind === 'budget') {
+    await q("UPDATE bills SET casting_vote='aye', resolved_at=now() WHERE id=$1", [b.id]);
+    await enact(b, req.user.id);
+    log(req.user.id, 'bill.casting', `${b.ref} budget carried on the casting vote`);
+    return res.json({ carried: true, enacted: true });
   }
   await q("UPDATE bills SET status='passed', casting_vote='aye', resolved_at=now() WHERE id=$1", [b.id]);
   log(req.user.id, 'bill.casting', `${b.ref} carried on the Speaker's casting vote`);
@@ -2377,6 +2407,8 @@ app.post('/api/me/resign', auth, wrap(async (req, res) => {
     await q("UPDATE offices SET active=FALSE, until=now() WHERE user_id=$1 AND office='speaker' AND active",
       [req.user.id]);
   }
+  if (office === 'intel_director' && ACT_CONTEXT.intel?.directorRemoved)
+    await ACT_CONTEXT.intel.directorRemoved(req.user.id);
   log(req.user.id, 'office.resign', office);
   res.json({ ok: true, offices: await officesOf(req.user.id) });
 }));
@@ -2807,8 +2839,9 @@ app.post('/api/admin/invites', admin, wrap(async (req, res) => {
 }));
 
 app.put('/api/admin/config', admin, wrap(async (req, res) => {
+  const budgetControlled = new Set(['tax_free_allowance','tax_rate','tax_upper_threshold','tax_rate_upper','foreign_trade_tax','military_budget_per_cycle']);
   for (const [k, v] of Object.entries(req.body || {})) {
-    if (!(k in DEFAULTS)) continue;
+    if (!(k in DEFAULTS) || budgetControlled.has(k)) continue;
     await q('INSERT INTO config(key,value) VALUES($1,$2) ON CONFLICT (key) DO UPDATE SET value=$2', [k, String(v)]);
   }
   log(req.user.id, 'config.update', Object.keys(req.body || {}).join(','));
@@ -2825,7 +2858,8 @@ const RO_MAY_NOT_FILL = {
   quartermaster: 'The Quartermaster is appointed by the Prime Minister, or by the President where there is none, through /api/war/quartermaster/appoint. The Returning Officer holds no office and does not appoint to one.',
   foreign_minister: 'The Foreign Minister is appointed by the Prime Minister, or by the President where there is none, through /api/diplomacy/foreign-office/appoint. The Returning Officer holds no office and does not appoint to one.',
   treasurer: 'The Treasurer is appointed by the Prime Minister, or by the President where there is none, through /api/treasury/appoint. The Returning Officer holds no office and does not appoint to one.',
-  fed_chair: 'The head of the Fed is nominated by the President and confirmed by the House. Once confirmed, only impeachment or their own resignation removes them — Article 21.10 and 21.11. There is no administrative route in or out.'
+  fed_chair: 'The head of the Fed is nominated by the President and confirmed by the House. Once confirmed, only impeachment or their own resignation removes them — Article 21.10 and 21.11. There is no administrative route in or out.',
+  intel_director: 'The Director of Intelligence is nominated by the Prime Minister, or the President where there is none, and confirmed by a majority of the House. Once confirmed, only impeachment, expiry of the fixed term, or their own resignation removes them. There is no administrative route in or out.'
 };
 
 app.post('/api/admin/office', admin, wrap(async (req, res) => {
@@ -2939,7 +2973,7 @@ const ACT_CONTEXT = {
    503 for the rest of the process's life, and on Render that used to be
    invisible at boot — the same failure shape as a mismatched ALLOWED_ORIGINS,
    where the server looks healthy while half the site does not work. */
-for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war', './intelligence', './worldexport', './worldgen', './offshore', './publicapi']) {
+for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war', './intelligence', './budget', './worldexport', './worldgen', './offshore', './publicapi']) {
   const name = mod.replace('./', '');
   try {
     require(mod).mount(app, ACT_CONTEXT);

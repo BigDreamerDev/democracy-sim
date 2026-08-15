@@ -162,7 +162,9 @@ module.exports.mount = function mount(app, ctx) {
     return Number(rows[0].s);
   }
 
-  const budgetLeft = async () => Math.max(0, money(num('military_budget_per_cycle')) - (await spentThisCycle()));
+  const budgetLeft = async () => ctx.budget?.remaining
+    ? ctx.budget.remaining('defence', cycleNo())
+    : Math.max(0, money(num('military_budget_per_cycle')) - (await spentThisCycle()));
 
   /* --------------------------------------------------------- procurement */
 

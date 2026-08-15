@@ -437,7 +437,8 @@ module.exports.mount = function mount(app, ctx) {
     const policy = await treatyPolicy(powerId);
     const foreign = await sanctionPolicy(powerId);
     const republic = await republicSanctionPolicy(powerId);
-    const base = policy.tariff_rate == null ? Math.max(0, Number(num('foreign_trade_tax')) || 0) : policy.tariff_rate;
+    const fiscalTariff = ctx.budget?.importTariff ? await ctx.budget.importTariff(cycleNo()) : Math.max(0, Number(num('foreign_trade_tax')) || 0);
+    const base = policy.tariff_rate == null ? fiscalTariff : policy.tariff_rate;
     return Math.max(0, Math.min(1, base + foreign.tariff_surcharge + republic.tariff_surcharge));
   }
 
@@ -2980,7 +2981,7 @@ module.exports.mount = function mount(app, ctx) {
         clearances: svc
           ? (
               await q(`
-          SELECT c.user_id, c.reason, c.since, c.until, u.display_name FROM intel_clearance c
+          SELECT c.user_id, c.reason, c.since, c.until, c.source, u.display_name FROM intel_clearance c
             JOIN users u ON u.id=c.user_id ORDER BY c.since`)
             ).rows
           : [],

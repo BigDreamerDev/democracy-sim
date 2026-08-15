@@ -27,7 +27,7 @@
    "nothing here happened" is not how this codebase treats consequential action. */
 
 module.exports.mount = function mount(app, ctx) {
-  const { q, tx, log, auth, admin, wrap, canPropose, cycleNow } = ctx;
+  const { q, tx, log, auth, admin, wrap, canPropose, cycleNow, num, loadConfig, officesOf, holds } = ctx;
 
   const cycleNo = () => cycleNow()?.number || 0;
   const clean = (s, n = 2000) => String(s ?? '').trim().slice(0, n);
@@ -38,6 +38,74 @@ module.exports.mount = function mount(app, ctx) {
      object rather than replacing it — isCleared/intelService/declassifyDue stay
      exactly as diplomacy.js and offshore.js already rely on them. */
   const I = () => ctx.intel;
+
+
+  /* --------------------------------------------------------- leadership
+
+     The Director is intentionally modelled on the head of the Fed: nomination
+     does nothing by itself, the House supplies the appointment, and after that
+     the nominating officer has no dismissal power. Clearance remains a row in
+     intel_clearance; confirmation creates an office-derived row so the Director
+     can actually do the job without making the office itself a secret-access
+     bypass. */
+  const pmNow = async () =>
+    (await q(`SELECT u.id, u.display_name FROM offices o JOIN users u ON u.id=o.user_id
+               WHERE o.office='prime_minister' AND o.active LIMIT 1`)).rows[0] || null;
+  const houseSize = async () =>
+    Number((await q("SELECT count(*)::int n FROM offices WHERE active AND office='mp'")).rows[0].n) || 0;
+
+  async function directorAppointer() {
+    return (await pmNow()) ? 'prime_minister' : 'president';
+  }
+
+  async function directorRemoved(userId) {
+    await q("DELETE FROM intel_clearance WHERE user_id=$1 AND source='director'", [userId]);
+  }
+
+  async function retireExpiredDirector() {
+    const row = (await q(`
+      SELECT u.id, u.display_name, o.since, n.term_ends
+        FROM offices o JOIN users u ON u.id=o.user_id
+        LEFT JOIN LATERAL (
+          SELECT term_ends FROM intel_director_nominations
+           WHERE user_id=u.id AND status='confirmed' ORDER BY id DESC LIMIT 1
+        ) n ON TRUE
+       WHERE o.office='intel_director' AND o.active LIMIT 1`)).rows[0] || null;
+
+    /* Impeachment is generic in server.js. If it removed the office between
+       intelligence requests, remove only the clearance that came from the
+       office; a separately granted RO clearance survives. */
+    if (!row) {
+      await q(`DELETE FROM intel_clearance c WHERE c.source='director'
+                AND NOT EXISTS (SELECT 1 FROM offices o WHERE o.user_id=c.user_id
+                                AND o.office='intel_director' AND o.active)`);
+      return null;
+    }
+    if (row.term_ends && new Date(row.term_ends).getTime() <= Date.now()) {
+      await q("UPDATE offices SET active=FALSE, until=now() WHERE user_id=$1 AND office='intel_director' AND active", [row.id]);
+      await directorRemoved(row.id);
+      log(null, 'intel.director.term', `${row.display_name}, term served`);
+      return null;
+    }
+
+    /* A Director necessarily has clearance, but it is still represented by a
+       row. ON CONFLICT preserves an independently granted manual clearance. */
+    await q(`INSERT INTO intel_clearance(user_id,granted_by,reason,until,source)
+             VALUES($1,NULL,'Director of Intelligence — office clearance',$2,'director')
+             ON CONFLICT (user_id) DO NOTHING`, [row.id, row.term_ends || null]);
+    return row;
+  }
+
+  const directorNow = retireExpiredDirector;
+
+  async function requireDirector(req, res) {
+    const d = await directorNow();
+    if (d && d.id === req.user.id) return true;
+    res.status(403).json({
+      error: 'Only the confirmed Director of Intelligence may manage the Service. No officer may instruct it as to its findings.'
+    });
+    return false;
+  }
 
   /* Every table here hangs off `powers`, which only exists if diplomacy's schema
      ran. Asked at request time, not mount time, and cached: a table that exists
@@ -81,6 +149,34 @@ module.exports.mount = function mount(app, ctx) {
     const found = (await run("SELECT * FROM accounts WHERE owner_kind='power' AND owner_id=$1", [powerId])).rows[0];
     if (found) return found;
     return (await run("INSERT INTO accounts(owner_kind,owner_id) VALUES('power',$1) RETURNING *", [powerId])).rows[0];
+  }
+
+  async function agencyAccount() {
+    return E() ? E().accountFor('intel_ops', null) : null;
+  }
+
+  async function agencyFinance(svc) {
+    if (!svc || !E()) return {
+      operating_balance: 0,
+      recurring_budget: Number(svc?.budget_per_cycle || 0),
+      payroll_per_cycle: 0,
+      active_agents: 0,
+      funding_requests: []
+    };
+    const acc = await agencyAccount();
+    const payroll = (await q(`SELECT COALESCE(sum(salary_per_cycle),0)::bigint total, count(*)::int n
+                                FROM intel_service_agents WHERE active`)).rows[0];
+    const requests = (await q(`
+      SELECT r.*, b.ref, b.title, b.status
+        FROM intel_funding_requests r JOIN bills b ON b.id=r.bill_id
+       ORDER BY r.created_at DESC LIMIT 12`)).rows;
+    return {
+      operating_balance: Number(acc?.balance || 0),
+      recurring_budget: Number(svc.budget_per_cycle || 0),
+      payroll_per_cycle: Number(payroll?.total || 0),
+      active_agents: Number(payroll?.n || 0),
+      funding_requests: requests
+    };
   }
 
   /* ---------------------------------------------------------- progression
@@ -144,10 +240,133 @@ module.exports.mount = function mount(app, ctx) {
 
   app.get(
     '/api/intel/agency',
-    wrap(async (_req, res) => {
+    wrap(async (req, res) => {
       const svc = I()?.intelService ? await I().intelService() : null;
-      if (!svc) return res.json({ service: null, tier: 0, gates: TIER_GATE, ops: OPS });
-      res.json({ service: svc, progress: await agencyProgress(svc), ops: OPS });
+      const director = await directorNow();
+      const nomination = (await q(`
+        SELECT n.*, u.display_name, p.display_name AS nominated_by_name,
+               (SELECT count(*)::int FROM intel_director_confirmations c WHERE c.nomination_id=n.id) AS confirmations
+          FROM intel_director_nominations n
+          LEFT JOIN users u ON u.id=n.user_id
+          LEFT JOIN users p ON p.id=n.nominated_by
+         WHERE n.status='open' ORDER BY n.id DESC LIMIT 1`)).rows[0] || null;
+      const house = await houseSize();
+      const appointer = await directorAppointer();
+      let iConfirmed = false;
+      if (req.user && nomination)
+        iConfirmed = !!(await q('SELECT 1 FROM intel_director_confirmations WHERE nomination_id=$1 AND user_id=$2',
+          [nomination.id, req.user.id])).rows[0];
+      const leadership = {
+        director,
+        director_term_ends: director?.term_ends || null,
+        director_terms: Math.max(1, num('intel_director_terms') || 4),
+        nomination,
+        house,
+        needed: Math.max(1, Math.floor(house / 2) + 1),
+        i_confirmed: iConfirmed,
+        i_am_director: !!(req.user && director && director.id === req.user.id),
+        appointer,
+        can_nominate: !!(req.user && await holds(req.user.id, appointer))
+      };
+      if (!svc) return res.json({ service: null, tier: 0, gates: TIER_GATE, ops: OPS, ...leadership });
+      res.json({ service: svc, progress: await agencyProgress(svc), finance: await agencyFinance(svc), ops: OPS, ...leadership });
+    })
+  );
+
+  app.post(
+    '/api/intel/director/nominate',
+    auth,
+    wrap(async (req, res) => {
+      if (!(await needIntel(res))) return;
+      const appointer = await directorAppointer();
+      if (!(await holds(req.user.id, appointer)))
+        return res.status(403).json({
+          error: appointer === 'prime_minister'
+            ? 'The Prime Minister nominates the Director of Intelligence.'
+            : 'There is no Prime Minister, so the President nominates the Director of Intelligence.'
+        });
+      if (await directorNow())
+        return res.status(400).json({ error: 'The Service already has a Director. The nominating officer may not dismiss them.' });
+      const target = (await q('SELECT id, display_name FROM users WHERE id=$1 AND is_active AND approved',
+        [Number(req.body?.user_id) || 0])).rows[0];
+      if (!target) return res.status(400).json({ error: 'Name a citizen to nominate.' });
+      if (target.id === req.user.id) return res.status(400).json({ error: 'The nominating officer may not nominate themselves.' });
+      await q("UPDATE intel_director_nominations SET status='withdrawn', settled_at=now() WHERE status='open'");
+      const row = (await q(
+        'INSERT INTO intel_director_nominations(user_id,nominated_by) VALUES($1,$2) RETURNING *',
+        [target.id, req.user.id]
+      )).rows[0];
+      log(req.user.id, 'intel.director.nominate', target.display_name);
+      res.json(row);
+    })
+  );
+
+  app.post(
+    '/api/intel/director/confirm',
+    auth,
+    wrap(async (req, res) => {
+      if (!(await needIntel(res))) return;
+      await loadConfig();
+      const nom = (await q("SELECT * FROM intel_director_nominations WHERE status='open' ORDER BY id DESC LIMIT 1")).rows[0];
+      if (!nom) return res.status(400).json({ error: 'No Director nomination is before the House.' });
+      if (!(await officesOf(req.user.id)).includes('mp'))
+        return res.status(403).json({ error: 'The House confirms the Director of Intelligence.' });
+
+      if (req.body?.support === false) {
+        await q('DELETE FROM intel_director_confirmations WHERE nomination_id=$1 AND user_id=$2', [nom.id, req.user.id]);
+        return res.json({ confirmed: false, withdrew: true });
+      }
+      await q('INSERT INTO intel_director_confirmations(nomination_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
+        [nom.id, req.user.id]);
+      const votes = Number((await q('SELECT count(*)::int n FROM intel_director_confirmations WHERE nomination_id=$1', [nom.id])).rows[0].n) || 0;
+      const house = await houseSize();
+      const needed = Math.max(1, Math.floor(house / 2) + 1);
+      if (votes < needed) return res.json({ confirmed: false, votes, needed, house });
+
+      const held = (await officesOf(nom.user_id)).filter(o => o !== 'intel_director');
+      if (held.length)
+        return res.status(400).json({ error: `They hold office as ${held.join(', ')}. The Director holds no other office and must resign it first.` });
+
+      const terms = Math.max(1, num('intel_director_terms') || 4);
+      const ends = new Date(Date.now() + terms * Math.max(1, num('cycle_days') || 7) * 86400000);
+      await q("INSERT INTO offices(office,user_id) VALUES('intel_director',$1)", [nom.user_id]);
+      await q("UPDATE intel_director_nominations SET status='confirmed', settled_at=now(), term_ends=$2 WHERE id=$1", [nom.id, ends]);
+      await q(`INSERT INTO intel_clearance(user_id,granted_by,reason,until,source)
+               VALUES($1,NULL,'Director of Intelligence — office clearance',$2,'director')
+               ON CONFLICT (user_id) DO NOTHING`, [nom.user_id, ends]);
+      const who = (await q('SELECT display_name FROM users WHERE id=$1', [nom.user_id])).rows[0];
+      log(req.user.id, 'intel.director.confirm', `${who?.display_name} confirmed, ${votes} of ${house}, until ${ends.toISOString().slice(0, 10)}`);
+      res.json({ confirmed: true, votes, needed, house, term_ends: ends });
+    })
+  );
+
+  app.post(
+    '/api/intel/director/refuse',
+    auth,
+    wrap(async (req, res) => {
+      if (!(await needIntel(res))) return;
+      const nom = (await q("SELECT * FROM intel_director_nominations WHERE status='open' ORDER BY id DESC LIMIT 1")).rows[0];
+      if (!nom) return res.status(400).json({ error: 'No Director nomination is before the House.' });
+      if (!(await officesOf(req.user.id)).includes('speaker'))
+        return res.status(403).json({ error: "Only the Speaker may declare the House's refusal." });
+      await q("UPDATE intel_director_nominations SET status='refused', settled_at=now() WHERE id=$1", [nom.id]);
+      log(req.user.id, 'intel.director.refuse', `nomination ${nom.id} refused`);
+      res.json({ ok: true });
+    })
+  );
+
+  app.post(
+    '/api/intel/director/resign',
+    auth,
+    wrap(async (req, res) => {
+      const director = await directorNow();
+      if (!director) return res.status(400).json({ error: 'The Service has no Director.' });
+      if (director.id !== req.user.id)
+        return res.status(403).json({ error: 'Only the Director may resign. The Prime Minister, President and Returning Officer may not dismiss them; the House may remove them only by impeachment.' });
+      await q("UPDATE offices SET active=FALSE, until=now() WHERE user_id=$1 AND office='intel_director' AND active", [director.id]);
+      await directorRemoved(director.id);
+      log(req.user.id, 'intel.director.resign', director.display_name);
+      res.json({ ok: true });
     })
   );
 
@@ -192,61 +411,135 @@ module.exports.mount = function mount(app, ctx) {
 
   ctx.addEnactHook(async bill => {
     const charter = (await q('SELECT * FROM intel_charters WHERE bill_id=$1', [bill.id])).rows[0];
-    if (!charter) return;
-    await q(
-      `INSERT INTO intel_service(id, established_bill_id, charter, declassify_after_cycles, budget_per_cycle, established_cycle)
-       VALUES (1,$1,$2,$3,$4,$5)
-       ON CONFLICT (id) DO UPDATE SET established_bill_id=$1, charter=$2, declassify_after_cycles=$3,
-         budget_per_cycle=$4, established_cycle=$5, abolished_at=NULL`,
-      [bill.id, charter.charter, charter.declassify_after_cycles, charter.budget_per_cycle, cycleNo()]
-    );
-    log(null, 'intel.establish', bill.ref);
+    if (charter) {
+      await q(
+        `INSERT INTO intel_service(id, established_bill_id, charter, declassify_after_cycles, budget_per_cycle, established_cycle)
+         VALUES (1,$1,$2,$3,$4,$5)
+         ON CONFLICT (id) DO UPDATE SET established_bill_id=$1, charter=$2, declassify_after_cycles=$3,
+           budget_per_cycle=$4, established_cycle=$5, abolished_at=NULL`,
+        [bill.id, charter.charter, charter.declassify_after_cycles, charter.budget_per_cycle, cycleNo()]
+      );
+      log(null, 'intel.establish', bill.ref);
+    }
+
+    const funding = (await q('SELECT * FROM intel_funding_requests WHERE bill_id=$1 AND enacted_at IS NULL', [bill.id])).rows[0];
+    if (!funding) return;
+    if (funding.request_kind === 'recurring') {
+      await q('UPDATE intel_service SET budget_per_cycle = budget_per_cycle + $1 WHERE id=1', [funding.amount]);
+      log(null, 'intel.funding.recurring', `${bill.ref}: +${funding.amount} per cycle`);
+    } else if (E()) {
+      const treasury = await E().treasury();
+      const ops = await agencyAccount();
+      await E().settle(treasury.id, ops.id, Number(funding.amount), 'intel.appropriation', `${bill.ref}: ${funding.purpose}`);
+      log(null, 'intel.funding.supplemental', `${bill.ref}: ${funding.amount}`);
+    }
+    await q('UPDATE intel_funding_requests SET enacted_at=now() WHERE bill_id=$1', [bill.id]);
   });
+
+  app.post(
+    '/api/intel/funding-request',
+    auth,
+    wrap(async (req, res) => {
+      if (!(await needIntel(res))) return;
+      if (!(await requireDirector(req, res))) return;
+      const requestKind = req.body?.request_kind === 'recurring' ? 'recurring' : 'supplemental';
+      if (requestKind === 'recurring' && ctx.budget)
+        return res.status(400).json({ error: 'Recurring Intelligence appropriations are set in the Presidential Budget. Ask the House for a current-cycle supplemental instead.' });
+      const amount = money(req.body?.amount);
+      const purpose = clean(req.body?.purpose, 1200);
+      if (amount <= 0) return res.status(400).json({ error: 'Ask the House for an amount above zero.' });
+      if (purpose.length < 10) return res.status(400).json({ error: 'Tell the House what the money is for.' });
+      const ref = await nextBillRef();
+      const title = requestKind === 'recurring'
+        ? `Intelligence Service recurring budget increase — ${amount}`
+        : `Intelligence Service supplemental appropriation — ${amount}`;
+      const body = requestKind === 'recurring'
+        ? `The Director of Intelligence requests that the Service recurring budget be increased by ${amount} per cycle.
+
+Purpose: ${purpose}`
+        : `The Director of Intelligence requests a one-off supplemental appropriation of ${amount}.
+
+Purpose: ${purpose}`;
+      const bill = (await q(
+        "INSERT INTO bills(ref,title,kind,body,author_id) VALUES($1,$2,'motion',$3,$4) RETURNING *",
+        [ref, title, body, req.user.id]
+      )).rows[0];
+      await q(`INSERT INTO intel_funding_requests(bill_id,request_kind,amount,purpose,requested_by)
+               VALUES($1,$2,$3,$4,$5)`, [bill.id, requestKind, amount, purpose, req.user.id]);
+      log(req.user.id, 'intel.funding.request', `${bill.ref}: ${requestKind} ${amount}`);
+      res.json(bill);
+    })
+  );
 
   /* --------------------------------------------------------- clearance
 
-     No dedicated office holds this; clearance never was an office, it is a row,
-     and granting one is exactly the kind of setting the RO may edit and log —
-     the same authority that already extends to the Fed's rates. */
+     Clearance remains a row, never an office. The Director controls ordinary
+     Service staffing, while the Returning Officer retains an explicit security
+     override to grant or revoke access. That override does not let the RO order
+     missions, assign agents, extract assets or instruct findings. */
+  async function clearanceAuthority(req) {
+    const director = await directorNow();
+    if (director && director.id === req.user.id) return { source: 'service', director };
+    if (req.user?.is_admin) return { source: 'ro', director };
+    return null;
+  }
+
   app.post(
     '/api/intel/clearance',
     auth,
-    admin,
     wrap(async (req, res) => {
       if (!(await needIntel(res))) return;
-      const target = (await q('SELECT id, display_name FROM users WHERE id=$1', [Number(req.body?.user_id) || 0])).rows[0];
-      if (!target) return res.status(400).json({ error: 'No such citizen.' });
-      const reason = clean(req.body?.reason, 500) || 'cleared by the Returning Officer';
+      const authority = await clearanceAuthority(req);
+      if (!authority)
+        return res.status(403).json({ error: 'Only the Director of Intelligence or the Returning Officer may grant clearance.' });
+      const target = (await q('SELECT id, display_name FROM users WHERE id=$1 AND is_active AND approved', [Number(req.body?.user_id) || 0])).rows[0];
+      if (!target) return res.status(400).json({ error: 'No such active citizen.' });
+      if (target.id === authority.director?.id)
+        return res.status(400).json({ error: 'The Director already has office-derived clearance.' });
+      const by = authority.source === 'ro' ? 'Returning Officer' : 'Director of Intelligence';
+      const reason = clean(req.body?.reason, 500) || `cleared by the ${by}`;
       await q(
-        'INSERT INTO intel_clearance(user_id,granted_by,reason,until) VALUES($1,$2,$3,$4) ' +
-          'ON CONFLICT (user_id) DO UPDATE SET granted_by=$2, reason=$3, until=$4, since=now()',
-        [target.id, req.user.id, reason, req.body?.until || null]
+        `INSERT INTO intel_clearance(user_id,granted_by,reason,until,source) VALUES($1,$2,$3,$4,$5)
+         ON CONFLICT (user_id) DO UPDATE SET granted_by=$2, reason=$3, until=$4, source=$5, since=now()`,
+        [target.id, req.user.id, reason, req.body?.until || null, authority.source]
       );
-      log(req.user.id, 'intel.clearance.grant', target.display_name);
-      res.json({ ok: true });
+      log(req.user.id, 'intel.clearance.grant', `${target.display_name} (${authority.source})`);
+      res.json({ ok: true, source: authority.source });
     })
   );
 
   app.delete(
     '/api/intel/clearance/:userId',
     auth,
-    admin,
     wrap(async (req, res) => {
       if (!(await needIntel(res))) return;
-      await q('DELETE FROM intel_clearance WHERE user_id=$1', [Number(req.params.userId) || 0]);
-      log(req.user.id, 'intel.clearance.revoke', String(req.params.userId));
+      const authority = await clearanceAuthority(req);
+      if (!authority)
+        return res.status(403).json({ error: 'Only the Director of Intelligence or the Returning Officer may revoke clearance.' });
+      const userId = Number(req.params.userId) || 0;
+      if (userId === authority.director?.id)
+        return res.status(409).json({ error: "The Director's clearance belongs to the office and ends only when the office does." });
+      const gone = (await q(
+        "DELETE FROM intel_clearance WHERE user_id=$1 AND source <> 'director' RETURNING user_id",
+        [userId]
+      )).rows[0];
+      if (!gone) return res.status(404).json({ error: 'That citizen has no revocable Service clearance.' });
+      await q('UPDATE intel_service_agents SET active=FALSE, retired_at=now() WHERE user_id=$1 AND active', [userId]);
+      log(req.user.id, 'intel.clearance.revoke', `${userId} (${authority.source})`);
       res.json({ ok: true });
     })
   );
 
-  /* An RO-adjustable, published difficulty. Not a secret dial: everyone can read
-     it on GET /api/diplomacy/powers and do the arithmetic themselves before an
-     operation is even ordered. */
+  /* A published defensive assessment. The Director owns the Service's ordinary
+     record; the RO retains the simulation/security override that existed before
+     the Director office. Everyone can read the number before an operation. */
   app.put(
     '/api/intel/powers/:id/counter-intel',
     auth,
-    admin,
     wrap(async (req, res) => {
+      const d = await directorNow();
+      if (!req.user?.is_admin && d?.id !== req.user.id)
+        return res.status(403).json({ error: 'Only the Director of Intelligence or the Returning Officer may record that assessment.' });
       const p = await powerRow(req.params.id);
       if (!p) return res.status(404).json({ error: 'No such power.' });
       const v = Math.max(0, Math.min(500, Math.round(Number(req.body?.counter_intel))));
@@ -261,8 +554,10 @@ module.exports.mount = function mount(app, ctx) {
 
   app.get(
     '/api/intel/assets',
-    wrap(async (_req, res) => {
+    auth,
+    wrap(async (req, res) => {
       if (!(await needIntel(res))) return;
+      if (!(await requireCleared(req, res))) return;
       const rows = (
         await q(`
         SELECT a.*, p.name AS power_name FROM intel_assets a
@@ -280,13 +575,115 @@ module.exports.mount = function mount(app, ctx) {
     auth,
     wrap(async (req, res) => {
       if (!(await needIntel(res))) return;
-      if (!(await requireCleared(req, res))) return;
+      if (!(await requireDirector(req, res))) return;
       const a = (await q('SELECT * FROM intel_assets WHERE id=$1', [Number(req.params.id) || 0])).rows[0];
       if (!a) return res.status(404).json({ error: 'No such asset.' });
       if (a.status !== 'active') return res.status(409).json({ error: `That asset is already ${a.status}.` });
       await q("UPDATE intel_assets SET status='extracted', resolved_at=now() WHERE id=$1", [a.id]);
       log(req.user.id, 'intel.asset.extract', a.codename);
       res.json({ ok: true });
+    })
+  );
+
+  /* ----------------------------------------------------- player agents
+
+     Clearance is necessary but not sufficient for operational work. The
+     Director keeps a separate roster with a role and a default fee paid every
+     time that citizen is assigned to an operation. The RO can grant clearance,
+     but cannot silently enlist someone or set their pay. */
+  app.get(
+    '/api/intel/agents',
+    auth,
+    wrap(async (req, res) => {
+      if (!(await needIntel(res))) return;
+      if (!(await requireCleared(req, res))) return;
+      const director = await directorNow();
+      const all = !!(director && director.id === req.user.id);
+      const rows = (await q(`
+        SELECT a.*, u.display_name, c.until AS clearance_until, c.source AS clearance_source,
+               (c.user_id IS NOT NULL AND (c.until IS NULL OR c.until > now())) AS cleared,
+               (SELECT count(*)::int FROM intel_operation_agents ia WHERE ia.user_id=a.user_id) AS missions
+          FROM intel_service_agents a
+          JOIN users u ON u.id=a.user_id
+          LEFT JOIN intel_clearance c ON c.user_id=a.user_id
+         WHERE ($1::boolean OR a.user_id=$2)
+         ORDER BY a.active DESC, u.display_name`, [all, req.user.id])).rows;
+      res.json(rows);
+    })
+  );
+
+  app.post(
+    '/api/intel/agents',
+    auth,
+    wrap(async (req, res) => {
+      if (!(await needIntel(res))) return;
+      if (!(await requireDirector(req, res))) return;
+      const userId = Number(req.body?.user_id) || 0;
+      const target = (await q(`SELECT id, display_name FROM users
+                               WHERE id=$1 AND is_active AND approved`, [userId])).rows[0];
+      if (!target) return res.status(400).json({ error: 'No such active citizen.' });
+      const director = await directorNow();
+      if (userId === director?.id) return res.status(400).json({ error: 'The Director manages the Service and is not enlisted as a field agent.' });
+      const role = clean(req.body?.role, 80) || 'field agent';
+      const salaryPerCycle = money(req.body?.salary_per_cycle);
+      const operationPay = money(req.body?.operation_pay);
+      const notes = clean(req.body?.notes, 600);
+      /* Enlistment itself carries the minimum clearance needed to serve. It is
+         tagged separately so retirement can remove only this automatic grant and
+         preserve any independent Director/RO clearance the citizen already held. */
+      await q(`INSERT INTO intel_clearance(user_id,granted_by,reason,until,source)
+               VALUES($1,$2,'Active Intelligence Service agent',NULL,'agent')
+               ON CONFLICT (user_id) DO NOTHING`, [userId, req.user.id]);
+      const row = (await q(`
+        INSERT INTO intel_service_agents(user_id,enlisted_by,role,salary_per_cycle,operation_pay,notes,active,retired_at)
+        VALUES($1,$2,$3,$4,$5,$6,TRUE,NULL)
+        ON CONFLICT (user_id) DO UPDATE SET enlisted_by=$2, role=$3, salary_per_cycle=$4, operation_pay=$5,
+          notes=$6, active=TRUE, retired_at=NULL
+        RETURNING *`, [userId, req.user.id, role, salaryPerCycle, operationPay, notes])).rows[0];
+      log(req.user.id, 'intel.agent.enlist', `${target.display_name}: ${role}, ${salaryPerCycle}/cycle + ${operationPay}/operation`);
+      res.json(row);
+    })
+  );
+
+  app.delete(
+    '/api/intel/agents/:userId',
+    auth,
+    wrap(async (req, res) => {
+      if (!(await needIntel(res))) return;
+      if (!(await requireDirector(req, res))) return;
+      const userId = Number(req.params.userId) || 0;
+      const row = (await q(`UPDATE intel_service_agents SET active=FALSE, retired_at=now()
+                             WHERE user_id=$1 AND active RETURNING user_id, role`, [userId])).rows[0];
+      if (!row) return res.status(404).json({ error: 'That citizen is not an active Service agent.' });
+      await q("DELETE FROM intel_clearance WHERE user_id=$1 AND source='agent'", [userId]);
+      log(req.user.id, 'intel.agent.retire', `${userId}: ${row.role}`);
+      res.json({ ok: true });
+    })
+  );
+
+  /* Cleared citizens assigned by the Director to operations. Assignment
+     identities and individual pay are not part of the public register: the
+     Director sees the whole staffing record, while each agent sees their own. */
+  app.get(
+    '/api/intel/assignments',
+    auth,
+    wrap(async (req, res) => {
+      if (!(await needIntel(res))) return;
+      if (!(await requireCleared(req, res))) return;
+      const director = await directorNow();
+      const all = !!(director && director.id === req.user.id);
+      const rows = (await q(`
+        SELECT ia.operation_id, ia.user_id, ia.role, ia.pay, ia.assigned_at,
+               u.display_name, o.kind, o.outcome, o.cycle_no, o.created_at,
+               p.name AS power_name
+          FROM intel_operation_agents ia
+          JOIN users u ON u.id=ia.user_id
+          JOIN intel_operations o ON o.id=ia.operation_id
+          LEFT JOIN powers p ON p.id=o.power_id
+         WHERE ($1::boolean OR ia.user_id=$2)
+         ORDER BY o.id DESC, u.display_name
+         LIMIT 200`, [all, req.user.id])).rows;
+      res.json(rows);
     })
   );
 
@@ -348,7 +745,7 @@ module.exports.mount = function mount(app, ctx) {
     wrap(async (req, res) => {
       const svc = await needIntel(res);
       if (!svc) return;
-      if (!(await requireCleared(req, res))) return;
+      if (!(await requireDirector(req, res))) return;
       const kind = String(req.body?.kind || '');
       const op = OPS[kind];
       if (!op) return res.status(400).json({ error: 'That is not an operation the service knows how to run.' });
@@ -368,6 +765,31 @@ module.exports.mount = function mount(app, ctx) {
 
       const budget = money(req.body?.budget);
       if (budget <= 0) return res.status(400).json({ error: 'An operation needs a budget above zero.' });
+
+      const requestedAgentIds = [...new Set((Array.isArray(req.body?.agent_ids) ? req.body.agent_ids : [])
+        .map(Number).filter(n => Number.isInteger(n) && n > 0))];
+      let assignedAgents = [];
+      if (requestedAgentIds.length) {
+        assignedAgents = (await q(`
+          SELECT a.user_id, a.role, a.operation_pay, u.display_name
+            FROM intel_service_agents a
+            JOIN intel_clearance c ON c.user_id=a.user_id
+            JOIN users u ON u.id=a.user_id
+           WHERE a.user_id = ANY($1::int[])
+             AND a.active
+             AND (c.until IS NULL OR c.until > now())
+             AND u.is_active AND u.approved
+           ORDER BY u.display_name`, [requestedAgentIds])).rows;
+        if (assignedAgents.length !== requestedAgentIds.length)
+          return res.status(409).json({ error: "Every assigned agent must be active on the Director's roster and hold current Service clearance." });
+      }
+      const agentPayTotal = assignedAgents.reduce((n, a) => n + money(a.operation_pay), 0);
+      const agentAccounts = new Map();
+      const opsAcc = E() ? await agencyAccount() : null;
+      if (E()) for (const agent of assignedAgents)
+        agentAccounts.set(agent.user_id, await E().accountFor('citizen', agent.user_id));
+      if (opsAcc && Number(opsAcc.balance) < budget + agentPayTotal)
+        return res.status(409).json({ error: `The Service needs ${budget + agentPayTotal} for this operation and holds ${Number(opsAcc.balance)}. Request more funds from the House or reduce the commitment.` });
 
       /* An asset in place, not conjured by the order itself. run_collection needs
          one to run; back_coup and removal need one whether or not the payload
@@ -398,12 +820,17 @@ module.exports.mount = function mount(app, ctx) {
            exactly how tribute and procurement already move money abroad), same
            as the old tribute bug this codebase specifically remembers fixing. */
         if (E()) {
-          const t = await E().treasury();
-          const toAcc = power ? await powerAccount(power.id, run) : await E().accountFor('intel_ops', null);
-          await E().settle(t.id, toAcc.id, budget, `intel.${kind}`, `${op0(kind)} — ${power?.name || 'domestic'}`, run);
+          const toAcc = power ? await powerAccount(power.id, run) : await E().accountFor('intel_spend', null);
+          await E().pay(opsAcc.id, toAcc.id, budget, `intel.${kind}`, `${op0(kind)} — ${power?.name || 'domestic'}`, run);
+          for (const agent of assignedAgents) {
+            const fee = money(agent.operation_pay);
+            if (fee <= 0) continue;
+            const acc = agentAccounts.get(agent.user_id);
+            await E().pay(opsAcc.id, acc.id, fee, 'intel.agent_pay', `${agent.role} — ${op0(kind)}, cycle ${cycleNo()}`, run);
+          }
         }
         await run('UPDATE intel_service SET committed_budget = committed_budget + $1, tradecraft = tradecraft + $2 WHERE id=1', [
-          budget,
+          budget + agentPayTotal,
           success ? op.reward : 0
         ]);
 
@@ -477,7 +904,8 @@ module.exports.mount = function mount(app, ctx) {
           `${op0(kind)}${power ? ` — ${power.name}` : ''} (${outcome})`;
         const bodyText = clean(req.body?.notes, 1500) ||
           `${op0(kind)} ordered against ${power?.name || 'no named target'}. ` +
-          `Budget committed: ${budget}. Score ${score} against a threshold of ${threshold}. Outcome: ${outcome}.`;
+          `Operational budget committed: ${budget}. Agent pay: ${agentPayTotal}. ` +
+          `Score ${score} against a threshold of ${threshold}. Outcome: ${outcome}.`;
         reportRow = await fileReport(
           run,
           svc,
@@ -490,15 +918,21 @@ module.exports.mount = function mount(app, ctx) {
 
         opRow = (
           await run(
-            `INSERT INTO intel_operations(kind,tier,power_id,asset_id,ordered_by,budget,cycle_no,score,threshold,outcome,report_id)
-             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-            [kind, op.tier, power?.id || null, asset?.id || null, req.user.id, budget, cycleNo(), score, threshold, outcome, reportRow.id]
+            `INSERT INTO intel_operations(kind,tier,power_id,asset_id,ordered_by,budget,agent_pay_total,cycle_no,score,threshold,outcome,report_id)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+            [kind, op.tier, power?.id || null, asset?.id || null, req.user.id, budget, agentPayTotal, cycleNo(), score, threshold, outcome, reportRow.id]
           )
         ).rows[0];
+        for (const agent of assignedAgents)
+          await run(
+            `INSERT INTO intel_operation_agents(operation_id,user_id,assigned_by,role,pay) VALUES($1,$2,$3,$4,$5)
+             ON CONFLICT DO NOTHING`,
+            [opRow.id, agent.user_id, req.user.id, agent.role, money(agent.operation_pay)]
+          );
       });
 
       log(req.user.id, `intel.op.${kind}`, `${outcome} vs ${power?.name || 'domestic'} (score ${score}/${threshold})`);
-      res.json({ operation: opRow, report: { ...reportRow, body: undefined, sealed: true } });
+      res.json({ operation: { ...opRow, assigned_agent_count: assignedAgents.length, agent_pay_total: agentPayTotal }, report: { ...reportRow, body: undefined, sealed: true } });
     })
   );
 
@@ -514,7 +948,7 @@ module.exports.mount = function mount(app, ctx) {
     wrap(async (req, res) => {
       const svc = await needIntel(res);
       if (!svc) return;
-      if (!(await requireCleared(req, res))) return;
+      if (!(await requireDirector(req, res))) return;
       const op = OPS.counter_sweep;
       const budget = money(req.body?.budget);
       if (budget <= 0) return res.status(400).json({ error: 'A sweep needs a budget above zero.' });
@@ -525,6 +959,9 @@ module.exports.mount = function mount(app, ctx) {
       const score = svc.tradecraft + Math.floor(budget / op.costUnit);
       const success = score >= threshold;
 
+      const counterOpsAcc = E() ? await agencyAccount() : null;
+      if (counterOpsAcc && Number(counterOpsAcc.balance) < budget)
+        return res.status(409).json({ error: `The Service needs ${budget} for this sweep and holds ${Number(counterOpsAcc.balance)}. Request more funds from the House.` });
       let opRow, reportRow;
       await tx(async run => {
         /* Domestic, so there is no foreign account to pay into — but the money
@@ -532,9 +969,9 @@ module.exports.mount = function mount(app, ctx) {
            tribute learned the hard way. It goes to the agency's own operating
            float, an ordinary account like the Treasury's or an escrow's. */
         if (E()) {
-          const t = await E().treasury();
-          const opsAcc = await E().accountFor('intel_ops', null);
-          await E().settle(t.id, opsAcc.id, budget, 'intel.counter_sweep', 'domestic counter-intelligence sweep', run);
+          const opsAcc = await agencyAccount();
+          const spendAcc = await E().accountFor('intel_spend', null);
+          await E().pay(opsAcc.id, spendAcc.id, budget, 'intel.counter_sweep', 'domestic counter-intelligence sweep', run);
         }
         await run('UPDATE intel_service SET committed_budget = committed_budget + $1, tradecraft = tradecraft + $2 WHERE id=1', [
           budget,
@@ -564,5 +1001,48 @@ module.exports.mount = function mount(app, ctx) {
     })
   );
 
-  ctx.intel = Object.assign(ctx.intel || {}, { agencyProgress, OPS, TIER_GATE });
+  async function runPayrun(cycle, actorId) {
+    const svc = I()?.intelService ? await I().intelService() : null;
+    if (!svc || !E()) return { funded: 0, salaries_paid: 0, salaries_unpaid: 0, reason: 'no active Service economy' };
+    await retireExpiredDirector();
+    const already = (await q('SELECT 1 FROM payruns WHERE kind=$1 AND cycle_no=$2', ['intelligence', cycle])).rows[0];
+    if (already) return { funded: 0, salaries_paid: 0, salaries_unpaid: 0, reason: 'already run for this cycle' };
+
+    const treasury = await E().treasury();
+    const ops = await agencyAccount();
+    const funded = money(svc.budget_per_cycle);
+    if (funded > 0)
+      await E().settle(treasury.id, ops.id, funded, 'intel.appropriation', `Intelligence Service recurring appropriation, cycle ${cycle}`);
+
+    const agents = (await q(`SELECT a.user_id, a.role, a.salary_per_cycle, u.display_name
+                               FROM intel_service_agents a JOIN users u ON u.id=a.user_id
+                              WHERE a.active AND u.is_active AND u.approved
+                              ORDER BY a.user_id`)).rows;
+    const payable = agents.map(agent => ({ ...agent, amount: money(agent.salary_per_cycle) })).filter(a => a.amount > 0);
+    const salaryDue = payable.reduce((n, a) => n + a.amount, 0);
+    const afterFunding = await agencyAccount();
+    let salariesPaid = 0, salariesUnpaid = 0, salaryTotal = 0;
+    /* Payroll is all-or-none. A short Service budget cannot silently favour the
+       first agent by database id; the Director sees the full arrears and can ask
+       the House for a supplemental or recurring appropriation. */
+    if (salaryDue > Number(afterFunding.balance)) {
+      salariesUnpaid = payable.length;
+    } else {
+      for (const agent of payable) {
+        const citizen = await E().accountFor('citizen', agent.user_id);
+        await E().pay(afterFunding.id, citizen.id, agent.amount, 'intel.salary', `${agent.role}, cycle ${cycle}`);
+        salariesPaid++;
+        salaryTotal += agent.amount;
+      }
+    }
+    await q('INSERT INTO payruns(kind,cycle_no,detail) VALUES($1,$2,$3)', [
+      'intelligence', cycle, `${funded} appropriated; ${salariesPaid} salaries paid (${salaryTotal}); ${salariesUnpaid} unpaid`
+    ]);
+    log(actorId, 'intel.payrun', `cycle ${cycle}: funded ${funded}; salaries ${salaryTotal}; unpaid ${salariesUnpaid}`);
+    return { funded, salaries_paid: salariesPaid, salary_total: salaryTotal, salaries_unpaid: salariesUnpaid, operating_balance: Number((await agencyAccount()).balance) };
+  }
+
+  ctx.intel = Object.assign(ctx.intel || {}, {
+    agencyProgress, agencyFinance, OPS, TIER_GATE, directorNow, retireExpiredDirector, directorRemoved, runPayrun
+  });
 };

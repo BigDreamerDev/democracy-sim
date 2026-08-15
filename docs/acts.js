@@ -262,14 +262,24 @@
   /* ----------------------------------------------------------- the economy */
 
   async function viewEconomy(v) {
-    const [e, me, market, orders, bank, inventory] = await Promise.all([
+    const [e, me, market, orders, bank, inventory, budget] = await Promise.all([
       api('/api/economy'),
       api('/api/economy/me'),
       api('/api/economy/market'),
       api('/api/economy/orders'),
       api('/api/economy/bank'),
-      api('/api/economy/inventory')
+      api('/api/economy/inventory'),
+      api('/api/budget')
     ]);
+    const fiscal = budget.current || {};
+    const policy = fiscal;
+    const budgetState = fiscal.status === 'provisional' ? 'Provisional' : fiscal.carryover ? `Carry-over from cycle ${Number(fiscal.source_cycle || 0)}` : 'House approved';
+    const deptRows = (fiscal.departments || []).map(d => `<div class="item"><div class="item-top"><span class="item-title">${esc(d.label)}</span><span class="result-count">${cash(d.allocation + d.supplements)}</span></div><div class="item-meta">${cash(d.spent)} spent · ${cash(d.remaining)} remaining${d.supplements ? ` · ${cash(d.supplements)} supplemental` : ''}</div></div>`).join('');
+    const defaults = budget.defaults || {};
+    const defaultDepts = defaults.departments || {};
+    const next = budget.next_proposal;
+    const proposalForm = has('president') ? `<div class="card"><p class="eyebrow">President</p><h2>Propose cycle ${Number(budget.target_cycle)} budget</h2><p class="small muted">The proposal is tabled immediately. The House approves or rejects it by division; a carried budget takes effect without a second executive assent.</p><form id="fiscal-budget" class="stack"><div class="grid2"><label class="field"><span>Tax-free allowance</span><input name="tax_free_allowance" type="number" min="0" value="${Number(defaults.tax_free_allowance || 0)}" required></label><label class="field"><span>Base tax rate (%)</span><input name="tax_rate" type="number" min="0" max="100" step="0.01" value="${(Number(defaults.tax_rate || 0) * 100).toFixed(2)}" required></label><label class="field"><span>Upper threshold</span><input name="tax_upper_threshold" type="number" min="0" value="${Number(defaults.tax_upper_threshold || 0)}" required></label><label class="field"><span>Upper tax rate (%)</span><input name="tax_rate_upper" type="number" min="0" max="100" step="0.01" value="${(Number(defaults.tax_rate_upper || 0) * 100).toFixed(2)}" required></label><label class="field"><span>Import tariff (%)</span><input name="import_tariff" type="number" min="0" max="100" step="0.01" value="${(Number(defaults.import_tariff || 0) * 100).toFixed(2)}" required></label></div><h3>Departmental operating appropriations</h3><div class="grid2">${Object.entries(budget.departments || {}).map(([key,label]) => `<label class="field"><span>${esc(label)}</span><input name="dept_${esc(key)}" type="number" min="0" value="${Number(defaultDepts[key] || 0)}" required></label>`).join('')}</div><label class="field"><span>President's budget statement</span><textarea name="rationale" maxlength="3000" rows="5" placeholder="Priorities, trade-offs and the reason for the tax settlement."></textarea></label><button class="btn btn-primary">Send budget to the House</button></form></div>` : '';
+    const fiscalCard = `<div class="card"><div class="item-top"><div><p class="eyebrow">Public budget · cycle ${Number(fiscal.cycle_no || 0)}</p><h2>${esc(budgetState)}</h2></div>${fiscal.status === 'provisional' ? '<span class="tag on-violet">Provisional</span>' : '<span class="tag on-green">Approved</span>'}</div><div class="grid2" style="margin-top:12px"><div class="item"><div class="item-title">Tax settlement</div><div class="item-meta">${cash(policy.tax_free_allowance)} tax-free · ${Math.round(Number(policy.tax_rate || 0) * 10000) / 100}% to ${cash(policy.tax_upper_threshold)} · ${Math.round(Number(policy.tax_rate_upper || 0) * 10000) / 100}% above · ${Math.round(Number(policy.import_tariff || 0) * 10000) / 100}% import tariff</div></div><div class="item"><div class="item-title">Operating appropriations</div><div class="item-meta">${cash(fiscal.total_appropriations || 0)} approved · current-balance tax estimate ${cash(fiscal.projected_tax || 0)} · tax less appropriations ${cash(fiscal.projected_tax_balance || 0)}</div></div></div><p class="small muted" style="margin-top:10px">Office salaries and the citizen dividend are statutory expenditure outside these operating lines. Once the first budget is approved, a missed cycle visibly carries the last plan forward until the House replaces it.</p><div class="list" style="margin-top:12px">${deptRows || '<div class="empty">No departmental appropriations.</div>'}</div>${next ? `<p class="small" style="margin-top:12px">Cycle ${Number(budget.target_cycle)}: <a href="#/bill/${Number(next.bill_id)}"><span class="ref">${esc(next.ref || '')}</span> ${esc(next.title || 'Budget proposal')}</a> · ${esc(next.bill_status || next.status)}</p>` : `<p class="small muted" style="margin-top:12px">No budget has yet been proposed for cycle ${Number(budget.target_cycle)}.</p>`}</div>`;
 
     v.innerHTML = `
       <h1 class="page">The economy</h1>
@@ -349,7 +359,7 @@
         </div>
         <div class="card"><p class="eyebrow">The state</p>
           <p><strong>Treasury</strong> ${cash(e.treasury)}</p>
-          <p class="small muted">Tax: nothing below ${cash(e.tax_free)}, then ${Math.round(e.tax_rate * 100)}% on the excess.</p>
+          <p class="small muted">Tax this cycle: nothing below ${cash(policy.tax_free_allowance)}, ${Math.round(Number(policy.tax_rate || 0) * 10000) / 100}% up to ${cash(policy.tax_upper_threshold)}, then ${Math.round(Number(policy.tax_rate_upper || 0) * 10000) / 100}% above it.</p>
           <h2 style="margin-top:18px">Who holds what</h2>
           <div class="list">${e.holders
             .map(
@@ -360,6 +370,9 @@
             .join('')}</div>
         </div>
       </div>
+
+      ${fiscalCard}
+      ${proposalForm}
 
       <div class="card">
         <h2>The market</h2>
@@ -465,6 +478,26 @@
         .map(c => `<option value="${c.id}">${esc(c.display_name)}</option>`)
         .join('');
     });
+
+    if ($('#fiscal-budget')) $('#fiscal-budget').onsubmit = async ev => {
+      ev.preventDefault();
+      const f = Object.fromEntries(new FormData(ev.target));
+      const departments = {};
+      for (const key of Object.keys(budget.departments || {})) departments[key] = Number(f[`dept_${key}`] || 0);
+      try {
+        const r = await api('/api/budget/propose', { method: 'POST', body: {
+          tax_free_allowance: Number(f.tax_free_allowance),
+          tax_rate: Number(f.tax_rate) / 100,
+          tax_upper_threshold: Number(f.tax_upper_threshold),
+          tax_rate_upper: Number(f.tax_rate_upper) / 100,
+          import_tariff: Number(f.import_tariff) / 100,
+          departments,
+          rationale: f.rationale
+        }});
+        toast(`Budget ${r.ref} sent to the House.`);
+        location.hash = `#/bill/${r.bill_id}`;
+      } catch (err) { toast(err.message, true); }
+    };
 
     $('#pay').onsubmit = async ev => {
       ev.preventDefault();
@@ -2712,13 +2745,22 @@
     };
     const gates = progress.gates || agency.gates || {};
     const ops = agency.ops || {};
+    const finance = agency.finance || { operating_balance: 0, recurring_budget: Number(service?.budget_per_cycle || 0), payroll_per_cycle: 0, active_agents: 0, funding_requests: [] };
     const cleared = !!dashboard.cleared;
     const isRO = !!me?.is_admin;
+    const director = agency.director || null;
+    const nomination = agency.nomination || null;
+    const iAmDirector = !!agency.i_am_director;
+    const canNominate = !!agency.can_nominate;
+    const isMP = !!(me?.offices || []).includes('mp');
+    const isSpeaker = !!(me?.offices || []).includes('speaker');
     const canCharter = !!me &&
       (STATE()?.config?.bill_proposers === 'citizens' || (me.offices || []).some(o => o === 'mp' || o === 'speaker'));
-    const [assets, citizens, compromisedAgents] = await Promise.all([
+    const [assets, citizens, assignments, agents, compromisedAgents] = await Promise.all([
       cleared && service ? api('/api/intel/assets') : Promise.resolve([]),
-      isRO && service ? api('/api/citizens') : Promise.resolve([]),
+      service && (canNominate || iAmDirector || isRO) ? api('/api/citizens') : Promise.resolve([]),
+      cleared && service ? api('/api/intel/assignments').catch(() => []) : Promise.resolve([]),
+      cleared && service ? api('/api/intel/agents').catch(() => []) : Promise.resolve([]),
       cleared && service ? api('/api/intel/foreign-agents/compromised').catch(() => []) : Promise.resolve([])
     ]);
     const completedFor = tier => tier === 2 ? Number(progress.successful_tier1 || 0) : tier === 3 ? Number(progress.successful_tier2 || 0) : 0;
@@ -2744,16 +2786,29 @@
       return `<option value="${esc(kind)}" ${open ? '' : 'disabled'}>${esc(intelOpName(kind))} · Tier ${Number(op.tier || 0)}${open ? '' : ` · Locked: ${esc(locked)}`}</option>`;
     }).join('');
     const powerOptions = powers.map(p => `<option value="${Number(p.id)}">${esc(p.name)}</option>`).join('');
-    const assetRows = assets.length ? assets.map(a => `<div class="item"><div class="item-top"><span class="item-title">${esc(a.codename)}</span><span class="tag ${a.status === 'active' ? 'on-green' : a.status === 'blown' ? 'on-oxide' : ''}">${esc(intelLabel(a.status))}</span></div><div class="item-meta">${esc(a.power_name)} · experience ${Number(a.experience || 0)} · recruited cycle ${Number(a.recruited_cycle || 0)}${a.target_agent_id ? ` · foreign seat #${Number(a.target_agent_id)}` : ''}</div>${a.status === 'active' ? `<button class="btn btn-sm" data-intel-extract="${Number(a.id)}">Extract asset</button>` : ''}</div>`).join('') : '<div class="empty">No assets are on the register.</div>';
-    const operationRows = operations.length ? operations.map(o => `<div class="item"><div class="item-top"><span class="item-title">${esc(intelOpName(o.kind))} · ${esc(o.power_name || 'Domestic')}</span><span class="tag ${o.outcome === 'success' ? 'on-green' : 'on-oxide'}">${esc(intelLabel(o.outcome))}</span></div><div class="item-meta">Tier ${Number(o.tier || 0)} · score ${Number(o.score || 0)} / threshold ${Number(o.threshold || 0)}</div></div>`).join('') : '<div class="empty">No intelligence operation has been recorded.</div>';
+    const assetRows = assets.length ? assets.map(a => `<div class="item"><div class="item-top"><span class="item-title">${esc(a.codename)}</span><span class="tag ${a.status === 'active' ? 'on-green' : a.status === 'blown' ? 'on-oxide' : ''}">${esc(intelLabel(a.status))}</span></div><div class="item-meta">${esc(a.power_name)} · experience ${Number(a.experience || 0)} · recruited cycle ${Number(a.recruited_cycle || 0)}${a.target_agent_id ? ` · foreign seat #${Number(a.target_agent_id)}` : ''}</div>${iAmDirector && a.status === 'active' ? `<button class="btn btn-sm" data-intel-extract="${Number(a.id)}">Extract asset</button>` : ''}</div>`).join('') : '<div class="empty">No assets are on the register.</div>';
+    const operationRows = operations.length ? operations.map(o => `<div class="item"><div class="item-top"><span class="item-title">${esc(intelOpName(o.kind))} · ${esc(o.power_name || 'Domestic')}</span><span class="tag ${o.outcome === 'success' ? 'on-green' : 'on-oxide'}">${esc(intelLabel(o.outcome))}</span></div><div class="item-meta">Tier ${Number(o.tier || 0)} · score ${Number(o.score || 0)} / threshold ${Number(o.threshold || 0)} · operation budget ${cash(o.budget)}${Number(o.agent_pay_total || 0) ? ` · agent pay ${cash(o.agent_pay_total)}` : ''}</div></div>`).join('') : '<div class="empty">No intelligence operation has been recorded.</div>';
     const reportRows = cleared ? (dashboard.reports || []).map(r => `<div class="item"><div class="item-top"><span class="item-title"><span class="ref">${esc(r.ref)}</span> ${esc(r.subject)}</span><span class="tag ${r.sealed ? 'on-violet' : 'on-green'}">${r.sealed ? 'Sealed' : 'Declassified'}</span></div><div class="item-meta">Filed cycle ${Number(r.filed_cycle || 0)} · ${esc(r.confidence || 'unknown')} confidence · ${esc(r.sourcing || 'source not stated')}${r.declassifies_at_cycle ? ` · declassifies cycle ${Number(r.declassifies_at_cycle)}` : ''}</div>${r.sealed ? `<p class="small muted">Opening this report is logged in the public read register.</p><button class="btn btn-sm" data-intel-read="${Number(r.id)}">Read sealed report</button><div id="intel-report-${Number(r.id)}"></div>` : `<div class="prose" style="margin-top:10px">${esc(r.body || '').replace(/\n/g, '<br>')}</div>`}</div>`).join('') : '';
-    const clearanceRows = isRO ? (dashboard.clearances || []).map(c => `<div class="item"><div class="item-top"><span class="item-title">${esc(c.display_name)}</span><button class="btn btn-sm" data-intel-revoke="${Number(c.user_id)}">Revoke</button></div><div class="item-meta">${esc(c.reason || '')} · since ${when(c.since)}${c.until ? ` · until ${when(c.until)}` : ''}</div></div>`).join('') : '';
+    const activeClearances = (dashboard.clearances || []).filter(c => !c.until || new Date(c.until).getTime() > Date.now());
+    const clearanceSource = c => c.source === 'ro' ? 'RO' : c.source === 'director' ? 'Office' : c.source === 'service' ? 'Director' : c.source === 'agent' ? 'Agent' : 'Service';
+    const clearanceRows = (iAmDirector || isRO) ? activeClearances.map(c => `<div class="item"><div class="item-top"><span class="item-title">${esc(c.display_name)}</span><div class="row" style="gap:6px"><span class="tag">${esc(clearanceSource(c))}</span>${Number(c.user_id) === Number(director?.id) ? '<span class="tag on-green">Director</span>' : `<button class="btn btn-sm" data-intel-revoke="${Number(c.user_id)}">Revoke</button>`}</div></div><div class="item-meta">${esc(c.reason || '')} · since ${when(c.since)}${c.until ? ` · until ${when(c.until)}` : ''}</div></div>`).join('') : '';
+    const rosterAgents = agents.filter(a => a.active);
+    const activeAgents = rosterAgents.filter(a => a.cleared !== false);
+    const agentOptions = activeAgents.map(a => `<option value="${Number(a.user_id)}">${esc(a.display_name)} · ${esc(intelLabel(a.role || 'field agent'))} · ${cash(a.operation_pay)} mission fee</option>`).join('');
+    const agentRows = iAmDirector ? (rosterAgents.length ? rosterAgents.map(a => `<div class="item"><div class="item-top"><span class="item-title">${esc(a.display_name)}</span><button class="btn btn-sm" data-intel-agent-retire="${Number(a.user_id)}">Retire from Service</button></div><div class="item-meta">${esc(intelLabel(a.role || 'field agent'))} · ${cash(a.salary_per_cycle)} / cycle · ${cash(a.operation_pay)} / operation · ${Number(a.missions || 0)} mission(s)${a.cleared === false ? ' · clearance expired/revoked' : a.clearance_until ? ` · clearance until ${when(a.clearance_until)}` : ''}</div>${a.notes ? `<p class="small muted">${esc(a.notes)}</p>` : ''}</div>`).join('') : '<div class="empty">No player-agents are enlisted.</div>') : '';
+    const myAgent = agents.find(a => a.active && Number(a.user_id) === Number(me?.id));
+    const fundingRows = (finance.funding_requests || []).length ? finance.funding_requests.map(r => `<div class="item"><div class="item-top"><span class="item-title"><span class="ref">${esc(r.ref)}</span> ${esc(r.request_kind === 'recurring' ? 'Recurring budget increase' : 'Supplemental appropriation')}</span><span class="tag">${esc(intelLabel(r.status))}</span></div><div class="item-meta">${cash(r.amount)} · ${esc(r.purpose || '')}</div></div>`).join('') : '<div class="empty">No funding requests have been filed.</div>';
+    const assignmentRows = assignments.length ? assignments.map(a => `<div class="item"><div class="item-top"><span class="item-title">${iAmDirector ? `${esc(a.display_name)} · ` : ''}${esc(intelOpName(a.kind))}</span><span class="tag ${a.outcome === 'success' ? 'on-green' : 'on-oxide'}">${esc(intelLabel(a.outcome))}</span></div><div class="item-meta">${esc(a.power_name || 'Domestic')} · cycle ${Number(a.cycle_no || 0)} · ${esc(intelLabel(a.role || 'field agent'))} · paid ${cash(a.pay)}</div></div>`).join('') : '<div class="empty">No operation assignments yet.</div>';
+    const appointerName = agency.appointer === 'prime_minister' ? 'Prime Minister' : 'President';
+    const leadershipCard = service ? `<div class="card"><p class="eyebrow">Service leadership</p><div class="item-top"><div><h2>${director ? esc(director.display_name) : 'Director vacant'}</h2><p class="small muted">${director ? `Confirmed Director · term ends ${when(agency.director_term_ends)}` : nomination ? `${esc(nomination.display_name)} nominated by ${esc(nomination.nominated_by_name || appointerName)} · ${Number(nomination.confirmations || 0)} / ${Number(agency.needed || 1)} confirmations` : `The ${esc(appointerName)} may nominate a Director.`}</p></div>${director ? '<span class="tag on-green">In office</span>' : nomination ? '<span class="tag">Before the House</span>' : '<span class="tag on-oxide">Vacant</span>'}</div><p class="small muted" style="margin-top:10px">The Director serves ${Number(agency.director_terms || 4)} cycles under the current rules. Once confirmed, only term expiry, impeachment or the Director's own resignation ends the appointment.</p>${canNominate && !director ? `<form id="intel-director-nominate" class="stack" style="margin-top:14px"><label class="field"><span>Nominee</span><select name="user_id" required>${citizens.map(c => `<option value="${Number(c.id)}">${esc(c.display_name)}</option>`).join('')}</select></label><button class="btn btn-primary">Nominate Director</button></form>` : ''}${nomination && (isMP || isSpeaker) ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px">${isMP ? `<button class="btn btn-primary" data-intel-director-confirm>${agency.i_confirmed ? 'Confirmation recorded' : 'Confirm nominee'}</button>${agency.i_confirmed ? '<button class="btn" data-intel-director-unconfirm>Withdraw confirmation</button>' : ''}` : ''}${isSpeaker ? '<button class="btn" data-intel-director-refuse>Declare refusal</button>' : ''}</div>` : ''}${iAmDirector ? '<button class="btn" style="margin-top:12px" data-intel-director-resign>Resign as Director</button>' : ''}</div>` : '';
 
     v.innerHTML = `
       <h1 class="page">Intelligence</h1>
       <p class="page-sub">The gate is public. Operations stay on the record. Report bodies stay sealed until their clock runs out.</p>
 
-      ${service ? `<div class="card"><div class="item-top"><div><p class="eyebrow">Chartered intelligence service</p><h2 style="margin-top:4px">Tier ${Number(progress.tier || 0)} · ${esc(gates[progress.tier]?.name || '')}</h2></div><span class="tag on-green">active</span></div><div class="prose">${esc(service.charter || '').replace(/\n/g, '<br>')}</div><p class="small muted" style="margin-top:12px">Reports declassify after ${Number(service.declassify_after_cycles || 0)} cycle(s) · ordinary budget ${cash(service.budget_per_cycle)} per cycle.</p></div>` : `<div class="card"><h2>No intelligence service has been chartered</h2><p class="small muted">The service comes into existence only after the House enacts its charter as a motion.</p></div>`}
+      ${service ? `<div class="card"><div class="item-top"><div><p class="eyebrow">Chartered intelligence service</p><h2 style="margin-top:4px">Tier ${Number(progress.tier || 0)} · ${esc(gates[progress.tier]?.name || '')}</h2></div><span class="tag on-green">Active</span></div><div class="prose">${esc(service.charter || '').replace(/\n/g, '<br>')}</div><p class="small muted" style="margin-top:12px">Reports declassify after ${Number(service.declassify_after_cycles || 0)} cycle(s) · ordinary budget ${cash(service.budget_per_cycle)} per cycle.</p></div>` : `<div class="card"><h2>No intelligence service has been chartered</h2><p class="small muted">The service comes into existence only after the House enacts its charter as a motion.</p></div>`}
+
+      ${leadershipCard}
 
       ${!service && canCharter ? `<div class="card"><h2>Charter an intelligence service</h2><p class="small muted">This files a motion. It does not create the service until the bill is enacted.</p><form id="intel-charter" class="stack"><label class="field"><span>Title</span><input name="title" required value="Establishment of an Intelligence Service"></label><label class="field"><span>Charter</span><textarea name="charter" required minlength="20" rows="7" placeholder="Set out the service's purpose and limits."></textarea></label><div class="grid2"><label class="field"><span>Declassify reports after</span><input name="declassify_after_cycles" type="number" min="1" value="3" required><span class="small muted">cycles</span></label><label class="field"><span>Budget per cycle</span><input name="budget_per_cycle" type="number" min="0" value="0" required></label></div><button class="btn btn-primary">File charter motion</button></form></div>` : !service ? `<div class="card"><p class="small muted">Only someone who may propose a bill can file the charter motion.</p></div>` : ''}
 
@@ -2761,9 +2816,19 @@
 
       <div class="card"><h2>Operations catalogue</h2><div class="list">${operationCatalogue}</div></div>
 
-      ${isRO && service ? `<div class="grid2"><div class="card"><p class="eyebrow">Returning Officer</p><h2>Clearance register</h2><p class="small muted">Clearance is a row in this register, not an office.</p><form id="intel-clearance" class="stack"><label class="field"><span>Citizen</span><select name="user_id" required>${citizens.map(c => `<option value="${Number(c.id)}">${esc(c.display_name)}</option>`).join('')}</select></label><label class="field"><span>Reason</span><input name="reason" maxlength="500" required></label><label class="field"><span>Expiry (optional)</span><input name="until" type="datetime-local"></label><button class="btn btn-primary">Grant clearance</button></form><div class="list" style="margin-top:14px">${clearanceRows || '<div class="empty">No clearances are active.</div>'}</div></div><div class="card"><p class="eyebrow">Returning Officer</p><h2>Foreign counter-intelligence</h2><p class="small muted">This is a published defensive rating, not a secret dial.</p><form id="intel-counter" class="stack"><label class="field"><span>Foreign power</span><select name="power_id" required>${powerOptions}</select></label><label class="field"><span>Counter-intelligence rating</span><input name="counter_intel" type="number" min="0" max="500" required></label><button class="btn btn-primary">Record rating</button></form></div></div>` : ''}
+      ${iAmDirector && service ? `<div class="grid2"><div class="card"><p class="eyebrow">Director of Intelligence</p><h2>Service clearance</h2><p class="small muted">The Director grants ordinary Service access. Clearance alone does not put a citizen on the operational roster.</p><form id="intel-clearance-director" class="stack"><label class="field"><span>Citizen</span><select name="user_id" required>${citizens.filter(c => Number(c.id) !== Number(director?.id)).map(c => `<option value="${Number(c.id)}">${esc(c.display_name)}</option>`).join('')}</select></label><label class="field"><span>Reason</span><input name="reason" maxlength="500" required></label><label class="field"><span>Expiry (optional)</span><input name="until" type="datetime-local"></label><button class="btn btn-primary">Grant clearance</button></form></div><div class="card"><p class="eyebrow">Director of Intelligence</p><h2>Player-agent roster</h2><p class="small muted">Add any active citizen as an agent; enlistment creates a Service-clearance row if they do not already have one. Set their role, standing salary and mission fee.</p><form id="intel-agent" class="stack"><label class="field"><span>Citizen</span><select name="user_id" required>${citizens.filter(c => Number(c.id) !== Number(director?.id)).map(c => `<option value="${Number(c.id)}">${esc(c.display_name)}</option>`).join('')}</select></label><label class="field"><span>Role</span><input name="role" maxlength="80" value="Field agent" required></label><div class="grid2"><label class="field"><span>Salary per cycle</span><input name="salary_per_cycle" type="number" min="0" value="0" required></label><label class="field"><span>Pay per operation</span><input name="operation_pay" type="number" min="0" value="0" required></label></div><label class="field"><span>Internal notes (optional)</span><textarea name="notes" maxlength="600" rows="3"></textarea></label><button class="btn btn-primary">Enlist / update agent</button></form></div></div><div class="card"><h2>Service staffing register</h2><div class="list">${clearanceRows || '<div class="empty">No clearances are active.</div>'}</div><h3 style="margin-top:16px">Active player-agents</h3><div class="list" style="margin-top:10px">${agentRows}</div></div><div class="card"><p class="eyebrow">Director of Intelligence</p><h2>Service finances</h2><div class="grid2"><div class="item"><div class="item-title">Operating balance</div><div class="item-meta">${cash(finance.operating_balance)} on hand</div></div><div class="item"><div class="item-title">Recurring appropriation</div><div class="item-meta">${cash(finance.recurring_budget)} per cycle · payroll ${cash(finance.payroll_per_cycle)} per cycle</div></div></div><p class="small muted" style="margin-top:12px">The recurring appropriation is transferred into the Service account each cycle. Agent salaries, mission fees and operations all come from that account; the Director cannot pull money directly from the Treasury.</p><form id="intel-funding" class="stack" style="margin-top:14px"><input type="hidden" name="request_kind" value="supplemental"><div class="grid2"><div class="item"><div class="item-title">Current-cycle supplement</div><div class="item-meta">The House may add money above the Presidential Budget. Recurring funding belongs in the next Presidential Budget.</div></div><label class="field"><span>Amount</span><input name="amount" type="number" min="1" required></label></div><label class="field"><span>Purpose</span><textarea name="purpose" minlength="10" maxlength="1200" required></textarea></label><button class="btn btn-primary">File supplemental funding motion</button></form><h3 style="margin-top:16px">Funding requests</h3><div class="list" style="margin-top:10px">${fundingRows}</div></div>` : ''}
 
-      ${cleared && service ? `<div class="card"><h2>Assets</h2><div class="list">${assetRows}</div></div><div class="card"><h2>Order an operation</h2><p class="small muted">The result is deterministic from the published inputs. Higher committed budget adds score at the operation's published cost per point.</p><form id="intel-operation" class="stack"><label class="field"><span>Operation</span><select name="kind" id="intel-kind" required>${opOptions}</select></label><div class="grid2"><label class="field" id="intel-power-wrap"><span>Target power</span><select name="power_id" id="intel-power">${powerOptions}</select></label><label class="field"><span>Budget</span><input name="budget" type="number" min="1" required></label></div><label class="field" id="intel-asset-wrap"><span>Asset (optional unless the operation requires one)</span><select name="asset_id" id="intel-asset"><option value="">Choose automatically</option></select></label><div class="grid2"><label class="field"><span>Codename (optional)</span><input name="codename" maxlength="60"></label><label class="field"><span>Notes (optional)</span><textarea name="notes" maxlength="1500" rows="3"></textarea></label></div><p class="small"><strong>Committed operation budgets are spent whether the mission succeeds or fails; they cannot be recovered.</strong></p><button class="btn btn-primary">Order operation</button></form>${recentOperation ? `<div id="intel-op-result" class="item" style="margin-top:14px"><div class="item-top"><span class="item-title">${esc(intelOpName(recentOperation.kind))} recorded</span><span class="tag ${recentOperation.outcome === 'success' ? 'on-green' : 'on-oxide'}">${esc(intelLabel(recentOperation.outcome))}</span></div><div class="item-meta">Score ${Number(recentOperation.score || 0)} / threshold ${Number(recentOperation.threshold || 0)}</div></div>` : '<div id="intel-op-result"></div>'}</div><div class="card"><h2>Reports</h2><p class="small muted">A sealed report opens only to a cleared citizen. Reading it is itself logged and public.</p><div class="list">${reportRows || '<div class="empty">No reports have been filed.</div>'}</div></div>` : ''}
+      ${isRO && service ? `<div class="card"><p class="eyebrow">Returning Officer</p><h2>Clearance override</h2><p class="small muted">The RO may grant or revoke security access. This does not enlist an agent, order a mission or authorise interference with the Service's findings.</p><form id="intel-clearance-ro" class="stack"><label class="field"><span>Citizen</span><select name="user_id" required>${citizens.filter(c => Number(c.id) !== Number(director?.id)).map(c => `<option value="${Number(c.id)}">${esc(c.display_name)}</option>`).join('')}</select></label><label class="field"><span>Reason</span><input name="reason" maxlength="500" required></label><label class="field"><span>Expiry (optional)</span><input name="until" type="datetime-local"></label><button class="btn btn-primary">Grant RO clearance</button></form><div class="list" style="margin-top:14px">${clearanceRows || '<div class="empty">No clearances are active.</div>'}</div></div>` : ''}
+
+      ${(iAmDirector || isRO) && service ? `<div class="card"><p class="eyebrow">${iAmDirector ? 'Director of Intelligence' : 'Returning Officer'}</p><h2>Foreign counter-intelligence assessment</h2><p class="small muted">Record the Service's published estimate of a foreign power's defensive capability.</p><form id="intel-counter" class="stack"><label class="field"><span>Foreign power</span><select name="power_id" required>${powerOptions}</select></label><label class="field"><span>Counter-intelligence rating</span><input name="counter_intel" type="number" min="0" max="500" required></label><button class="btn btn-primary">Record assessment</button></form></div>` : ''}
+
+      ${cleared && service ? `<div class="card"><h2>Assets</h2><div class="list">${assetRows}</div></div>` : ''}
+
+      ${myAgent && !iAmDirector ? `<div class="card"><p class="eyebrow">Your Service terms</p><h2>${esc(intelLabel(myAgent.role || 'field agent'))}</h2><p class="small muted">You are on the active player-agent roster at ${cash(myAgent.salary_per_cycle)} per cycle plus ${cash(myAgent.operation_pay)} per assigned operation · ${Number(myAgent.missions || 0)} mission(s) recorded.</p></div>` : ''}
+
+      ${iAmDirector && service ? `<div class="card"><p class="eyebrow">Director of Intelligence</p><h2>Order an operation</h2><p class="small muted">Choose cleared player-agents to work the mission. Their identities stay off the public operations register.</p><form id="intel-operation" class="stack"><label class="field"><span>Operation</span><select name="kind" id="intel-kind" required>${opOptions}</select></label><div class="grid2"><label class="field" id="intel-power-wrap"><span>Target power</span><select name="power_id" id="intel-power">${powerOptions}</select></label><label class="field"><span>Budget</span><input name="budget" type="number" min="1" required></label></div><label class="field"><span>Assigned agents (optional)</span><select name="agent_ids" id="intel-agents" multiple size="${Math.min(6, Math.max(2, activeAgents.length))}">${agentOptions}</select><span class="small muted">Only active roster agents with current Service clearance appear here. Use Ctrl/Cmd-click to select more than one.</span></label><label class="field" id="intel-asset-wrap"><span>Foreign asset (optional unless the operation requires one)</span><select name="asset_id" id="intel-asset"><option value="">Choose automatically</option></select></label><div class="grid2"><label class="field"><span>Codename (optional)</span><input name="codename" maxlength="60"></label><label class="field"><span>Notes (optional)</span><textarea name="notes" maxlength="1500" rows="3"></textarea></label></div><p class="small"><strong>Operation budgets and mission fees are paid from the Service operating balance (${cash(finance.operating_balance)}). Committed money is spent whether the mission succeeds or fails.</strong></p><button class="btn btn-primary">Order operation</button></form>${recentOperation ? `<div id="intel-op-result" class="item" style="margin-top:14px"><div class="item-top"><span class="item-title">${esc(intelOpName(recentOperation.kind))} recorded</span><span class="tag ${recentOperation.outcome === 'success' ? 'on-green' : 'on-oxide'}">${esc(intelLabel(recentOperation.outcome))}</span></div><div class="item-meta">Score ${Number(recentOperation.score || 0)} / threshold ${Number(recentOperation.threshold || 0)} · ${Number(recentOperation.assigned_agent_count || 0)} assigned agent(s) · agent pay ${cash(recentOperation.agent_pay_total)}</div></div>` : '<div id="intel-op-result"></div>'}</div>` : ''}
+
+      ${cleared && service ? `<div class="card"><h2>${iAmDirector ? 'Operation assignments' : 'Your operation assignments'}</h2><p class="small muted">Assignment identities are Service information and do not appear in the public operations register.</p><div class="list">${assignmentRows}</div></div><div class="card"><h2>Reports</h2><p class="small muted">A sealed report opens only to a cleared citizen. Reading it is itself logged and public.</p><div class="list">${reportRows || '<div class="empty">No reports have been filed.</div>'}</div></div>` : ''}
 
       ${cleared && service ? `<div class="card"><h2>Compromised foreign agents</h2><p class="small muted">These agents are known because a foreign operation exposed them. An active known agent can be approached to work secretly for the Republic; accepting is the agent player's choice.</p><div class="list">${compromisedAgents.length ? compromisedAgents.map(a => `<div class="item"><div class="item-top"><span class="item-title">${esc(a.power_name)} · ${esc(a.codename)} · ${esc(a.display_name)}</span><span class="tag ${a.double_agent ? 'on-green' : a.status === 'burned' ? 'on-oxide' : 'on-violet'}">${a.double_agent ? 'Double agent' : a.status === 'burned' ? 'Burned' : 'Identified'}</span></div><div class="item-meta">Experience ${Number(a.experience || 0)}${a.status === 'active' && !a.double_agent ? ` · <button class="btn btn-sm" data-intel-turn-agent="${Number(a.id)}">Approach as double agent</button>` : ''}</div></div>`).join('') : '<div class="empty">No foreign player agents have been identified.</div>'}</div></div>` : ''}
 
@@ -2783,16 +2848,102 @@
       });
     };
 
-    if ($('#intel-clearance')) $('#intel-clearance').onsubmit = e => {
+    if ($('#intel-director-nominate')) $('#intel-director-nominate').onsubmit = e => {
+      e.preventDefault();
+      busy(e.submitter || e.target.querySelector('button'), async () => {
+        try {
+          await api('/api/intel/director/nominate', { method: 'POST', body: { user_id: Number(new FormData(e.target).get('user_id')) } });
+          toast('Director nomination placed before the House.');
+          await viewIntel(v);
+        } catch (err) { toast(err.message, true); }
+      });
+    };
+
+    document.querySelectorAll('[data-intel-director-confirm]').forEach(btn => btn.onclick = () => busy(btn, async () => {
+      try {
+        const r = await api('/api/intel/director/confirm', { method: 'POST', body: { support: true } });
+        toast(r.confirmed ? 'Director confirmed by the House.' : `Confirmation recorded: ${Number(r.votes || 0)} / ${Number(r.needed || 1)}.`);
+        await viewIntel(v);
+      } catch (err) { toast(err.message, true); }
+    }));
+
+    document.querySelectorAll('[data-intel-director-unconfirm]').forEach(btn => btn.onclick = () => busy(btn, async () => {
+      try {
+        await api('/api/intel/director/confirm', { method: 'POST', body: { support: false } });
+        toast('Confirmation withdrawn.');
+        await viewIntel(v);
+      } catch (err) { toast(err.message, true); }
+    }));
+
+    document.querySelectorAll('[data-intel-director-refuse]').forEach(btn => btn.onclick = () => busy(btn, async () => {
+      if (!confirm('Declare that the House has refused this nomination?')) return;
+      try {
+        await api('/api/intel/director/refuse', { method: 'POST' });
+        toast('Nomination refused.');
+        await viewIntel(v);
+      } catch (err) { toast(err.message, true); }
+    }));
+
+    document.querySelectorAll('[data-intel-director-resign]').forEach(btn => btn.onclick = () => busy(btn, async () => {
+      if (!confirm('Resign as Director of Intelligence? This ends the protected office and its automatic clearance.')) return;
+      try {
+        await api('/api/intel/director/resign', { method: 'POST' });
+        toast('Director resigned.');
+        await viewIntel(v);
+      } catch (err) { toast(err.message, true); }
+    }));
+
+    ['#intel-clearance-director', '#intel-clearance-ro'].forEach(sel => {
+      if (!$(sel)) return;
+      $(sel).onsubmit = e => {
+        e.preventDefault();
+        busy(e.submitter || e.target.querySelector('button'), async () => {
+          const f = Object.fromEntries(new FormData(e.target));
+          f.user_id = Number(f.user_id);
+          if (!f.until) delete f.until;
+          try {
+            await api('/api/intel/clearance', { method: 'POST', body: f });
+            toast('Clearance recorded.');
+            await viewIntel(v);
+          } catch (err) { toast(err.message, true); }
+        });
+      };
+    });
+
+    if ($('#intel-agent')) $('#intel-agent').onsubmit = e => {
       e.preventDefault();
       busy(e.submitter || e.target.querySelector('button'), async () => {
         const f = Object.fromEntries(new FormData(e.target));
         f.user_id = Number(f.user_id);
-        if (!f.until) delete f.until;
+        f.salary_per_cycle = Number(f.salary_per_cycle);
+        f.operation_pay = Number(f.operation_pay);
+        if (!f.notes) delete f.notes;
         try {
-          await api('/api/intel/clearance', { method: 'POST', body: f });
-          toast('Clearance recorded.');
+          await api('/api/intel/agents', { method: 'POST', body: f });
+          toast('Agent roster updated.');
           await viewIntel(v);
+        } catch (err) { toast(err.message, true); }
+      });
+    };
+
+    document.querySelectorAll('[data-intel-agent-retire]').forEach(btn => btn.onclick = () => busy(btn, async () => {
+      if (!confirm('Retire this citizen from the Service agent roster? Clearance created by enlistment ends too; independently granted clearance remains.')) return;
+      try {
+        await api(`/api/intel/agents/${btn.dataset.intelAgentRetire}`, { method: 'DELETE' });
+        toast('Agent retired from operational duty.');
+        await viewIntel(v);
+      } catch (err) { toast(err.message, true); }
+    }));
+
+    if ($('#intel-funding')) $('#intel-funding').onsubmit = e => {
+      e.preventDefault();
+      busy(e.submitter || e.target.querySelector('button'), async () => {
+        const f = Object.fromEntries(new FormData(e.target));
+        f.amount = Number(f.amount);
+        try {
+          const bill = await api('/api/intel/funding-request', { method: 'POST', body: f });
+          toast(`Funding request filed as ${bill.ref}. The House decides.`);
+          location.hash = `#/bill/${bill.id}`;
         } catch (err) { toast(err.message, true); }
       });
     };
@@ -2834,8 +2985,10 @@
       $('#intel-operation').onsubmit = e => {
         e.preventDefault();
         busy(e.submitter || e.target.querySelector('button'), async () => {
-          const f = Object.fromEntries(new FormData(e.target));
+          const fd = new FormData(e.target);
+          const f = Object.fromEntries(fd);
           const op = ops[f.kind] || {};
+          f.agent_ids = fd.getAll('agent_ids').map(Number).filter(Boolean);
           f.budget = Number(f.budget);
           if (op.needsPower === false) delete f.power_id; else f.power_id = Number(f.power_id);
           if (f.asset_id) f.asset_id = Number(f.asset_id); else delete f.asset_id;

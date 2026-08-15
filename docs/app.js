@@ -1469,7 +1469,7 @@ async function viewBill(v, id) {
   } else if (b.status === 'tabled') {
     action = `<div class="row"><span class="small muted">Tabled and waiting on the Speaker to call a division.</span>
       ${has('speaker') ? '<button class="btn btn-primary" data-act="division">Call the division</button>' : ''}
-      ${b.author_id === ME.id ? '<button class="btn btn-sm" id="bill-edit">Edit</button><button class="btn btn-sm" id="bill-withdraw">Withdraw</button>' : ''}</div>`;
+      ${b.author_id === ME.id && b.kind !== 'budget' ? '<button class="btn btn-sm" id="bill-edit">Edit</button><button class="btn btn-sm" id="bill-withdraw">Withdraw</button>' : ''}</div>`;
   } else if (b.status === 'division') {
     action = `${strip()}
       ${b.can_vote && !b.my_vote ? `<div class="row" style="margin-top:10px">
@@ -1511,6 +1511,7 @@ async function viewBill(v, id) {
       <p class="eyebrow">Impeachment</p>
       <p>If this carries at ${Math.round(Number(STATE.config.impeachment_threshold) * 100)}% of the division, <strong>${esc(b.target_name || 'the officer named')}</strong> is removed from every office they hold, at once. It does not go to the President for assent.</p>
     </div>` : ''}
+    ${b.kind === 'budget' ? `<div class="card"><p class="eyebrow">Presidential Budget</p><p>The President proposes this fiscal plan for one cycle. It is tabled without seconders and becomes the approved budget as soon as the House carries the division; there is no further executive assent.</p></div>` : ''}
     <div class="card">${b.kind === 'rule'
       ? `<p class="eyebrow">If this passes, these settings change</p>
          <div class="list">${b.body.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#')).map(l => {
@@ -1869,8 +1870,8 @@ const RULE_KEYS = [
   'cycle_enabled', 'cycle_days', 'campaign_days', 'poll_days', 'cycle_elects',
   'speaker_auto', 'speaker_threshold', 'speaker_relax', 'enforce_term_limit', 'nation_name', 'motto',
   'justice_terms', 'justice_auto', 'justice_nomination_hours', 'justice_poll_hours',
-  'salary_treasurer', 'salary_fed_chair', 'fed_terms', 'bank_charter_fee', 'deposit_guarantee',
-  'diplomacy_enabled', 'foreign_actions_per_cycle', 'treaty_threshold', 'recognition_threshold', 'foreign_trade_tax'
+  'salary_treasurer', 'salary_fed_chair', 'salary_intel_director', 'fed_terms', 'intel_director_terms', 'bank_charter_fee', 'deposit_guarantee',
+  'diplomacy_enabled', 'foreign_actions_per_cycle', 'treaty_threshold', 'recognition_threshold'
 ];
 
 const CONFIG_FIELDS = [
@@ -1913,14 +1914,15 @@ const CONFIG_FIELDS = [
   ['goods_economy_enabled', 'Strategic goods economy (true / false)'],
   ['salary_treasurer', 'Treasurer salary'],
   ['salary_fed_chair', 'Fed chair salary'],
+  ['salary_intel_director', 'Director of Intelligence salary'],
   ['fed_terms', 'Cycles the head of the Fed serves'],
+  ['intel_director_terms', 'Cycles the Director of Intelligence serves'],
   ['bank_charter_fee', 'Least capital a citizen may open a bank with'],
   ['deposit_guarantee', 'What the Treasury makes good per depositor if a bank fails'],
   ['diplomacy_enabled', 'Enable diplomacy (true / false)'],
   ['foreign_actions_per_cycle', 'Foreign actions allowed per cycle'],
   ['treaty_threshold', 'Treaty ratification threshold (0–1)'],
   ['recognition_threshold', 'Foreign recognition threshold (0–1)'],
-  ['foreign_trade_tax', 'Tax on foreign imports (0–1)'],
   ['offshore_enabled', 'Enable offshore banking & forex (true / false)'],
   ['offshore_fee', 'Offshore deposit fee (0–1)'],
   ['offshore_minimum', 'Minimum offshore deposit'],
@@ -1983,7 +1985,7 @@ async function viewAdmin(v) {
     <div class="card"><h2>Appoint and remove</h2>
       <p class="small muted">For ties, resignations, and coups. Elections normally do this for you.</p>
       <p class="small muted">The Prime Minister is properly appointed by the President and confirmed by the House on the <a href="#/prime-minister">Prime Minister</a> page — that records who backed the government. Use this only where the House has already decided elsewhere and will not tap through.</p>
-      <p class="small muted">The Treasurer and the head of the Fed are not here on purpose. The Treasurer is the government's to appoint, and the Fed's head is nominated by the President, confirmed by the House, and removable only by impeachment — you would be taking a power from one of them, or a power nobody has.</p>
+      <p class="small muted">The Treasurer, head of the Fed and Director of Intelligence are not here on purpose. The Treasurer is the government's to appoint; the Fed's head and Intelligence Director have protected confirmation processes and cannot be administratively seated or dismissed — you would be taking a power from one of them, or a power nobody has.</p>
       <form id="off" class="stack" style="margin-top:10px">
         <div class="grid2">
           <label class="field"><span>Citizen</span><select name="user_id">${citizens.map(u => `<option value="${u.id}">${esc(u.display_name)}</option>`).join('')}</select></label>
