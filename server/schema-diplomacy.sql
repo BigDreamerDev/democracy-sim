@@ -207,8 +207,17 @@ CREATE TABLE IF NOT EXISTS republic_territories (
 );
 
 /* Subdivision-level starting territory. `country_code` is the existing opaque
-   M49 map code; `subdivision_code` is an ISO 3166-2 code. The old whole-country
-   table stays in place so an existing deployment upgrades without losing data. */
+   M49 map code; `subdivision_code` is an opaque subdivision id (`s0001`), NOT
+   an ISO 3166-2 code — an ISO code names a real place on its own, and these
+   rows are read straight out onto a public map. The pairing lives in
+   server/subdivision-codes.json and never leaves the Returning Officer's
+   routes.
+
+   Deployments written before that change hold ISO codes here. They are
+   renumbered by ensureOpaqueSubdivisionCodes() in diplomacy.js, on the first
+   read after boot, because the mapping is a JSON file this schema cannot see.
+   The old whole-country table stays in place so an existing deployment upgrades
+   without losing data. */
 CREATE TABLE IF NOT EXISTS republic_subdivisions (
   subdivision_code TEXT PRIMARY KEY,
   country_code     TEXT NOT NULL,
@@ -218,9 +227,9 @@ CREATE TABLE IF NOT EXISTS republic_subdivisions (
 CREATE INDEX IF NOT EXISTS idx_republic_subdivisions_country ON republic_subdivisions(country_code);
 
 /* Foreign powers can also hold subdivisions. Whole-country rows in `territories`
-   remain as a backwards-compatible legacy representation. ISO subdivision codes
-   are globally unique, so the primary key also prevents two powers owning the
-   same subdivision. Cross-checks against Republic ownership live in the admin
+   remain as a backwards-compatible legacy representation. Subdivision ids are
+   globally unique, so the primary key also prevents two powers owning the same
+   subdivision. Cross-checks against Republic ownership live in the admin
    assignment routes. */
 CREATE TABLE IF NOT EXISTS foreign_subdivisions (
   subdivision_code TEXT PRIMARY KEY,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate docs/world-subdivisions.js from geoBoundaries ADM1 geometry.
+"""Generate the docs/subdiv/ subdivision map from geoBoundaries ADM1 geometry.
 
 The browser never downloads GIS data. This script is run by the developer and
 writes ordinary precomputed SVG path strings, matching the existing world-map.js
@@ -7,16 +7,40 @@ architecture.
 
 Usage from the repository root:
     python tools/generate-world-subdivisions.py
+    python tools/generate-world-subdivisions.py --from-existing
 
-The script reads server/subdivisions.json so the geometry keys are exactly the
-same ISO 3166-2 codes used by the Returning Officer territory editor. It uses
+Two things about the output are deliberate and load-bearing.
+
+IDENTITY IS NOT IN THE KEY. The browser gets `s0001`, never `AE-AJ`. An ISO
+3166-2 code names a real place all by itself, so a file keyed by ISO codes hands
+any player who opens the console the entire real-world mapping — no name table
+required. That breaks the same invariant `TERRITORY_NAMES` exists to protect.
+The ISO codes stay in `server/subdivision-codes.json`, which the server reads
+and never serves; the only route that will say `AE-AJ` out loud is behind the
+Returning Officer's admin guard. Assignment is append-only: an id, once given
+out, is what the database stores, so this file is read before it is written and
+existing pairs are never renumbered.
+
+NOTHING LOADS THE WHOLE WORLD. One file per parent territory, and each territory
+twice: a coarse pass for the world view and a detail pass for the one country
+somebody is actually looking at. 2,576 shapes in a 1000x500 viewBox is a mesh,
+not a map, and it used to be a 2.9 MB blocking script on every page load.
+
+The script reads server/subdivisions.json so the geometry lines up exactly with
+the subdivisions the Returning Officer territory editor offers. It uses
 geoBoundaries gbOpen ADM1 simplified GeoJSON and matches features first by
 shapeISO, then by normalized subdivision name. Downloads are cached under
 .tools-cache/world-subdivisions/ so reruns do not redownload unchanged files.
+
+`--from-existing` rebuilds the docs/subdiv/ layout from a previously generated
+docs/world-subdivisions.js instead of the network. It exists so the split and
+the renumbering can be redone from geometry this script already produced,
+without a fresh 168-country download.
 """
 
 from __future__ import annotations
 
+import argparse
 import concurrent.futures
 import difflib
 import json
@@ -34,15 +58,20 @@ ROOT = Path(__file__).resolve().parents[1]
 SUBDIVISIONS_FILE = ROOT / "server" / "subdivisions.json"
 ALPHA_MAP_FILE = ROOT / "tools" / "iso-alpha2-alpha3.json"
 WORLD_MAP_FILE = ROOT / "docs" / "world-map.js"
-OUTPUT_FILE = ROOT / "docs" / "world-subdivisions.js"
+IDS_FILE = ROOT / "server" / "subdivision-codes.json"
+OUTPUT_DIR = ROOT / "docs" / "subdiv"
+LEGACY_OUTPUT_FILE = ROOT / "docs" / "world-subdivisions.js"
 CACHE_DIR = ROOT / ".tools-cache" / "world-subdivisions"
 
 API = "https://www.geoboundaries.org/api/current/gbOpen/{alpha3}/ADM1/"
 USER_AGENT = "democracy-sim subdivision map generator/1.0"
 ROUND = 1
-SIMPLIFY_TOLERANCE_PX = 0.20
+DETAIL_TOLERANCE_PX = 0.20
+COARSE_TOLERANCE_PX = 1.10
 MAX_WORKERS = 8
 MIN_CALIBRATION_SIZE_PX = 5.0
+
+CREDIT = "geoBoundaries gbOpen ADM1 (CC BY 4.0)"
 
 
 def fetch_json(url: str, retries: int = 3):
@@ -111,18 +140,6 @@ def geometry_rings(geometry):
     if typ == "MultiPolygon":
         return [ring for polygon in coords for ring in polygon]
     return []
-
-
-def country_lon_mode(features):
-    lons = []
-    for feature in features:
-        for ring in geometry_rings(feature.get("geometry")):
-            lons.extend(float(p[0]) for p in ring if len(p) >= 2)
-    if not lons:
-        return False
-    # Countries spanning the anti-meridian are easier to treat in a continuous
-    # 0..360 longitude frame before fitting them into their existing country box.
-    return max(lons) - min(lons) > 180
 
 
 def projected_rings(feature):
@@ -198,18 +215,62 @@ def fmt(n: float):
     return f"{value:.{ROUND}f}".rstrip("0").rstrip(".")
 
 
-def rings_to_path(rings, scale, translate_x, translate_y):
-    def transform(p):
-        return (translate_x + p[0] * scale, translate_y + p[1] * scale)
+def ring_extent(ring):
+    xs = [p[0] for p in ring]
+    ys = [p[1] for p in ring]
+    return max(xs) - min(xs), max(ys) - min(ys)
 
-    parts = []
+
+def path_from_rings(rings, tolerance, drop_below_px=0.0):
+    """One SVG path for a subdivision, simplified to `tolerance`.
+
+    At coarse tolerance most island rings are smaller than a pixel and only cost
+    bytes, so they are dropped — but never all of them. A subdivision that
+    vanishes entirely at world scale is a holding the map cannot show, which is
+    worse than a slightly wrong one, so the largest ring is always kept.
+    """
+    kept = []
     for ring in rings:
-        pts = [transform(p) for p in ring]
-        pts = simplify(pts, SIMPLIFY_TOLERANCE_PX)
+        pts = simplify(ring, tolerance)
         if len(pts) < 3:
             continue
-        parts.append("M" + "L".join(f"{fmt(x)},{fmt(y)}" for x, y in pts) + "Z")
-    return "".join(parts)
+        if drop_below_px:
+            w, h = ring_extent(pts)
+            if w < drop_below_px and h < drop_below_px:
+                continue
+        kept.append(pts)
+    if not kept and rings:
+        biggest = max(rings, key=lambda r: max(ring_extent(r), default=0))
+        pts = simplify(biggest, tolerance)
+        if len(pts) >= 3:
+            kept.append(pts)
+    return "".join("M" + "L".join(f"{fmt(x)},{fmt(y)}" for x, y in ring) + "Z" for ring in kept)
+
+
+def parse_path(d: str):
+    """Rings back out of one of our own generated `M x,y L x,y … Z` paths."""
+    rings = []
+    for chunk in d.split("M"):
+        chunk = chunk.strip().rstrip("Z")
+        if not chunk:
+            continue
+        points = []
+        for pair in chunk.split("L"):
+            pair = pair.strip()
+            if not pair:
+                continue
+            x, _, y = pair.partition(",")
+            try:
+                points.append((float(x), float(y)))
+            except ValueError:
+                continue
+        if len(points) >= 3:
+            rings.append(points)
+    return rings
+
+
+def transform_rings(rings, scale, translate_x, translate_y):
+    return [[(translate_x + x * scale, translate_y + y * scale) for x, y in ring] for ring in rings]
 
 
 def projected_bbox(features):
@@ -360,11 +421,147 @@ def match_features(expected, features):
     return matched, missing
 
 
-def main():
+# ------------------------------------------------------------ opaque ids
+
+def load_ids() -> dict:
+    if not IDS_FILE.exists():
+        return {}
+    data = json.loads(IDS_FILE.read_text(encoding="utf-8"))
+    return dict(data.get("ids") or {})
+
+
+def assign_ids(existing: dict, iso_codes) -> dict:
+    """Append-only. A database row holds the id, so nothing already given out
+    may be renumbered — a new subdivision takes the next free number, even if
+    that leaves the numbering out of alphabetical order forever."""
+    ids = dict(existing)
+    used = {int(v[1:]) for v in ids.values() if re.fullmatch(r"s\d+", v)}
+    nxt = (max(used) + 1) if used else 1
+    for iso in sorted(set(iso_codes)):
+        if iso in ids:
+            continue
+        ids[iso] = f"s{nxt:04d}"
+        nxt += 1
+    return ids
+
+
+def write_ids(ids: dict, subdivisions: dict):
+    """The only place the real world is written down, and it is never served.
+
+    Render deploys `server/` and nothing else, so this has to live here rather
+    than beside the generator, or the Returning Officer's own console would be
+    unable to name what it is handing out."""
+    by_country = {}
+    for country, entries in subdivisions.items():
+        for entry in entries:
+            iso = entry.get("code")
+            if iso in ids:
+                by_country[ids[iso]] = country
+    payload = {
+        "note": "ISO 3166-2 <-> opaque subdivision id. Server-side only: nothing here may reach a player. Generated by tools/generate-world-subdivisions.py; assignment is append-only.",
+        "ids": dict(sorted(ids.items())),
+        "territories": dict(sorted(by_country.items())),
+    }
+    IDS_FILE.write_text(json.dumps(payload, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+# ------------------------------------------------------------ output layout
+
+def write_layout(width, height, per_country, ids, projection=None):
+    """docs/subdiv/index.json + <territory>.json (coarse) + <territory>.d.json.
+
+    Coarse is what the world view draws. Detail is fetched for the one territory
+    somebody has opened, which is the only place the extra points are visible."""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    for stale in OUTPUT_DIR.glob("*.json"):
+        stale.unlink()
+
+    territories = {}
+    total_coarse = total_detail = 0
+    for country in sorted(per_country):
+        coarse, detail = {}, {}
+        for iso, rings in sorted(per_country[country].items()):
+            sid = ids[iso]
+            c = path_from_rings(rings, COARSE_TOLERANCE_PX, drop_below_px=0.8)
+            d = path_from_rings(rings, DETAIL_TOLERANCE_PX)
+            if c:
+                coarse[sid] = c
+            if d:
+                detail[sid] = d
+        if not detail:
+            continue
+        for name, shapes in ((f"{country}.json", coarse), (f"{country}.d.json", detail)):
+            (OUTPUT_DIR / name).write_text(
+                json.dumps({"t": country, "shapes": shapes}, separators=(",", ":"), ensure_ascii=False),
+                encoding="utf-8",
+            )
+        territories[country] = len(detail)
+        total_coarse += (OUTPUT_DIR / f"{country}.json").stat().st_size
+        total_detail += (OUTPUT_DIR / f"{country}.d.json").stat().st_size
+
+    index = {
+        "width": width,
+        "height": height,
+        "credit": CREDIT,
+        "territories": dict(sorted(territories.items())),
+    }
+    if projection:
+        index["projection"] = projection
+    (OUTPUT_DIR / "index.json").write_text(
+        json.dumps(index, separators=(",", ":"), ensure_ascii=False), encoding="utf-8"
+    )
+    return territories, total_coarse, total_detail
+
+
+def report_layout(territories, total_coarse, total_detail):
+    shapes = sum(territories.values())
+    print(
+        f"Wrote docs/subdiv/: {len(territories)} territories, {shapes} shapes. "
+        f"Coarse {total_coarse / 1024:.0f} KB total, detail {total_detail / 1024:.0f} KB total; "
+        f"largest single coarse file {max((f.stat().st_size for f in OUTPUT_DIR.glob('*.json') if not f.name.endswith('.d.json')), default=0) / 1024:.0f} KB."
+    )
+    if LEGACY_OUTPUT_FILE.exists():
+        LEGACY_OUTPUT_FILE.unlink()
+        print("Removed the old docs/world-subdivisions.js; nothing loads it any more.")
+
+
+# ------------------------------------------------------------ the two modes
+
+def build_from_existing():
+    """Re-split geometry this script already produced. No network."""
+    if not LEGACY_OUTPUT_FILE.exists():
+        raise SystemExit("docs/world-subdivisions.js is gone; run without --from-existing to download afresh.")
+    text = LEGACY_OUTPUT_FILE.read_text(encoding="utf-8")
+    match = re.search(r"window\.WORLD_SUBDIVISIONS\s*=\s*(\{.*\});\s*$", text, re.S)
+    if not match:
+        raise SystemExit("Could not parse window.WORLD_SUBDIVISIONS from docs/world-subdivisions.js")
+    payload = json.loads(match.group(1))
+    subdivisions = json.loads(SUBDIVISIONS_FILE.read_text(encoding="utf-8"))
+
+    ids = assign_ids(load_ids(), [e["code"] for entries in subdivisions.values() for e in entries])
+    write_ids(ids, subdivisions)
+
+    per_country = {}
+    for iso, d in payload.get("shapes", {}).items():
+        country = payload.get("parents", {}).get(iso)
+        if not country or iso not in ids:
+            continue
+        per_country.setdefault(country, {})[iso] = parse_path(d)
+
+    report_layout(*write_layout(
+        payload.get("width", 1000), payload.get("height", 500), per_country, ids,
+        projection=payload.get("projection"),
+    ))
+
+
+def build_from_source():
     subdivisions = json.loads(SUBDIVISIONS_FILE.read_text(encoding="utf-8"))
     alpha_map = json.loads(ALPHA_MAP_FILE.read_text(encoding="utf-8"))
     world = parse_world_map()
     target_boxes = {code: svg_bbox(path) for code, path in world["shapes"].items()}
+
+    ids = assign_ids(load_ids(), [e["code"] for entries in subdivisions.values() for e in entries])
+    write_ids(ids, subdivisions)
 
     jobs = []
     for country_code, expected in subdivisions.items():
@@ -394,8 +591,7 @@ def main():
         f"median bbox residual={median_residual:.2f}px, p90={p90_residual:.2f}px"
     )
 
-    shapes = {}
-    parents = {}
+    per_country = {}
     missing_report = {}
     matched_total = 0
     expected_total = 0
@@ -410,43 +606,43 @@ def main():
         matched, missing = match_features(expected, features)
         if missing:
             missing_report[country_code] = [x["code"] for x in missing]
-        if not matched:
-            continue
-
-        projected_by_code = {}
-        for code, feature in matched.items():
-            projected_by_code[code] = projected_rings(feature)
-
-        for code, rings in projected_by_code.items():
-            d = rings_to_path(rings, scale, translate_x, translate_y)
-            if not d:
+        for iso, feature in matched.items():
+            rings = transform_rings(projected_rings(feature), scale, translate_x, translate_y)
+            if not rings:
+                missing_report.setdefault(country_code, []).append(iso)
                 continue
-            shapes[code] = d
-            parents[code] = country_code
+            per_country.setdefault(country_code, {})[iso] = rings
             matched_total += 1
 
-    payload = {
-        "width": world["width"],
-        "height": world["height"],
-        "shapes": dict(sorted(shapes.items())),
-        "parents": dict(sorted(parents.items())),
-        "source": "geoBoundaries gbOpen ADM1 simplified geometry (CC BY 4.0); globally projected with Natural Earth 1 and clipped to democracy-sim country paths",
-        "projection": {"name": "Natural Earth 1", "scale": round(scale, 6), "translate": [round(translate_x, 4), round(translate_y, 4)]},
-    }
-    header = """/* Generated by tools/generate-world-subdivisions.py.\n\n   Subdivision geometry: geoBoundaries gbOpen ADM1, used under CC BY 4.0.\n   This file contains geometry and opaque subdivision codes only; subdivision\n   names remain in the Returning Officer API/UI. Do not hand-edit this file. */\n"""
-    OUTPUT_FILE.write_text(header + "window.WORLD_SUBDIVISIONS = " + json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + ";\n", encoding="utf-8")
-
-    print(f"Wrote {OUTPUT_FILE.relative_to(ROOT)} with {matched_total}/{expected_total} configured subdivision shapes.")
+    report_layout(*write_layout(
+        world["width"], world["height"], per_country, ids,
+        projection={"name": "Natural Earth 1", "scale": round(scale, 6), "translate": [round(translate_x, 4), round(translate_y, 4)]},
+    ))
+    print(f"{matched_total}/{expected_total} configured subdivisions have geometry.")
     if failures:
         print(f"Network/source failures for {len(failures)} countries:", file=sys.stderr)
         for code, msg in sorted(failures.items()):
             print(f"  {code}: {msg}", file=sys.stderr)
     if missing_report:
         total_missing = sum(len(v) for v in missing_report.values())
-        print(f"{total_missing} configured subdivisions had no safe geometry match; they remain selectable but fall back to parent-country preview.")
+        print(f"{total_missing} configured subdivisions had no safe geometry match; they remain selectable and the Returning Officer editor marks them as unmapped.")
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
         report_file = CACHE_DIR / "unmatched.json"
         report_file.write_text(json.dumps(missing_report, indent=2), encoding="utf-8")
         print(f"Match report: {report_file.relative_to(ROOT)}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--from-existing", action="store_true",
+        help="rebuild docs/subdiv/ from an existing docs/world-subdivisions.js instead of downloading",
+    )
+    args = parser.parse_args()
+    if args.from_existing:
+        build_from_existing()
+    else:
+        build_from_source()
 
 
 if __name__ == "__main__":
