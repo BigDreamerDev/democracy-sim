@@ -141,6 +141,11 @@ CREATE TABLE IF NOT EXISTS foreign_government_turns (
   UNIQUE (power_id, cycle_number)
 );
 
+/* What the chosen action actually did, and what the government refused on the
+   way there. Without it the Returning Officer can see that a turn happened and
+   not what came of it, which is the whole of debugging a cabinet. */
+ALTER TABLE foreign_government_turns ADD COLUMN IF NOT EXISTS result JSONB;
+
 CREATE TABLE IF NOT EXISTS foreign_agent_proposals (
   id          BIGSERIAL PRIMARY KEY,
   turn_id     BIGINT NOT NULL REFERENCES foreign_government_turns(id),
