@@ -342,6 +342,251 @@ CREATE TABLE IF NOT EXISTS foreign_intel_operations (
 );
 CREATE INDEX IF NOT EXISTS idx_foreign_intel_ops_power ON foreign_intel_operations(power_id,id);
 
+/* ------------------------------------------------ persistent relationships
+
+   `powers.standing` remains the compact public label, but the durable state is
+   directional. A NULL counterparty is this power's relationship with the
+   Republic; a concrete counterparty is reserved for foreign-to-foreign ties. */
+CREATE TABLE IF NOT EXISTS foreign_relations (
+  id                    BIGSERIAL PRIMARY KEY,
+  power_id              INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  counterparty_power_id INT REFERENCES powers(id) ON DELETE CASCADE,
+  trust                  INT NOT NULL DEFAULT 0,
+  fear                   INT NOT NULL DEFAULT 0,
+  respect                INT NOT NULL DEFAULT 0,
+  grievance              INT NOT NULL DEFAULT 0,
+  trade_dependency       INT NOT NULL DEFAULT 0,
+  ideological_affinity   INT NOT NULL DEFAULT 0,
+  updated_cycle          INT NOT NULL DEFAULT 0,
+  updated_at             TIMESTAMPTZ DEFAULT now(),
+  CHECK (counterparty_power_id IS NULL OR counterparty_power_id <> power_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_foreign_relations_pair
+  ON foreign_relations(power_id,COALESCE(counterparty_power_id,0));
+
+CREATE TABLE IF NOT EXISTS foreign_relation_events (
+  id                    BIGSERIAL PRIMARY KEY,
+  power_id              INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  counterparty_power_id INT REFERENCES powers(id) ON DELETE CASCADE,
+  kind                  TEXT NOT NULL,
+  summary               TEXT NOT NULL,
+  trust_delta           INT NOT NULL DEFAULT 0,
+  fear_delta            INT NOT NULL DEFAULT 0,
+  respect_delta         INT NOT NULL DEFAULT 0,
+  grievance_delta       INT NOT NULL DEFAULT 0,
+  trade_delta           INT NOT NULL DEFAULT 0,
+  public                BOOLEAN NOT NULL DEFAULT TRUE,
+  cycle_no              INT NOT NULL DEFAULT 0,
+  created_at            TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_foreign_relation_events_pair
+  ON foreign_relation_events(power_id,counterparty_power_id,id DESC);
+
+/* ------------------------------------------------ executable treaty policy */
+CREATE TABLE IF NOT EXISTS foreign_treaty_compliance (
+  id          BIGSERIAL PRIMARY KEY,
+  treaty_id   BIGINT NOT NULL REFERENCES treaties(id) ON DELETE CASCADE,
+  cycle_no    INT NOT NULL,
+  obligation  TEXT NOT NULL,
+  status      TEXT NOT NULL CHECK (status IN ('met','breached','waived')),
+  detail      TEXT NOT NULL DEFAULT '',
+  created_at  TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (treaty_id,cycle_no,obligation)
+);
+
+ALTER TABLE foreign_conflicts ADD COLUMN IF NOT EXISTS measures JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+CREATE TABLE IF NOT EXISTS republic_sanctions (
+  id           BIGSERIAL PRIMARY KEY,
+  power_id     INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  bill_id      INT NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
+  lift_bill_id INT REFERENCES bills(id) ON DELETE SET NULL,
+  measures     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  active       BOOLEAN NOT NULL DEFAULT FALSE,
+  created_by   INT REFERENCES users(id) ON DELETE SET NULL,
+  created_at   TIMESTAMPTZ DEFAULT now(),
+  enacted_at   TIMESTAMPTZ,
+  lifted_at    TIMESTAMPTZ,
+  UNIQUE (bill_id)
+);
+CREATE INDEX IF NOT EXISTS idx_republic_sanctions_power ON republic_sanctions(power_id,active,id DESC);
+
+/* ------------------------------------------------ embassies/private diplomacy */
+CREATE TABLE IF NOT EXISTS foreign_embassies (
+  power_id                    INT PRIMARY KEY REFERENCES powers(id) ON DELETE CASCADE,
+  status                      TEXT NOT NULL DEFAULT 'closed' CHECK (status IN ('open','closed','recalled','expelled')),
+  republic_ambassador_user_id INT REFERENCES users(id) ON DELETE SET NULL,
+  foreign_ambassador_name     TEXT NOT NULL DEFAULT '',
+  opened_cycle                INT,
+  updated_at                  TIMESTAMPTZ DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS foreign_private_dispatches (
+  id             BIGSERIAL PRIMARY KEY,
+  power_id       INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  direction      TEXT NOT NULL CHECK (direction IN ('incoming','outgoing')),
+  subject        TEXT NOT NULL,
+  body           TEXT NOT NULL,
+  in_reply_to    BIGINT REFERENCES foreign_private_dispatches(id) ON DELETE SET NULL,
+  author_user_id INT REFERENCES users(id) ON DELETE SET NULL,
+  leaked_at      TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_foreign_private_dispatches_power ON foreign_private_dispatches(power_id,id DESC);
+
+/* Foreign states can now talk to each other without routing every interaction
+   through the Republic. Proposals require the other cabinet to accept/reject. */
+CREATE TABLE IF NOT EXISTS foreign_bilateral_dispatches (
+  id            BIGSERIAL PRIMARY KEY,
+  from_power_id INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  to_power_id   INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  subject       TEXT NOT NULL,
+  body          TEXT NOT NULL,
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  CHECK (from_power_id <> to_power_id)
+);
+CREATE TABLE IF NOT EXISTS foreign_bilateral_agreements (
+  id              BIGSERIAL PRIMARY KEY,
+  proposer_id     INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  counterparty_id INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  kind            TEXT NOT NULL CHECK (kind IN ('trade','non_aggression','mutual_defence','currency_swap')),
+  title           TEXT NOT NULL,
+  terms           JSONB NOT NULL DEFAULT '{}'::jsonb,
+  status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','active','rejected','denounced')),
+  proposed_cycle  INT NOT NULL DEFAULT 0,
+  responded_at    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  CHECK (proposer_id <> counterparty_id)
+);
+CREATE INDEX IF NOT EXISTS idx_foreign_bilateral_agreements_party
+  ON foreign_bilateral_agreements(proposer_id,counterparty_id,status,id DESC);
+
+CREATE TABLE IF NOT EXISTS foreign_bilateral_conflicts (
+  id            BIGSERIAL PRIMARY KEY,
+  aggressor_id  INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  target_id     INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  kind          TEXT NOT NULL CHECK (kind IN ('sanction','ultimatum','war')),
+  grievance     TEXT NOT NULL,
+  demands       TEXT NOT NULL DEFAULT '',
+  measures      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  status        TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved','withdrawn')),
+  outcome       TEXT NOT NULL DEFAULT '',
+  cycle_no      INT NOT NULL DEFAULT 0,
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  resolved_at   TIMESTAMPTZ,
+  CHECK (aggressor_id <> target_id)
+);
+CREATE INDEX IF NOT EXISTS idx_foreign_bilateral_conflicts_pair
+  ON foreign_bilateral_conflicts(aggressor_id,target_id,status,id DESC);
+
+/* Foreign powers can hold one another's currencies for bilateral settlement. */
+CREATE TABLE IF NOT EXISTS foreign_currency_reserves (
+  holder_power_id   INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  currency_power_id INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  units             BIGINT NOT NULL DEFAULT 0 CHECK (units >= 0),
+  updated_at        TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (holder_power_id,currency_power_id),
+  CHECK (holder_power_id <> currency_power_id)
+);
+
+/* ------------------------------------------------ foreign domestic economy & shipments */
+CREATE TABLE IF NOT EXISTS foreign_economies (
+  power_id            INT PRIMARY KEY REFERENCES powers(id) ON DELETE CASCADE,
+  population_index    INT NOT NULL DEFAULT 100 CHECK (population_index > 0),
+  consumption_scale   NUMERIC NOT NULL DEFAULT 1 CHECK (consumption_scale >= 0),
+  last_cycle          INT NOT NULL DEFAULT 0,
+  created_at          TIMESTAMPTZ DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS foreign_production (
+  power_id      INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  good_category TEXT NOT NULL,
+  capacity      INT NOT NULL DEFAULT 0 CHECK (capacity >= 0),
+  base_price    BIGINT NOT NULL DEFAULT 10 CHECK (base_price >= 0),
+  PRIMARY KEY (power_id,good_category)
+);
+CREATE TABLE IF NOT EXISTS foreign_economy_events (
+  id            BIGSERIAL PRIMARY KEY,
+  power_id      INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  cycle_no      INT NOT NULL,
+  kind          TEXT NOT NULL,
+  good_category TEXT,
+  quantity      BIGINT NOT NULL DEFAULT 0,
+  detail        TEXT NOT NULL DEFAULT '',
+  created_at    TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS foreign_shipments (
+  id                    BIGSERIAL PRIMARY KEY,
+  origin_power_id       INT REFERENCES powers(id) ON DELETE SET NULL,
+  destination_power_id  INT REFERENCES powers(id) ON DELETE SET NULL,
+  republic_direction    TEXT CHECK (republic_direction IN ('import','export')),
+  trade_id              BIGINT REFERENCES foreign_trade(id) ON DELETE SET NULL,
+  recipient_user_id     INT REFERENCES users(id) ON DELETE SET NULL,
+  recipient_business_id INT REFERENCES businesses(id) ON DELETE SET NULL,
+  recipient_stockpile    BOOLEAN NOT NULL DEFAULT FALSE,
+  good_category         TEXT,
+  title                 TEXT NOT NULL,
+  unit                  TEXT NOT NULL DEFAULT 'unit',
+  quantity              BIGINT NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  value_marks           BIGINT NOT NULL DEFAULT 0,
+  departed_cycle        INT NOT NULL,
+  eta_cycle             INT NOT NULL,
+  status                TEXT NOT NULL DEFAULT 'in_transit' CHECK (status IN ('in_transit','delayed','arrived','seized','lost')),
+  risk                   INT NOT NULL DEFAULT 0,
+  detail                 TEXT NOT NULL DEFAULT '',
+  arrived_at             TIMESTAMPTZ,
+  created_at             TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_foreign_shipments_status ON foreign_shipments(status,eta_cycle,id);
+CREATE TABLE IF NOT EXISTS foreign_bilateral_trade (
+  id              BIGSERIAL PRIMARY KEY,
+  buyer_power_id  INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  seller_power_id INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  good_category   TEXT NOT NULL,
+  quantity        BIGINT NOT NULL CHECK (quantity > 0),
+  seller_units    BIGINT NOT NULL DEFAULT 0,
+  buyer_units     BIGINT NOT NULL DEFAULT 0,
+  value_marks     BIGINT NOT NULL DEFAULT 0,
+  cycle_no        INT NOT NULL,
+  shipment_id     BIGINT REFERENCES foreign_shipments(id) ON DELETE SET NULL,
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  CHECK (buyer_power_id <> seller_power_id)
+);
+
+
+
+/* Crises are negotiations with a deadline rather than a one-shot declaration. */
+CREATE TABLE IF NOT EXISTS diplomatic_crises (
+  id             BIGSERIAL PRIMARY KEY,
+  power_id       INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  conflict_id    BIGINT REFERENCES foreign_conflicts(id) ON DELETE SET NULL,
+  treaty_id      BIGINT REFERENCES treaties(id) ON DELETE SET NULL,
+  title          TEXT NOT NULL,
+  demand         TEXT NOT NULL,
+  republic_offer TEXT NOT NULL DEFAULT '',
+  foreign_reply  TEXT NOT NULL DEFAULT '',
+  deadline_cycle INT,
+  status         TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','offered','settled','failed','withdrawn')),
+  created_at     TIMESTAMPTZ DEFAULT now(),
+  resolved_at    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_diplomatic_crises_power ON diplomatic_crises(power_id,status,id DESC);
+
+ALTER TABLE foreign_intel_operations ADD COLUMN IF NOT EXISTS detected BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE foreign_intel_operations ADD COLUMN IF NOT EXISTS attributed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE foreign_intel_operations ADD COLUMN IF NOT EXISTS consequence TEXT NOT NULL DEFAULT '';
+ALTER TABLE foreign_intel_agents ADD COLUMN IF NOT EXISTS loyalty INT NOT NULL DEFAULT 50;
+ALTER TABLE foreign_intel_agents ADD COLUMN IF NOT EXISTS double_agent BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE TABLE IF NOT EXISTS foreign_agent_turns (
+  id           BIGSERIAL PRIMARY KEY,
+  agent_id     BIGINT NOT NULL REFERENCES foreign_intel_agents(id) ON DELETE CASCADE,
+  offered_by   INT REFERENCES users(id) ON DELETE SET NULL,
+  pitch        TEXT NOT NULL DEFAULT '',
+  status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','rejected','withdrawn')),
+  created_at   TIMESTAMPTZ DEFAULT now(),
+  responded_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_foreign_agent_turn_pending ON foreign_agent_turns(agent_id) WHERE status='pending';
+
 /* ------------------------------------------------------------- the world
 
    Real coastlines, invented countries. A territory is one shape on the map,

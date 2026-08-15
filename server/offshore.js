@@ -221,6 +221,13 @@ module.exports.mount = function mount(app, ctx) {
       )
     ).rows;
     const rate = Number(cur.rate);
+    let heldByForeign = 0, foreignReserves = [];
+    try {
+      heldByForeign = Number((await q('SELECT COALESCE(sum(units),0)::bigint n FROM foreign_currency_reserves WHERE currency_power_id=$1',[powerId])).rows[0].n);
+      foreignReserves = (await q(`SELECT r.currency_power_id,r.units,p.name AS currency_power_name,c.code,c.rate
+        FROM foreign_currency_reserves r JOIN powers p ON p.id=r.currency_power_id LEFT JOIN currencies c ON c.power_id=r.currency_power_id
+        WHERE r.holder_power_id=$1 AND r.units>0 ORDER BY p.name`,[powerId])).rows;
+    } catch (err) { if (err.code !== '42P01') throw err; }
     return {
       power_id: Number(powerId),
       code: cur.code,
@@ -230,6 +237,8 @@ module.exports.mount = function mount(app, ctx) {
       treasury_balance: Number(cur.treasury_balance),
       circulation: Number(cur.circulation),
       citizen_holdings: citizenUnits,
+      held_by_foreign_powers: heldByForeign,
+      foreign_reserves: foreignReserves,
       republic_reserve: Number(reserve.units),
       republic_mark_reserve: Number(marks.balance),
       buying_power_marks: Math.max(0, Number(marks.balance)) + Math.floor(Number(cur.treasury_balance) / rate),
@@ -365,6 +374,8 @@ module.exports.mount = function mount(app, ctx) {
     const shortfall = amount - markUsed;
     let foreignUnits = 0;
     if (shortfall > 0) {
+      if (ctx.diplomacy?.fxAllowed && !(await ctx.diplomacy.fxAllowed(powerId)))
+        throw Object.assign(new Error('Currency conversion with this power is blocked by active sanctions.'), { status: 403 });
       foreignUnits = Math.ceil(shortfall * Number(cur.rate));
       if (Number(cur.treasury_balance) < foreignUnits)
         throw Object.assign(
@@ -738,6 +749,8 @@ module.exports.mount = function mount(app, ctx) {
     if (!(await enabled(res))) return;
     const p = await powerRow(req.body?.power_id);
     if (!p) return res.status(400).json({ error: 'Name a foreign power to buy from.' });
+    if (ctx.diplomacy?.fxAllowed && !(await ctx.diplomacy.fxAllowed(p.id)))
+      return res.status(403).json({ error: 'Currency exchange with this power is blocked by active sanctions.' });
     const cur = await currencyFor(p.id);
     if (!cur) return res.status(400).json({ error: 'That power has no currency.' });
 
@@ -782,6 +795,8 @@ module.exports.mount = function mount(app, ctx) {
     if (!(await enabled(res))) return;
     const p = await powerRow(req.body?.power_id);
     if (!p) return res.status(400).json({ error: 'Name a foreign power to sell to.' });
+    if (ctx.diplomacy?.fxAllowed && !(await ctx.diplomacy.fxAllowed(p.id)))
+      return res.status(403).json({ error: 'Currency exchange with this power is blocked by active sanctions.' });
     const cur = await currencyFor(p.id);
     if (!cur) return res.status(400).json({ error: 'That power has no currency.' });
 

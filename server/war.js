@@ -213,26 +213,28 @@ module.exports.mount = function mount(app, ctx) {
     if (!o) return res.status(404).json({ error: 'No such foreign offer.' });
     if (!o.good_category) return res.status(400).json({ error: 'That offer has no category, so the Republic cannot store it.' });
     if (o.stock !== null && Number(o.stock) < units) return res.status(400).json({ error: `Only ${o.stock} left.` });
+    if (ctx.diplomacy.tradeCategoryAllowed && !(await ctx.diplomacy.tradeCategoryAllowed(o.power_id,o.good_category,'import')))
+      return res.status(403).json({ error: 'Treaty or sanction rules block procurement of that category.' });
 
     const currency = await ctx.offshore.foreignCurrencyState(o.power_id);
     if (!currency) return res.status(409).json({ error: 'That power has no currency.' });
     const localGross = money(Number(o.price) * units);
     const gross = localGross > 0 ? Math.ceil(localGross / Number(currency.rate)) : 0;
-    const tax = money(gross * (num('foreign_trade_tax') || 0));
+    const tariffRate = ctx.diplomacy.effectiveImportTariff ? await ctx.diplomacy.effectiveImportTariff(o.power_id) : (num('foreign_trade_tax') || 0);
+    const tax = money(gross * tariffRate);
     const cost = gross + tax;
     const left = await budgetLeft();
     if (cost > left)
       return res.status(400).json({ error: `That costs ${cost} with duty and ${left} is left of this cycle's military budget.` });
 
     const t = await treasury();
-    let settlement = null;
-    const held = await tx(async run => {
+    let settlement = null, shipment = null;
+    await tx(async run => {
       if (o.stock !== null) {
         const left = Number((await run('SELECT stock FROM foreign_offers WHERE id=$1 FOR UPDATE', [o.id])).rows[0].stock);
         if (left < units) throw Object.assign(new Error(`Only ${left} left.`), { status: 400 });
         await run('UPDATE foreign_offers SET stock = stock - $1 WHERE id=$2', [units, o.id]);
       }
-      const inStore = await move(o.good_category, units, 'procurement', `${o.title} from ${o.power_name}`, req.user.id, run);
       settlement = await ctx.offshore.settleRepublicImport(
         o.power_id,
         localGross,
@@ -247,13 +249,16 @@ module.exports.mount = function mount(app, ctx) {
         await run('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)',
           [t.id, t.id, tax, 'duty', `duty on ${o.title} [cycle ${cycleNo()}]`]);
       }
-      await run(
+      const trade=(await run(
         `INSERT INTO foreign_trade(power_id,direction,amount,tax,offer_id,cycle_no,foreign_units,fx_rate)
-         VALUES($1,'import',$2,$3,$4,$5,$6,$7)`,
+         VALUES($1,'import',$2,$3,$4,$5,$6,$7) RETURNING *`,
         [o.power_id, settlement.marks, tax, o.id, cycleNo(), localGross, settlement.rate]
-      );
-      return inStore;
+      )).rows[0];
+      shipment = await ctx.diplomacy.queueShipment({ origin_power_id:o.power_id, republic_direction:'import', trade_id:trade.id,
+        recipient_stockpile:true, good_category:o.good_category, title:o.title, unit:o.unit||'unit', quantity:units,
+        value_marks:settlement.marks, detail:`Quartermaster procurement from ${o.power_name}` }, run);
     });
+    const held=(await stockpile())[o.good_category] || 0;
     log(req.user.id, 'war.procure.foreign', `${units} x ${o.title} from ${o.power_name} for ${localGross} ${currency.code} / ${cost} marks with duty`);
     res.json({
       ok: true,
@@ -266,6 +271,8 @@ module.exports.mount = function mount(app, ctx) {
       rate: settlement.rate,
       reserve_spent: settlement.reserve_spent,
       held,
+      shipment,
+      delivery_pending: true,
       budget_left: await budgetLeft()
     });
   }));

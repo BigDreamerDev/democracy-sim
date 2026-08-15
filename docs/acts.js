@@ -1945,7 +1945,7 @@
     const isPresident = !!me?.offices?.includes('president');
     const isSpeaker = !!me?.offices?.includes('speaker');
     const isMinister = !!me?.offices?.includes('foreign_minister');
-    const [powers, dispatches, treaties, offers, conflicts, balance, adminPowers, world, fo, republicTerritoryAdmin, govCatalogue, worldgenGens, exportDesk, foreignIntel] = await Promise.all([
+    const [powers, dispatches, treaties, offers, conflicts, balance, adminPowers, world, fo, republicTerritoryAdmin, govCatalogue, worldgenGens, exportDesk, foreignIntel, crises, shipments, bilateral, privateCables, ambassadors] = await Promise.all([
       api('/api/diplomacy/powers'),
       api('/api/diplomacy/dispatches'),
       api('/api/diplomacy/treaties'),
@@ -1962,7 +1962,12 @@
       /* Same reasoning: an older server has no world generator at all. */
       me?.is_admin ? api('/api/world/generations').catch(() => ({ generations: [] })) : Promise.resolve(null),
       me ? api('/api/diplomacy/export-desk').catch(() => null) : Promise.resolve(null),
-      me ? api('/api/diplomacy/foreign-intelligence').catch(() => null) : Promise.resolve(null)
+      me ? api('/api/diplomacy/foreign-intelligence').catch(() => null) : Promise.resolve(null),
+      api('/api/diplomacy/crises').catch(() => []),
+      api('/api/diplomacy/shipments').catch(() => []),
+      api('/api/diplomacy/bilateral').catch(() => ({ agreements: [], conflicts: [] })),
+      me ? api('/api/diplomacy/private').catch(() => null) : Promise.resolve(null),
+      me ? api('/api/diplomacy/eligible-ambassadors').catch(() => null) : Promise.resolve(null)
     ]);
     /* Before the map is drawn, not while. The renderer is synchronous and
        returns a string, so anything it needs has to be in hand first. */
@@ -1993,7 +1998,21 @@
         luxury: 'Luxury',
         services: 'Services'
       })[k] || '';
-    const foreignTradeTax = Number(STATE().config.foreign_trade_tax) || 0;
+    const treatyTermLabel = (key, value) => {
+      const labels = {
+        trade_open: 'Open trade', tariff_free: 'Tariff-free', tariff_rate: 'Tariff', export_cap: 'Export cap',
+        non_aggression: 'Non-aggression', mutual_defence: 'Mutual defence', military_access: 'Military access',
+        intelligence_sharing: 'Intelligence sharing', extradition: 'Extradition', offshore_disclosure: 'Offshore disclosure',
+        arms_embargo: 'Arms embargo', technology_embargo: 'Technology embargo', territorial_guarantee: 'Territorial guarantee',
+        foreign_aid_per_cycle: 'Foreign aid / cycle', loan_repayment_per_cycle: 'Loan repayment / cycle',
+        currency_swap_limit: 'Currency swap limit', tribute_per_cycle: 'Tribute / cycle'
+      };
+      if (!labels[key] || key === 'idempotency_key' || value === false || value == null || value === '') return '';
+      if (typeof value === 'boolean') return labels[key];
+      if (key === 'tariff_rate') return `${labels[key]} ${(Number(value) * 100).toFixed(1)}%`;
+      return `${labels[key]} ${Number.isFinite(Number(value)) ? Number(value).toLocaleString() : value}`;
+    };
+    const treatyTerms = terms => Object.entries(terms || {}).map(([k, v]) => treatyTermLabel(k, v)).filter(Boolean);
     const activeAdminPowers = adminPowers.filter(p => !p.revoked_at);
     const messageForm =
       canDiplomat && powers.length
@@ -2050,24 +2069,46 @@
       </section>`;
 
     const pendingSpyApproaches = (foreignIntel?.recruitments || []).filter(r => r.status === 'pending');
+    const pendingTurnApproaches = (foreignIntel?.turn_offers || []).filter(r => r.status === 'pending');
     const foreignIntelHtml = !me || !foreignIntel
       ? ''
       : `<section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Private channel</span><h2>Foreign intelligence</h2></div>
         <p class="small muted">A foreign government can approach you whether you remain a Republic citizen or have defected. You become its agent only if you accept. Recruitment and your operation reports are visible here only to you.</p>
         ${pendingSpyApproaches.length ? `<h3>Recruitment approaches</h3><div class="list">${pendingSpyApproaches.map(r => `<div class="item"><div class="item-top"><span class="item-title">${esc(r.power_name)} · codename ${esc(r.codename)}</span><span class="tag on-violet">Pending</span></div><p>${esc(r.pitch)}</p><p class="small muted">Signing bonus: ${Number(r.signing_bonus || 0).toLocaleString()} ${esc(r.currency_code || '')}${r.currency_rate ? ` · current rate ${Number(r.currency_rate).toFixed(3)} per ${esc(STATE().config.currency_name || 'Mark')}` : ''}</p><div class="row"><button class="btn btn-primary btn-sm" data-spy-recruit="${r.id}" data-accept="1">Accept</button><button class="btn btn-sm" data-spy-recruit="${r.id}" data-accept="0">Decline</button></div></div>`).join('')}</div>` : '<p class="small muted">No foreign service is currently approaching you.</p>'}
         ${(foreignIntel.agents || []).length ? `<h3>Your foreign-agent roles</h3><div class="list">${foreignIntel.agents.map(a => `<div class="item"><div class="item-top"><span class="item-title">${esc(a.power_name)} · ${esc(a.codename)}</span><span class="tag ${a.status === 'active' ? 'on-green' : ''}">${esc(String(a.status || '').replace(/(^|\s)\S/g, m => m.toUpperCase()))}</span></div><p class="small muted">Experience ${Number(a.experience || 0)}${a.status === 'active' ? ` · <button class="btn btn-sm" data-spy-resign="${a.id}">Resign as agent</button>` : ''}</p></div>`).join('')}</div>` : ''}
-        ${(foreignIntel.operations || []).length ? `<h3>Operations involving you</h3><div class="list">${foreignIntel.operations.map(o => `<div class="item"><div class="item-top"><span class="item-title">${esc(o.power_name)} · ${esc(String(o.kind || '').replaceAll('_', ' ').replace(/(^|\s)\S/g, m => m.toUpperCase()))}</span><span class="tag ${o.outcome === 'success' ? 'on-green' : 'on-oxide'}">${esc(String(o.outcome || '').replace(/(^|\s)\S/g, m => m.toUpperCase()))}</span></div><p>${esc(o.report || '')}</p><p class="small muted">Budget ${Number(o.budget || 0).toLocaleString()} ${esc(o.currency_code || '')} · score ${Number(o.score || 0)} / threshold ${Number(o.threshold || 0)} · cycle ${Number(o.cycle_no || 0)}</p></div>`).join('')}</div>` : ''}
+        ${(foreignIntel.operations || []).length ? `<h3>Operations involving you</h3><div class="list">${foreignIntel.operations.map(o => `<div class="item"><div class="item-top"><span class="item-title">${esc(o.power_name)} · ${esc(String(o.kind || '').replaceAll('_', ' ').replace(/(^|\s)\S/g, m => m.toUpperCase()))}</span><span class="tag ${o.outcome === 'success' ? 'on-green' : 'on-oxide'}">${esc(String(o.outcome || '').replace(/(^|\s)\S/g, m => m.toUpperCase()))}</span></div><p>${esc(o.report || '')}</p><p class="small muted">Budget ${Number(o.budget || 0).toLocaleString()} ${esc(o.currency_code || '')} · score ${Number(o.score || 0)} / threshold ${Number(o.threshold || 0)}${o.detected ? ' · detected' : ''}${o.attributed ? ' · attributed' : ''} · cycle ${Number(o.cycle_no || 0)}</p></div>`).join('')}</div>` : ''}
+        ${pendingTurnApproaches.length ? `<h3>Republic counter-intelligence approaches</h3><div class="list">${pendingTurnApproaches.map(t => `<div class="item"><div class="item-top"><span class="item-title">Codename ${esc(t.codename)} · ${esc(t.power_name)}</span><span class="tag on-violet">Double-agent approach</span></div><p>${esc(t.pitch)}</p><p class="small muted">Accepting secretly marks this foreign role as a Republic double agent.</p><div class="row"><button class="btn btn-primary btn-sm" data-spy-turn="${t.id}" data-accept="1">Accept</button><button class="btn btn-sm" data-spy-turn="${t.id}" data-accept="0">Decline</button></div></div>`).join('')}</div>` : ''}
       </section>`;
 
+    const embassyHtml = !canDiplomat
+      ? ''
+      : `<section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Embassies · sealed traffic</span><h2>Private diplomacy</h2></div>
+        <p class="small muted">Private cables require an open embassy. They remain sealed unless deliberately leaked or exposed by intelligence.</p>
+        <div class="grid2"><form id="embassy-form" class="stack"><label class="field"><span>Foreign power</span><select name="power_id">${powers.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label><label class="field"><span>Embassy status</span><select name="status"><option value="open">Open</option><option value="closed">Close</option><option value="recalled">Recall ambassador</option><option value="expelled">Expel mission</option></select></label><label class="field"><span>Republic ambassador</span><select name="republic_ambassador_user_id"><option value="">No change / none</option>${(ambassadors || []).map(a => `<option value="${a.id}">${esc(a.display_name)}</option>`).join('')}</select></label>${isSpeaker && !isPresident ? `<label class="field"><span>Enacted House resolution bill ID</span><input name="resolution_bill_id" type="number" min="1" required></label>` : ''}<button class="btn">Update embassy</button></form>
+        <form id="private-cable-form" class="stack"><label class="field"><span>Foreign power</span><select name="power_id">${powers.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label><label class="field"><span>Subject</span><input name="subject" maxlength="200" required></label><label class="field"><span>Sealed cable</span><textarea name="body" rows="5" maxlength="4000" required></textarea></label>${isSpeaker && !isPresident ? `<label class="field"><span>Enacted House resolution bill ID</span><input name="resolution_bill_id" type="number" min="1" required></label>` : ''}<button class="btn btn-primary">Send private cable</button></form></div>
+        <div class="list" style="margin-top:12px">${(privateCables || []).length ? privateCables.slice(0,20).map(d => `<div class="item"><div class="item-top"><span class="item-title">${d.direction === 'outgoing' ? 'Republic →' : '←'} ${esc(d.power_name)} · ${esc(d.subject)}</span><span class="tag ${d.leaked_at ? 'on-oxide' : 'on-violet'}">${d.leaked_at ? 'Leaked' : 'Sealed'}</span></div><p>${esc(d.body)}</p><p class="small muted">${d.author_name ? `Authorised by ${esc(d.author_name)} · ` : ''}${new Date(d.created_at).toLocaleString()}</p></div>`).join('') : '<p class="muted">No private cables.</p>'}</div></section>`;
+
+    const crisisHtml = `<section class="dip-section dip-alerts"><div class="dip-section-head"><span class="dip-section-kicker">Deadline diplomacy</span><h2>Diplomatic crises</h2></div><div class="list">${crises.length ? crises.map(c => `<div class="item"><div class="item-top"><span class="item-title">${esc(c.power_name)} · ${esc(c.title)}</span><span class="tag ${c.status === 'settled' ? 'on-green' : c.status === 'failed' ? 'on-oxide' : 'on-violet'}">${esc(String(c.status || '').replaceAll('_',' '))}</span></div><p><strong>Demand:</strong> ${esc(c.demand || '')}</p>${c.republic_offer ? `<p><strong>Republic offer:</strong> ${esc(c.republic_offer)}</p>` : ''}${c.foreign_reply ? `<p><strong>Foreign reply:</strong> ${esc(c.foreign_reply)}</p>` : ''}<p class="small muted">${c.deadline_cycle == null ? 'No deadline' : `Deadline cycle ${Number(c.deadline_cycle)}`}</p>${canDiplomat && ['open','offered'].includes(c.status) ? `<button class="btn btn-sm" data-crisis-offer="${c.id}">Make / revise negotiated offer</button>` : ''}</div>`).join('') : '<p class="muted">No active or recorded crises.</p>'}</div></section>`;
+
+    const bilateralHtml = `<section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">World system</span><h2>Foreign-to-foreign relations</h2></div>
+      <h3>Agreements</h3><div class="list">${(bilateral?.agreements || []).length ? bilateral.agreements.map(a => `<div class="item"><div class="item-top"><span class="item-title">${esc(a.proposer_name)} ↔ ${esc(a.counterparty_name)}</span><span class="tag on-green">${esc(String(a.kind || '').replaceAll('_',' '))}</span></div><p>${esc(a.title)}</p></div>`).join('') : '<p class="muted">No active foreign-to-foreign agreements.</p>'}</div>
+      <h3>Conflicts</h3><div class="list">${(bilateral?.conflicts || []).length ? bilateral.conflicts.map(c => `<div class="item"><div class="item-top"><span class="item-title">${esc(c.aggressor_name)} → ${esc(c.target_name)}</span><span class="tag on-oxide">${esc(c.kind)}</span></div><p>${esc(c.grievance)}</p>${c.demands ? `<p class="small muted">Demand: ${esc(c.demands)}</p>` : ''}</div>`).join('') : '<p class="muted">No active conflicts between foreign powers.</p>'}</div></section>`;
+
+    const shipmentsHtml = `<section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Trade routes</span><h2>International shipments</h2></div><div class="list">${shipments.length ? shipments.slice(0,40).map(s => {
+      const origin = s.origin_name || (s.republic_direction === 'export' ? 'Republic' : 'Unknown');
+      const destination = s.destination_name || (s.republic_direction === 'import' ? 'Republic' : 'Unknown');
+      return `<div class="item"><div class="item-top"><span class="item-title">${esc(origin)} → ${esc(destination)} · ${esc(s.title)}</span><span class="tag ${s.status === 'arrived' ? 'on-green' : ['seized','lost'].includes(s.status) ? 'on-oxide' : ''}">${esc(String(s.status || '').replaceAll('_',' '))}</span></div><p class="small muted">${Number(s.quantity).toLocaleString()} ${esc(s.unit || 'unit')} · ${goodLabel(s.good_category) ? esc(goodLabel(s.good_category)) : 'Goods'} · departed cycle ${Number(s.departed_cycle)} · ETA cycle ${Number(s.eta_cycle)} · route risk ${Number(s.risk || 0)}%</p></div>`;
+    }).join('') : '<p class="muted">No international shipments yet.</p>'}</div></section>`;
+
     box.innerHTML = `<div class="diplomacy-office">
-      <header class="dip-head"><div><p class="dip-head-code">FOREIGN OFFICE · PUBLIC CHANNEL</p><h1>Diplomacy</h1><p class="muted">Foreign powers speak to the Republic publicly. Official government messages and Returning Officer actions are entered in the public record.</p></div><div class="dip-signal" aria-hidden="true"><span></span><span></span><span></span></div></header>
+      <header class="dip-head"><div><p class="dip-head-code">FOREIGN OFFICE · DIPLOMATIC NETWORK</p><h1>Diplomacy</h1><p class="muted">Official diplomacy remains on the public record; recognised states may also maintain sealed embassy channels whose existence and leaks can carry political consequences.</p></div><div class="dip-signal" aria-hidden="true"><span></span><span></span><span></span></div></header>
       ${worldMap(world)}
 
       ${messageForm}
 
       ${foreignOffice(fo, canAppointMinister, isMinister, powers)}
 
-      <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Recognised contacts</span><h2>Powers</h2></div><div class="list dip-powers">${powers.length ? powers.map(p => `<div class="item"><div class="item-top"><span class="item-title"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${esc(p.colour)};margin-right:7px"></span>${esc(p.name)}</span><span>${standing(p)}</span></div>${me && !p.recognised ? `<button class="btn btn-sm" data-recognise="${p.id}">Move recognition</button>` : ''}</div>`).join('') : '<p class="muted">No foreign powers.</p>'}</div></section>
+      <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Recognised contacts</span><h2>Powers</h2></div><div class="list dip-powers">${powers.length ? powers.map(p => `<div class="item"><div class="item-top"><span class="item-title"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${esc(p.colour)};margin-right:7px"></span>${esc(p.name)}</span><span>${standing(p)}</span></div><div class="row"><button class="btn btn-sm" data-dossier="${p.id}">Open country dossier</button>${me && !p.recognised ? `<button class="btn btn-sm" data-recognise="${p.id}">Move recognition</button>` : ''}${me && p.recognised ? `<button class="btn btn-sm" data-sanction="${p.id}" data-power-name="${esc(p.name)}">Move sanctions</button>` : ''}</div></div>`).join('') : '<p class="muted">No foreign powers.</p>'}</div><div id="country-dossier" style="margin-top:12px"></div></section>
 
       <section class="dip-section dip-correspondence"><div class="dip-section-head"><span class="dip-section-kicker">Cable traffic · public record</span><h2>Diplomatic correspondence</h2></div><div class="dip-thread">${
         dispatches.length
@@ -2075,19 +2116,20 @@
               .slice(0, 50)
               .map(
                 d =>
-                  `<article class="dip-message ${d.direction === 'outbound' ? 'is-republic' : 'is-foreign'} ${d.in_reply_to ? 'is-reply' : ''}"><div class="dip-message-route"><span class="dip-route-mark">${d.direction === 'outbound' ? 'R' : 'F'}</span><div><span class="dip-sender">${d.direction === 'outbound' ? 'Republic Foreign Office' : esc(d.power_name)}</span><span class="dip-route-detail">${d.direction === 'outbound' ? `To ${esc(d.power_name)}` : 'To the Republic'}</span></div><span class="dip-message-id">#${d.id}</span></div><div class="dip-message-head"><h3>${esc(d.subject)}</h3><div class="dip-message-tags"><span class="tag ${d.message_kind === 'ultimatum' ? 'on-oxide' : d.message_kind === 'treaty_proposal' ? 'on-violet' : d.message_kind === 'trade_proposal' ? 'on-green' : ''}">${kindLabel(d.message_kind)}</span><span class="tag">${d.direction}</span></div></div><p class="dip-meta">${d.in_reply_to ? `In reply to cable #${d.in_reply_to}` : 'New diplomatic thread'}${d.author_name ? ` · authorised by ${esc(d.author_name)}` : ''}</p><div class="dip-message-body">${esc(d.body).replace(/\n/g, '<br>')}</div>${canDiplomat ? `<div class="dip-message-actions"><button class="btn btn-sm" data-reply="${d.id}" data-reply-kind="${esc(d.message_kind || 'dispatch')}" data-reply-subject="${esc(d.subject)}">Reply on this channel</button></div>` : ''}</article>`
+                  `<article class="dip-message ${d.direction === 'outgoing' ? 'is-republic' : 'is-foreign'} ${d.in_reply_to ? 'is-reply' : ''}"><div class="dip-message-route"><span class="dip-route-mark">${d.direction === 'outgoing' ? 'R' : 'F'}</span><div><span class="dip-sender">${d.direction === 'outgoing' ? 'Republic Foreign Office' : esc(d.power_name)}</span><span class="dip-route-detail">${d.direction === 'outgoing' ? `To ${esc(d.power_name)}` : 'To the Republic'}</span></div><span class="dip-message-id">#${d.id}</span></div><div class="dip-message-head"><h3>${esc(d.subject)}</h3><div class="dip-message-tags"><span class="tag ${d.message_kind === 'ultimatum' ? 'on-oxide' : d.message_kind === 'treaty_proposal' ? 'on-violet' : d.message_kind === 'trade_proposal' ? 'on-green' : ''}">${kindLabel(d.message_kind)}</span><span class="tag">${d.direction}</span></div></div><p class="dip-meta">${d.in_reply_to ? `In reply to cable #${d.in_reply_to}` : 'New diplomatic thread'}${d.author_name ? ` · authorised by ${esc(d.author_name)}` : ''}</p><div class="dip-message-body">${esc(d.body).replace(/\n/g, '<br>')}</div>${canDiplomat ? `<div class="dip-message-actions"><button class="btn btn-sm" data-reply="${d.id}" data-reply-kind="${esc(d.message_kind || 'dispatch')}" data-reply-subject="${esc(d.subject)}">Reply on this channel</button></div>` : ''}</article>`
               )
               .join('')
           : '<p class="muted">No dispatches.</p>'
       }</div></section>
 
       <div class="dip-grid">
-        <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Ratification desk</span><h2>Treaties</h2></div><div class="list">${treaties.length ? treaties.map(t => `<div class="item"><div class="item-top"><span class="item-title">${esc(t.title)}</span><span class="tag">${esc(t.republic_status)}</span></div><p class="small muted">${esc(t.power_name)} · ${esc(t.bill_ref || '')}</p></div>`).join('') : '<p class="muted">No treaties.</p>'}</div></section>
+        <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Ratification desk</span><h2>Treaties</h2></div><div class="list">${treaties.length ? treaties.map(t => { const terms=treatyTerms(t.terms); return `<div class="item"><div class="item-top"><span class="item-title">${esc(t.title)}</span><span class="tag">${esc(t.republic_status)}</span></div><p class="small muted">${esc(t.power_name)} · ${esc(t.bill_ref || '')}</p>${terms.length ? `<p>${terms.map(x => `<span class="tag">${esc(x)}</span>`).join(' ')}</p>` : ''}</div>`; }).join('') : '<p class="muted">No treaties.</p>'}</div></section>
         <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Commercial attaché</span><h2>Foreign market</h2></div><div class="list">${offers.length ? offers.map(o => {
           const localPrice = Number(o.local_price ?? o.price) || 0;
           const price = Number(o.mark_price ?? localPrice) || 0;
-          const tax = Math.round(price * foreignTradeTax);
-          const total = price + tax;
+          const tax = Number(o.tariff ?? 0) || 0;
+          const total = Number(o.total_mark_price ?? (price + tax)) || (price + tax);
+          const tariffRate = Number(o.tariff_rate ?? 0) || 0;
           const code = o.currency_code || '';
           const category = goodLabel(o.good_category);
           const stock = o.stock === null || o.stock === undefined ? 'No stock limit' : `${Number(o.stock).toLocaleString()} in stock`;
@@ -2095,7 +2137,7 @@
           return `<div class="item"><div class="item-top"><span class="item-title">${esc(o.title)} · ${esc(o.power_name)}</span><span class="money">${code ? `${localPrice.toLocaleString()} ${esc(code)}` : cash(price)}</span></div>
             ${(category || o.unit || (o.stock !== null && o.stock !== undefined)) ? `<p class="small muted">${category ? `<span class="tag">${esc(category)}</span> ` : ''}${esc(stock)}${unit}</p>` : ''}
             ${o.description ? `<p>${esc(o.description)}</p>` : ''}
-            <p class="small muted">${code && o.currency_rate ? `1 ${esc(STATE().config.currency_name || 'Mark')} = ${Number(o.currency_rate).toFixed(3)} ${esc(code)} · ` : ''}${cash(price)} at the current rate${tax ? ` + ${cash(tax)} import tariff` : ' · no import tariff'} · <strong>${cash(total)} total</strong></p>
+            <p class="small muted">${code && o.currency_rate ? `1 ${esc(STATE().config.currency_name || 'Mark')} = ${Number(o.currency_rate).toFixed(3)} ${esc(code)} · ` : ''}${cash(price)} at the current rate${tax ? ` + ${cash(tax)} import tariff (${(tariffRate * 100).toFixed(1)}%)` : ' · no import tariff'} · <strong>${cash(total)} total</strong></p>
             ${me ? `<button class="btn btn-sm" data-foreign-buy="${o.id}">Buy</button>` : ''}</div>`;
         }).join('') : '<p class="muted">No foreign offers.</p>'}</div></section>
       </div>
@@ -2116,6 +2158,9 @@
           <span class="dip-ledger-note">${b.spent_this_cycle} of ${b.export_cap} spent buying from us this cycle</span>` : ''}</div>`).join('')}</div></section>
       </div>
 
+      ${embassyHtml}
+      <div class="dip-grid">${crisisHtml}${bilateralHtml}</div>
+      ${shipmentsHtml}
       ${exportDeskHtml}
       ${foreignIntelHtml}
 
@@ -2134,6 +2179,69 @@
     bindWorldMap(world);
     bindForeignOffice();
     bindExportButtons();
+
+    const renderDossier = d => {
+      const target = document.querySelector('#country-dossier');
+      if (!target || !d?.power) return;
+      const r = d.relationship || {};
+      const metrics = [['Trust',r.trust],['Fear',r.fear],['Respect',r.respect],['Grievance',r.grievance],['Trade dependency',r.trade_dependency],['Ideological affinity',r.ideological_affinity]];
+      const cur=d.currency || {};
+      const production=d.foreign_economy?.production || [], stock=d.foreign_economy?.stockpile || [];
+      const stockFor=k=>Number(stock.find(x=>x.good_category===k)?.quantity||0);
+      const sanctionsAndConflicts=[
+        ...(d.republic_sanctions||[]).filter(x=>x.active).map(x=>`<div class="item"><span class="tag on-oxide">Republic sanctions</span> <strong>${esc(x.bill_ref||'')}</strong><p class="small muted">${esc(JSON.stringify(x.measures||{}))}</p>${me ? `<button class="btn btn-sm" data-lift-sanction="${x.id}">Move to lift</button>`:''}</div>`),
+        ...(d.conflicts||[]).map(c=>`<div class="item"><span class="tag on-oxide">${esc(c.kind)}</span> ${esc(c.grievance)}${c.measures && Object.keys(c.measures).length ? `<p class="small muted">Measures: ${esc(JSON.stringify(c.measures))}</p>`:''}</div>`)
+      ];
+      const bilateralPosition=[
+        ...(d.bilateral_agreements||[]).map(a=>`<div class="item">${esc(a.proposer_name)} ↔ ${esc(a.counterparty_name)} · <span class="tag on-green">${esc(a.kind.replaceAll('_',' '))}</span> ${esc(a.title)}</div>`),
+        ...(d.bilateral_conflicts||[]).filter(c=>c.status==='open').map(c=>`<div class="item">${esc(c.aggressor_name)} → ${esc(c.target_name)} · <span class="tag on-oxide">${esc(c.kind)}</span> ${esc(c.grievance)}</div>`)
+      ];
+      target.innerHTML=`<article class="card"><div class="item-top"><div><span class="dip-section-kicker">Country dossier</span><h2 style="margin:4px 0">${esc(d.power.name)}</h2></div><span>${standing(d.power)}</span></div>
+        ${d.power.persona ? `<p>${esc(d.power.persona)}</p>` : ''}
+        <h3>Relationship</h3><div class="grid2">${metrics.map(([k,v])=>`<div class="item"><span class="small muted">${k}</span><div><strong>${Number(v||0)}</strong></div></div>`).join('')}</div>
+        <h3>Government & embassy</h3><p>${(d.ministers||[]).length ? d.ministers.map(m=>`${esc(m.role.replaceAll('_',' '))}: <strong>${esc(m.display_name)}</strong>`).join(' · ') : 'No cabinet data.'}</p><p class="small muted">Embassy: ${esc(String(d.embassy?.status||'closed').replaceAll('_',' '))}${d.embassy?.foreign_ambassador_name ? ` · foreign ambassador ${esc(d.embassy.foreign_ambassador_name)}` : ''}</p>
+        <h3>Currency & economy</h3>${cur.code ? `<p><strong>1 ${esc(STATE().config.currency_name || 'Mark')} = ${Number(cur.rate||0).toFixed(3)} ${esc(cur.code)}</strong> · treasury ${Number(cur.treasury_balance||0).toLocaleString()} · circulation ${Number(cur.circulation||0).toLocaleString()} · supply ${Number(cur.money_supply||0).toLocaleString()} · their Mark reserve ${cash(cur.republic_mark_reserve||0)} · our reserve ${Number(cur.republic_reserve||0).toLocaleString()} ${esc(cur.code)}</p>` : '<p class="muted">No currency data.</p>'}
+        <div class="list">${production.map(x=>`<div class="item"><div class="item-top"><span class="item-title">${esc(goodLabel(x.good_category)||x.good_category)}</span><span class="tag">${stockFor(x.good_category).toLocaleString()} stock</span></div><p class="small muted">Produces ${Number(x.capacity||0).toLocaleString()} / cycle · base price ${Number(x.base_price||0).toLocaleString()} local units</p></div>`).join('')}</div>
+        <h3>Treaties & compliance</h3><div class="list">${(d.treaties||[]).length ? d.treaties.map(t=>{ const terms=treatyTerms(t.terms); return `<div class="item"><div class="item-top"><span class="item-title">${esc(t.title)}</span><span class="tag">${esc(t.republic_status||'')}</span></div>${terms.length?`<p>${terms.map(x=>`<span class="tag">${esc(x)}</span>`).join(' ')}</p>`:''}</div>`;}).join(''):'<p class="muted">No treaties.</p>'}</div>
+        ${(d.treaty_compliance||[]).length ? `<p class="small muted">Recent compliance: ${d.treaty_compliance.slice(0,8).map(c=>`${esc(c.treaty_title)} · ${esc(c.obligation.replaceAll('_',' '))}: <strong>${esc(c.status)}</strong>`).join(' · ')}</p>` : ''}
+        <h3>Sanctions & conflicts</h3><div class="list">${sanctionsAndConflicts.length ? sanctionsAndConflicts.join('') : '<p class="muted">No active sanctions or conflicts.</p>'}</div>
+        <h3>International position</h3>${(d.foreign_relations||[]).length ? `<p class="small muted">${d.foreign_relations.map(x=>`${esc(x.counterparty_name)}: trust ${Number(x.trust||0)}, grievance ${Number(x.grievance||0)}, trade dependence ${Number(x.trade_dependency||0)}, affinity ${Number(x.ideological_affinity||0)}`).join(' · ')}</p>` : ''}<div class="list">${bilateralPosition.length ? bilateralPosition.join('') : '<p class="muted">No recorded bilateral commitments.</p>'}</div>
+        <h3>Known intelligence</h3><div class="list">${(d.known_intelligence||[]).length ? d.known_intelligence.map(i=>`<div class="item"><div class="item-top"><span class="item-title">${esc(i.ref)} · ${esc(i.subject)}</span><span class="tag">${esc(i.confidence||'moderate')} confidence</span></div><p>${esc(i.body||'')}</p></div>`).join(''):'<p class="muted">No declassified intelligence in the dossier.</p>'}</div>
+        <h3>Relationship timeline</h3><div class="list">${(d.timeline||[]).length ? d.timeline.slice(0,20).map(e=>`<div class="item"><div class="item-top"><span class="item-title">${esc(String(e.kind||'').replaceAll('_',' '))}</span><span class="small muted">cycle ${Number(e.cycle_no||0)}</span></div><p>${esc(e.summary||'')}</p></div>`).join(''):'<p class="muted">No relationship events yet.</p>'}</div>
+      </article>`;
+      target.querySelectorAll('[data-lift-sanction]').forEach(btn=>btn.onclick=()=>busy(btn,async()=>{
+        try { const b=await api(`/api/diplomacy/sanctions/${btn.dataset.liftSanction}/lift`,{method:'POST',body:{reason:'The Republic shall lift the recorded sanctions.'}}); toast(`Motion ${b.ref} filed to lift sanctions.`); viewDiplomacy(); }
+        catch(err){ toast(err.message,true); }
+      }));
+    };
+
+    document.querySelectorAll('[data-dossier]').forEach(btn => btn.onclick = () => busy(btn, async () => {
+      try { renderDossier(await api(`/api/diplomacy/powers/${btn.dataset.dossier}/dossier`)); }
+      catch (err) { toast(err.message, true); }
+    }));
+    document.querySelectorAll('[data-sanction]').forEach(btn => btn.onclick = () => busy(btn, async () => {
+      const reason=prompt(`Reason for sanctions on ${btn.dataset.powerName}`); if(!reason) return;
+      const raw=prompt('Categories to restrict (comma-separated: food, raw_materials, energy, industrial_goods, technology, arms, luxury, services). Leave blank for none.','arms,technology') || '';
+      const categories=raw.split(',').map(x=>x.trim()).filter(Boolean);
+      const trade_ban=confirm('Apply a complete two-way trade ban? Cancel = targeted measures only.');
+      const fx_ban=confirm('Freeze new foreign-exchange conversion with this power?');
+      const surcharge=prompt('Extra import tariff as a decimal (0 to 1). Example: 0.25 = 25%.','0');
+      try { const b=await api(`/api/diplomacy/powers/${btn.dataset.sanction}/sanction`,{method:'POST',body:{reason,categories,trade_ban,fx_ban,tariff_surcharge:Number(surcharge)||0}}); toast(`Sanctions motion ${b.ref} filed.`); }
+      catch(err){ toast(err.message,true); }
+    }));
+    document.querySelectorAll('[data-crisis-offer]').forEach(btn => btn.onclick = () => busy(btn, async () => {
+      const offer=prompt('Republic settlement offer / counter-offer'); if(!offer) return;
+      const body={offer};
+      if(isSpeaker && !isPresident) { const r=prompt('Enacted House resolution bill ID'); if(!r) return; body.resolution_bill_id=Number(r); }
+      try { await api(`/api/diplomacy/crises/${btn.dataset.crisisOffer}/offer`,{method:'POST',body}); toast('Negotiated offer sent through the diplomatic channel.'); viewDiplomacy(); }
+      catch(err){ toast(err.message,true); }
+    }));
+    if(document.querySelector('#embassy-form')) document.querySelector('#embassy-form').onsubmit=ev=>{
+      ev.preventDefault(); busy(ev.submitter,async()=>{ const body=Object.fromEntries(new FormData(ev.target)); try { await api(`/api/diplomacy/powers/${body.power_id}/embassy`,{method:'POST',body}); toast('Embassy status updated.'); viewDiplomacy(); } catch(err){toast(err.message,true);} });
+    };
+    if(document.querySelector('#private-cable-form')) document.querySelector('#private-cable-form').onsubmit=ev=>{
+      ev.preventDefault(); busy(ev.submitter,async()=>{ const body=Object.fromEntries(new FormData(ev.target)); try { await api('/api/diplomacy/private',{method:'POST',body}); toast('Sealed diplomatic cable sent.'); viewDiplomacy(); } catch(err){toast(err.message,true);} });
+    };
 
     const targetedPower = document.querySelector('#targeted-export-power');
     const targetedCode = document.querySelector('#targeted-export-code');
@@ -2200,6 +2308,17 @@
           } catch (err) {
             toast(err.message, true);
           }
+        }))
+    );
+    document.querySelectorAll('[data-spy-turn]').forEach(btn =>
+      (btn.onclick = () =>
+        busy(btn, async () => {
+          try {
+            const accepted = btn.dataset.accept === '1';
+            await api(`/api/diplomacy/foreign-intelligence/turns/${btn.dataset.spyTurn}/respond`, { method: 'POST', body: { accept: accepted } });
+            toast(accepted ? 'Counter-intelligence approach accepted. Your foreign role is now secretly doubled.' : 'Counter-intelligence approach declined.');
+            viewDiplomacy();
+          } catch (err) { toast(err.message, true); }
         }))
     );
     document.querySelectorAll('[data-spy-resign]').forEach(btn =>
@@ -2273,7 +2392,7 @@
         (btn.onclick = async () => {
           try {
             const r = await api(`/api/diplomacy/offers/${btn.dataset.foreignBuy}/buy`, { method: 'POST' });
-            toast(`Bought for ${cash(r.total)}${r.currency_code ? ` (${Number(r.local_price).toLocaleString()} ${r.currency_code})` : ''}.${r.inventory ? ' Added to your strategic goods inventory.' : ''}`);
+            toast(`Bought for ${cash(r.total)}${r.currency_code ? ` (${Number(r.local_price).toLocaleString()} ${r.currency_code})` : ''}.${r.shipment ? ` Shipment #${r.shipment.id} is due cycle ${r.shipment.eta_cycle}.` : r.inventory ? ' Added to your strategic goods inventory.' : ''}`);
             viewDiplomacy();
           } catch (err) {
             toast(err.message, true);
@@ -2597,9 +2716,10 @@
     const isRO = !!me?.is_admin;
     const canCharter = !!me &&
       (STATE()?.config?.bill_proposers === 'citizens' || (me.offices || []).some(o => o === 'mp' || o === 'speaker'));
-    const [assets, citizens] = await Promise.all([
+    const [assets, citizens, compromisedAgents] = await Promise.all([
       cleared && service ? api('/api/intel/assets') : Promise.resolve([]),
-      isRO && service ? api('/api/citizens') : Promise.resolve([])
+      isRO && service ? api('/api/citizens') : Promise.resolve([]),
+      cleared && service ? api('/api/intel/foreign-agents/compromised').catch(() => []) : Promise.resolve([])
     ]);
     const completedFor = tier => tier === 2 ? Number(progress.successful_tier1 || 0) : tier === 3 ? Number(progress.successful_tier2 || 0) : 0;
     const tierCards = [1, 2, 3].map(tier => {
@@ -2644,6 +2764,8 @@
       ${isRO && service ? `<div class="grid2"><div class="card"><p class="eyebrow">Returning Officer</p><h2>Clearance register</h2><p class="small muted">Clearance is a row in this register, not an office.</p><form id="intel-clearance" class="stack"><label class="field"><span>Citizen</span><select name="user_id" required>${citizens.map(c => `<option value="${Number(c.id)}">${esc(c.display_name)}</option>`).join('')}</select></label><label class="field"><span>Reason</span><input name="reason" maxlength="500" required></label><label class="field"><span>Expiry (optional)</span><input name="until" type="datetime-local"></label><button class="btn btn-primary">Grant clearance</button></form><div class="list" style="margin-top:14px">${clearanceRows || '<div class="empty">No clearances are active.</div>'}</div></div><div class="card"><p class="eyebrow">Returning Officer</p><h2>Foreign counter-intelligence</h2><p class="small muted">This is a published defensive rating, not a secret dial.</p><form id="intel-counter" class="stack"><label class="field"><span>Foreign power</span><select name="power_id" required>${powerOptions}</select></label><label class="field"><span>Counter-intelligence rating</span><input name="counter_intel" type="number" min="0" max="500" required></label><button class="btn btn-primary">Record rating</button></form></div></div>` : ''}
 
       ${cleared && service ? `<div class="card"><h2>Assets</h2><div class="list">${assetRows}</div></div><div class="card"><h2>Order an operation</h2><p class="small muted">The result is deterministic from the published inputs. Higher committed budget adds score at the operation's published cost per point.</p><form id="intel-operation" class="stack"><label class="field"><span>Operation</span><select name="kind" id="intel-kind" required>${opOptions}</select></label><div class="grid2"><label class="field" id="intel-power-wrap"><span>Target power</span><select name="power_id" id="intel-power">${powerOptions}</select></label><label class="field"><span>Budget</span><input name="budget" type="number" min="1" required></label></div><label class="field" id="intel-asset-wrap"><span>Asset (optional unless the operation requires one)</span><select name="asset_id" id="intel-asset"><option value="">Choose automatically</option></select></label><div class="grid2"><label class="field"><span>Codename (optional)</span><input name="codename" maxlength="60"></label><label class="field"><span>Notes (optional)</span><textarea name="notes" maxlength="1500" rows="3"></textarea></label></div><p class="small"><strong>Committed operation budgets are spent whether the mission succeeds or fails; they cannot be recovered.</strong></p><button class="btn btn-primary">Order operation</button></form>${recentOperation ? `<div id="intel-op-result" class="item" style="margin-top:14px"><div class="item-top"><span class="item-title">${esc(intelOpName(recentOperation.kind))} recorded</span><span class="tag ${recentOperation.outcome === 'success' ? 'on-green' : 'on-oxide'}">${esc(intelLabel(recentOperation.outcome))}</span></div><div class="item-meta">Score ${Number(recentOperation.score || 0)} / threshold ${Number(recentOperation.threshold || 0)}</div></div>` : '<div id="intel-op-result"></div>'}</div><div class="card"><h2>Reports</h2><p class="small muted">A sealed report opens only to a cleared citizen. Reading it is itself logged and public.</p><div class="list">${reportRows || '<div class="empty">No reports have been filed.</div>'}</div></div>` : ''}
+
+      ${cleared && service ? `<div class="card"><h2>Compromised foreign agents</h2><p class="small muted">These agents are known because a foreign operation exposed them. An active known agent can be approached to work secretly for the Republic; accepting is the agent player's choice.</p><div class="list">${compromisedAgents.length ? compromisedAgents.map(a => `<div class="item"><div class="item-top"><span class="item-title">${esc(a.power_name)} · ${esc(a.codename)} · ${esc(a.display_name)}</span><span class="tag ${a.double_agent ? 'on-green' : a.status === 'burned' ? 'on-oxide' : 'on-violet'}">${a.double_agent ? 'Double agent' : a.status === 'burned' ? 'Burned' : 'Identified'}</span></div><div class="item-meta">Experience ${Number(a.experience || 0)}${a.status === 'active' && !a.double_agent ? ` · <button class="btn btn-sm" data-intel-turn-agent="${Number(a.id)}">Approach as double agent</button>` : ''}</div></div>`).join('') : '<div class="empty">No foreign player agents have been identified.</div>'}</div></div>` : ''}
 
       <div class="card"><h2>Public operations register</h2><div class="list">${operationRows}</div></div>`;
 
@@ -2727,6 +2849,16 @@
         });
       };
     }
+
+    document.querySelectorAll('[data-intel-turn-agent]').forEach(btn => btn.onclick = () => busy(btn, async () => {
+      const pitch = prompt('Counter-intelligence pitch to this agent');
+      if (!pitch) return;
+      try {
+        await api(`/api/intel/foreign-agents/${btn.dataset.intelTurnAgent}/turn`, { method: 'POST', body: { pitch } });
+        toast('Counter-intelligence approach sent. The player must choose whether to accept.');
+        await viewIntel(v);
+      } catch (err) { toast(err.message, true); }
+    }));
 
     document.querySelectorAll('[data-intel-extract]').forEach(btn => btn.onclick = () => busy(btn, async () => {
       if (!confirm('Extract this asset? They will no longer be available for operations.')) return;

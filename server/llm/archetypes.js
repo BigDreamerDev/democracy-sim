@@ -22,7 +22,7 @@
 /* The action kinds diplomacy.js will execute. Duplicated here so a refusal can
    be written against a name that exists; diplomacy.js remains the authority and
    checks its own set before anything is stored. */
-const KINDS = ['nothing', 'dispatch', 'treaty', 'ratify', 'denounce', 'offer', 'buy', 'accept_export', 'reject_export', 'issue_currency', 'distribute_currency', 'establish_intel', 'recruit_agent', 'spy_operation', 'declare'];
+const KINDS = ['nothing', 'dispatch', 'treaty', 'ratify', 'denounce', 'offer', 'buy', 'accept_export', 'reject_export', 'issue_currency', 'distribute_currency', 'establish_intel', 'recruit_agent', 'spy_operation', 'embassy', 'private_dispatch', 'bilateral_message', 'bilateral_propose', 'bilateral_respond', 'bilateral_declare', 'crisis_respond', 'declare'];
 
 /* ------------------------------------------------------------ small helpers */
 
@@ -1005,8 +1005,8 @@ function posturePriorityBias(archetypeId, actionKind, context = {}) {
   const pressure = Math.max(0, Math.min(100, Number(context.pressure) || 0));
   const heat = Math.round(pressure / 25); // 0..4
   const kind = String(actionKind || '');
-  const aggressive = kind === 'declare' || kind === 'denounce' || kind === 'spy_operation';
-  const commercial = kind === 'offer' || kind === 'buy' || kind === 'accept_export' || kind === 'reject_export' || kind === 'treaty';
+  const aggressive = kind === 'declare' || kind === 'bilateral_declare' || kind === 'denounce' || kind === 'spy_operation';
+  const commercial = kind === 'offer' || kind === 'buy' || kind === 'accept_export' || kind === 'reject_export' || kind === 'treaty' || kind === 'bilateral_propose';
 
   if (a.posture === 'escalate') {
     if (aggressive) return 1 + heat;
@@ -1126,6 +1126,15 @@ function situation(input = {}) {
     tradeTreaty: treaties.find(t => t.status === 'in_force' && t.trade_open === true) || null,
     awaitingRatification: treaties.find(t => t.republic_status === 'enacted' && !t.foreign_ratified_at) || null,
     pendingTreaty: treaties.find(t => t.status === 'pending') || null,
+    pendingBilateral: Array.isArray(state.bilateral?.agreements)
+      ? state.bilateral.agreements.find(a => a.status === 'pending' && Number(a.counterparty_id) === Number(state.power_id || gov.power_id)) || null
+      : null,
+    crisis: Array.isArray(state.crises) ? state.crises.find(c => c.status === 'offered' || c.status === 'open') || null : null,
+    embassy: state.embassy || null,
+    foreignEconomy: state.foreign_economy || null,
+    bilateralOthers: Array.isArray(state.bilateral?.others) ? state.bilateral.others : [],
+    bilateralAgreements: Array.isArray(state.bilateral?.agreements) ? state.bilateral.agreements : [],
+    shortages: Array.isArray(state.foreign_economy?.events) ? state.foreign_economy.events.filter(e => e.kind === 'shortage' && Number(e.cycle_no) >= Number(gov.cycle || 0) - 1) : [],
     unanswered: last && last.direction === 'outgoing' ? last : null
   };
 }
@@ -1173,6 +1182,59 @@ function scriptedProposal(input = {}) {
       'other'
     );
   }
+
+  if (s.crisis?.republic_offer) {
+    const conciliatory = ['diplomat','trader','technician','treasurer'].includes(s.temperament);
+    return {
+      action_kind: 'crisis_respond',
+      priority: 9,
+      payload: { crisis_id: s.crisis.id, choice: conciliatory ? 'accept' : 'counter', reply: conciliatory ? 'We accept the negotiated settlement.' : 'We require firmer assurances before settlement.' },
+      rationale: 'A live crisis with a Republic offer should be answered before routine diplomacy.'
+    };
+  }
+
+  if (s.pendingBilateral) {
+    const accept = s.temperament !== 'partisan' && s.temperament !== 'hawk';
+    return {
+      action_kind: 'bilateral_respond',
+      priority: 7,
+      payload: { agreement_id: s.pendingBilateral.id, accept },
+      rationale: 'Another foreign government has put a formal bilateral proposal before us.'
+    };
+  }
+
+  if (s.shortages.length && s.bilateralOthers.length) {
+    const target = s.bilateralOthers.slice().sort((a,b) => Number(b.relation?.trust || 0) - Number(a.relation?.trust || 0))[0];
+    const existing = s.bilateralAgreements.some(a => a.status !== 'rejected' && a.status !== 'denounced' && ((Number(a.proposer_id) === Number(target.id)) || (Number(a.counterparty_id) === Number(target.id))) && a.kind === 'trade');
+    if (target && !existing) return {
+      action_kind: 'bilateral_propose', priority: 8,
+      payload: { target_power_id: target.id, kind: 'trade', title: `Trade Accord with ${target.name}`, terms: { shortage_relief: true } },
+      rationale: `Domestic shortages make a direct trade accord with ${target.name} more valuable than another public statement to the Republic.`
+    };
+  }
+
+  if (s.bilateralOthers.length) {
+    const hostile = s.bilateralOthers.find(o => Number(o.relation?.grievance || 0) >= 45 || Number(o.relation?.trust || 0) <= -45);
+    if (hostile && ['hawk','partisan','sovereign'].includes(s.temperament)) return {
+      action_kind: 'bilateral_declare', priority: 8,
+      payload: { target_power_id: hostile.id, kind: 'sanction', grievance: `Relations with ${hostile.name} have deteriorated beyond normal commerce.`, measures: { trade_ban: true } },
+      rationale: 'The bilateral relationship has accumulated enough grievance that normal trade no longer matches government policy.'
+    };
+    const candidate = s.bilateralOthers.find(o => !s.bilateralAgreements.some(a => a.status === 'active' && ((Number(a.proposer_id)===Number(o.id)) || (Number(a.counterparty_id)===Number(o.id)))));
+    if (candidate && ['diplomat','trader','sovereign','treasurer'].includes(s.temperament) && s.cycle % 5 === 0) return {
+      action_kind: 'bilateral_propose', priority: 5,
+      payload: { target_power_id: candidate.id, kind: s.temperament === 'trader' ? 'trade' : 'non_aggression', title: `${s.temperament === 'trader' ? 'Trade' : 'Non-Aggression'} Accord with ${candidate.name}`, terms: {} },
+      rationale: 'A direct relationship with another foreign state reduces dependence on the Republic and makes the wider world consequential.'
+    };
+  }
+
+  if (s.embassy?.status !== 'open' && ['diplomat','trader','sovereign','treasurer'].includes(s.temperament) && s.cycle % 3 === 0)
+    return {
+      action_kind: 'embassy',
+      priority: 6,
+      payload: { status: 'open', foreign_ambassador_name: `${s.adjective || s.power} Ambassador` },
+      rationale: 'Recognition without a resident diplomatic channel leaves routine disputes needlessly public.'
+    };
 
   /* A treaty the Republic has enacted and we have not answered. Ratifying is
      nearly always the right move and it is cheap to check. */
