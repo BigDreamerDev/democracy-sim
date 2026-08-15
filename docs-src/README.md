@@ -14,6 +14,7 @@ Which document you want, and why there is more than one.
 | Understand the Treasury and the Fed | [../MONEY.md](../MONEY.md) |
 | Understand diplomacy and the world map | [DIPLOMACY.md](DIPLOMACY.md), §5 of [REFERENCE.md](REFERENCE.md) |
 | Run a foreign power's LLM cabinet | [MULTI-AGENT-DIPLOMACY.md](MULTI-AGENT-DIPLOMACY.md), [RUNBOOK-FOREIGN-POWER.md](RUNBOOK-FOREIGN-POWER.md) |
+| Charter an intelligence service, or let a defector join a foreign government | [INTELLIGENCE-AND-DEFECTION.md](INTELLIGENCE-AND-DEFECTION.md) |
 | Change the code | [../CLAUDE.md](../CLAUDE.md) — conventions and traps, first |
 | Build a third-party app against it | [PUBLIC-API.md](PUBLIC-API.md) |
 | See what is planned and why | [ROADMAP.md](ROADMAP.md) — none of it built yet |

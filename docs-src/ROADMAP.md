@@ -1,8 +1,14 @@
 # Roadmap — subdivisions, a generated world, and money that can run
 
-Written after the transaction fixes landed. Nothing below is built. It is the
-argument for what to build and in what order, so the order can be argued with
-before anyone writes it.
+Written after the transaction fixes landed, as the argument for what to build
+and in what order, so the order could be argued with before anyone wrote it.
+
+**Everything below is now built.** Kept as the historical argument for *why*
+each piece is shaped the way it is — the checkboxes are how it actually
+shipped, not a plan. For what each system does today, read
+[INTELLIGENCE-AND-DEFECTION.md](INTELLIGENCE-AND-DEFECTION.md),
+[RUNBOOK-FOREIGN-POWER.md](RUNBOOK-FOREIGN-POWER.md), and
+[REFERENCE.md](REFERENCE.md) instead of this document.
 
 Five strands, deliberately separated because they fail independently:
 

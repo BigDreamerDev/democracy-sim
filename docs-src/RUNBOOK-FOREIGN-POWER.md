@@ -25,16 +25,32 @@ Diplomacy page → **Create a foreign power**. Three fields: a name, a governmen
 
 The archetype is a whole government and it changes mechanics, not only prose:
 
+There are thirteen, not eight — the table below is the complete, current list.
+Three of them (marked ♛) have a real crown: a succession line, a reign length,
+and — for a defector who petitioned to join it — a real chance of one day
+wearing it. See [INTELLIGENCE-AND-DEFECTION.md](INTELLIGENCE-AND-DEFECTION.md)
+for how a citizen actually gets there.
+
 | Archetype | Decides by | Actions/cycle | Under pressure | Will not |
 |---|---|---|---|---|
 | Military junta | weighted | 3 | escalates | sign away freedom of action; sit still on an open grievance |
 | Merchant republic | cabinet | 3 | trades | vote for war; tear up an open trade agreement |
-| Absolute monarchy | executive | 2 | escalates | pay tribute; withdraw a word already given |
+| Absolute monarchy ♛ | executive | 2 | escalates | pay tribute; withdraw a word already given |
+| Constitutional monarchy ♛ | weighted, council-checked | 2 | escalates | bind the realm to an act the ministry did not carry; declare war without the ministry having answered for it |
+| Theocratic monarchy ♛ | consensus | 2 | escalates | sell the holy sites; bless a war the clergy was not consulted on |
 | One-party state | executive | 2 | escalates | go to war before blockade; leave a message unanswered |
 | Theocracy | consensus 0.66 | 1 | stalls | sell the holy sites; bind itself to tribute |
 | Federal democracy | consensus 0.6 | 1 | stalls | declare before the dispute has escalated; tribute without a vote |
 | Revolutionary council | cabinet | 3 | escalates | do nothing; inherit the old regime's tribute |
 | Technocracy | weighted | 2 | measures | demand what it cannot state; act without a stated reason |
+| Oligarchy | weighted | 2 | trades | undercut a house's own price abroad; open a market on terms that let anyone undercut it |
+| Military dictatorship | executive | 2 | escalates | send a warning instead of acting; sit still — stillness reads as weakness to the officers who put him there |
+| Tribal confederation | consensus | 3 | escalates | bind every chief to one tribute schedule; wait to write until the fighting has effectively started |
+
+A constitutional monarchy's crown proposes like any executive, but a council of
+named ministers has to actually back what it chose at ≥50% weight — refuse
+that and the proposal is discarded whatever the crown wanted. That check runs
+in addition to the archetype's own refusals, not instead of them.
 
 The archetype's action budget can only ever be **slower** than `foreign_actions_per_cycle`, never faster: no government type votes itself out of a limit the House set.
 
@@ -157,5 +173,6 @@ Nothing here is reversible by deleting a power: treaties enacted by the House ar
 
 - [DIPLOMACY.md](DIPLOMACY.md) — the behavioural contract and why it is shaped this way
 - [MULTI-AGENT-DIPLOMACY.md](MULTI-AGENT-DIPLOMACY.md) — the cabinet model in detail
+- [INTELLIGENCE-AND-DEFECTION.md](INTELLIGENCE-AND-DEFECTION.md) — chartering an intelligence service, and what a defector can become in the government they join
 - [REFERENCE.md](REFERENCE.md) — the rest of the system
 - [../CLAUDE.md](../CLAUDE.md) — conventions and traps, before you change any of it
