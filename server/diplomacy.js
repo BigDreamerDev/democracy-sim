@@ -1454,7 +1454,7 @@ module.exports.mount = function mount(app, ctx) {
       await loadConfig();
       const o = (
         await q(
-          `SELECT o.*,p.recognised FROM foreign_offers o JOIN powers p ON p.id=o.power_id WHERE o.id=$1 AND NOT o.withdrawn`,
+          `SELECT o.*,p.recognised,p.name AS power_name FROM foreign_offers o JOIN powers p ON p.id=o.power_id WHERE o.id=$1 AND NOT o.withdrawn`,
           [req.params.id]
         )
       ).rows[0];
@@ -1501,13 +1501,27 @@ module.exports.mount = function mount(app, ctx) {
             `INSERT INTO foreign_trade(power_id,direction,amount,tax,citizen_id,offer_id,cycle_no) VALUES($1,'import',$2,$3,$4,$5,$6)`,
             [o.power_id, price, tax, req.user.id, o.id, cycleNo()]
           );
+          if (o.good_category && E()?.addInventoryItem)
+            await E().addInventoryItem(
+              req.user.id,
+              {
+                title: o.title,
+                description: o.description,
+                good_category: o.good_category,
+                unit: o.unit,
+                source_kind: 'foreign_offer',
+                source_id: o.id,
+                source_name: o.power_name
+              },
+              run
+            );
         });
       } catch (err) {
         if (err.status === 400) return res.status(400).json({ error: err.message });
         throw err;
       }
       log(req.user.id, 'foreign.import', `${price} from power #${o.power_id}`);
-      res.json({ ok: true, price, tax, total });
+      res.json({ ok: true, price, tax, total, inventory: Boolean(o.good_category) });
     })
   );
 

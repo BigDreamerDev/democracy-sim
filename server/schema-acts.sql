@@ -191,3 +191,23 @@ CREATE INDEX IF NOT EXISTS idx_trades_biz  ON trades(business_id);
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS good_category TEXT;
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS good_category TEXT;
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'unit';
+
+-- A citizen actually owns strategic goods after delivery/payment. The source is
+-- deliberately generic: domestic listings and foreign offers live in different
+-- schemas, but both resolve to one stack in the citizen's inventory.
+CREATE TABLE IF NOT EXISTS inventory_items (
+  id            BIGSERIAL PRIMARY KEY,
+  owner_id      INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title         TEXT NOT NULL,
+  description   TEXT DEFAULT '',
+  good_category TEXT NOT NULL,
+  unit          TEXT DEFAULT 'unit',
+  quantity      INT NOT NULL DEFAULT 1 CHECK (quantity >= 0),
+  source_kind   TEXT NOT NULL,              -- domestic_listing | foreign_offer
+  source_id     BIGINT NOT NULL,
+  source_name   TEXT DEFAULT '',
+  acquired_at   TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (owner_id, source_kind, source_id)
+);
+CREATE INDEX IF NOT EXISTS idx_inventory_owner ON inventory_items(owner_id);

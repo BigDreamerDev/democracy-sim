@@ -123,6 +123,37 @@ module.exports.mount = function mount(app, ctx) {
     throw err;
   };
 
+  async function addInventoryItem(ownerId, item, run = q) {
+    const category = GOOD_CATEGORIES.has(item?.good_category) ? item.good_category : null;
+    if (!category) return null;
+    const sourceKind = ['domestic_listing', 'foreign_offer'].includes(item?.source_kind)
+      ? item.source_kind
+      : null;
+    const sourceId = String(item?.source_id || '');
+    if (!sourceKind || !/^[1-9]\d*$/.test(sourceId)) return null;
+    return (
+      await run(
+        `INSERT INTO inventory_items(owner_id,title,description,good_category,unit,quantity,source_kind,source_id,source_name)
+         VALUES($1,$2,$3,$4,$5,1,$6,$7,$8)
+         ON CONFLICT (owner_id,source_kind,source_id) DO UPDATE
+           SET quantity=inventory_items.quantity+1,
+               title=EXCLUDED.title, description=EXCLUDED.description, good_category=EXCLUDED.good_category,
+               unit=EXCLUDED.unit, source_name=EXCLUDED.source_name, updated_at=now()
+         RETURNING *`,
+        [
+          ownerId,
+          String(item.title || 'Strategic good').slice(0, 120),
+          String(item.description || '').slice(0, 4000),
+          category,
+          String(item.unit || 'unit').slice(0, 80),
+          sourceKind,
+          sourceId,
+          String(item.source_name || '').slice(0, 160)
+        ]
+      )
+    ).rows[0];
+  }
+
   app.get(
     '/api/economy/me',
     auth,
@@ -155,6 +186,20 @@ module.exports.mount = function mount(app, ctx) {
         businesses: mine,
         currency: ctx.CONFIG.currency_name || 'Mark'
       });
+    })
+  );
+
+  app.get(
+    '/api/economy/inventory',
+    auth,
+    wrap(async (req, res) => {
+      const { rows } = await q(
+        `SELECT * FROM inventory_items
+          WHERE owner_id=$1 AND quantity > 0
+          ORDER BY good_category, title, id`,
+        [req.user.id]
+      );
+      res.json(rows);
     })
   );
 
@@ -607,17 +652,52 @@ module.exports.mount = function mount(app, ctx) {
     '/api/economy/orders/:id/confirm',
     auth,
     wrap(async (req, res) => {
-      const o = (await q('SELECT * FROM orders WHERE id=$1', [req.params.id])).rows[0];
+      const o = (
+        await q(
+          `SELECT o.*, l.title, l.description, l.unit,
+                  COALESCE(l.good_category,b.good_category) AS good_category, b.name AS source_name
+             FROM orders o
+             LEFT JOIN listings l ON l.id=o.listing_id
+             LEFT JOIN businesses b ON b.id=o.business_id
+            WHERE o.id=$1`,
+          [req.params.id]
+        )
+      ).rows[0];
       if (!o) return res.status(404).json({ error: 'No such order.' });
       if (o.buyer_id !== req.user.id)
         return res.status(403).json({ error: 'Only the buyer confirms delivery.' });
       if (o.status !== 'escrow') return res.status(400).json({ error: 'That order is already settled.' });
       const held = await escrowAcc();
       const seller = await accountFor('business', o.business_id);
-      await pay(held.id, seller.id, o.price, 'purchase', `order ${o.id} delivered`);
-      await q("UPDATE orders SET status='delivered', settled_at=now() WHERE id=$1", [o.id]);
+      let inventoryItem = null;
+      try {
+        await tx(async run => {
+          const locked = (await run('SELECT status FROM orders WHERE id=$1 FOR UPDATE', [o.id])).rows[0];
+          if (locked?.status !== 'escrow')
+            throw Object.assign(new Error('That order is already settled.'), { status: 400 });
+          await pay(held.id, seller.id, o.price, 'purchase', `order ${o.id} delivered`, run);
+          await run("UPDATE orders SET status='delivered', settled_at=now() WHERE id=$1", [o.id]);
+          if (o.good_category && o.listing_id)
+            inventoryItem = await addInventoryItem(
+              req.user.id,
+              {
+                title: o.title,
+                description: o.description,
+                good_category: o.good_category,
+                unit: o.unit,
+                source_kind: 'domestic_listing',
+                source_id: o.listing_id,
+                source_name: o.source_name
+              },
+              run
+            );
+        });
+      } catch (err) {
+        if (err.status === 400) return res.status(400).json({ error: err.message });
+        throw err;
+      }
       log(req.user.id, 'economy.delivered', `order ${o.id}`);
-      res.json({ ok: true });
+      res.json({ ok: true, inventory_item: inventoryItem });
     })
   );
 
@@ -1184,5 +1264,5 @@ module.exports.mount = function mount(app, ctx) {
      economy.js leaves ctx.economy undefined and the Treasury and the Fed simply
      do not answer — which is the honest state of affairs when there is no
      currency for them to be responsible for. */
-  ctx.economy = { accountFor, pay, settle, money, treasury, bank, escrowAcc, taxOn };
+  ctx.economy = { accountFor, pay, settle, money, treasury, bank, escrowAcc, taxOn, addInventoryItem };
 };

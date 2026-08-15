@@ -262,12 +262,13 @@
   /* ----------------------------------------------------------- the economy */
 
   async function viewEconomy(v) {
-    const [e, me, market, orders, bank] = await Promise.all([
+    const [e, me, market, orders, bank, inventory] = await Promise.all([
       api('/api/economy'),
       api('/api/economy/me'),
       api('/api/economy/market'),
       api('/api/economy/orders'),
-      api('/api/economy/bank')
+      api('/api/economy/bank'),
+      api('/api/economy/inventory')
     ]);
 
     v.innerHTML = `
@@ -380,6 +381,18 @@
             : '<div class="empty">Nothing is for sale yet. Found a business and list something.</div>'
         }
       </div>
+
+      ${String(STATE().config.goods_economy_enabled) === 'true' || inventory.length ? `<div class="card">
+        <h2>Your strategic goods</h2>
+        <p class="small muted">Domestic goods enter your inventory when you confirm delivery. Foreign-market goods enter it as soon as the purchase is paid.</p>
+        ${inventory.length ? `<div class="list">${inventory.map(i => {
+          const category = String(i.good_category || '').replaceAll('_', ' ');
+          const label = category ? category.charAt(0).toUpperCase() + category.slice(1) : 'Strategic good';
+          const qty = Number(i.quantity) || 0;
+          const unit = esc(i.unit || 'unit');
+          return `<div class="item"><div class="item-top"><span class="item-title">${esc(i.title)} <span class="tag">${esc(label)}</span></span><span class="result-count">${qty.toLocaleString()} × ${unit}</span></div>${i.description ? `<div class="small" style="margin-top:4px">${esc(i.description)}</div>` : ''}<div class="item-meta">${i.source_name ? `From ${esc(i.source_name)} · ` : ''}${when(i.updated_at || i.acquired_at)}</div></div>`;
+        }).join('')}</div>` : '<p class="small muted">You do not own any strategic goods yet.</p>'}
+      </div>` : ''}
 
       <div class="card">
         <h2>Your orders</h2>
@@ -1856,6 +1869,18 @@
         ultimatum: 'Ultimatum',
         other: 'Other'
       })[k] || 'Dispatch';
+    const goodLabel = k =>
+      ({
+        food: 'Food',
+        raw_materials: 'Raw materials',
+        energy: 'Energy',
+        industrial_goods: 'Industrial goods',
+        technology: 'Technology',
+        arms: 'Arms',
+        luxury: 'Luxury',
+        services: 'Services'
+      })[k] || '';
+    const foreignTradeTax = Number(STATE().config.foreign_trade_tax) || 0;
     const activeAdminPowers = adminPowers.filter(p => !p.revoked_at);
     const messageForm =
       canDiplomat && powers.length
@@ -1897,7 +1922,19 @@
 
       <div class="dip-grid">
         <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Ratification desk</span><h2>Treaties</h2></div><div class="list">${treaties.length ? treaties.map(t => `<div class="item"><div class="item-top"><span class="item-title">${esc(t.title)}</span><span class="tag">${esc(t.republic_status)}</span></div><p class="small muted">${esc(t.power_name)} · ${esc(t.bill_ref || '')}</p></div>`).join('') : '<p class="muted">No treaties.</p>'}</div></section>
-        <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Commercial attaché</span><h2>Foreign market</h2></div><div class="list">${offers.length ? offers.map(o => `<div class="item"><div class="item-top"><span class="item-title">${esc(o.title)} · ${esc(o.power_name)}</span><span class="money">${o.price}</span></div>${me ? `<button class="btn btn-sm" data-foreign-buy="${o.id}">Buy</button>` : ''}</div>`).join('') : '<p class="muted">No foreign offers.</p>'}</div></section>
+        <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Commercial attaché</span><h2>Foreign market</h2></div><div class="list">${offers.length ? offers.map(o => {
+          const price = Number(o.price) || 0;
+          const tax = Math.round(price * foreignTradeTax);
+          const total = price + tax;
+          const category = goodLabel(o.good_category);
+          const stock = o.stock === null || o.stock === undefined ? 'No stock limit' : `${Number(o.stock).toLocaleString()} in stock`;
+          const unit = o.unit ? ` · per ${esc(o.unit)}` : '';
+          return `<div class="item"><div class="item-top"><span class="item-title">${esc(o.title)} · ${esc(o.power_name)}</span><span class="money">${cash(total)}</span></div>
+            ${(category || o.unit || (o.stock !== null && o.stock !== undefined)) ? `<p class="small muted">${category ? `<span class="tag">${esc(category)}</span> ` : ''}${esc(stock)}${unit}</p>` : ''}
+            ${o.description ? `<p>${esc(o.description)}</p>` : ''}
+            <p class="small muted">${cash(price)} price${tax ? ` + ${cash(tax)} import tariff` : ' · no import tariff'} · <strong>${cash(total)} total</strong></p>
+            ${me ? `<button class="btn btn-sm" data-foreign-buy="${o.id}">Buy</button>` : ''}</div>`;
+        }).join('') : '<p class="muted">No foreign offers.</p>'}</div></section>
       </div>
 
       <div class="dip-grid">
@@ -1986,7 +2023,7 @@
         (btn.onclick = async () => {
           try {
             const r = await api(`/api/diplomacy/offers/${btn.dataset.foreignBuy}/buy`, { method: 'POST' });
-            toast(`Bought for ${r.total}.`);
+            toast(`Bought for ${r.total}.${r.inventory ? ' Added to your strategic goods inventory.' : ''}`);
             viewDiplomacy();
           } catch (err) {
             toast(err.message, true);
