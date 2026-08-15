@@ -1598,7 +1598,7 @@
     const isPresident = !!me?.offices?.includes('president');
     const isSpeaker = !!me?.offices?.includes('speaker');
     const isMinister = !!me?.offices?.includes('foreign_minister');
-    const [powers, dispatches, treaties, offers, conflicts, balance, adminPowers, world, fo, republicTerritoryAdmin] = await Promise.all([
+    const [powers, dispatches, treaties, offers, conflicts, balance, adminPowers, world, fo, republicTerritoryAdmin, govCatalogue] = await Promise.all([
       api('/api/diplomacy/powers'),
       api('/api/diplomacy/dispatches'),
       api('/api/diplomacy/treaties'),
@@ -1608,7 +1608,10 @@
       me?.is_admin ? api('/api/admin/foreign/powers') : Promise.resolve([]),
       api('/api/diplomacy/map').catch(() => null),
       api('/api/diplomacy/foreign-office').catch(() => null),
-      me?.is_admin ? api('/api/admin/republic/territories').catch(() => ({ subdivisions: [], legacy_territories: [] })) : Promise.resolve(null)
+      me?.is_admin ? api('/api/admin/republic/territories').catch(() => ({ subdivisions: [], legacy_territories: [] })) : Promise.resolve(null),
+      /* Catches rather than throws: an older server has no archetypes route and
+         the whole Diplomacy page should not go blank because of it. */
+      me?.is_admin ? api('/api/admin/foreign/archetypes').catch(() => ({ archetypes: [], strengths: {}, default_agent: null })) : Promise.resolve(null)
     ]);
     /* Before the map is drawn, not while. The renderer is synchronous and
        returns a string, so anything it needs has to be in hand first. */
@@ -1689,7 +1692,7 @@
           ? `<section class="dip-ro"><div class="dip-ro-head"><span class="dip-section-kicker">Restricted operations console</span><h2>Returning Officer — foreign powers</h2></div><p class="small muted">Operational control of foreign powers and their LLM governments. Recognition and treaties still follow the Republic's political rules. Every change made here is written to the public record.</p>
         ${republicTerritoryPicker(world, republicTerritoryAdmin)}
         <div class="card dip-ro-console"><label class="field"><span>Manage power</span><select id="ro-power-select">${adminPowers.map(p => `<option value="${p.id}">${esc(p.name)}${p.revoked_at ? ' (revoked)' : ''}</option>`).join('')}</select></label><div id="ro-power-panel"></div></div>
-        <details class="card dip-ro-create"><summary><strong>Create a foreign power</strong></summary><form id="newpower" class="stack" style="margin-top:12px"><div class="grid2"><label class="field"><span>Power name</span><input name="name" required></label><label class="field"><span>Adjective</span><input name="adjective"></label></div><div class="grid2"><label class="field"><span>Colour</span><input name="colour" type="color" value="#5B2E9E"></label><label class="field"><span>Standing</span><select name="standing"><option>neutral</option><option>friendly</option><option>allied</option><option>strained</option><option>hostile</option><option>at_war</option></select></label></div><button class="btn btn-primary">Create power</button><div id="newpowerkey"></div></form></details>
+        <details class="card dip-ro-create" open><summary><strong>Create a foreign power</strong></summary><form id="newpower" class="stack" style="margin-top:12px"><p class="small muted">A name, a government and a rough strength is the whole of it. The cabinet, its ministers and their instructions come with the archetype, and the models are configured for you${govCatalogue?.default_agent ? ` — this server will use <strong>${esc(govCatalogue.default_agent.provider)}</strong>` : ''}. Everything below the button is optional.</p><div class="grid2"><label class="field"><span>Power name</span><input name="name" required></label><label class="field"><span>Government</span><select name="archetype" id="newpower-archetype">${(govCatalogue?.archetypes || []).map(a => `<option value="${esc(a.id)}">${esc(a.label)}</option>`).join('')}<option value="">(no government — configure by hand)</option></select></label></div><label class="field"><span>Rough strength</span><select name="strength">${Object.entries(govCatalogue?.strengths || {}).map(([k, v]) => `<option value="${esc(k)}" ${k === 'matched' ? 'selected' : ''}>${esc(k)} (${v})</option>`).join('')}</select></label><p class="small muted" id="newpower-blurb"></p><button class="btn btn-primary">Create power</button><details><summary class="small muted">Appearance and standing</summary><div class="grid2" style="margin-top:8px"><label class="field"><span>Adjective</span><input name="adjective"></label><label class="field"><span>Colour</span><input name="colour" type="color" value="#5B2E9E"></label></div><label class="field"><span>Standing</span><select name="standing"><option>neutral</option><option>friendly</option><option>allied</option><option>strained</option><option>hostile</option><option>at_war</option></select></label></details><div id="newpowerkey"></div></form></details>
       </section>`
           : ''
       }
@@ -1781,7 +1784,23 @@
           }
         })
     );
-    if (document.querySelector('#newpower'))
+    /* What the chosen government actually is, before it is created. The point
+       of archetypes is that they change mechanics, so the mechanics are what
+       this shows: who decides, how fast, and what it will refuse. */
+    const archetypeSummary = a =>
+      a
+        ? `<strong>${esc(a.label)}</strong> — ${esc(a.blurb)}<br>Decides by <strong>${esc(a.decision_method)}</strong> · ${a.actions_per_cycle} action(s) per cycle · ${a.cabinet.length} ministers · under pressure it <strong>${esc(a.posture === 'escalate' ? 'escalates' : a.posture === 'stall' ? 'stalls' : a.posture === 'trade' ? 'trades' : 'measures')}</strong>.<br>Will never: ${a.refusals.map(r => esc(r.why)).join(' ')}`
+        : 'No government. You will have to add ministers and instructions by hand before this power does anything.';
+    if (document.querySelector('#newpower')) {
+      const arSel = document.querySelector('#newpower-archetype'),
+        arBlurb = document.querySelector('#newpower-blurb');
+      const showBlurb = () => {
+        arBlurb.innerHTML = archetypeSummary((govCatalogue?.archetypes || []).find(a => a.id === arSel.value));
+      };
+      if (arSel && arBlurb) {
+        arSel.onchange = showBlurb;
+        showBlurb();
+      }
       document.querySelector('#newpower').onsubmit = async ev => {
         ev.preventDefault();
         try {
@@ -1790,12 +1809,37 @@
             body: Object.fromEntries(new FormData(ev.target))
           });
           document.querySelector('#newpowerkey').innerHTML =
-            `<p class="small"><strong>Save this key now; it is shown once.</strong></p><textarea readonly>${esc(r.key)}</textarea>`;
+            `${r.government ? `<p class="small">Installed a <strong>${esc(r.government.label || r.government.archetype)}</strong>: ${r.government.ministers} ministers deciding by ${esc(r.government.decision_method)}, running on <strong>${esc(r.government.provider)}/${esc(r.government.model)}</strong>. It is ready to run a turn now.</p>` : ''}<p class="small"><strong>Save this key now; it is shown once.</strong></p><textarea readonly>${esc(r.key)}</textarea>`;
           toast('Foreign power created and recorded.');
         } catch (err) {
           toast(err.message, true);
         }
       };
+    }
+
+    /* What each minister proposed, who voted for it and what carried.
+       Debugging a cabinet you cannot see is guesswork — and until this existed,
+       a turn that did nothing and a turn where everything was refused by the
+       archetype looked identical from here. */
+    function deliberationHtml(d) {
+      if (!d || !d.turn) return '<p class="muted">This government has not met yet.</p>';
+      const t = d.turn,
+        refused = t.result?.refused || [];
+      if (!d.proposals.length)
+        return `<p class="muted">Turn #${t.id} · cycle ${t.cycle_number}: no minister put a usable proposal to the cabinet.</p>${refused.length ? `<ul class="small muted">${refused.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}`;
+      return `<p class="small muted">Turn #${t.id} · cycle ${t.cycle_number} · ${d.proposals.length} proposal(s), voting round ${d.last_round}${t.result?.status ? ` · outcome <strong>${esc(t.result.status)}</strong>` : ''}${t.result?.error ? ` — ${esc(t.result.error)}` : ''}</p>
+        <div class="list">${d.proposals
+          .map(
+            p => `<div class="item"${p.carried ? ' style="border-left:3px solid var(--accent,#5B2E9E)"' : ''}>
+              <div class="item-top"><span class="item-title">${esc(p.display_name)} · ${esc(String(p.role).replace(/_/g, ' '))}</span><span class="tag${p.carried ? ' on-green' : ''}">${esc(p.action_kind)}${p.carried ? ' · carried' : ''}</span></div>
+              <p class="small">${esc(p.rationale || '')}</p>
+              <p class="small muted">priority ${p.priority} · ${p.votes} vote(s), weight ${p.weight}${p.voters.length ? ` — ${p.voters.map(v => esc(v.display_name)).join(', ')}` : ' — nobody'}</p>
+              ${p.voters.filter(v => v.reasoning).map(v => `<p class="small muted">${esc(v.display_name)}: ${esc(v.reasoning)}</p>`).join('')}
+            </div>`
+          )
+          .join('')}</div>
+        ${refused.length ? `<p class="small muted">Refused by this government: </p><ul class="small muted">${refused.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}`;
+    }
 
     async function loadRoPower(id) {
       const panel = document.querySelector('#ro-power-panel');
@@ -1803,19 +1847,24 @@
       panel.innerHTML = '<p class="muted">Loading…</p>';
       try {
         const p = adminPowers.find(x => String(x.id) === String(id));
-        const [detail, territoryAdmin] = await Promise.all([
+        const [detail, territoryAdmin, delib] = await Promise.all([
           api(`/api/admin/foreign/powers/${id}/government`),
-          api(`/api/admin/foreign/powers/${id}/territories`)
+          api(`/api/admin/foreign/powers/${id}/territories`),
+          api(`/api/admin/foreign/powers/${id}/deliberation`).catch(() => null)
         ]);
         const g = detail.government || {};
         const agents = detail.agents || [];
         panel.innerHTML = `<div class="stack" style="margin-top:12px">
           <form id="ro-power-edit" class="stack"><div class="grid2"><label class="field"><span>Adjective</span><input name="adjective" value="${esc(p?.adjective || '')}"></label><label class="field"><span>Colour</span><input name="colour" type="color" value="${esc(p?.colour || '#5B2E9E')}"></label></div><label class="field"><span>Standing</span><select name="standing">${['allied', 'friendly', 'neutral', 'strained', 'hostile', 'at_war'].map(x => `<option value="${x}" ${p?.standing === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label><button class="btn">Save power settings</button></form>
           <div class="row"><button class="btn btn-sm" id="ro-rotate-key">Rotate foreign API key</button>${p?.revoked_at ? '' : `<button class="btn btn-sm" id="ro-revoke-power">Revoke power</button>`}</div><div id="ro-key-output"></div>
-          <h3>LLM government</h3><form id="ro-government" class="stack"><div class="grid2"><label class="field"><span>Decision method</span><select name="decision_method">${['executive', 'cabinet', 'weighted', 'consensus'].map(x => `<option value="${x}" ${g.decision_method === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label><label class="field"><span>Decision threshold</span><input name="decision_threshold" type="number" min="0" max="1" step="0.05" value="${g.decision_threshold ?? 0.5}"></label></div><label class="field"><span>Max deliberation rounds</span><input name="max_rounds" type="number" min="1" max="4" value="${g.max_rounds ?? 1}"></label><button class="btn">Save government</button></form>
+          <h3>Government</h3>
+          <p class="small muted">${archetypeSummary(detail.archetype)}</p>
+          <form id="ro-archetype" class="row"><select name="archetype">${(govCatalogue?.archetypes || []).map(a => `<option value="${esc(a.id)}" ${detail.archetype?.id === a.id ? 'selected' : ''}>${esc(a.label)}</option>`).join('')}</select><button class="btn btn-sm">${detail.archetype ? 'Replace government' : 'Install a government'}</button></form>
+          <details><summary class="small muted">Decision machinery by hand</summary><form id="ro-government" class="stack" style="margin-top:8px"><div class="grid2"><label class="field"><span>Decision method</span><select name="decision_method">${['executive', 'cabinet', 'weighted', 'consensus'].map(x => `<option value="${x}" ${g.decision_method === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label><label class="field"><span>Decision threshold</span><input name="decision_threshold" type="number" min="0" max="1" step="0.05" value="${g.decision_threshold ?? 0.5}"></label></div><label class="field"><span>Max deliberation rounds</span><input name="max_rounds" type="number" min="1" max="4" value="${g.max_rounds ?? 1}"></label><button class="btn">Save government</button></form></details>
           <h3>Ministers</h3><div class="list">${agents.length ? agents.map(a => `<div class="item"><div class="item-top"><span class="item-title">${esc(a.display_name)} · ${esc(a.role)}</span><span class="tag">${esc(a.model_provider)} / ${esc(a.model_name)}</span></div><p class="small muted">weight ${a.vote_weight} · ${a.active ? 'active' : 'inactive'}</p><button class="btn btn-sm" data-agent-toggle="${a.id}" data-agent-active="${a.active ? '1' : '0'}">${a.active ? 'Deactivate' : 'Activate'}</button></div>`).join('') : '<p class="muted">No ministers configured.</p>'}</div>
-          <form id="ro-new-agent" class="stack"><div class="grid2"><label class="field"><span>Role</span><input name="role" placeholder="foreign_minister" required></label><label class="field"><span>Character name</span><input name="display_name" required></label></div><div class="grid2"><label class="field"><span>Free provider</span><select name="model_provider"><option value="groq">groq</option><option value="gemini">gemini</option><option value="openrouter">openrouter</option><option value="mock">mock</option></select></label><label class="field"><span>Model</span><input name="model_name" value="llama-3.1-8b-instant"></label></div><label class="field"><span>Role instructions</span><textarea name="system_prompt" rows="4"></textarea></label><button class="btn">Add minister</button></form>
+          <details><summary class="small muted">Add a minister by hand, or change models</summary><form id="ro-new-agent" class="stack" style="margin-top:8px"><div class="grid2"><label class="field"><span>Role</span><input name="role" placeholder="foreign_minister" required></label><label class="field"><span>Character name</span><input name="display_name" required></label></div><div class="grid2"><label class="field"><span>Free provider</span><select name="model_provider"><option value="groq">groq</option><option value="gemini">gemini</option><option value="openrouter">openrouter</option><option value="mock">mock</option></select></label><label class="field"><span>Model</span><input name="model_name" value="llama-3.1-8b-instant"></label></div><div class="row"><button class="btn btn-sm" type="button" id="ro-test-key">Test this model now</button></div><div id="ro-test-result"></div><label class="field"><span>Role instructions</span><textarea name="system_prompt" rows="4"></textarea></label><button class="btn">Add minister</button></form></details>
           ${territoryPicker(id, world, territoryAdmin)}
+          <h3>The last deliberation</h3><div id="ro-delib">${deliberationHtml(delib)}</div>
           <div class="row"><button class="btn btn-primary" id="ro-run-turn">Run foreign government turn</button><button class="btn" id="ro-load-turns">View recent turns</button></div><div id="ro-turns"></div>
         </div>`;
         bindTerritoryPicker(id, p, territoryAdmin, viewDiplomacy);
@@ -1829,6 +1878,21 @@
             });
             toast('Power settings recorded.');
             viewDiplomacy();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        };
+        document.querySelector('#ro-archetype').onsubmit = async ev => {
+          ev.preventDefault();
+          const archetype = new FormData(ev.target).get('archetype');
+          if (!confirm('Install this government? Its ministers replace any of the same names, and its decision method replaces the current one.')) return;
+          try {
+            const r = await api(`/api/admin/foreign/powers/${id}/archetype`, {
+              method: 'POST',
+              body: { archetype }
+            });
+            toast(`${r.ministers} ministers installed on ${r.provider}/${r.model}.`);
+            loadRoPower(id);
           } catch (err) {
             toast(err.message, true);
           }
@@ -1856,6 +1920,24 @@
             mock: 'mock'
           };
         provider.onchange = () => (model.value = defaults[provider.value] || '');
+        /* Say plainly whether the key works, at the moment it is chosen. The
+           old failure mode was a minister saved happily and a turn that failed
+           a cycle later with "every configured free LLM provider failed". */
+        document.querySelector('#ro-test-key').onclick = async () => {
+          const out = document.querySelector('#ro-test-result');
+          out.innerHTML = '<p class="small muted">Calling the provider…</p>';
+          try {
+            const r = await api('/api/admin/foreign/llm-test', {
+              method: 'POST',
+              body: { model_provider: provider.value, model_name: model.value }
+            });
+            out.innerHTML = r.ok
+              ? `<p class="small"><span class="tag on-green">works</span> ${esc(r.provider)}/${esc(r.model)} answered in ${r.ms ?? 0}ms.</p>`
+              : `<p class="small"><span class="tag">failed</span> ${esc(r.error || 'no reason given')}</p><p class="small muted">${esc(r.hint || '')}</p>`;
+          } catch (err) {
+            out.innerHTML = `<p class="small"><span class="tag">failed</span> ${esc(err.message)}</p>`;
+          }
+        };
         af.onsubmit = async ev => {
           ev.preventDefault();
           try {
@@ -1910,11 +1992,16 @@
           try {
             const r = await api(`/api/admin/foreign/powers/${id}/run-turn`, { method: 'POST' });
             toast(
-              r.chosen
-                ? `Government chose ${r.chosen.action_kind}; action recorded.`
-                : 'Government took no action; turn recorded.'
+              r.already_ran
+                ? 'This government has already met this cycle.'
+                : r.chosen
+                  ? `Government chose ${r.chosen.action_kind}; action recorded.`
+                  : 'Government took no action; turn recorded.'
             );
-            viewDiplomacy();
+            /* Redraw the deliberation in place rather than the whole page: what
+               the cabinet just argued about is the thing you came to read. */
+            const d = await api(`/api/admin/foreign/powers/${id}/deliberation`).catch(() => null);
+            document.querySelector('#ro-delib').innerHTML = deliberationHtml(d);
           } catch (err) {
             toast(err.message, true);
           }
@@ -1923,7 +2010,19 @@
           try {
             const turns = await api(`/api/admin/foreign/powers/${id}/turns`);
             document.querySelector('#ro-turns').innerHTML =
-              `<div class="list">${turns.length ? turns.map(t => `<div class="item"><div class="item-top"><span class="item-title">Turn #${t.id} · cycle ${t.cycle_number}</span><span class="tag">${esc(t.status)}</span></div><p class="small muted">chosen proposal ${t.chosen_proposal_id || 'none'} · ${esc(t.created_at || '')}</p></div>`).join('') : '<p class="muted">No turns.</p>'}</div>`;
+              `<div class="list">${turns.length ? turns.map(t => `<div class="item"><div class="item-top"><span class="item-title">Turn #${t.id} · cycle ${t.cycle_number}</span><span class="tag">${esc(t.result?.status || t.status)}</span></div><p class="small muted">${t.proposal_count ?? 0} proposal(s) · chosen ${t.chosen_proposal_id || 'none'} · ${esc(t.created_at || '')}</p><button class="btn btn-sm" data-show-turn="${t.id}">Show the deliberation</button></div>`).join('') : '<p class="muted">No turns.</p>'}</div>`;
+            document.querySelectorAll('[data-show-turn]').forEach(
+              b =>
+                (b.onclick = async () => {
+                  try {
+                    document.querySelector('#ro-delib').innerHTML = deliberationHtml(
+                      await api(`/api/admin/foreign/turns/${b.dataset.showTurn}`)
+                    );
+                  } catch (err) {
+                    toast(err.message, true);
+                  }
+                })
+            );
           } catch (err) {
             toast(err.message, true);
           }

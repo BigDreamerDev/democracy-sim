@@ -168,29 +168,33 @@ the UI.
 
 ## 4. Foreign governments people can actually set up
 
+**Built.** `server/llm/archetypes.js` holds the catalogue, `runGovernmentTurn`
+in `server/diplomacy.js` enforces it, and `server/test/government.mjs` asserts
+it — including that an invented `action_kind` writes nothing.
+
 Right now configuring one means knowing a provider, a model ID that passes the
 free-tier allowlist, and writing system prompts per agent. That is why it is
 "quite useless" — the setup cost is paid before any fun is had.
 
 ### Make it work with zero configuration
 
-- [ ] **Ship archetypes.** A dropdown of complete, pre-written governments:
+- [x] **Ship archetypes.** A dropdown of complete, pre-written governments:
       *military junta*, *merchant republic*, *absolute monarchy*, *one-party
       state*, *theocracy*, *federal democracy*, *revolutionary council*,
       *technocracy*. Each one is a decision method, a cabinet of agents with
       roles and prompts, and a temperament — written once, chosen in one click.
-- [ ] **One button: "Create a foreign power".** Name, archetype, rough strength.
+- [x] **One button: "Create a foreign power".** Name, archetype, rough strength.
       Everything else defaulted. Model configuration should be a thing you *can*
       open, not a thing you must.
-- [ ] **Make `mock` genuinely playable.** Today it returns `action_kind:
+- [x] **Make `mock` genuinely playable.** Today it returns `action_kind:
       'nothing'` and says "Mock provider takes no action", so an unconfigured
       world is a dead world. A scripted temperament — belligerent powers lodge
       grievances, mercantile ones make offers — means the whole system is worth
       switching on before anyone finds an API key.
-- [ ] **Test the key at save time.** One cheap call, and say plainly whether it
+- [x] **Test the key at save time.** One cheap call, and say plainly whether it
       worked. Silent fallback through four providers to a generic failure is the
       worst possible diagnostic.
-- [ ] Show the last turn's deliberation in the RO console: what each agent
+- [x] Show the last turn's deliberation in the RO console: what each agent
       proposed, how they voted, what carried. Debugging a cabinet you cannot see
       is guesswork.
 

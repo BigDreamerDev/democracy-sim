@@ -29,4 +29,11 @@ Module._load = function (req, ...a) {
 
 process.env.PORT = process.env.TEST_PORT || '4321';
 process.env.JWT_SECRET = 'x'.repeat(48);
+/* Foreign cabinets deliberate against the scripted mock here, never a hosted
+   model. A suite whose result depends on whether the developer happens to have
+   a Groq key exported — and which spends their free tier to find out — is not a
+   test. Deleted rather than blanked so providerHasKey() answers honestly. */
+delete process.env.GROQ_API_KEY;
+delete process.env.GEMINI_API_KEY;
+delete process.env.OPENROUTER_API_KEY;
 require('../server.js');
