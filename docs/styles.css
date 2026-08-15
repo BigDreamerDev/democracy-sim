@@ -496,6 +496,7 @@ input[type=color]{padding:3px;height:38px}
 .dip-ro-create{margin-top:12px;background:var(--card)}
 .dip-ro-create summary{cursor:pointer;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
 .dip-ro-create[open] summary{border-bottom:1px solid var(--rule);padding-bottom:10px;margin-bottom:12px}
+.worldgen-preview-img{display:block;max-width:100%;border:1px solid var(--rule);background:var(--paper)}
 
 /* ═══════════════════════════════════ FOREIGN LEDGER AND STRATEGIC GOODS
 
