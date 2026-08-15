@@ -2032,7 +2032,7 @@ module.exports.mount = function mount(app, ctx) {
         (await q('SELECT * FROM foreign_governments WHERE power_id=$1', [req.params.id])).rows[0] || null;
       const agents = (
         await q(
-          'SELECT id,role,display_name,model_provider,model_name,vote_weight,active,system_prompt FROM foreign_agents WHERE power_id=$1 ORDER BY id',
+          'SELECT id,role,display_name,model_provider,model_name,vote_weight,active,system_prompt,user_id FROM foreign_agents WHERE power_id=$1 ORDER BY id',
           [req.params.id]
         )
       ).rows;
