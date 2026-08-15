@@ -850,6 +850,76 @@
   const STANDING_ORDER = ['allied', 'friendly', 'neutral', 'strained', 'hostile', 'at_war'];
   const standingLabel = s => (s === 'at_war' ? 'at war' : String(s || 'neutral'));
 
+  /* Nation export: SVG straight from the server, PNG drawn from that same SVG
+     on a canvas in the browser. `worldexport.js` deliberately has no
+     rasteriser — the browser already owns one — so the PNG button never
+     touches a new endpoint, it just paints what the SVG button downloads. */
+  function triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function exportFilename() {
+    return (STATE()?.config?.nation_name || 'republic')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'republic';
+  }
+
+  async function fetchExportSvgText() {
+    const svgText = await api('/api/world/export.svg?borders=1');
+    if (typeof svgText !== 'string' || !svgText.startsWith('<svg'))
+      throw new Error('The world export did not come back as an SVG.');
+    return svgText;
+  }
+
+  async function downloadWorldSvg() {
+    try {
+      const svgText = await fetchExportSvgText();
+      triggerDownload(new Blob([svgText], { type: 'image/svg+xml' }), `${exportFilename()}.svg`);
+    } catch (err) { toast(err.message, true); }
+  }
+
+  async function downloadWorldPng() {
+    try {
+      const svgText = await fetchExportSvgText();
+      const svgUrl = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
+      try {
+        const img = new Image();
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error('The exported SVG could not be drawn to a canvas.'));
+          img.src = svgUrl;
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width || 800;
+        canvas.height = img.naturalHeight || img.height || 800;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        if (!pngBlob) throw new Error('The canvas could not produce a PNG.');
+        triggerDownload(pngBlob, `${exportFilename()}.png`);
+      } finally {
+        URL.revokeObjectURL(svgUrl);
+      }
+    } catch (err) { toast(err.message, true); }
+  }
+
+  function exportButtonsHtml() {
+    return `<div class="row wm-export-row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button type="button" class="btn btn-sm" data-export-svg="1">Download SVG</button>
+      <button type="button" class="btn btn-sm" data-export-png="1">Download PNG</button>
+    </div>`;
+  }
+
+  function bindExportButtons() {
+    document.querySelectorAll('[data-export-svg]').forEach(b => (b.onclick = downloadWorldSvg));
+    document.querySelectorAll('[data-export-png]').forEach(b => (b.onclick = downloadWorldPng));
+  }
+
   /* Subdivision geometry, fetched when it is actually needed.
 
      It used to be one 2.9 MB script tag in index.html, parsed on every page
@@ -1126,6 +1196,7 @@
         <span class="wm-key"><i class="wm-key-hatch"></i>not recognised</span>
         <span class="wm-key"><i class="wm-key-land"></i>unclaimed (${unclaimed})</span>
       </div>
+      ${exportButtonsHtml()}
       ${hasSubdivisionGeometry ? '<p class="small muted wm-boundary-credit">Subdivision boundaries: geoBoundaries gbOpen ADM1 (CC BY 4.0).</p>' : ''}
       <div id="wm-detail" class="wm-detail" hidden></div>
     </section>`;
@@ -1532,6 +1603,157 @@
     });
   }
 
+  /* The procedural world generator. Power is set before any land is handed
+     out, so what this form actually chooses is a spread of strength around
+     the Republic's own — the map is only asked afterwards to make that real.
+     Nothing exists until the Returning Officer commits a preview; discard as
+     many as it takes. */
+  function worldgenNationRow(n) {
+    return `<div class="item">
+      <div class="item-top">
+        <span class="item-title">${esc(n.name)}</span>
+        <span class="tag${n.satisfied ? ' on-green' : ''}">${esc(n.target_multiple)}x target · ${esc(n.achieved_multiple)}x achieved</span>
+      </div>
+      <p class="small muted">${n.subdivision_count} subdivision(s) · strength ${n.strength}${n.name_degraded ? ' · name drawn from the reserve list' : ''}</p>
+      <p class="small muted">${esc(n.stopped_because || '')}</p>
+    </div>`;
+  }
+
+  function worldgenPlanHtml(plan) {
+    if (!plan) return '';
+    const nations = plan.nations || [];
+    return `<div class="stack" id="worldgen-plan" style="margin-top:14px">
+      <p class="small muted">Seed <code>${esc(plan.seed)}</code> · ${nations.length} power(s) · Republic strength ${esc(plan.republic_strength)} (${esc(plan.republic_strength_source || '')}) · ${esc(plan.claimed_by_generation)} of ${esc(plan.unclaimed_before)} unclaimed pieces used, ${esc(plan.unclaimed_after)} left.</p>
+      <img class="worldgen-preview-img" alt="Preview of a generated world" data-preview-for="${plan.id}">
+      ${(plan.warnings || []).length ? `<div class="list">${plan.warnings.map(w => `<p class="small muted">${esc(w)}</p>`).join('')}</div>` : ''}
+      <div class="list">${nations.map(worldgenNationRow).join('')}</div>
+      <p class="small muted">${esc(plan.recognition || '')}</p>
+      ${plan.status === 'preview' || !plan.status
+        ? `<div class="row" style="gap:8px">
+        <button class="btn btn-primary btn-sm" data-worldgen-commit="${plan.id}">Commit this world</button>
+        <button class="btn btn-sm" data-worldgen-discard="${plan.id}">Discard</button>
+      </div>`
+        : `<p class="small muted">This generation is ${esc(plan.status)}.</p>`}
+      <div id="worldgen-commit-result"></div>
+    </div>`;
+  }
+
+  async function loadWorldgenPreview(id) {
+    const img = document.querySelector(`img[data-preview-for="${id}"]`);
+    if (!img) return;
+    try {
+      const svgText = await api(`/api/world/generations/${id}/preview.svg`);
+      if (typeof svgText !== 'string' || !svgText.startsWith('<svg')) throw new Error('no preview');
+      const url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
+      if (img.dataset.blobUrl) URL.revokeObjectURL(img.dataset.blobUrl);
+      img.dataset.blobUrl = url;
+      img.src = url;
+    } catch { /* the image tag simply stays broken; the numbers above still tell the story */ }
+  }
+
+  function worldgenSectionHtml(gens) {
+    const rows = gens?.generations || [];
+    return `<details class="card dip-ro-create dip-ro-worldgen"><summary><strong>Generate a world</strong></summary>
+      <div class="stack" style="margin-top:12px">
+        <p class="small muted">The Republic's own strength is read first, and every neighbour is set as a multiple of it — only then is the map asked to satisfy those numbers. Every power arrives unrecognised. Nothing goes live until you commit; throw a preview away and try another seed as often as you like.</p>
+        <form id="worldgen-generate" class="stack">
+          <div class="grid2">
+            <label class="field"><span>Seed (optional)</span><input name="seed" placeholder="random"></label>
+            <label class="field"><span>Number of powers</span><input name="powers" type="number" min="1" max="24" value="8"></label>
+          </div>
+          <div class="grid2">
+            <label class="field"><span>Fill share (0.2–0.95)</span><input name="fill_share" type="number" step="0.01" min="0.2" max="0.95" value="0.72"></label>
+            <label class="field"><span>Reach (40–400)</span><input name="reach" type="number" min="40" max="400" value="170"></label>
+          </div>
+          <label class="field"><span>Republic strength override (optional)</span><input name="republic_strength" type="number" min="1" placeholder="read from war.js if left blank"></label>
+          <button class="btn btn-primary">Generate preview</button>
+        </form>
+        <div id="worldgen-active"></div>
+        <h3 class="small muted" style="margin-top:6px">Past generations</h3>
+        <div class="list" id="worldgen-list">${
+          rows.length
+            ? rows.map(g => `<div class="item">
+          <div class="item-top"><span class="item-title">Seed ${esc(g.seed)}</span><span class="tag${g.status === 'committed' ? ' on-green' : ''}">${esc(g.status)}</span></div>
+          <p class="small muted">${esc(g.powers)} power(s) · Republic strength ${esc(g.republic_strength)}${g.created_by_name ? ` · ${esc(g.created_by_name)}` : ''}${g.committed_at ? ` · committed ${esc(g.committed_at)}` : ''}</p>
+          ${g.status === 'preview' ? `<div class="row" style="gap:8px"><button type="button" class="btn btn-sm" data-worldgen-view="${g.id}">Open preview</button></div>` : ''}
+        </div>`).join('')
+            : '<p class="muted">No generations yet.</p>'
+        }</div>
+      </div>
+    </details>`;
+  }
+
+  function bindWorldgenPlanButtons() {
+    document.querySelectorAll('[data-worldgen-commit]').forEach(b => {
+      b.onclick = async () => {
+        if (!confirm('Commit this world? Its powers become real and the generation cannot be discarded afterward.')) return;
+        try {
+          const r = await api(`/api/world/generations/${b.dataset.worldgenCommit}/commit`, { method: 'POST' });
+          const out = document.querySelector('#worldgen-commit-result');
+          if (out) {
+            out.innerHTML = `<p class="small"><strong>Committed. Each key is shown once — save it now.</strong></p>` +
+              (r.powers || []).map(p => `<p class="small">${esc(p.name)} · ${esc(p.subdivisions)} subdivision(s)</p><textarea readonly>${esc(p.key)}</textarea>`).join('');
+          }
+          toast(`${(r.powers || []).length} power(s) committed.`);
+        } catch (err) { toast(err.message, true); }
+      };
+    });
+    document.querySelectorAll('[data-worldgen-discard]').forEach(b => {
+      b.onclick = async () => {
+        if (!confirm('Discard this preview?')) return;
+        try {
+          await api(`/api/world/generations/${b.dataset.worldgenDiscard}/discard`, { method: 'POST' });
+          toast('Preview discarded.');
+          viewDiplomacy();
+        } catch (err) { toast(err.message, true); }
+      };
+    });
+  }
+
+  function bindWorldgenSection() {
+    const form = document.querySelector('#worldgen-generate');
+    if (form) {
+      form.onsubmit = async ev => {
+        ev.preventDefault();
+        const fd = Object.fromEntries(new FormData(ev.target));
+        const body = {
+          seed: fd.seed || undefined,
+          powers: fd.powers || undefined,
+          fill_share: fd.fill_share || undefined,
+          reach: fd.reach || undefined,
+          republic_strength: fd.republic_strength || undefined
+        };
+        const active = document.querySelector('#worldgen-active');
+        if (active) active.innerHTML = '<p class="small muted">Generating…</p>';
+        try {
+          const plan = await api('/api/world/generate', { method: 'POST', body });
+          if (active) active.innerHTML = worldgenPlanHtml(plan);
+          bindWorldgenPlanButtons();
+          loadWorldgenPreview(plan.id);
+          toast(`Preview generated: ${(plan.nations || []).length} power(s).`);
+        } catch (err) {
+          if (active) active.innerHTML = '';
+          toast(err.message, true);
+        }
+      };
+    }
+    document.querySelectorAll('[data-worldgen-view]').forEach(b => {
+      b.onclick = async () => {
+        const active = document.querySelector('#worldgen-active');
+        if (active) active.innerHTML = '<p class="small muted">Loading…</p>';
+        try {
+          const plan = await api(`/api/world/generations/${b.dataset.worldgenView}`);
+          if (active) {
+            active.innerHTML = worldgenPlanHtml(plan);
+            active.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+          bindWorldgenPlanButtons();
+          loadWorldgenPreview(plan.id);
+        } catch (err) { toast(err.message, true); }
+      };
+    });
+  }
+
   /* The Foreign Office. Appointed by the government, dismissable by it, and
      holding no power to bind — which is what the note under the name says,
      because a player looking at a minister needs to know that immediately. */
@@ -1547,6 +1769,7 @@
       <p class="small muted">Appointed by the ${esc(by)} and dismissable by them. Holds the channel to foreign governments, and binds nothing: treaties, recognition and emergencies all arrive as bills, and the House votes on every one.${
         fo.minister ? '' : ' While the office is empty the President speaks for the Republic.'
       }</p>
+      ${exportButtonsHtml()}
       ${
         canAppoint || isMinister
           ? `<div class="row" style="margin-top:14px;gap:8px;flex-wrap:wrap">
@@ -1598,7 +1821,7 @@
     const isPresident = !!me?.offices?.includes('president');
     const isSpeaker = !!me?.offices?.includes('speaker');
     const isMinister = !!me?.offices?.includes('foreign_minister');
-    const [powers, dispatches, treaties, offers, conflicts, balance, adminPowers, world, fo, republicTerritoryAdmin, govCatalogue] = await Promise.all([
+    const [powers, dispatches, treaties, offers, conflicts, balance, adminPowers, world, fo, republicTerritoryAdmin, govCatalogue, worldgenGens] = await Promise.all([
       api('/api/diplomacy/powers'),
       api('/api/diplomacy/dispatches'),
       api('/api/diplomacy/treaties'),
@@ -1611,7 +1834,9 @@
       me?.is_admin ? api('/api/admin/republic/territories').catch(() => ({ subdivisions: [], legacy_territories: [] })) : Promise.resolve(null),
       /* Catches rather than throws: an older server has no archetypes route and
          the whole Diplomacy page should not go blank because of it. */
-      me?.is_admin ? api('/api/admin/foreign/archetypes').catch(() => ({ archetypes: [], strengths: {}, default_agent: null })) : Promise.resolve(null)
+      me?.is_admin ? api('/api/admin/foreign/archetypes').catch(() => ({ archetypes: [], strengths: {}, default_agent: null })) : Promise.resolve(null),
+      /* Same reasoning: an older server has no world generator at all. */
+      me?.is_admin ? api('/api/world/generations').catch(() => ({ generations: [] })) : Promise.resolve(null)
     ]);
     /* Before the map is drawn, not while. The renderer is synchronous and
        returns a string, so anything it needs has to be in hand first. */
@@ -1693,6 +1918,7 @@
         ${republicTerritoryPicker(world, republicTerritoryAdmin)}
         <div class="card dip-ro-console"><label class="field"><span>Manage power</span><select id="ro-power-select">${adminPowers.map(p => `<option value="${p.id}">${esc(p.name)}${p.revoked_at ? ' (revoked)' : ''}</option>`).join('')}</select></label><div id="ro-power-panel"></div></div>
         <details class="card dip-ro-create" open><summary><strong>Create a foreign power</strong></summary><form id="newpower" class="stack" style="margin-top:12px"><p class="small muted">A name, a government and a rough strength is the whole of it. The cabinet, its ministers and their instructions come with the archetype, and the models are configured for you${govCatalogue?.default_agent ? ` — this server will use <strong>${esc(govCatalogue.default_agent.provider)}</strong>` : ''}. Everything below the button is optional.</p><div class="grid2"><label class="field"><span>Power name</span><input name="name" required></label><label class="field"><span>Government</span><select name="archetype" id="newpower-archetype">${(govCatalogue?.archetypes || []).map(a => `<option value="${esc(a.id)}">${esc(a.label)}</option>`).join('')}<option value="">(no government — configure by hand)</option></select></label></div><label class="field"><span>Rough strength</span><select name="strength">${Object.entries(govCatalogue?.strengths || {}).map(([k, v]) => `<option value="${esc(k)}" ${k === 'matched' ? 'selected' : ''}>${esc(k)} (${v})</option>`).join('')}</select></label><p class="small muted" id="newpower-blurb"></p><button class="btn btn-primary">Create power</button><details><summary class="small muted">Appearance and standing</summary><div class="grid2" style="margin-top:8px"><label class="field"><span>Adjective</span><input name="adjective"></label><label class="field"><span>Colour</span><input name="colour" type="color" value="#5B2E9E"></label></div><label class="field"><span>Standing</span><select name="standing"><option>neutral</option><option>friendly</option><option>allied</option><option>strained</option><option>hostile</option><option>at_war</option></select></label></details><div id="newpowerkey"></div></form></details>
+        ${worldgenGens ? worldgenSectionHtml(worldgenGens) : ''}
       </section>`
           : ''
       }
@@ -1700,7 +1926,9 @@
 
     bindWorldMap(world);
     bindForeignOffice();
+    bindExportButtons();
     if (me?.is_admin) bindRepublicTerritoryPicker(republicTerritoryAdmin, viewDiplomacy);
+    if (me?.is_admin) bindWorldgenSection();
 
     if (document.querySelector('#official-foreign-message'))
       document.querySelector('#official-foreign-message').onsubmit = async ev => {
