@@ -790,9 +790,10 @@ module.exports.mount = function mount(app, ctx) {
 
     const g = atlas.graph();
     /* Invented names only. There is no id, no code and no real name anywhere in
-       what follows — a preview gets screenshotted like everything else. Labels
-       are nudged deterministically around their capitals so long generated names
-       do not sit directly on top of a neighbouring state's name. */
+       what follows — a preview gets screenshotted like everything else. A label
+       starts at the area-weighted centroid of every subdivision its nation owns,
+       so it is centred on the generated nation as a whole rather than its capital.
+       A small deterministic nudge is used only if two nation-centre labels collide. */
     const nations = row.plan?.nations || [];
     const labelBoxes = [];
     const labelPositions = new Map();
@@ -800,19 +801,33 @@ module.exports.mount = function mount(app, ctx) {
       a.x < b.x + b.w + pad && a.x + a.w + pad > b.x &&
       a.y < b.y + b.h + pad && a.y + a.h + pad > b.y;
     const offsets = [
-      [0, 0], [0, -10], [0, 10], [16, 0], [-16, 0],
-      [16, -10], [-16, -10], [16, 10], [-16, 10],
-      [0, -20], [0, 20], [30, 0], [-30, 0]
+      [0, 0], [0, -10], [0, 10], [14, 0], [-14, 0],
+      [14, -10], [-14, -10], [14, 10], [-14, 10]
     ];
-    for (const n of [...nations].sort((a, b) => (b.subdivision_count || 0) - (a.subdivision_count || 0))) {
-      const c = g.cells.get(n.capital);
-      if (!c) continue;
+    const nationCentre = n => {
+      let area = 0, cx = 0, cy = 0;
+      for (const id of n.subdivisions || []) {
+        const c = g.cells.get(id);
+        if (!c || !(c.area > 0)) continue;
+        area += c.area;
+        cx += c.cx * c.area;
+        cy += c.cy * c.area;
+      }
+      if (area > 0) return { x: cx / area, y: cy / area, area };
+      const capital = g.cells.get(n.capital);
+      return capital ? { x: capital.cx, y: capital.cy, area: 0 } : null;
+    };
+    const centred = nations
+      .map(n => ({ n, centre: nationCentre(n) }))
+      .filter(x => x.centre)
+      .sort((a, b) => b.centre.area - a.centre.area);
+    for (const { n, centre } of centred) {
       const w = Math.max(18, String(n.name || '').length * 4.1);
       const h = 8;
       let best = null;
       for (const [dx, dy] of offsets) {
-        const x = Math.max(w / 2 + 2, Math.min(a.width - w / 2 - 2, c.cx + dx));
-        const y = Math.max(h / 2 + 2, Math.min(a.height - h / 2 - 2, c.cy + dy));
+        const x = Math.max(w / 2 + 2, Math.min(a.width - w / 2 - 2, centre.x + dx));
+        const y = Math.max(h / 2 + 2, Math.min(a.height - h / 2 - 2, centre.y + dy));
         const box = { x: x - w / 2, y: y - h / 2, w, h };
         const collisions = labelBoxes.reduce((count, other) => count + (overlaps(box, other) ? 1 : 0), 0);
         if (!best || collisions < best.collisions) best = { x, y, box, collisions };

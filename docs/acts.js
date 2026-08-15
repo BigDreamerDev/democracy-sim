@@ -1219,10 +1219,47 @@
   }
 
 
-  /* SVG text has no useful collision layout of its own. Measure the polygons
-     after insertion, prefer the largest pieces actually owned by each state,
-     and try nearby anchors until labels no longer collide. This keeps generated
-     states sharing one parent territory from inheriting the same centroid. */
+  /* Put each label at the centroid of all geometry the state actually owns,
+     rather than the centre of one territory. Generated states often span several
+     subdivisions (and sometimes several parent territories), so the weighted
+     polygon centroid is the centre of the nation as a whole. Collision offsets
+     are only a fallback when two true nation centres happen to be very close. */
+  function measureWorldLabelPath(d) {
+    const rings = [];
+    for (const part of String(d || '').split('M').slice(1)) {
+      const pts = [];
+      for (const chunk of part.replace(/Z/gi, '').split('L')) {
+        if (!chunk) continue;
+        const comma = chunk.indexOf(',');
+        if (comma < 0) continue;
+        const x = Number(chunk.slice(0, comma));
+        const y = Number(chunk.slice(comma + 1));
+        if (Number.isFinite(x) && Number.isFinite(y)) pts.push([x, y]);
+      }
+      if (pts.length >= 3) rings.push(pts);
+    }
+
+    let area = 0, cx = 0, cy = 0;
+    for (const ring of rings) {
+      let signed = 0, rx = 0, ry = 0;
+      for (let i = 0; i < ring.length; i++) {
+        const [x1, y1] = ring[i];
+        const [x2, y2] = ring[(i + 1) % ring.length];
+        const f = x1 * y2 - x2 * y1;
+        signed += f;
+        rx += (x1 + x2) * f;
+        ry += (y1 + y2) * f;
+      }
+      signed /= 2;
+      const weight = Math.abs(signed);
+      if (weight <= 1e-9) continue;
+      area += weight;
+      cx += (rx / (6 * signed)) * weight;
+      cy += (ry / (6 * signed)) * weight;
+    }
+    return area > 0 ? { area, cx: cx / area, cy: cy / area } : null;
+  }
+
   function placeWorldLabels() {
     const svg = document.querySelector('.wm-svg');
     if (!svg) return;
@@ -1247,41 +1284,39 @@
       const selector = label.dataset.worldLabel === 'republic'
         ? '.wm-republic'
         : `.wm-claim[data-power="${label.dataset.power}"]`;
-      const parts = [...svg.querySelectorAll(selector)]
-        .map(boxOf)
-        .filter(b => b && b.width > 0 && b.height > 0)
-        .sort((a, b) => (b.width * b.height) - (a.width * a.height));
-      const area = parts.reduce((n, b) => n + b.width * b.height, 0);
-      return { label, parts, area };
-    }).sort((a, b) => b.area - a.area);
+      const measures = [...svg.querySelectorAll(selector)]
+        .map(path => measureWorldLabelPath(path.getAttribute('d')))
+        .filter(Boolean);
+      const area = measures.reduce((n, m) => n + m.area, 0);
+      const centre = area > 0 ? {
+        x: measures.reduce((n, m) => n + m.cx * m.area, 0) / area,
+        y: measures.reduce((n, m) => n + m.cy * m.area, 0) / area
+      } : null;
+      return { label, centre, area };
+    }).filter(e => e.centre).sort((a, b) => b.area - a.area);
 
     const offsets = [
-      [0, 0], [0, -12], [0, 12], [18, 0], [-18, 0],
-      [18, -12], [-18, -12], [18, 12], [-18, 12],
-      [0, -24], [0, 24], [34, 0], [-34, 0]
+      [0, 0], [0, -10], [0, 10], [14, 0], [-14, 0],
+      [14, -10], [-14, -10], [14, 10], [-14, 10]
     ];
 
-    for (const { label, parts } of entries) {
-      if (!parts.length) continue;
-      const anchors = parts.slice(0, 6).map(b => [b.x + b.width / 2, b.y + b.height / 2]);
+    for (const { label, centre } of entries) {
       let best = null;
-      for (const [ax, ay] of anchors) {
-        for (const [dx, dy] of offsets) {
-          label.setAttribute('x', ax + dx);
-          label.setAttribute('y', ay + dy);
-          let b = boxOf(label);
-          if (!b) continue;
-          const x = Math.max(b.width / 2 + 2, Math.min(width - b.width / 2 - 2, ax + dx));
-          const y = Math.max(b.height / 2 + 2, Math.min(height - b.height / 2 - 2, ay + dy));
-          label.setAttribute('x', x);
-          label.setAttribute('y', y);
-          b = boxOf(label);
-          if (!b) continue;
-          const collisions = placed.reduce((n, other) => n + (intersects(b, other) ? 1 : 0), 0);
-          if (!best || collisions < best.collisions) best = { x, y, box: b, collisions };
-          if (!collisions) break;
-        }
-        if (best?.collisions === 0) break;
+      for (const [dx, dy] of offsets) {
+        const tx = centre.x + dx, ty = centre.y + dy;
+        label.setAttribute('x', tx);
+        label.setAttribute('y', ty);
+        let b = boxOf(label);
+        if (!b) continue;
+        const x = Math.max(b.width / 2 + 2, Math.min(width - b.width / 2 - 2, tx));
+        const y = Math.max(b.height / 2 + 2, Math.min(height - b.height / 2 - 2, ty));
+        label.setAttribute('x', x);
+        label.setAttribute('y', y);
+        b = boxOf(label);
+        if (!b) continue;
+        const collisions = placed.reduce((n, other) => n + (intersects(b, other) ? 1 : 0), 0);
+        if (!best || collisions < best.collisions) best = { x, y, box: b, collisions };
+        if (!collisions) break;
       }
       if (!best) continue;
       label.setAttribute('x', best.x);
