@@ -2129,6 +2129,169 @@ module.exports.mount = function mount(app, ctx) {
     })
   );
 
+  /* The RO's own way to seat or vacate a citizen — used to fix a petition
+     gone wrong, or to hand-place someone outside the petition flow. `user_id:
+     null` vacates. The one-seat-per-citizen rule is not re-checked here in
+     application code; it is the same partial unique index the petition route
+     relies on, and this route trusts it exactly as much. */
+  app.post(
+    '/api/admin/foreign/agents/:id/seat',
+    admin,
+    wrap(async (req, res) => {
+      const current = (await q('SELECT * FROM foreign_agents WHERE id=$1', [req.params.id])).rows[0];
+      if (!current) return res.status(404).json({ error: 'No such foreign agent.' });
+      const userId = req.body?.user_id === null || req.body?.user_id === undefined ? null : Number(req.body.user_id) || null;
+      let row;
+      try {
+        row = (
+          await q('UPDATE foreign_agents SET user_id=$1 WHERE id=$2 RETURNING *', [userId, req.params.id])
+        ).rows[0];
+      } catch (e) {
+        if (e.code === '23505')
+          return res.status(409).json({ error: 'That citizen already holds a seat in a foreign government — one seat each, held at the database.' });
+        throw e;
+      }
+      log(req.user.id, 'foreign.agent.seat', `#${row.id}: ${userId ? `user #${userId}` : 'vacated'}`);
+      res.json(row);
+    })
+  );
+
+  /* ============================================== defectors in government
+
+     A defector doesn't just leave — the owner wants them to actually become
+     a subject of the power they joined, able to ask for a place in its
+     government and, in a monarchy, a real place in the succession. None of
+     this binds the Republic; it is a foreign power's own internal politics,
+     the same as a Returning Officer applying an archetype is. */
+
+  /* Petition to hold a seat: take a vacant cabinet role outright, or queue
+     if every role is already claimed by another citizen; or, in a monarchy,
+     join the line of succession instead of taking an immediate seat. No
+     randomness anywhere in here — vacant-or-not and queue order are the
+     whole of the decision, same as the rest of this codebase holds for war
+     and forex. */
+  app.post('/api/diplomacy/foreign/:powerId/petition', auth, wrap(async (req, res) => {
+    if (!(await enabled(res))) return;
+    const power = (await q('SELECT * FROM powers WHERE id=$1 AND revoked_at IS NULL', [req.params.powerId])).rows[0];
+    if (!power) return res.status(404).json({ error: 'No such active power.' });
+    const def = (
+      await q("SELECT * FROM defections WHERE user_id=$1 AND status='defected'", [req.user.id])
+    ).rows[0];
+    if (!def || Number(def.power_id) !== Number(power.id))
+      return res.status(403).json({ error: 'Only a citizen who renounced the Republic for this power may petition its government.' });
+    if ((await q('SELECT 1 FROM foreign_agents WHERE user_id=$1', [req.user.id])).rows[0])
+      return res.status(409).json({ error: 'You already hold a seat in a foreign government.' });
+
+    const gov = (await q('SELECT * FROM foreign_governments WHERE power_id=$1', [power.id])).rows[0];
+    const arch = gov ? archetypes.get(gov.config?.archetype) : null;
+    if (!gov || !arch) return res.status(400).json({ error: 'This power has no government to petition.' });
+    if (!archetypes.acceptsDefectors(arch.id))
+      return res.status(403).json({ error: `${power.name} takes no foreigners into its government, whatever they renounced to come here.` });
+
+    const mode = req.body?.mode === 'succession' ? 'succession' : 'cabinet';
+
+    if (mode === 'succession') {
+      if (!arch.succession) return res.status(400).json({ error: 'This government has no crown to join the succession of.' });
+      const cfg = gov.config || {};
+      const contenders = successionContenders(cfg);
+      const nextConfig = {
+        ...cfg,
+        succession_contenders: [
+          ...contenders,
+          { user_id: req.user.id, display_name: text(req.body?.display_name, 120) || req.user.display_name }
+        ]
+      };
+      await q('UPDATE foreign_governments SET config=$2 WHERE power_id=$1', [power.id, nextConfig]);
+      const petition = (
+        await q(
+          `INSERT INTO foreign_role_petitions(power_id,user_id,defection_id,mode) VALUES($1,$2,$3,'succession') RETURNING *`,
+          [power.id, req.user.id, def.id]
+        )
+      ).rows[0];
+      log(req.user.id, 'foreign.petition.succession', `${power.name}: joined the line of succession`);
+      return res.json({
+        ok: true,
+        mode: 'succession',
+        petition,
+        position: successionLineLength(arch.succession, nextConfig) - 1
+      });
+    }
+
+    const crownRole = arch.succession?.crown_role || null;
+    const cabinetRoles = arch.cabinet.map(m => m.role).filter(r => r !== crownRole);
+    const requestedRole = text(req.body?.role, 80);
+    if (requestedRole && !cabinetRoles.includes(requestedRole))
+      return res.status(400).json({ error: 'That is not a cabinet role in this government.' });
+    const candidates = requestedRole ? [requestedRole] : cabinetRoles;
+    const seat = (
+      await q(
+        `SELECT * FROM foreign_agents WHERE power_id=$1 AND role=ANY($2::text[]) AND user_id IS NULL ORDER BY id LIMIT 1`,
+        [power.id, candidates]
+      )
+    ).rows[0];
+    if (seat) {
+      await q('UPDATE foreign_agents SET user_id=$1 WHERE id=$2', [req.user.id, seat.id]);
+      log(req.user.id, 'foreign.petition.seated', `${power.name}: ${seat.role}`);
+      return res.json({ ok: true, mode: 'cabinet', seated: true, seat: { id: seat.id, role: seat.role, power_id: power.id } });
+    }
+    const petition = (
+      await q(
+        `INSERT INTO foreign_role_petitions(power_id,user_id,defection_id,mode,desired_role) VALUES($1,$2,$3,'cabinet',$4) RETURNING *`,
+        [power.id, req.user.id, def.id, requestedRole || null]
+      )
+    ).rows[0];
+    log(req.user.id, 'foreign.petition.queued', `${power.name}${requestedRole ? `: ${requestedRole}` : ''}`);
+    res.json({ ok: true, mode: 'cabinet', seated: false, petition });
+  }));
+
+  /* Vacates a seat — not the Republic readmission process in offshore.js.
+     Resigning a foreign role does not renounce the renunciation; it just
+     frees the seat, reverting it to whatever LLM was configured (or leaving
+     the crown role blank until the next succession, same as any other
+     archetype-defined role). */
+  app.post('/api/diplomacy/foreign/agents/:agentId/resign', auth, wrap(async (req, res) => {
+    if (!(await enabled(res))) return;
+    const agent = (await q('SELECT * FROM foreign_agents WHERE id=$1', [req.params.agentId])).rows[0];
+    if (!agent) return res.status(404).json({ error: 'No such seat.' });
+    if (Number(agent.user_id) !== Number(req.user.id))
+      return res.status(403).json({ error: 'That seat is not yours to resign.' });
+    await q('UPDATE foreign_agents SET user_id=NULL WHERE id=$1', [agent.id]);
+    log(req.user.id, 'foreign.agent.resign', `${agent.role} at power #${agent.power_id}`);
+    res.json({ ok: true });
+  }));
+
+  /* The one route a human-controlled seat actually acts through. Same output
+     shape a model returns — action_kind, payload, rationale — and the SAME
+     allowlist check runGovernmentTurn runs on a model's proposal, right here,
+     before anything is written. A person gets no more latitude than an LLM:
+     that is the entire point of routing both through one Set. */
+  app.post('/api/diplomacy/foreign/:powerId/agents/:agentId/act', auth, wrap(async (req, res) => {
+    if (!(await enabled(res))) return;
+    const agent = (
+      await q('SELECT * FROM foreign_agents WHERE id=$1 AND power_id=$2', [req.params.agentId, req.params.powerId])
+    ).rows[0];
+    if (!agent) return res.status(404).json({ error: 'No such seat.' });
+    if (Number(agent.user_id) !== Number(req.user.id))
+      return res.status(403).json({ error: 'That seat is not yours to speak for.' });
+    const kind = text(req.body?.action_kind, 40);
+    if (!ACTIONS.has(kind))
+      return res.status(400).json({ error: `"${kind}" is not an action this government's controller recognises.` });
+    const payload = req.body?.payload && typeof req.body.payload === 'object' && !Array.isArray(req.body.payload) ? req.body.payload : {};
+    const rationale = text(req.body?.rationale, 2000);
+    const c = cycleNo();
+    const row = (
+      await q(
+        `INSERT INTO foreign_agent_submissions(agent_id,cycle_number,action_kind,payload,rationale)
+           VALUES($1,$2,$3,$4,$5)
+         ON CONFLICT (agent_id,cycle_number) DO UPDATE SET action_kind=$3,payload=$4,rationale=$5,submitted_at=now()
+         RETURNING *`,
+        [agent.id, c, kind, payload, rationale]
+      )
+    ).rows[0];
+    log(req.user.id, 'foreign.agent.act', `#${agent.power_id}/${agent.role}: ${kind}`);
+    res.json(row);
+  }));
+
   /* Treaties as the cabinet needs to see them, terms included.
 
      `publicState` deliberately hides terms — it is the narrow public snapshot a
@@ -2211,6 +2374,36 @@ module.exports.mount = function mount(app, ctx) {
     return 'diplomat';
   }
 
+  /* A succession line as the archetype defines it (`succ.line`, NPC names
+     baked into the module every power sharing that archetype reads), extended
+     per-power by any citizen contenders a defector has petitioned onto it.
+     Contenders live in the government's OWN config — never mutated onto the
+     archetype object — because queueing a citizen at the Crown of Vess must
+     never add a pretender to every other absolute monarchy in the game. */
+  function successionContenders(cfg) {
+    return Array.isArray(cfg?.succession_contenders) ? cfg.succession_contenders : [];
+  }
+  function successionLineLength(succ, cfg) {
+    return succ.line.length + successionContenders(cfg).length;
+  }
+  function successionEntry(succ, cfg, index) {
+    if (index < succ.line.length) return succ.line[index];
+    return successionContenders(cfg)[index - succ.line.length] || null;
+  }
+
+  /* What a human-controlled seat contributes to this cycle's turn: whatever
+     they submitted through /agents/:agentId/act for THIS cycle number, or an
+     abstention if they didn't. Same shape a model returns — action_kind,
+     payload, rationale — so the caller cannot tell, and does not need to,
+     which kind of seat it came from before it runs the allowlist. */
+  async function humanSubmission(agentId, cycleNumber) {
+    const row = (
+      await q('SELECT * FROM foreign_agent_submissions WHERE agent_id=$1 AND cycle_number=$2', [agentId, cycleNumber])
+    ).rows[0];
+    if (!row) return { action_kind: 'nothing', payload: {}, rationale: 'No submission received before the turn ran; abstained.' };
+    return { action_kind: row.action_kind, payload: row.payload, rationale: row.rationale };
+  }
+
   async function runGovernmentTurn(powerId) {
     const power = (await q('SELECT * FROM powers WHERE id=$1 AND revoked_at IS NULL', [powerId])).rows[0];
     if (!power) throw Object.assign(new Error('No such active power.'), { status: 404 });
@@ -2257,25 +2450,34 @@ module.exports.mount = function mount(app, ctx) {
         ? Number(cfg.succession_started_cycle)
         : c;
       const heirIndex = Number.isFinite(Number(cfg.heir_index)) ? Number(cfg.heir_index) : 0;
-      if (c - startedAt >= succ.reign_cycles && heirIndex < succ.line.length - 1) {
-        const heir = succ.line[heirIndex + 1];
-        await q('UPDATE foreign_agents SET display_name=$3,system_prompt=$4 WHERE power_id=$1 AND role=$2', [
-          powerId,
-          succ.crown_role,
-          heir.display_name,
-          heir.prompt
-        ]);
-        const nextConfig = { ...cfg, succession_started_cycle: c, heir_index: heirIndex + 1 };
-        await q('UPDATE foreign_governments SET config=$2 WHERE power_id=$1', [powerId, nextConfig]);
-        await q("INSERT INTO foreign_memories(power_id,kind,body) VALUES($1,'national',$2)", [
-          powerId,
-          `The crown has passed. ${heir.display_name} now reigns over ${power.name}.`
-        ]);
-        gov.config = nextConfig;
-        const crown = agents.find(a => a.role === succ.crown_role);
-        if (crown) {
-          crown.display_name = heir.display_name;
-          crown.system_prompt = heir.prompt;
+      const total = successionLineLength(succ, cfg);
+      if (c - startedAt >= succ.reign_cycles && heirIndex < total - 1) {
+        const heir = successionEntry(succ, cfg, heirIndex + 1);
+        if (heir) {
+          /* A citizen contender carries a user_id and no prompt to speak of —
+             they are about to be played by a person, not a model, and the
+             row's system_prompt is left blank rather than inherited from
+             whoever reigned before them. Reverting FROM a citizen crown to an
+             NPC one clears user_id the same way resigning a seat does. */
+          await q(
+            'UPDATE foreign_agents SET display_name=$3,system_prompt=$4,user_id=$5 WHERE power_id=$1 AND role=$2',
+            [powerId, succ.crown_role, heir.display_name, heir.user_id ? '' : heir.prompt || '', heir.user_id || null]
+          );
+          const nextConfig = { ...cfg, succession_started_cycle: c, heir_index: heirIndex + 1 };
+          await q('UPDATE foreign_governments SET config=$2 WHERE power_id=$1', [powerId, nextConfig]);
+          await q("INSERT INTO foreign_memories(power_id,kind,body) VALUES($1,'national',$2)", [
+            powerId,
+            heir.user_id
+              ? `The crown has passed. ${heir.display_name}, a citizen of the Republic before this throne, now reigns over ${power.name}.`
+              : `The crown has passed. ${heir.display_name} now reigns over ${power.name}.`
+          ]);
+          gov.config = nextConfig;
+          const crown = agents.find(a => a.role === succ.crown_role);
+          if (crown) {
+            crown.display_name = heir.display_name;
+            crown.system_prompt = heir.user_id ? '' : heir.prompt || '';
+            crown.user_id = heir.user_id || null;
+          }
         }
       }
     }
@@ -2350,7 +2552,13 @@ A proposal that breaks one of these is discarded by your own government before i
             [powerId, a.id]
           )
         ).rows.map(x => x.body);
-        const out = await providers.complete({
+        /* A seat with a user_id is played by a citizen, not a model — nothing
+           here calls providers.complete for them. They submitted (or didn't)
+           through /agents/:agentId/act, and whatever comes back next goes
+           through the EXACT SAME allowlist and refusal checks a model's
+           proposal does, a few lines below. That is the whole of the
+           guarantee: a human seat gets no more latitude than an LLM one. */
+        const out = a.user_id ? await humanSubmission(a.id, c) : await providers.complete({
           provider: a.model_provider,
           model: a.model_name,
           system: `You are ${a.display_name}, ${a.role} of ${power.name}.
@@ -2691,6 +2899,12 @@ Do not add commentary after the JSON.`,
       votes = [];
       for (const a of agents) {
         if (calls >= maxCalls) break;
+        /* A human seat casts no model-driven vote — there is no call to make
+           on their behalf. Their own proposal, if any, still stands and can
+           still be chosen by weight or by the executive's own tie-break; they
+           simply do not participate in a deliberation round that only makes
+           sense for a model. */
+        if (a.user_id) continue;
         try {
           calls++;
           const v = await providers.complete({
