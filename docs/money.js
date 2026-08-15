@@ -755,12 +755,19 @@
 
   function powerCard(p) {
     const acc = p.my_account;
+    const c = p.currency;
+    const monetary = c?.actions?.length
+      ? `<div style="margin-top:10px"><p class="eyebrow">Recent monetary decisions</p>${c.actions.slice(0, 3).map(a =>
+          `<p class="small muted">${a.kind === 'issue' ? 'Printed' : 'Distributed'} ${Number(a.amount).toLocaleString()} ${esc(c.code)} — ${esc(a.reason)}</p>`
+        ).join('')}</div>`
+      : '';
     return `<div class="item">
       <div class="item-top">
         <span class="item-title">${esc(p.name)}${p.discloses ? ' <span class="tag">discloses by treaty</span>' : ''}</span>
-        ${p.currency ? `<span class="money">1 = ${Number(p.currency.rate).toFixed(3)} ${esc(p.currency.code)}</span>` : '<span class="small muted">no currency yet</span>'}
+        ${c ? `<span class="money">1 ${esc(STATE()?.config?.currency_name || 'Mark')} = ${Number(c.rate).toFixed(3)} ${esc(c.code)}</span>` : '<span class="small muted">no currency yet</span>'}
       </div>
       <p class="small muted">Standing: ${esc(p.standing)}</p>
+      ${c ? `<p class="small muted" style="margin-top:6px">Supply ${Number(c.money_supply).toLocaleString()} ${esc(c.code)} · treasury ${Number(c.treasury_balance).toLocaleString()} · domestic circulation ${Number(c.circulation).toLocaleString()} · Republic reserve ${Number(c.republic_reserve).toLocaleString()} ${esc(c.code)} · their Republic-mark reserve ${cash(c.republic_mark_reserve)}</p>${monetary}` : ''}
       <div class="grid2" style="margin-top:10px;gap:14px">
         <div>
           <p class="eyebrow">Offshore account</p>
@@ -783,14 +790,14 @@
         <div>
           <p class="eyebrow">Foreign exchange</p>
           ${
-            p.currency
-              ? `<p>Holding ${p.my_units} ${esc(p.currency.code)}</p>
+            c
+              ? `<p>Holding ${p.my_units} ${esc(c.code)}</p>
              <div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap">
                <input type="number" min="1" placeholder="Marks to convert" style="width:130px" data-fx-buy-amt="${p.id}">
-               <button class="btn btn-sm" data-fx-buy="${p.id}">Buy ${esc(p.currency.code)}</button>
+               <button class="btn btn-sm" data-fx-buy="${p.id}">Buy ${esc(c.code)}</button>
              </div>
              <div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap">
-               <input type="number" min="1" placeholder="${esc(p.currency.code)} to sell" style="width:130px" data-fx-sell-amt="${p.id}">
+               <input type="number" min="1" placeholder="${esc(c.code)} to sell" style="width:130px" data-fx-sell-amt="${p.id}">
                <button class="btn btn-sm" data-fx-sell="${p.id}">Sell for ${esc(STATE()?.config?.currency_name || 'marks')}</button>
              </div>`
               : '<p class="small muted">No currency yet.</p>'
@@ -855,7 +862,7 @@
 
       <div class="card">
         <h2>Foreign currencies</h2>
-        <p class="small muted">Rates move once a cycle, for three published reasons: the balance of trade, conflict pressure, and what the Fed has issued. Nothing here is random.</p>
+        <p class="small muted">Rates move once a cycle from the balance of trade, conflict pressure, and relative monetary expansion. Foreign printing or distribution weakens that currency; Republic issuance weakens ours. Nothing here is random.</p>
         <div class="list" style="margin-top:12px">
           ${d.powers.map(powerCard).join('') || '<p class="small muted">No foreign power exists yet.</p>'}
         </div>

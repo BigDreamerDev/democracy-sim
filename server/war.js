@@ -195,13 +195,16 @@ module.exports.mount = function mount(app, ctx) {
     res.json({ ok: true, category: l.category, units, cost, held, budget_left: await budgetLeft() });
   }));
 
-  /* Buying abroad. Same money, same stockpile, and the import tax the House set
-     applies exactly as it does to a citizen — the state gets no exemption from
-     its own tariff. */
+  /* Buying abroad. Foreign offers are priced in the seller's local currency.
+     The Republic spends any reserve of that currency first; uncovered value is
+     settled in marks into the foreign power's Republic-currency reserve. The
+     import tax still counts against the military budget exactly as it does for
+     a citizen. */
   app.post('/api/war/procure/foreign/:id', auth, needEconomy, slowWrites, wrap(async (req, res) => {
     await loadConfig();
     if (!(await requireQuartermaster(req, res))) return;
-    if (!ctx.diplomacy) return res.status(503).json({ error: 'Diplomacy is not running, so there is nothing to buy abroad.' });
+    if (!ctx.diplomacy || !ctx.offshore?.foreignCurrencyState || !ctx.offshore?.settleRepublicImport)
+      return res.status(503).json({ error: 'Foreign-currency settlement is not running, so there is nothing to buy abroad.' });
     const units = qty(req.body?.units) || 1;
     const o = (await q(`
       SELECT o.*, p.name AS power_name, p.recognised FROM foreign_offers o
@@ -211,20 +214,18 @@ module.exports.mount = function mount(app, ctx) {
     if (!o.good_category) return res.status(400).json({ error: 'That offer has no category, so the Republic cannot store it.' });
     if (o.stock !== null && Number(o.stock) < units) return res.status(400).json({ error: `Only ${o.stock} left.` });
 
-    const gross = money(Number(o.price) * units);
+    const currency = await ctx.offshore.foreignCurrencyState(o.power_id);
+    if (!currency) return res.status(409).json({ error: 'That power has no currency.' });
+    const localGross = money(Number(o.price) * units);
+    const gross = localGross > 0 ? Math.ceil(localGross / Number(currency.rate)) : 0;
     const tax = money(gross * (num('foreign_trade_tax') || 0));
     const cost = gross + tax;
     const left = await budgetLeft();
     if (cost > left)
       return res.status(400).json({ error: `That costs ${cost} with duty and ${left} is left of this cycle's military budget.` });
 
-    const powerAcc = await E().accountFor('power', o.power_id);
     const t = await treasury();
-    /* Paid for, taken off the seller's shelf and put in the store as one act.
-       This used to pay first and store afterwards, so a second request for the
-       last few units — one double-click on a slow morning — would pass the stock
-       check above, pay, and then break on `CHECK (stock >= 0)`. The Treasury was
-       debited twice and one lot of goods arrived. */
+    let settlement = null;
     const held = await tx(async run => {
       if (o.stock !== null) {
         const left = Number((await run('SELECT stock FROM foreign_offers WHERE id=$1 FOR UPDATE', [o.id])).rows[0].stock);
@@ -232,18 +233,41 @@ module.exports.mount = function mount(app, ctx) {
         await run('UPDATE foreign_offers SET stock = stock - $1 WHERE id=$2', [units, o.id]);
       }
       const inStore = await move(o.good_category, units, 'procurement', `${o.title} from ${o.power_name}`, req.user.id, run);
-      await spendFromTreasury(powerAcc.id, gross, 'procurement', `${units} x ${o.title} from ${o.power_name} [cycle ${cycleNo()}]`, run);
+      settlement = await ctx.offshore.settleRepublicImport(
+        o.power_id,
+        localGross,
+        t.id,
+        `${units} x ${o.title} from ${o.power_name} [cycle ${cycleNo()}]`,
+        run,
+        true
+      );
       /* The duty is the Republic charging itself, so it moves no money. It is
-         recorded so that the cost against the budget is the true one — a state
-         that exempted itself from its own tariff would be lying in its accounts. */
+         recorded so that the cost against the budget is the true one. */
       if (tax > 0) {
         await run('INSERT INTO ledger(from_id,to_id,amount,kind,note) VALUES($1,$2,$3,$4,$5)',
           [t.id, t.id, tax, 'duty', `duty on ${o.title} [cycle ${cycleNo()}]`]);
       }
+      await run(
+        `INSERT INTO foreign_trade(power_id,direction,amount,tax,offer_id,cycle_no,foreign_units,fx_rate)
+         VALUES($1,'import',$2,$3,$4,$5,$6,$7)`,
+        [o.power_id, settlement.marks, tax, o.id, cycleNo(), localGross, settlement.rate]
+      );
       return inStore;
     });
-    log(req.user.id, 'war.procure.foreign', `${units} x ${o.title} from ${o.power_name} for ${cost}`);
-    res.json({ ok: true, category: o.good_category, units, cost, duty: tax, held, budget_left: await budgetLeft() });
+    log(req.user.id, 'war.procure.foreign', `${units} x ${o.title} from ${o.power_name} for ${localGross} ${currency.code} / ${cost} marks with duty`);
+    res.json({
+      ok: true,
+      category: o.good_category,
+      units,
+      cost,
+      duty: tax,
+      local_cost: localGross,
+      currency_code: currency.code,
+      rate: settlement.rate,
+      reserve_spent: settlement.reserve_spent,
+      held,
+      budget_left: await budgetLeft()
+    });
   }));
 
   /* ----------------------------------------------------------- formations */

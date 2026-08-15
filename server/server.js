@@ -181,8 +181,9 @@ const DEFAULTS = {
   deposit_guarantee: '300',        // what the Treasury makes good per depositor if a bank fails
 
   // Diplomacy
-  foreign_treasury_start: '5000',     // what a new foreign power holds in our currency
-  foreign_treasury_per_cycle: '1000', // topped up each cycle by the payrun
+  foreign_treasury_start: '5000',     // legacy: existing worlds may still hold Republic-mark reserves
+  foreign_treasury_per_cycle: '1000', // legacy: no longer tops foreign powers up from our Treasury
+  foreign_currency_start: '10000',    // opening local-currency supply, held by the foreign treasury
   foreign_export_cap_per_cycle: '2000', // most one power may buy from us in a cycle; 0 = no cap
   diplomacy_enabled: 'false',
   foreign_actions_per_cycle: '6',

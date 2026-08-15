@@ -92,20 +92,60 @@ CREATE TABLE IF NOT EXISTS offshore_seizures (
 
    `rate` is units of the power's currency for one of ours: higher means our
    money buys more of theirs. It moves once a cycle, in the payrun, by a bounded
-   step, and only for the three published reasons recorded in `forex_rates`.
+   step, using only the published trade, conflict and relative-money inputs
+   recorded in `forex_rates`.
 
    `trade_seen_id` and `issued_seen` are the high-water marks the last fixing
    read. Keeping them here rather than reading "this cycle's trade" means a
    fixing counts every deal exactly once even when the cycle clock is stopped,
    and means a payrun run twice cannot count the same export twice. */
 CREATE TABLE IF NOT EXISTS currencies (
-  power_id      INT PRIMARY KEY,
-  code          TEXT NOT NULL,
-  name          TEXT NOT NULL DEFAULT '',
-  rate          NUMERIC NOT NULL DEFAULT 1 CHECK (rate > 0),
-  trade_seen_id BIGINT NOT NULL DEFAULT 0,
-  issued_seen   BIGINT NOT NULL DEFAULT 0,
-  created_at    TIMESTAMPTZ DEFAULT now()
+  power_id          INT PRIMARY KEY,
+  code              TEXT NOT NULL,
+  name              TEXT NOT NULL DEFAULT '',
+  rate              NUMERIC NOT NULL DEFAULT 1 CHECK (rate > 0),
+  money_supply      BIGINT NOT NULL DEFAULT 0 CHECK (money_supply >= 0),
+  treasury_balance  BIGINT NOT NULL DEFAULT 0 CHECK (treasury_balance >= 0),
+  circulation       BIGINT NOT NULL DEFAULT 0 CHECK (circulation >= 0),
+  issued_total      BIGINT NOT NULL DEFAULT 0 CHECK (issued_total >= 0),
+  distributed_total BIGINT NOT NULL DEFAULT 0 CHECK (distributed_total >= 0),
+  trade_seen_id     BIGINT NOT NULL DEFAULT 0,
+  issued_seen       BIGINT NOT NULL DEFAULT 0,
+  foreign_issued_seen BIGINT NOT NULL DEFAULT 0,
+  distributed_seen  BIGINT NOT NULL DEFAULT 0,
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+
+/* Existing worlds already have currencies from the first forex implementation.
+   These columns turn those labels/rates into actual foreign monetary systems. */
+ALTER TABLE currencies ADD COLUMN IF NOT EXISTS money_supply BIGINT NOT NULL DEFAULT 0 CHECK (money_supply >= 0);
+ALTER TABLE currencies ADD COLUMN IF NOT EXISTS treasury_balance BIGINT NOT NULL DEFAULT 0 CHECK (treasury_balance >= 0);
+ALTER TABLE currencies ADD COLUMN IF NOT EXISTS circulation BIGINT NOT NULL DEFAULT 0 CHECK (circulation >= 0);
+ALTER TABLE currencies ADD COLUMN IF NOT EXISTS issued_total BIGINT NOT NULL DEFAULT 0 CHECK (issued_total >= 0);
+ALTER TABLE currencies ADD COLUMN IF NOT EXISTS distributed_total BIGINT NOT NULL DEFAULT 0 CHECK (distributed_total >= 0);
+ALTER TABLE currencies ADD COLUMN IF NOT EXISTS foreign_issued_seen BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE currencies ADD COLUMN IF NOT EXISTS distributed_seen BIGINT NOT NULL DEFAULT 0;
+
+/* Foreign currency held by the Republic. These are real units of the other
+   power's money, acquired when it pays for Republic exports with local currency
+   and spent again when the Republic imports from that power. */
+CREATE TABLE IF NOT EXISTS republic_fx_reserves (
+  power_id       INT PRIMARY KEY,
+  units          BIGINT NOT NULL DEFAULT 0 CHECK (units >= 0),
+  acquired_marks BIGINT NOT NULL DEFAULT 0 CHECK (acquired_marks >= 0),
+  updated_at     TIMESTAMPTZ DEFAULT now()
+);
+
+/* Public central-bank decisions made by a foreign power. */
+CREATE TABLE IF NOT EXISTS foreign_currency_actions (
+  id              BIGSERIAL PRIMARY KEY,
+  power_id        INT NOT NULL,
+  kind            TEXT NOT NULL CHECK (kind IN ('issue','distribute')),
+  amount          BIGINT NOT NULL CHECK (amount > 0),
+  reason          TEXT NOT NULL DEFAULT '',
+  idempotency_key TEXT NOT NULL,
+  at              TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (power_id, idempotency_key)
 );
 
 /* The published record of every move, with the inputs that caused it. A rate
@@ -119,12 +159,17 @@ CREATE TABLE IF NOT EXISTS forex_rates (
   rate_after    NUMERIC NOT NULL,
   trade_balance BIGINT NOT NULL DEFAULT 0,   -- our exports to them less our imports
   pressure      NUMERIC NOT NULL DEFAULT 0,  -- conflict pressure, +ve means they prevail
-  issuance      BIGINT NOT NULL DEFAULT 0,   -- marks the Fed issued since the last fixing
+  issuance      BIGINT NOT NULL DEFAULT 0,   -- Republic marks the Fed issued since the last fixing
+  foreign_issuance BIGINT NOT NULL DEFAULT 0,-- local currency newly printed since the last fixing
+  distribution  BIGINT NOT NULL DEFAULT 0,   -- local currency moved from the foreign treasury into circulation
   signal        NUMERIC NOT NULL DEFAULT 0,  -- the weighted sum, -1 .. 1
   note          TEXT NOT NULL DEFAULT '',
   at            TIMESTAMPTZ DEFAULT now(),
   UNIQUE (power_id, cycle_no)
 );
+
+ALTER TABLE forex_rates ADD COLUMN IF NOT EXISTS foreign_issuance BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE forex_rates ADD COLUMN IF NOT EXISTS distribution BIGINT NOT NULL DEFAULT 0;
 
 /* What a citizen holds in somebody else's money. This is NOT part of the closed
    ledger and must never be: it is a claim on a foreign power, not a mark. The

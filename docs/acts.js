@@ -1945,7 +1945,7 @@
     const isPresident = !!me?.offices?.includes('president');
     const isSpeaker = !!me?.offices?.includes('speaker');
     const isMinister = !!me?.offices?.includes('foreign_minister');
-    const [powers, dispatches, treaties, offers, conflicts, balance, adminPowers, world, fo, republicTerritoryAdmin, govCatalogue, worldgenGens] = await Promise.all([
+    const [powers, dispatches, treaties, offers, conflicts, balance, adminPowers, world, fo, republicTerritoryAdmin, govCatalogue, worldgenGens, exportDesk, foreignIntel] = await Promise.all([
       api('/api/diplomacy/powers'),
       api('/api/diplomacy/dispatches'),
       api('/api/diplomacy/treaties'),
@@ -1960,7 +1960,9 @@
          the whole Diplomacy page should not go blank because of it. */
       me?.is_admin ? api('/api/admin/foreign/archetypes').catch(() => ({ archetypes: [], strengths: {}, default_agent: null })) : Promise.resolve(null),
       /* Same reasoning: an older server has no world generator at all. */
-      me?.is_admin ? api('/api/world/generations').catch(() => ({ generations: [] })) : Promise.resolve(null)
+      me?.is_admin ? api('/api/world/generations').catch(() => ({ generations: [] })) : Promise.resolve(null),
+      me ? api('/api/diplomacy/export-desk').catch(() => null) : Promise.resolve(null),
+      me ? api('/api/diplomacy/foreign-intelligence').catch(() => null) : Promise.resolve(null)
     ]);
     /* Before the map is drawn, not while. The renderer is synchronous and
        returns a string, so anything it needs has to be in hand first. */
@@ -2009,6 +2011,54 @@
       </form></section>`
         : '';
 
+    const exportSources = exportDesk
+      ? [
+          ...(exportDesk.listings || []).map(x => ({
+            kind: 'listing',
+            id: x.id,
+            title: `${x.business_name} — ${x.title}`,
+            detail: x.stock === null || x.stock === undefined ? `unlimited · ${x.unit || 'unit'}` : `${Number(x.stock).toLocaleString()} × ${x.unit || 'unit'}`,
+            category: goodLabel(x.good_category)
+          })),
+          ...(exportDesk.inventory || []).map(x => ({
+            kind: 'inventory',
+            id: x.id,
+            title: x.title,
+            detail: `${Number(x.quantity).toLocaleString()} × ${x.unit || 'unit'} in your inventory`,
+            category: goodLabel(x.good_category)
+          }))
+        ]
+      : [];
+    const exportDeskHtml = !me || !exportDesk
+      ? ''
+      : `<section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Direct commercial channel</span><h2>Targeted exports</h2></div>
+        ${exportDesk.enabled
+          ? `<p class="small muted">Reserve strategic goods and offer them directly to one foreign government at a price in that government's own currency. The goods return to you if the offer is rejected or cancelled.</p>
+            ${(exportDesk.powers || []).length && exportSources.length ? `<form id="targeted-export-form" class="stack">
+              <div class="grid2"><label class="field"><span>Foreign power</span><select name="power_id" id="targeted-export-power">${exportDesk.powers.map(p => `<option value="${p.id}" data-code="${esc(p.currency_code || '')}">${esc(p.name)} · ${esc(p.currency_code || '')}</option>`).join('')}</select></label>
+              <label class="field"><span>Goods</span><select name="source" id="targeted-export-source">${exportSources.map(x => `<option value="${x.kind}:${x.id}">${esc(x.title)} · ${esc(x.category || 'Strategic good')} · ${esc(x.detail)}</option>`).join('')}</select></label></div>
+              <div class="grid2"><label class="field"><span>Quantity</span><input name="quantity" type="number" min="1" step="1" value="1" required></label><label class="field"><span>Price per unit <span id="targeted-export-code" class="muted"></span></span><input name="unit_price" type="number" min="0" step="1" required></label></div>
+              <label class="field"><span>Note to the buyer</span><textarea name="note" rows="3" maxlength="1200" placeholder="Optional commercial terms or reason for the offer"></textarea></label>
+              <button class="btn btn-primary">Send targeted export offer</button>
+            </form>` : '<p class="small muted">You need both strategic goods to sell and a recognised foreign power with an open trade treaty.</p>'}
+            <div class="list" style="margin-top:12px">${(exportDesk.offers || []).length ? exportDesk.offers.map(o => {
+              const total = Number(o.unit_price || 0) * Number(o.quantity || 0);
+              const markValue = Number(o.currency_rate) > 0 ? Math.ceil(total / Number(o.currency_rate)) : null;
+              return `<div class="item"><div class="item-top"><span class="item-title">${esc(o.title)} → ${esc(o.power_name)}</span><span class="tag ${o.status === 'accepted' ? 'on-green' : o.status === 'rejected' || o.status === 'cancelled' ? 'on-oxide' : ''}">${esc(String(o.status || '').replace(/(^|\s)\S/g, m => m.toUpperCase()))}</span></div><p class="small muted">${Number(o.quantity).toLocaleString()} × ${esc(o.unit || 'unit')} · ${Number(o.unit_price).toLocaleString()} ${esc(o.currency_code || '')} each · ${total.toLocaleString()} ${esc(o.currency_code || '')} total${markValue === null ? '' : ` · about ${cash(markValue)} at the current rate`}</p>${o.note ? `<p>${esc(o.note)}</p>` : ''}${o.status === 'pending' ? `<button class="btn btn-sm" data-cancel-export="${o.id}">Cancel and return goods</button>` : ''}</div>`;
+            }).join('') : '<p class="small muted">No targeted export offers yet.</p>'}</div>`
+          : '<p class="small muted">Targeted exports become available when the strategic-goods economy is enabled.</p>'}
+      </section>`;
+
+    const pendingSpyApproaches = (foreignIntel?.recruitments || []).filter(r => r.status === 'pending');
+    const foreignIntelHtml = !me || !foreignIntel
+      ? ''
+      : `<section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Private channel</span><h2>Foreign intelligence</h2></div>
+        <p class="small muted">A foreign government can approach you whether you remain a Republic citizen or have defected. You become its agent only if you accept. Recruitment and your operation reports are visible here only to you.</p>
+        ${pendingSpyApproaches.length ? `<h3>Recruitment approaches</h3><div class="list">${pendingSpyApproaches.map(r => `<div class="item"><div class="item-top"><span class="item-title">${esc(r.power_name)} · codename ${esc(r.codename)}</span><span class="tag on-violet">Pending</span></div><p>${esc(r.pitch)}</p><p class="small muted">Signing bonus: ${Number(r.signing_bonus || 0).toLocaleString()} ${esc(r.currency_code || '')}${r.currency_rate ? ` · current rate ${Number(r.currency_rate).toFixed(3)} per ${esc(STATE().config.currency_name || 'Mark')}` : ''}</p><div class="row"><button class="btn btn-primary btn-sm" data-spy-recruit="${r.id}" data-accept="1">Accept</button><button class="btn btn-sm" data-spy-recruit="${r.id}" data-accept="0">Decline</button></div></div>`).join('')}</div>` : '<p class="small muted">No foreign service is currently approaching you.</p>'}
+        ${(foreignIntel.agents || []).length ? `<h3>Your foreign-agent roles</h3><div class="list">${foreignIntel.agents.map(a => `<div class="item"><div class="item-top"><span class="item-title">${esc(a.power_name)} · ${esc(a.codename)}</span><span class="tag ${a.status === 'active' ? 'on-green' : ''}">${esc(String(a.status || '').replace(/(^|\s)\S/g, m => m.toUpperCase()))}</span></div><p class="small muted">Experience ${Number(a.experience || 0)}${a.status === 'active' ? ` · <button class="btn btn-sm" data-spy-resign="${a.id}">Resign as agent</button>` : ''}</p></div>`).join('')}</div>` : ''}
+        ${(foreignIntel.operations || []).length ? `<h3>Operations involving you</h3><div class="list">${foreignIntel.operations.map(o => `<div class="item"><div class="item-top"><span class="item-title">${esc(o.power_name)} · ${esc(String(o.kind || '').replaceAll('_', ' ').replace(/(^|\s)\S/g, m => m.toUpperCase()))}</span><span class="tag ${o.outcome === 'success' ? 'on-green' : 'on-oxide'}">${esc(String(o.outcome || '').replace(/(^|\s)\S/g, m => m.toUpperCase()))}</span></div><p>${esc(o.report || '')}</p><p class="small muted">Budget ${Number(o.budget || 0).toLocaleString()} ${esc(o.currency_code || '')} · score ${Number(o.score || 0)} / threshold ${Number(o.threshold || 0)} · cycle ${Number(o.cycle_no || 0)}</p></div>`).join('')}</div>` : ''}
+      </section>`;
+
     box.innerHTML = `<div class="diplomacy-office">
       <header class="dip-head"><div><p class="dip-head-code">FOREIGN OFFICE · PUBLIC CHANNEL</p><h1>Diplomacy</h1><p class="muted">Foreign powers speak to the Republic publicly. Official government messages and Returning Officer actions are entered in the public record.</p></div><div class="dip-signal" aria-hidden="true"><span></span><span></span><span></span></div></header>
       ${worldMap(world)}
@@ -2034,31 +2084,40 @@
       <div class="dip-grid">
         <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Ratification desk</span><h2>Treaties</h2></div><div class="list">${treaties.length ? treaties.map(t => `<div class="item"><div class="item-top"><span class="item-title">${esc(t.title)}</span><span class="tag">${esc(t.republic_status)}</span></div><p class="small muted">${esc(t.power_name)} · ${esc(t.bill_ref || '')}</p></div>`).join('') : '<p class="muted">No treaties.</p>'}</div></section>
         <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Commercial attaché</span><h2>Foreign market</h2></div><div class="list">${offers.length ? offers.map(o => {
-          const price = Number(o.price) || 0;
+          const localPrice = Number(o.local_price ?? o.price) || 0;
+          const price = Number(o.mark_price ?? localPrice) || 0;
           const tax = Math.round(price * foreignTradeTax);
           const total = price + tax;
+          const code = o.currency_code || '';
           const category = goodLabel(o.good_category);
           const stock = o.stock === null || o.stock === undefined ? 'No stock limit' : `${Number(o.stock).toLocaleString()} in stock`;
           const unit = o.unit ? ` · per ${esc(o.unit)}` : '';
-          return `<div class="item"><div class="item-top"><span class="item-title">${esc(o.title)} · ${esc(o.power_name)}</span><span class="money">${cash(total)}</span></div>
+          return `<div class="item"><div class="item-top"><span class="item-title">${esc(o.title)} · ${esc(o.power_name)}</span><span class="money">${code ? `${localPrice.toLocaleString()} ${esc(code)}` : cash(price)}</span></div>
             ${(category || o.unit || (o.stock !== null && o.stock !== undefined)) ? `<p class="small muted">${category ? `<span class="tag">${esc(category)}</span> ` : ''}${esc(stock)}${unit}</p>` : ''}
             ${o.description ? `<p>${esc(o.description)}</p>` : ''}
-            <p class="small muted">${cash(price)} price${tax ? ` + ${cash(tax)} import tariff` : ' · no import tariff'} · <strong>${cash(total)} total</strong></p>
+            <p class="small muted">${code && o.currency_rate ? `1 ${esc(STATE().config.currency_name || 'Mark')} = ${Number(o.currency_rate).toFixed(3)} ${esc(code)} · ` : ''}${cash(price)} at the current rate${tax ? ` + ${cash(tax)} import tariff` : ' · no import tariff'} · <strong>${cash(total)} total</strong></p>
             ${me ? `<button class="btn btn-sm" data-foreign-buy="${o.id}">Buy</button>` : ''}</div>`;
         }).join('') : '<p class="muted">No foreign offers.</p>'}</div></section>
       </div>
 
       <div class="dip-grid">
         <section class="dip-section dip-alerts"><div class="dip-section-head"><span class="dip-section-kicker">Alerts & declarations</span><h2>Conflicts</h2></div><div class="list">${conflicts.length ? conflicts.map(c => `<div class="item"><div class="item-top"><span class="item-title">${esc(c.power_name)} · ${esc(c.kind)}</span><span class="tag on-oxide">${esc(c.status)}</span></div><p>${esc(c.grievance)}</p>${me?.is_admin && c.status !== 'resolved' ? `<button class="btn btn-sm" data-resolve-conflict="${c.id}">Record resolution</button>` : ''}</div>`).join('') : '<p class="muted">No conflicts.</p>'}</div></section>
-        <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Economic desk</span><h2>Balance of trade</h2></div><div class="list">${balance.map(b => `<div class="item"><div class="item-top"><span class="item-title">${esc(b.name)}</span><span class="money">net ${b.net}</span></div>
+        <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Economic desk</span><h2>Balance of trade</h2></div><div class="list">${balance.map(b => `<div class="item"><div class="item-top"><span class="item-title">${esc(b.name)}</span><span class="money">net ${cash(b.net)}</span></div>
           <div class="dip-ledger">
-            <div class="dip-ledger-cell"><span>Their purse</span><strong>${b.purse ?? '—'}</strong><span class="dip-ledger-note">what they can still spend here</span></div>
-            <div class="dip-ledger-cell is-surplus"><span>Our exports</span><strong>${b.exports}</strong></div>
-            <div class="dip-ledger-cell is-deficit"><span>Our imports</span><strong>${b.imports}</strong></div>
+            <div class="dip-ledger-cell"><span>Buying power</span><strong>${cash(b.buying_power_marks ?? b.purse ?? 0)}</strong><span class="dip-ledger-note">Mark reserves + local treasury at the current FX rate</span></div>
+            <div class="dip-ledger-cell"><span>Their Mark reserve</span><strong>${cash(b.mark_reserve ?? 0)}</strong></div>
+            <div class="dip-ledger-cell"><span>Local treasury</span><strong>${Number(b.local_treasury || 0).toLocaleString()} ${esc(b.currency_code || '')}</strong></div>
+            <div class="dip-ledger-cell"><span>Our FX reserve</span><strong>${Number(b.republic_reserve || 0).toLocaleString()} ${esc(b.currency_code || '')}</strong></div>
+            <div class="dip-ledger-cell is-surplus"><span>Our exports</span><strong>${cash(b.exports)}</strong></div>
+            <div class="dip-ledger-cell is-deficit"><span>Our imports</span><strong>${cash(b.imports)}</strong></div>
           </div>
+          ${b.currency_code ? `<p class="small muted" style="margin-top:8px">1 ${esc(STATE().config.currency_name || 'Mark')} = ${Number(b.currency_rate || 0).toFixed(3)} ${esc(b.currency_code)} · supply ${Number(b.local_supply || 0).toLocaleString()} · domestic circulation ${Number(b.local_circulation || 0).toLocaleString()}${b.monetary_actions?.length ? ` · latest: ${esc(b.monetary_actions[0].kind === 'issue' ? 'printed' : 'distributed')} ${Number(b.monetary_actions[0].amount).toLocaleString()} ${esc(b.currency_code)} — ${esc(b.monetary_actions[0].reason || '')}` : ''}</p>` : ''}
           ${b.export_cap ? `<div class="dip-allowance ${Number(b.spent_this_cycle) >= Number(b.export_cap) ? 'is-spent' : ''}"><span style="width:${Math.min(100, Math.round((Number(b.spent_this_cycle) / Number(b.export_cap)) * 100))}%"></span></div>
           <span class="dip-ledger-note">${b.spent_this_cycle} of ${b.export_cap} spent buying from us this cycle</span>` : ''}</div>`).join('')}</div></section>
       </div>
+
+      ${exportDeskHtml}
+      ${foreignIntelHtml}
 
       ${
         me?.is_admin
@@ -2075,6 +2134,86 @@
     bindWorldMap(world);
     bindForeignOffice();
     bindExportButtons();
+
+    const targetedPower = document.querySelector('#targeted-export-power');
+    const targetedCode = document.querySelector('#targeted-export-code');
+    const showTargetCurrency = () => {
+      if (!targetedPower || !targetedCode) return;
+      targetedCode.textContent = targetedPower.selectedOptions[0]?.dataset.code || '';
+    };
+    if (targetedPower) {
+      targetedPower.onchange = showTargetCurrency;
+      showTargetCurrency();
+    }
+    if (document.querySelector('#targeted-export-form'))
+      document.querySelector('#targeted-export-form').onsubmit = ev => {
+        ev.preventDefault();
+        busy(ev.submitter || ev.target.querySelector('button'), async () => {
+          const raw = Object.fromEntries(new FormData(ev.target));
+          const [source_kind, source_id] = String(raw.source || '').split(':');
+          try {
+            const r = await api('/api/diplomacy/export-offers', {
+              method: 'POST',
+              body: {
+                power_id: Number(raw.power_id),
+                source_kind,
+                source_id: Number(source_id),
+                quantity: Number(raw.quantity),
+                unit_price: Number(raw.unit_price),
+                note: raw.note
+              }
+            });
+            toast(`Offer #${r.id} sent. Goods are reserved until it is accepted, rejected or cancelled.`);
+            viewDiplomacy();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        });
+      };
+    document.querySelectorAll('[data-cancel-export]').forEach(btn =>
+      (btn.onclick = () =>
+        busy(btn, async () => {
+          try {
+            await api(`/api/diplomacy/export-offers/${btn.dataset.cancelExport}`, { method: 'DELETE' });
+            toast('Export offer cancelled; reserved goods returned.');
+            viewDiplomacy();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        }))
+    );
+    document.querySelectorAll('[data-spy-recruit]').forEach(btn =>
+      (btn.onclick = () =>
+        busy(btn, async () => {
+          try {
+            const accepted = btn.dataset.accept === '1';
+            const r = await api(`/api/diplomacy/foreign-intelligence/recruitments/${btn.dataset.spyRecruit}/respond`, {
+              method: 'POST',
+              body: { accept: accepted }
+            });
+            toast(
+              accepted
+                ? `You accepted ${r.power_name}'s recruitment.${r.signing_bonus ? ` ${Number(r.signing_bonus).toLocaleString()} ${r.currency_code || ''} was paid to your FX holdings.` : ''}`
+                : 'Recruitment declined.'
+            );
+            viewDiplomacy();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        }))
+    );
+    document.querySelectorAll('[data-spy-resign]').forEach(btn =>
+      (btn.onclick = () =>
+        busy(btn, async () => {
+          try {
+            await api(`/api/diplomacy/foreign-intelligence/agents/${btn.dataset.spyResign}/resign`, { method: 'POST' });
+            toast('You resigned from that foreign intelligence service.');
+            viewDiplomacy();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        }))
+    );
     if (me?.is_admin) bindRepublicTerritoryPicker(republicTerritoryAdmin, viewDiplomacy);
     if (me?.is_admin) bindWorldgenSection();
 
@@ -2134,7 +2273,7 @@
         (btn.onclick = async () => {
           try {
             const r = await api(`/api/diplomacy/offers/${btn.dataset.foreignBuy}/buy`, { method: 'POST' });
-            toast(`Bought for ${r.total}.${r.inventory ? ' Added to your strategic goods inventory.' : ''}`);
+            toast(`Bought for ${cash(r.total)}${r.currency_code ? ` (${Number(r.local_price).toLocaleString()} ${r.currency_code})` : ''}.${r.inventory ? ' Added to your strategic goods inventory.' : ''}`);
             viewDiplomacy();
           } catch (err) {
             toast(err.message, true);

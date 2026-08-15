@@ -69,6 +69,48 @@ CREATE TABLE IF NOT EXISTS foreign_trade (
   created_at  TIMESTAMPTZ DEFAULT now()
 );
 
+/* A Republic seller can make a private commercial offer to one foreign
+   government instead of waiting for that government to discover an ordinary
+   public listing. Stock is reserved when the offer is filed and restored if it
+   is rejected or cancelled, so accepting a stale offer can never create goods.
+   `unit_price` is in the TARGET POWER'S currency; settlement converts at the
+   live fixing when that government accepts. */
+CREATE TABLE IF NOT EXISTS foreign_export_offers (
+  id             BIGSERIAL PRIMARY KEY,
+  power_id       INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  seller_user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  business_id    INT REFERENCES businesses(id) ON DELETE SET NULL,
+  source_kind    TEXT NOT NULL CHECK (source_kind IN ('listing','inventory')),
+  source_id      BIGINT NOT NULL,
+  title          TEXT NOT NULL,
+  description    TEXT NOT NULL DEFAULT '',
+  good_category  TEXT NOT NULL,
+  unit           TEXT NOT NULL DEFAULT 'unit',
+  quantity       INT NOT NULL CHECK (quantity > 0),
+  unit_price     BIGINT NOT NULL CHECK (unit_price >= 0),
+  note           TEXT NOT NULL DEFAULT '',
+  status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','rejected','cancelled')),
+  trade_id       BIGINT REFERENCES foreign_trade(id) ON DELETE SET NULL,
+  created_at     TIMESTAMPTZ DEFAULT now(),
+  decided_at     TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_foreign_export_offers_power ON foreign_export_offers(power_id,status,id);
+CREATE INDEX IF NOT EXISTS idx_foreign_export_offers_seller ON foreign_export_offers(seller_user_id,status,id);
+
+/* Goods bought directly from Republic sellers belong to the foreign power
+   afterwards. This deliberately stays category/item based rather than
+   pretending the foreign economy has factories or citizen inventories it does
+   not otherwise simulate. */
+CREATE TABLE IF NOT EXISTS foreign_goods_stockpile (
+  power_id      INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  good_category TEXT NOT NULL,
+  title         TEXT NOT NULL,
+  unit          TEXT NOT NULL DEFAULT 'unit',
+  quantity      BIGINT NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+  updated_at    TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (power_id,good_category,title,unit)
+);
+
 CREATE TABLE IF NOT EXISTS foreign_conflicts (
   id              BIGSERIAL PRIMARY KEY,
   power_id        INT NOT NULL REFERENCES powers(id),
@@ -227,9 +269,78 @@ ALTER TABLE foreign_offers ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'unit';
 ALTER TABLE foreign_dispatches ADD COLUMN IF NOT EXISTS message_kind TEXT NOT NULL DEFAULT 'dispatch';
 
 /* The export cap is measured per cycle, so a trade has to know which cycle it
-   happened in. Foreign powers also hold a real account: 'power' joins citizen,
-   business, treasury, bank and escrow as an owner kind. */
+   happened in. A power account now represents that government's reserve of
+   Republic marks; its domestic currency is tracked separately by offshore.sql. */
 ALTER TABLE foreign_trade ADD COLUMN IF NOT EXISTS cycle_no INT DEFAULT 0;
+ALTER TABLE foreign_trade ADD COLUMN IF NOT EXISTS foreign_units BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE foreign_trade ADD COLUMN IF NOT EXISTS fx_rate NUMERIC;
+
+/* -------------------------------------------- foreign intelligence services
+
+   Foreign governments may create their own intelligence service and recruit
+   actual players. Recruitment is private to the government and the player who
+   receives it; accepting an offer is the consent boundary. A Republic citizen
+   does not have to defect to spy for somebody, and a defector does not become
+   an agent merely by defecting. */
+CREATE TABLE IF NOT EXISTS foreign_intel_agencies (
+  power_id          INT PRIMARY KEY REFERENCES powers(id) ON DELETE CASCADE,
+  name              TEXT NOT NULL,
+  tradecraft        INT NOT NULL DEFAULT 0 CHECK (tradecraft >= 0),
+  committed_budget  BIGINT NOT NULL DEFAULT 0 CHECK (committed_budget >= 0),
+  established_cycle INT,
+  active            BOOLEAN NOT NULL DEFAULT TRUE,
+  established_at    TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS foreign_intel_recruitments (
+  id              BIGSERIAL PRIMARY KEY,
+  power_id        INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  user_id         INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  codename        TEXT NOT NULL,
+  pitch           TEXT NOT NULL DEFAULT '',
+  signing_bonus   BIGINT NOT NULL DEFAULT 0 CHECK (signing_bonus >= 0),
+  status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','rejected','withdrawn')),
+  idempotency_key TEXT,
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  responded_at    TIMESTAMPTZ,
+  UNIQUE (power_id,idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_foreign_intel_recruit_user ON foreign_intel_recruitments(user_id,status,id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_foreign_intel_pending_recruit
+  ON foreign_intel_recruitments(power_id,user_id) WHERE status='pending';
+
+CREATE TABLE IF NOT EXISTS foreign_intel_agents (
+  id             BIGSERIAL PRIMARY KEY,
+  power_id       INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  user_id        INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  recruitment_id BIGINT REFERENCES foreign_intel_recruitments(id) ON DELETE SET NULL,
+  codename       TEXT NOT NULL,
+  experience     INT NOT NULL DEFAULT 0 CHECK (experience >= 0),
+  status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','resigned','dismissed','burned')),
+  recruited_at   TIMESTAMPTZ DEFAULT now(),
+  resolved_at    TIMESTAMPTZ,
+  UNIQUE (power_id,user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_foreign_intel_agents_power ON foreign_intel_agents(power_id,status,id);
+CREATE INDEX IF NOT EXISTS idx_foreign_intel_agents_user ON foreign_intel_agents(user_id,status,id);
+
+CREATE TABLE IF NOT EXISTS foreign_intel_operations (
+  id              BIGSERIAL PRIMARY KEY,
+  power_id        INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
+  agent_id        BIGINT REFERENCES foreign_intel_agents(id) ON DELETE SET NULL,
+  kind            TEXT NOT NULL,
+  budget          BIGINT NOT NULL DEFAULT 0 CHECK (budget >= 0), -- local currency
+  budget_marks    BIGINT NOT NULL DEFAULT 0 CHECK (budget_marks >= 0),
+  cycle_no        INT,
+  score           INT NOT NULL DEFAULT 0,
+  threshold       INT NOT NULL DEFAULT 0,
+  outcome         TEXT NOT NULL CHECK (outcome IN ('success','failed','burned')),
+  report          TEXT NOT NULL DEFAULT '',
+  idempotency_key TEXT,
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (power_id,idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_foreign_intel_ops_power ON foreign_intel_operations(power_id,id);
 
 /* ------------------------------------------------------------- the world
 

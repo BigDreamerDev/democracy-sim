@@ -22,7 +22,7 @@
 /* The action kinds diplomacy.js will execute. Duplicated here so a refusal can
    be written against a name that exists; diplomacy.js remains the authority and
    checks its own set before anything is stored. */
-const KINDS = ['nothing', 'dispatch', 'treaty', 'ratify', 'denounce', 'offer', 'buy', 'declare'];
+const KINDS = ['nothing', 'dispatch', 'treaty', 'ratify', 'denounce', 'offer', 'buy', 'accept_export', 'reject_export', 'issue_currency', 'distribute_currency', 'establish_intel', 'recruit_agent', 'spy_operation', 'declare'];
 
 /* ------------------------------------------------------------ small helpers */
 
@@ -1005,8 +1005,8 @@ function posturePriorityBias(archetypeId, actionKind, context = {}) {
   const pressure = Math.max(0, Math.min(100, Number(context.pressure) || 0));
   const heat = Math.round(pressure / 25); // 0..4
   const kind = String(actionKind || '');
-  const aggressive = kind === 'declare' || kind === 'denounce';
-  const commercial = kind === 'offer' || kind === 'buy' || kind === 'treaty';
+  const aggressive = kind === 'declare' || kind === 'denounce' || kind === 'spy_operation';
+  const commercial = kind === 'offer' || kind === 'buy' || kind === 'accept_export' || kind === 'reject_export' || kind === 'treaty';
 
   if (a.posture === 'escalate') {
     if (aggressive) return 1 + heat;

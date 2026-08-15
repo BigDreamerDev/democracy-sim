@@ -17,12 +17,13 @@
    publish it — and the haven can freeze it the moment relations sour, which is
    usually the moment you wanted it.
 
-   **Forex** moves for three published reasons and never for a fourth: the
-   balance of trade with that power, conflict pressure, and what the Fed has
-   issued. No randomness. war.js refuses dice on principle — a war a player
-   cannot see coming teaches them nothing — and a rate that moves on a die roll
-   teaches them less. Every fixing writes the inputs it used into `forex_rates`,
-   so a player can do the arithmetic before the payrun runs.
+   **Forex** moves for published, inspectable reasons: the balance of trade
+   with that power, conflict pressure, and relative monetary expansion. Foreign
+   printing/distribution weakens their currency while Republic Fed issuance
+   weakens ours. No randomness. war.js refuses dice on principle — a war a
+   player cannot see coming teaches them nothing — and a rate that moves on a
+   die roll teaches them less. Every fixing writes the inputs it used into
+   `forex_rates`, so a player can do the arithmetic before the payrun runs.
 
    **Defection** is an explicit act with an explicit route. Article 1.2 ties
    citizenship to membership of the Group, so renouncing has to be something you
@@ -149,36 +150,306 @@ module.exports.mount = function mount(app, ctx) {
     return taken ? `${base}${power.id}` : base;
   };
 
+  async function republicIssuedTotal(run = q) {
+    return Number(
+      (await run("SELECT COALESCE(sum(amount),0)::bigint s FROM ledger WHERE kind='issue'")).rows[0].s
+    );
+  }
+
   async function currencyFor(powerId) {
-    const found = (await q('SELECT * FROM currencies WHERE power_id=$1', [powerId])).rows[0];
-    if (found) return found;
+    let found = (await q('SELECT * FROM currencies WHERE power_id=$1', [powerId])).rows[0];
+    if (found && Number(found.money_supply) > 0) return found;
     const p = await powerRow(powerId);
     if (!p) return null;
-    /* A new currency opens at parity. Every move it ever makes after that is in
-       forex_rates with the reasons attached, so the whole history of a rate is
-       readable from a single table. */
+
+    /* The opening stock is the foreign power's money, not ours. It starts in
+       that government's treasury and never touches the Republic ledger. Old
+       worlds may already have citizen FX claims created by the first forex
+       implementation, so migration seeds enough supply to honour them instead
+       of pretending those claims vanished. */
+    const start = Math.max(1, money(num('foreign_currency_start')) || 10000);
+    const held = Number(
+      (await q('SELECT COALESCE(sum(units),0)::bigint s FROM fx_holdings WHERE power_id=$1', [powerId])).rows[0].s
+    );
+    const reserve = Number(
+      (await q('SELECT units FROM republic_fx_reserves WHERE power_id=$1', [powerId])).rows[0]?.units || 0
+    );
+    const supply = Math.max(start, held + reserve);
+    const treasury = Math.max(0, supply - held - reserve);
+    const republicIssued = await republicIssuedTotal();
+    const code = await codeFor(p);
+    const name = `${clean(p.adjective || p.name, 40)} currency`;
     const { rows } = await q(
-      'INSERT INTO currencies(power_id, code, name) VALUES($1,$2,$3) ON CONFLICT (power_id) DO UPDATE SET code=EXCLUDED.code RETURNING *',
-      [powerId, await codeFor(p), `${clean(p.adjective || p.name, 40)} currency`]
+      `INSERT INTO currencies(power_id,code,name,money_supply,treasury_balance,issued_total,issued_seen,foreign_issued_seen)
+       VALUES($1,$2,$3,$4,$5,$4,$6,$4)
+       ON CONFLICT (power_id) DO UPDATE SET
+         code=EXCLUDED.code,
+         name=CASE WHEN currencies.name='' THEN EXCLUDED.name ELSE currencies.name END,
+         money_supply=CASE WHEN currencies.money_supply<=0 THEN EXCLUDED.money_supply ELSE currencies.money_supply END,
+         treasury_balance=CASE WHEN currencies.money_supply<=0 THEN EXCLUDED.treasury_balance ELSE currencies.treasury_balance END,
+         issued_total=CASE WHEN currencies.issued_total<=0 THEN EXCLUDED.issued_total ELSE currencies.issued_total END,
+         issued_seen=CASE WHEN currencies.money_supply<=0 THEN EXCLUDED.issued_seen ELSE currencies.issued_seen END,
+         foreign_issued_seen=CASE WHEN currencies.foreign_issued_seen<=0 THEN EXCLUDED.foreign_issued_seen ELSE currencies.foreign_issued_seen END
+       RETURNING *`,
+      [powerId, code, name, supply, treasury, republicIssued]
     );
     return rows[0];
   }
 
-  /* One fixing, for one power, for one cycle. Three inputs, three published
-     weights, one bounded step. The signal is deliberately additive and linear:
-     a player should be able to work out next cycle's rate on the back of an
-     envelope, because a rate nobody can predict is a casino and a casino
-     teaches them that nothing they do matters. */
+  async function reserveFor(powerId, run = q) {
+    return (
+      await run(
+        `INSERT INTO republic_fx_reserves(power_id) VALUES($1)
+         ON CONFLICT (power_id) DO UPDATE SET power_id=EXCLUDED.power_id RETURNING *`,
+        [powerId]
+      )
+    ).rows[0];
+  }
+
+  async function foreignCurrencyState(powerId) {
+    const cur = await currencyFor(powerId);
+    if (!cur) return null;
+    const reserve = await reserveFor(powerId);
+    const marks = await powerAcc(powerId);
+    const citizenUnits = Number(
+      (await q('SELECT COALESCE(sum(units),0)::bigint s FROM fx_holdings WHERE power_id=$1', [powerId])).rows[0].s
+    );
+    const actions = (
+      await q(
+        'SELECT id,kind,amount,reason,idempotency_key,at FROM foreign_currency_actions WHERE power_id=$1 ORDER BY id DESC LIMIT 20',
+        [powerId]
+      )
+    ).rows;
+    const rate = Number(cur.rate);
+    return {
+      power_id: Number(powerId),
+      code: cur.code,
+      name: cur.name,
+      rate,
+      money_supply: Number(cur.money_supply),
+      treasury_balance: Number(cur.treasury_balance),
+      circulation: Number(cur.circulation),
+      citizen_holdings: citizenUnits,
+      republic_reserve: Number(reserve.units),
+      republic_mark_reserve: Number(marks.balance),
+      buying_power_marks: Math.max(0, Number(marks.balance)) + Math.floor(Number(cur.treasury_balance) / rate),
+      actions
+    };
+  }
+
+  async function manageForeignCurrency(powerId, kind, amountRaw, reasonRaw, idempotencyKey) {
+    const amount = money(amountRaw);
+    const reason = clean(reasonRaw, 1000);
+    const key = clean(idempotencyKey, 200);
+    if (!['issue', 'distribute'].includes(kind))
+      throw Object.assign(new Error('Choose issue or distribute.'), { status: 400 });
+    if (amount < 1) throw Object.assign(new Error('Amount must be at least 1.'), { status: 400 });
+    if (reason.length < 10)
+      throw Object.assign(new Error('Give a reason of at least 10 characters; monetary decisions are public.'), { status: 400 });
+    if (!key) throw Object.assign(new Error('An idempotency_key is required.'), { status: 400 });
+    const old = (
+      await q('SELECT * FROM foreign_currency_actions WHERE power_id=$1 AND idempotency_key=$2', [powerId, key])
+    ).rows[0];
+    if (old) return { action: old, currency: await foreignCurrencyState(powerId), repeated: true };
+    await currencyFor(powerId);
+    let action;
+    await tx(async run => {
+      const cur = (await run('SELECT * FROM currencies WHERE power_id=$1 FOR UPDATE', [powerId])).rows[0];
+      if (!cur) throw Object.assign(new Error('That power has no currency.'), { status: 400 });
+      if (kind === 'issue') {
+        await run(
+          `UPDATE currencies SET money_supply=money_supply+$2::bigint,
+                                 treasury_balance=treasury_balance+$2::bigint,
+                                 issued_total=issued_total+$2::bigint
+             WHERE power_id=$1`,
+          [powerId, amount]
+        );
+      } else {
+        if (Number(cur.treasury_balance) < amount)
+          throw Object.assign(
+            new Error(`The foreign treasury holds only ${cur.treasury_balance} ${cur.code}.`),
+            { status: 400 }
+          );
+        await run(
+          `UPDATE currencies SET treasury_balance=treasury_balance-$2::bigint,
+                                 circulation=circulation+$2::bigint,
+                                 distributed_total=distributed_total+$2::bigint
+             WHERE power_id=$1`,
+          [powerId, amount]
+        );
+      }
+      action = (
+        await run(
+          `INSERT INTO foreign_currency_actions(power_id,kind,amount,reason,idempotency_key)
+           VALUES($1,$2,$3,$4,$5) RETURNING *`,
+          [powerId, kind, amount, reason, key]
+        )
+      ).rows[0];
+    });
+    log(null, `foreign.currency.${kind}`, `power #${powerId}: ${amount} — ${reason}`);
+    return { action, currency: await foreignCurrencyState(powerId), repeated: false };
+  }
+
+  /* Secret or ordinary government spending is still monetary distribution.
+     It does not mint anything: units leave the foreign treasury and either
+     enter that country's domestic circulation or a named player's FX holding.
+     `distributed_total` moves in both cases so the next fixing sees the same
+     monetary pressure regardless of whether the budget line itself is public. */
+  async function spendForeignTreasury(powerId, amountRaw, note, run = q) {
+    const amount = money(amountRaw);
+    if (amount < 1) return { amount: 0 };
+    await currencyFor(powerId);
+    const cur = (await run('SELECT * FROM currencies WHERE power_id=$1 FOR UPDATE', [powerId])).rows[0];
+    if (!cur) throw Object.assign(new Error('That power has no currency.'), { status: 400 });
+    if (Number(cur.treasury_balance) < amount)
+      throw Object.assign(
+        new Error(`The foreign treasury holds only ${cur.treasury_balance} ${cur.code}; ${amount} is required.`),
+        { status: 400 }
+      );
+    await run(
+      `UPDATE currencies
+          SET treasury_balance=treasury_balance-$2::bigint,
+              circulation=circulation+$2::bigint,
+              distributed_total=distributed_total+$2::bigint
+        WHERE power_id=$1`,
+      [powerId, amount]
+    );
+    return { amount, code: cur.code, note: clean(note, 500) };
+  }
+
+  async function payForeignCitizen(powerId, userId, amountRaw, note, run = q) {
+    const amount = money(amountRaw);
+    if (amount < 1) return { amount: 0 };
+    await currencyFor(powerId);
+    const cur = (await run('SELECT * FROM currencies WHERE power_id=$1 FOR UPDATE', [powerId])).rows[0];
+    if (!cur) throw Object.assign(new Error('That power has no currency.'), { status: 400 });
+    if (Number(cur.treasury_balance) < amount)
+      throw Object.assign(
+        new Error(`The foreign treasury holds only ${cur.treasury_balance} ${cur.code}; ${amount} is required.`),
+        { status: 400 }
+      );
+    await run(
+      `UPDATE currencies
+          SET treasury_balance=treasury_balance-$2::bigint,
+              distributed_total=distributed_total+$2::bigint
+        WHERE power_id=$1`,
+      [powerId, amount]
+    );
+    await run(
+      `INSERT INTO fx_holdings(user_id,power_id,units) VALUES($1,$2,$3::bigint)
+       ON CONFLICT (user_id,power_id) DO UPDATE SET units=fx_holdings.units+$3::bigint`,
+      [userId, powerId, amount]
+    );
+    return { amount, code: cur.code, note: clean(note, 500) };
+  }
+
+  /* A foreign power first spends any Republic marks it earned from our imports,
+     tribute or FX sales. If that reserve is short, it exchanges its own treasury
+     currency for the remainder. The local units become a real Republic foreign
+     reserve and the Fed supplies the matching marks to the Republic seller. */
+  async function settleForeignExport(powerId, marks, toAccountId, note, run) {
+    const amount = money(marks);
+    if (amount <= 0) return { marks: 0, mark_reserve_spent: 0, foreign_units_spent: 0, reserve_added: 0 };
+    const seeded = await currencyFor(powerId);
+    if (!seeded) throw Object.assign(new Error('That power has no currency.'), { status: 400 });
+    const pa = await powerAcc(powerId);
+    const fed = await E().accountFor('fed', null);
+    await reserveFor(powerId, run);
+    const markBalance = Number(
+      (await run('SELECT balance FROM accounts WHERE id=$1 FOR UPDATE', [pa.id])).rows[0]?.balance || 0
+    );
+    const cur = (await run('SELECT * FROM currencies WHERE power_id=$1 FOR UPDATE', [powerId])).rows[0];
+    const markUsed = Math.min(amount, Math.max(0, markBalance));
+    if (markUsed > 0)
+      await E().pay(pa.id, toAccountId, markUsed, 'foreign_export', `${note} — Republic-mark reserve`, run);
+    const shortfall = amount - markUsed;
+    let foreignUnits = 0;
+    if (shortfall > 0) {
+      foreignUnits = Math.ceil(shortfall * Number(cur.rate));
+      if (Number(cur.treasury_balance) < foreignUnits)
+        throw Object.assign(
+          new Error(
+            `This power can cover ${markUsed} marks from its Republic reserve, but its treasury holds only ${cur.treasury_balance} ${cur.code}; ${foreignUnits} ${cur.code} are needed for the rest.`
+          ),
+          { status: 400 }
+        );
+      await run('UPDATE currencies SET treasury_balance=treasury_balance-$2::bigint WHERE power_id=$1', [
+        powerId,
+        foreignUnits
+      ]);
+      await run(
+        `UPDATE republic_fx_reserves SET units=units+$2::bigint, acquired_marks=acquired_marks+$3::bigint, updated_at=now()
+           WHERE power_id=$1`,
+        [powerId, foreignUnits, shortfall]
+      );
+      await E().settle(fed.id, toAccountId, shortfall, 'fx_reserve_purchase', `${note} — ${foreignUnits} ${cur.code}`, run);
+    }
+    return {
+      marks: amount,
+      rate: Number(cur.rate),
+      code: cur.code,
+      mark_reserve_spent: markUsed,
+      foreign_units_spent: foreignUnits,
+      reserve_added: foreignUnits
+    };
+  }
+
+  /* Imports run the reserve flow in reverse. Republic-held foreign currency is
+     spent first and returns to that power's treasury. Only an uncovered part is
+     paid in Republic marks, which becomes that power's Republic-currency FX
+     reserve for future purchases here. */
+  async function settleRepublicImport(powerId, localUnitsRaw, fromAccountId, note, run, allowOverdraft = false) {
+    const localUnits = Math.max(0, money(localUnitsRaw));
+    const seeded = await currencyFor(powerId);
+    if (!seeded) throw Object.assign(new Error('That power has no currency.'), { status: 400 });
+    const pa = await powerAcc(powerId);
+    const fed = await E().accountFor('fed', null);
+    await reserveFor(powerId, run);
+    const cur = (await run('SELECT * FROM currencies WHERE power_id=$1 FOR UPDATE', [powerId])).rows[0];
+    const reserve = (
+      await run('SELECT * FROM republic_fx_reserves WHERE power_id=$1 FOR UPDATE', [powerId])
+    ).rows[0];
+    const rate = Number(cur.rate);
+    const marks = localUnits > 0 ? Math.ceil(localUnits / rate) : 0;
+    const reserveUsed = Math.min(Number(reserve.units), localUnits);
+    const reserveMarks = reserveUsed === localUnits
+      ? marks
+      : Math.min(marks, Math.floor((reserveUsed / Math.max(1, localUnits)) * marks));
+    const powerMarks = marks - reserveMarks;
+    if (reserveUsed > 0) {
+      await run('UPDATE republic_fx_reserves SET units=units-$2::bigint, updated_at=now() WHERE power_id=$1', [
+        powerId,
+        reserveUsed
+      ]);
+      await run('UPDATE currencies SET treasury_balance=treasury_balance+$2::bigint WHERE power_id=$1', [
+        powerId,
+        reserveUsed
+      ]);
+      if (reserveMarks > 0)
+        await (allowOverdraft ? E().settle : E().pay)(fromAccountId, fed.id, reserveMarks, 'fx_reserve_sale', `${note} — ${reserveUsed} ${cur.code}`, run);
+    }
+    if (powerMarks > 0)
+      await (allowOverdraft ? E().settle : E().pay)(fromAccountId, pa.id, powerMarks, 'foreign_import', `${note} — Republic-mark settlement`, run);
+    return {
+      marks,
+      local_units: localUnits,
+      rate,
+      code: cur.code,
+      reserve_spent: reserveUsed,
+      marks_to_power: powerMarks,
+      marks_to_republic_fx_desk: reserveMarks
+    };
+  }
+
+  /* One fixing, for one power, for one cycle. Trade and conflict still matter,
+     but the monetary term is now relative: fresh foreign printing/distribution
+     weakens their currency, while fresh Republic issuance weakens ours. */
   async function fixRate(cur, cycle) {
     if ((await q('SELECT 1 FROM forex_rates WHERE power_id=$1 AND cycle_no=$2', [cur.power_id, cycle])).rows[0])
       return null;
 
     let net = 0, seen = Number(cur.trade_seen_id);
     if (await hasTable('foreign_trade')) {
-      /* An export is them buying from us and wanting our money; an import is us
-         wanting theirs. Counted from the last fixing's high-water mark rather
-         than by cycle, so a stopped clock cannot make trade invisible and a
-         payrun run twice cannot count the same deal twice. */
       const r = (await q(
         `SELECT COALESCE(sum(CASE WHEN direction='export' THEN amount ELSE -amount END),0)::bigint net,
                 COALESCE(max(id), $2::bigint) hi
@@ -200,13 +471,10 @@ module.exports.mount = function mount(app, ctx) {
       pressure = Number(r.p);
     }
 
-    /* What the Fed has put into circulation since this rate last moved. The
-       ledger is the record of it, so this is the same number anyone can add up
-       from /api/fed. */
-    const issuedTotal = Number(
-      (await q("SELECT COALESCE(sum(amount),0)::bigint s FROM ledger WHERE kind='issue'")).rows[0].s
-    );
+    const issuedTotal = await republicIssuedTotal();
     const issuance = Math.max(0, issuedTotal - Number(cur.issued_seen));
+    const foreignIssuance = Math.max(0, Number(cur.issued_total) - Number(cur.foreign_issued_seen));
+    const distribution = Math.max(0, Number(cur.distributed_total) - Number(cur.distributed_seen));
 
     const wT = Number(num('forex_weight_trade')) || 0;
     const wP = Number(num('forex_weight_pressure')) || 0;
@@ -214,36 +482,65 @@ module.exports.mount = function mount(app, ctx) {
     const tradeScale = Math.max(1, Number(num('forex_trade_scale')) || 1);
     const issueScale = Math.max(1, Number(num('forex_issuance_scale')) || 1);
     const step = Math.max(0, Number(num('forex_step')) || 0);
+    const before = Number(cur.rate);
+    const foreignExpansionInMarks = (foreignIssuance + distribution) / Math.max(RATE_MIN, before);
+    const relativeMoney = foreignExpansionInMarks - issuance;
 
-    /* A surplus with a power makes our money worth more of theirs; losing a
-       conflict with them and printing at home both make it worth less. */
+    /* Higher `rate` means one Republic mark buys more foreign units. A Republic
+       trade surplus or foreign monetary expansion therefore pushes it up; a
+       foreign military advantage or Republic monetary expansion pushes it down. */
     const signal = clamp(
       wT * clamp(net / tradeScale, -1, 1)
       - wP * clamp(pressure / 100, -1, 1)
-      - wI * clamp(issuance / issueScale, 0, 1),
+      + wI * clamp(relativeMoney / issueScale, -1, 1),
       -1, 1
     );
-    const before = Number(cur.rate);
     const after = clamp(Number((before * (1 + step * signal)).toFixed(6)), RATE_MIN, RATE_MAX);
 
     await q(
-      `INSERT INTO forex_rates(power_id,cycle_no,rate_before,rate_after,trade_balance,pressure,issuance,signal,note)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [cur.power_id, cycle, before, after, net, pressure, issuance, signal,
-        `trade ${net >= 0 ? '+' : ''}${net}, pressure ${Math.round(pressure)}, issuance ${issuance}`]
+      `INSERT INTO forex_rates(power_id,cycle_no,rate_before,rate_after,trade_balance,pressure,issuance,foreign_issuance,distribution,signal,note)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [
+        cur.power_id,
+        cycle,
+        before,
+        after,
+        net,
+        pressure,
+        issuance,
+        foreignIssuance,
+        distribution,
+        signal,
+        `trade ${net >= 0 ? '+' : ''}${net}, pressure ${Math.round(pressure)}, Republic issue ${issuance}, foreign print ${foreignIssuance}, distributed ${distribution}`
+      ]
     );
-    await q('UPDATE currencies SET rate=$2, trade_seen_id=$3, issued_seen=$4 WHERE power_id=$1',
-      [cur.power_id, after, seen, issuedTotal]);
-    return { power_id: cur.power_id, before, after, net, pressure, issuance, signal };
+    await q(
+      `UPDATE currencies SET rate=$2, trade_seen_id=$3, issued_seen=$4,
+                             foreign_issued_seen=issued_total, distributed_seen=distributed_total
+         WHERE power_id=$1`,
+      [cur.power_id, after, seen, issuedTotal]
+    );
+    return {
+      power_id: cur.power_id,
+      before,
+      after,
+      net,
+      pressure,
+      issuance,
+      foreign_issuance: foreignIssuance,
+      distribution,
+      signal
+    };
   }
 
-  /* Called from economy.js's payrun, with the rest of the cycle's business. */
+  /* Foreign currencies are part of trade even when retail Offshore & Forex is
+     disabled. The switch controls citizen access/offshore banking, not whether
+     other sovereigns possess money of their own. */
   async function runPayrun(cycle, actorId) {
     await loadConfig();
     if (!E()) return { reason: 'the economy is not running' };
-    if (!bool('offshore_enabled')) return { reason: 'offshore and forex are switched off' };
     if (!(await hasTable('powers'))) return { reason: 'the Republic has no foreign relations' };
-    const freezes = await syncFreezes();
+    const freezes = bool('offshore_enabled') ? await syncFreezes() : { froze: 0, thawed: 0 };
     const fixed = [];
     for (const p of (await q('SELECT id FROM powers WHERE revoked_at IS NULL ORDER BY id')).rows) {
       const cur = await currencyFor(p.id);
@@ -270,7 +567,7 @@ module.exports.mount = function mount(app, ctx) {
     );
     const powers = [];
     for (const p of (await q('SELECT id,name,adjective,colour,standing FROM powers WHERE revoked_at IS NULL ORDER BY name')).rows) {
-      const cur = await currencyFor(p.id);
+      const cur = await foreignCurrencyState(p.id);
       const acct = me ? await offshoreRow(me, p.id) : null;
       const bal = acct ? Number((await offshoreAcc(acct.id)).balance) : 0;
       const fx = me
@@ -278,7 +575,13 @@ module.exports.mount = function mount(app, ctx) {
         : 0;
       powers.push({
         id: p.id, name: p.name, adjective: p.adjective, colour: p.colour, standing: p.standing,
-        currency: cur ? { code: cur.code, name: cur.name, rate: Number(cur.rate) } : null,
+        currency: cur ? {
+          code: cur.code, name: cur.name, rate: Number(cur.rate),
+          money_supply: cur.money_supply, treasury_balance: cur.treasury_balance, circulation: cur.circulation,
+          citizen_holdings: cur.citizen_holdings, republic_reserve: cur.republic_reserve,
+          republic_mark_reserve: cur.republic_mark_reserve, buying_power_marks: cur.buying_power_marks,
+          actions: cur.actions
+        } : null,
         discloses: !!havens.get(p.id)?.discloses,
         my_account: acct
           ? { id: acct.id, balance: bal, frozen: !!acct.frozen_at, frozen_reason: acct.frozen_reason, opened_at: acct.opened_at }
@@ -453,8 +756,15 @@ module.exports.mount = function mount(app, ctx) {
     const pa = await powerAcc(p.id);
     try {
       await tx(async run => {
+        const live = (await run('SELECT * FROM currencies WHERE power_id=$1 FOR UPDATE', [p.id])).rows[0];
+        if (Number(live.treasury_balance) < units)
+          throw Object.assign(
+            new Error(`${p.name}'s treasury has only ${live.treasury_balance} ${cur.code} available for exchange.`),
+            { status: 409 }
+          );
         await E().pay(from.id, pa.id, net, 'forex', `bought ${units} ${cur.code}`, run);
         if (fee > 0) await E().pay(from.id, pa.id, fee, 'forex_spread', `${cur.code} spread`, run);
+        await run('UPDATE currencies SET treasury_balance=treasury_balance-$2::bigint WHERE power_id=$1', [p.id, units]);
         await run(
           `INSERT INTO fx_holdings(user_id,power_id,units) VALUES($1,$2,$3::bigint)
              ON CONFLICT (user_id,power_id) DO UPDATE SET units = fx_holdings.units + $3::bigint`,
@@ -499,6 +809,7 @@ module.exports.mount = function mount(app, ctx) {
         if (fee > 0) await E().pay(to.id, pa.id, fee, 'forex_spread', `${cur.code} spread`, run);
         await run('UPDATE fx_holdings SET units = units - $3::bigint WHERE user_id=$1 AND power_id=$2',
           [req.user.id, p.id, units]);
+        await run('UPDATE currencies SET treasury_balance=treasury_balance+$2::bigint WHERE power_id=$1', [p.id, units]);
         await run('INSERT INTO fx_trades(user_id,power_id,side,marks,units,spread,rate) VALUES($1,$2,$3,$4,$5,$6,$7)',
           [req.user.id, p.id, 'sell', nett, units, fee, rate]);
       });
@@ -811,6 +1122,13 @@ module.exports.mount = function mount(app, ctx) {
   ctx.offshore = {
     runPayrun,
     syncFreezes,
+    currencyFor,
+    foreignCurrencyState,
+    manageForeignCurrency,
+    spendForeignTreasury,
+    payForeignCitizen,
+    settleForeignExport,
+    settleRepublicImport,
     async defectors() {
       if (!known.get('defections') && !(await hasTable('defections'))) return [];
       return (await q(`
