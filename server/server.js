@@ -455,6 +455,11 @@ async function bootstrap() {
   // its defection triggers attach to every ballot box every schema above defines.
   const offshoreSchema = path.join(__dirname, 'schema-offshore.sql');
   if (fs.existsSync(offshoreSchema)) await pool.query(fs.readFileSync(offshoreSchema, 'utf8'));
+  // Delegated credentials for third-party apps. Independent of every schema
+  // above — it only references users(id) — so it can load anywhere, but goes
+  // last because it is the newest and least tangled with anything else here.
+  const apikeysSchema = path.join(__dirname, 'schema-apikeys.sql');
+  if (fs.existsSync(apikeysSchema)) await pool.query(fs.readFileSync(apikeysSchema, 'utf8'));
   for (const [k, v] of Object.entries(DEFAULTS)) {
     await q('INSERT INTO config(key,value) VALUES($1,$2) ON CONFLICT (key) DO NOTHING', [k, v]);
   }
@@ -482,10 +487,40 @@ function sign(user) {
   return jwt.sign({ id: user.id, tv: user.token_version || 0 }, JWT_SECRET, { expiresIn: '60d' });
 }
 
+/* An API key is distinguished from a JWT by prefix alone (`rk_`), never by
+   length or shape guessing, so the two token kinds are never ambiguous here.
+   The secret half is never stored — only an HMAC of it, keyed on the same
+   JWT_SECRET the server already refuses to boot without. That is checked on
+   every request, so it has to be fast; bcrypt would not be, and does not need
+   to be here the way it does for a password, because the key itself is 192
+   bits of randomness nobody is guessing offline. */
 async function attach(req, _res, next) {
   const h = req.headers.authorization || '';
   const t = h.startsWith('Bearer ') ? h.slice(7) : null;
-  if (t) {
+  if (t && t.startsWith('rk_')) {
+    try {
+      const hash = crypto.createHmac('sha256', JWT_SECRET).update(t).digest('hex');
+      const { rows } = await q(
+        `SELECT k.id AS key_id, k.label, k.scopes, k.cap_amount, k.cap_window_ms, k.revoked_at,
+                u.id, u.username, u.display_name, u.bio, u.is_admin, u.is_active, u.approved, u.token_version
+           FROM api_keys k JOIN users u ON u.id = k.user_id
+          WHERE k.key_hash = $1`, [hash]);
+      const row = rows[0];
+      if (row && !row.revoked_at && row.is_active && row.approved) {
+        req.user = {
+          id: row.id, username: row.username, display_name: row.display_name, bio: row.bio,
+          is_admin: row.is_admin, is_active: row.is_active, approved: row.approved, token_version: row.token_version
+        };
+        req.apiKey = {
+          id: row.key_id, label: row.label, scopes: String(row.scopes || '').split(',').filter(Boolean),
+          cap_amount: row.cap_amount, cap_window_ms: row.cap_window_ms
+        };
+        // Best-effort: a citizen glancing at "last used" should never be able
+        // to stall a request that would otherwise be fine.
+        q('UPDATE api_keys SET last_used_at=now() WHERE id=$1', [row.key_id]).catch(() => {});
+      }
+    } catch { /* invalid key — treated as anonymous */ }
+  } else if (t) {
     try {
       const p = jwt.verify(t, JWT_SECRET);
       const { rows } = await q(
@@ -498,8 +533,39 @@ async function attach(req, _res, next) {
 }
 app.use(attach);
 
-const auth = (req, res, next) => req.user ? next() : res.status(401).json({ error: 'Sign in to do that.' });
-const admin = (req, res, next) => req.user?.is_admin ? next() : res.status(403).json({ error: 'Admins only.' });
+const auth = (req, res, next) => {
+  if (!req.user) return res.status(401).json({ error: 'Sign in to do that.' });
+  /* A key carries the implicit read scope and nothing more unless a route
+     opts it in explicitly with requireScope. That has to hold for every
+     write route in the app, not just the ones built with keys in mind — so
+     the block lives here, in the gate almost every write route already
+     calls, rather than as something each route has to remember to add. A
+     route that wants to accept a scoped key for a write uses requireScope()
+     in place of this. */
+  if (req.apiKey && !['GET', 'HEAD'].includes(req.method))
+    return res.status(403).json({ error: 'This API key cannot make changes. It needs a route with an explicit scope.' });
+  next();
+};
+const admin = (req, res, next) => {
+  if (!req.user?.is_admin) return res.status(403).json({ error: 'Admins only.' });
+  // The Returning Officer's own powers are never delegable to an app acting
+  // on someone's behalf — there is no scope for them, on purpose.
+  if (req.apiKey) return res.status(403).json({ error: 'API keys cannot act as the Returning Officer.' });
+  next();
+};
+
+/* For the handful of routes that should accept a suitably-scoped key instead
+   of blocking every key outright — today that is only economy:pay. A full
+   JWT session carries every scope implicitly: a signed-in citizen isn't
+   limited by a key's restrictions, only a delegated app is. */
+function requireScope(scope) {
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Sign in to do that.' });
+    if (req.apiKey && !req.apiKey.scopes.includes(scope))
+      return res.status(403).json({ error: `This API key is missing the "${scope}" scope.` });
+    next();
+  };
+}
 
 /* Article 7.1 is "one seat", and Article 4.1 makes the Speaker a member of the
    House — so mp and speaker are one seat held together, not two. */
@@ -516,6 +582,9 @@ const holds = async (userId, office) => (await officesOf(userId)).includes(offic
 function requireOffice(office) {
   return async (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Sign in to do that.' });
+    // No office comes with a key scope. Holding an office through a delegated
+    // app would mean the app, not the citizen, casts the Speaker's vote.
+    if (req.apiKey) return res.status(403).json({ error: 'API keys cannot act in an office.' });
     /* The Returning Officer runs the elections. They are not the President, the
        Speaker, or the House, and they do not act in those offices — an admin who
        can assent to their own bills makes every result look arranged.
@@ -531,8 +600,25 @@ function requireOffice(office) {
   };
 }
 
-const log = (actor, action, detail = '') =>
-  q('INSERT INTO audit(actor_id,action,detail) VALUES($1,$2,$3)', [actor, action, detail]).catch(() => {});
+/* A key acting for a citizen is exactly the case the public record has to
+   show plainly — "every admin action writes to the public record" only means
+   something if a delegated app can't quietly blend into an ordinary action by
+   the citizen it's acting for. Routes that accept a scoped key fold this into
+   the detail string log() already takes, rather than widening log()'s
+   signature for one caller shape. */
+const attribute = (detail, req) => req?.apiKey ? `${detail} (via app:${req.apiKey.label})` : detail;
+
+/* The public event feed taps this, not the audit table directly, so a
+   listener never sees a row before it's actually committed and never has to
+   poll. One process, one emitter — a restart just drops SSE connections,
+   which publicapi.js documents as expected client-reconnect behaviour. */
+const events = new (require('events').EventEmitter)();
+events.setMaxListeners(0);
+
+const log = (actor, action, detail = '') => {
+  events.emit('audit', { actor_id: actor, action, detail, at: new Date().toISOString() });
+  return q('INSERT INTO audit(actor_id,action,detail) VALUES($1,$2,$3)', [actor, action, detail]).catch(() => {});
+};
 
 const wrap = fn => (req, res) => fn(req, res).catch(err => {
   /* RP001 is the Republic's own SQLSTATE: a rule the database itself holds —
@@ -619,6 +705,75 @@ app.post('/api/me/password', auth, wrap(async (req, res) => {
     [await bcrypt.hash(String(nextPw), 10), req.user.id]);
   log(req.user.id, 'password.change', '');
   res.json({ ok: true, token: sign(upd[0]) });
+}));
+
+/* ------------------------------------------------------------- API keys */
+
+// The only scope beyond the implicit read every key gets. Keep this list
+// short on purpose — a third-party app should never be able to acquire a
+// capability nobody thought to name here.
+const KEY_SCOPES = new Set(['economy:pay']);
+const KEY_MIN_WINDOW_MS = 60 * 60 * 1000;        // an hour
+const KEY_MAX_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+const keyOut = k => ({
+  id: k.id, label: k.label, scopes: String(k.scopes || '').split(',').filter(Boolean),
+  cap_amount: k.cap_amount, cap_window_ms: k.cap_window_ms,
+  created_at: k.created_at, last_used_at: k.last_used_at, revoked_at: k.revoked_at
+});
+
+// A route built for a citizen's own JWT session, not for a key to use on
+// itself — auth() already refuses any apiKey a non-GET request here, which is
+// exactly right: an app cannot mint or revoke its own credentials.
+app.post('/api/me/keys', auth, wrap(async (req, res) => {
+  const { label, scopes, cap_amount, cap_window_ms } = req.body || {};
+  if (!label || !String(label).trim()) return res.status(400).json({ error: 'Give the key a label so you know what it is for later.' });
+  const wantScopes = Array.isArray(scopes) ? scopes.filter(s => KEY_SCOPES.has(s)) : [];
+  if (Array.isArray(scopes) && wantScopes.length !== scopes.length)
+    return res.status(400).json({ error: `Unknown scope. Valid scopes: ${[...KEY_SCOPES].join(', ')}.` });
+  let cap = null, window = null;
+  if (cap_amount != null) {
+    cap = Math.round(Number(cap_amount));
+    if (!(cap > 0)) return res.status(400).json({ error: 'A spending cap must be a positive amount.' });
+    window = Math.round(Number(cap_window_ms) || 24 * 60 * 60 * 1000);
+    window = Math.min(KEY_MAX_WINDOW_MS, Math.max(KEY_MIN_WINDOW_MS, window));
+  }
+  const raw = 'rk_' + crypto.randomBytes(24).toString('hex');
+  const hash = crypto.createHmac('sha256', JWT_SECRET).update(raw).digest('hex');
+  const { rows } = await q(
+    `INSERT INTO api_keys(user_id,label,key_hash,scopes,cap_amount,cap_window_ms)
+     VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [req.user.id, String(label).trim().slice(0, 80), hash, wantScopes.join(','), cap, window]);
+  log(req.user.id, 'apikey.create', `"${rows[0].label}"${wantScopes.length ? ' scopes: ' + wantScopes.join(',') : ''}`);
+  // The only moment the raw key is ever readable again by anyone, including us.
+  res.json({ key: raw, ...keyOut(rows[0]) });
+}));
+
+app.get('/api/me/keys', auth, wrap(async (req, res) => {
+  const { rows } = await q('SELECT * FROM api_keys WHERE user_id=$1 ORDER BY created_at DESC', [req.user.id]);
+  res.json(rows.map(keyOut));
+}));
+
+app.post('/api/me/keys/:id/revoke', auth, wrap(async (req, res) => {
+  const { rows } = await q(
+    'UPDATE api_keys SET revoked_at=now() WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL RETURNING label',
+    [req.params.id, req.user.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'No such key.' });
+  log(req.user.id, 'apikey.revoke', `"${rows[0].label}"`);
+  res.json({ ok: true });
+}));
+
+// Abuse response, same precedent as an admin resetting a password: the
+// citizen who created the key normally revokes it, but a compromised or
+// misbehaving app is exactly the case the Returning Officer has to be able to
+// cut off even if the citizen is unreachable.
+app.post('/api/admin/keys/:id/revoke', admin, wrap(async (req, res) => {
+  const { rows } = await q(
+    'UPDATE api_keys SET revoked_at=now() WHERE id=$1 AND revoked_at IS NULL RETURNING label,user_id',
+    [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'No such key.' });
+  log(req.user.id, 'apikey.revoke', `"${rows[0].label}" — revoked by the Returning Officer for user #${rows[0].user_id}`);
+  res.json({ ok: true });
 }));
 
 /* ----------------------------------------------------------- state feed */
@@ -2761,7 +2916,7 @@ app.put('/api/admin/constitution', admin, wrap(async (req, res) => {
    Republic simply does not have that institution yet. */
 const ACT_CONTEXT = {
   q, tx, log, auth, admin, wrap, num, bool, loadConfig, officesOf, holds,
-  citizenCount, slowWrites, requireOffice, enact, canPropose, cycleNow, addEnactHook, bcrypt, crypto,
+  citizenCount, slowWrites, requireOffice, requireScope, attribute, events, enact, canPropose, cycleNow, addEnactHook, bcrypt, crypto,
   justiceTermEnds,
   get CONFIG() { return CONFIG; }
 };
@@ -2783,7 +2938,7 @@ const ACT_CONTEXT = {
    503 for the rest of the process's life, and on Render that used to be
    invisible at boot — the same failure shape as a mismatched ALLOWED_ORIGINS,
    where the server looks healthy while half the site does not work. */
-for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war', './intelligence', './worldexport', './worldgen', './offshore']) {
+for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war', './intelligence', './worldexport', './worldgen', './offshore', './publicapi']) {
   const name = mod.replace('./', '');
   try {
     require(mod).mount(app, ACT_CONTEXT);

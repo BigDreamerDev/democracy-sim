@@ -1768,6 +1768,7 @@ async function viewRecord(v) {
 
 async function viewMe(v) {
   ME = await api('/api/me');
+  const keys = await api('/api/me/keys');
   v.innerHTML = `
     <h1 class="page">${esc(ME.display_name)}</h1>
     <p class="page-sub">@${esc(ME.username)}${ME.offices.length ? ' · ' + ME.offices.join(', ') : ''}${ME.party ? ' · ' + esc(ME.party.name) : ''}</p>
@@ -1790,7 +1791,49 @@ async function viewMe(v) {
         <label class="field"><span>New</span><input type="password" name="next" required></label>
         <button class="btn">Change it</button>
       </form>
+    </div>
+
+    <div class="card"><h2>Developer / integrations</h2>
+      <p class="small muted">A key lets a third-party app act as you — read your account, and move money on your
+        behalf if you grant it that scope. Treat one like a password: anyone who has it can use it until you revoke it.</p>
+      <form id="keyf" class="stack">
+        <label class="field"><span>Label</span><input name="label" placeholder="e.g. my ticker bot" required maxlength="80"></label>
+        <label class="field"><span><input type="checkbox" name="pay" style="width:auto;margin-right:6px">Allow economy:pay (this key can move money for you)</span></label>
+        <div class="row">
+          <label class="field"><span>Cap amount (optional)</span><input name="cap_amount" type="number" min="1" placeholder="e.g. 500"></label>
+          <label class="field"><span>Cap window (hours)</span><input name="cap_window_hours" type="number" min="1" placeholder="24"></label>
+        </div>
+        <button class="btn btn-primary">Create key</button>
+      </form>
+      <div id="key-output"></div>
+      <div class="stack" style="margin-top:14px">${keys.length ? keys.map(k => `
+        <div class="item">
+          <div class="item-title">${esc(k.label)}${k.revoked_at ? ' · <span class="muted">revoked</span>' : ''}</div>
+          <div class="item-meta">${k.scopes.length ? esc(k.scopes.join(', ')) : 'read only'}${k.cap_amount ? ` · cap ${k.cap_amount}/${Math.round(k.cap_window_ms / 3600000)}h` : ''} · created ${when(k.created_at)} · last used ${k.last_used_at ? when(k.last_used_at) : 'never'}</div>
+          ${!k.revoked_at ? `<button class="btn btn-sm" data-revoke-key="${k.id}">Revoke</button>` : ''}
+        </div>`).join('') : '<p class="small muted">No keys yet.</p>'}</div>
     </div>`;
+  $('#keyf').onsubmit = async e => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    const body = { label: f.label, scopes: f.pay ? ['economy:pay'] : [] };
+    if (f.cap_amount) { body.cap_amount = Number(f.cap_amount); body.cap_window_ms = Number(f.cap_window_hours || 24) * 3600000; }
+    try {
+      const r = await api('/api/me/keys', { method: 'POST', body });
+      // Shown exactly once, same pattern as a foreign power's key in acts.js:
+      // the server never returns the raw value again after this response.
+      $('#key-output').innerHTML =
+        `<p class="small"><strong>Save this key now; it cannot be shown again.</strong></p><textarea readonly>${esc(r.key)}</textarea>`;
+      toast('Key created.');
+      e.target.reset();
+    } catch (err) { toast(err.message, true); }
+  };
+  onAction('[data-revoke-key]', async btn => {
+    if (!confirm('Revoke this key? Any app using it stops working immediately.')) return;
+    await api(`/api/me/keys/${btn.dataset.revokeKey}/revoke`, { method: 'POST' });
+    toast('Key revoked.'); route();
+  });
+
   $('#pf').onsubmit = async e => {
     e.preventDefault();
     await api('/api/me', { method: 'PUT', body: Object.fromEntries(new FormData(e.target)) });
