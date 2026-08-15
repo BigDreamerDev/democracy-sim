@@ -20,9 +20,32 @@ module.exports.mount = function mount(app, ctx) {
     'services'
   ]);
   const goodsMode = () => String(ctx.CONFIG.goods_economy_enabled) === 'true';
-  const { q, tx, log, auth, admin, wrap, num, bool, loadConfig, officesOf, citizenCount, slowWrites } = ctx;
+  const { q, tx, log, auth, admin, wrap, num, bool, loadConfig, officesOf, citizenCount, slowWrites,
+    requireScope, attribute } = ctx;
 
   const money = n => Math.round(Number(n) || 0);
+
+  /* A spending cap belongs to the key, not the citizen — the citizen's own
+     balance is the real limit when they act directly. Sums what that key has
+     actually moved (api_key_charges, written by chargeKey below) inside the
+     trailing window, so the cap can't be bypassed by pacing requests across a
+     restart the way an in-memory counter could be. Refuses BEFORE pay() runs,
+     the same "check first" shape pay() itself uses for an overdraft. */
+  async function checkKeyCap(req, amount) {
+    const key = req.apiKey;
+    if (!key || key.cap_amount == null) return;
+    const { rows } = await q(
+      `SELECT COALESCE(sum(amount),0)::bigint spent FROM api_key_charges
+        WHERE key_id=$1 AND at > now() - ($2 || ' milliseconds')::interval`,
+      [key.id, String(key.cap_window_ms)]);
+    const spent = Number(rows[0].spent);
+    if (spent + money(amount) > Number(key.cap_amount))
+      throw Object.assign(
+        new Error(`This key's spending cap is ${key.cap_amount} per ${Math.round(key.cap_window_ms / 3600000)}h; it has ${spent} spent already.`),
+        { code: 'AMOUNT' });
+  }
+  const chargeKey = (req, amount) =>
+    req.apiKey ? q('INSERT INTO api_key_charges(key_id,amount) VALUES($1,$2)', [req.apiKey.id, money(amount)]).catch(() => {}) : null;
 
   /* ------------------------------------------------------------- accounts */
 
@@ -172,9 +195,12 @@ module.exports.mount = function mount(app, ctx) {
     })
   );
 
+  // The trace this codebase's traps ask for: a key with only the implicit
+  // read scope reaches requireScope('economy:pay') and is refused with a 403
+  // before a single query runs — pay() below is never called for it.
   app.post(
     '/api/economy/transfer',
-    auth,
+    requireScope('economy:pay'),
     slowWrites,
     wrap(async (req, res) => {
       const to = (
@@ -187,8 +213,10 @@ module.exports.mount = function mount(app, ctx) {
       const from = await accountFor('citizen', req.user.id);
       const dest = await accountFor('citizen', to.id);
       try {
+        await checkKeyCap(req, req.body?.amount);
         const amt = await pay(from.id, dest.id, req.body?.amount, 'transfer', String(req.body?.note || ''));
-        log(req.user.id, 'money.transfer', `${amt} to ${to.display_name}`);
+        await chargeKey(req, amt);
+        log(req.user.id, 'money.transfer', attribute(`${amt} to ${to.display_name}`, req));
         res.json({ ok: true });
       } catch (err) {
         return payErr(res, err);
