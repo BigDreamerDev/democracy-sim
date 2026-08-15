@@ -190,6 +190,19 @@ const DEFAULTS = {
   recognition_threshold: '0.5',
   foreign_trade_tax: '0.1',
 
+  // Offshore money, forex and defection
+  offshore_enabled: 'false',
+  offshore_fee: '0.05',             // the haven's cut of a deposit, rounded up in its favour
+  offshore_minimum: '50',           // least a haven will take in a single deposit
+  forex_spread: '0.03',             // the power's cut of a conversion, either direction
+  forex_step: '0.05',               // most a rate may move in one cycle, as a fraction of itself
+  forex_weight_trade: '0.4',        // how much the balance of trade moves the rate
+  forex_weight_pressure: '0.4',     // how much conflict pressure moves the rate
+  forex_weight_issuance: '0.2',     // how much fresh issuance moves the rate
+  forex_trade_scale: '2000',        // trade balance that produces a full-strength signal
+  forex_issuance_scale: '5000',     // issuance since the last fixing that produces a full-strength signal
+  defection_return_share: '0.3',    // the Treasury's cut of frozen holdings on readmission
+
   secret_ballot: 'true',           // hide who voted for whom in elections
   allow_open_signup: 'false',      // if true, no invite code needed
   require_approval: 'true',        // new accounts stay inert until an admin approves them
@@ -256,7 +269,10 @@ const LEGISLATABLE = new Set([
   'secret_ballot', 'cycle_enabled', 'cycle_days', 'campaign_days', 'poll_days',
   'cycle_elects', 'speaker_auto', 'speaker_threshold', 'speaker_nomination_hours',
   'speaker_poll_hours', 'speaker_relax', 'runoff_hours', 'enforce_term_limit', 'flag_law_ref',
-  'foreign_treasury_per_cycle', 'foreign_export_cap_per_cycle', 'foreign_trade_tax'
+  'foreign_treasury_per_cycle', 'foreign_export_cap_per_cycle', 'foreign_trade_tax',
+  'offshore_enabled', 'offshore_fee', 'offshore_minimum', 'forex_spread', 'forex_step',
+  'forex_weight_trade', 'forex_weight_pressure', 'forex_weight_issuance',
+  'forex_trade_scale', 'forex_issuance_scale', 'defection_return_share'
 ]);
 
 /* ------------------------------------------------------------------ the flag
@@ -428,6 +444,10 @@ async function bootstrap() {
   // Supply, procurement and upkeep. After diplomacy: foreign offers are bought from.
   const warSchema = path.join(__dirname, 'schema-war.sql');
   if (fs.existsSync(warSchema)) await pool.query(fs.readFileSync(warSchema, 'utf8'));
+  // Offshore money, forex and defection. Last: it hangs off a foreign power and
+  // its defection triggers attach to every ballot box every schema above defines.
+  const offshoreSchema = path.join(__dirname, 'schema-offshore.sql');
+  if (fs.existsSync(offshoreSchema)) await pool.query(fs.readFileSync(offshoreSchema, 'utf8'));
   for (const [k, v] of Object.entries(DEFAULTS)) {
     await q('INSERT INTO config(key,value) VALUES($1,$2) ON CONFLICT (key) DO NOTHING', [k, v]);
   }
@@ -508,6 +528,12 @@ const log = (actor, action, detail = '') =>
   q('INSERT INTO audit(actor_id,action,detail) VALUES($1,$2,$3)', [actor, action, detail]).catch(() => {});
 
 const wrap = fn => (req, res) => fn(req, res).catch(err => {
+  /* RP001 is the Republic's own SQLSTATE: a rule the database itself holds —
+     one person one vote, a defector's frozen domestic account — raised with
+     the sentence a citizen should actually read. It is not a bug, so it does
+     not get a stack trace and a 500; it gets exactly the same shape as any
+     other refusal. See schema-offshore.sql for the triggers that raise it. */
+  if (err.code === 'RP001') return res.status(400).json({ error: err.message });
   console.error(err);
   res.status(500).json({ error: 'Something broke on the server. Try again.' });
 });
@@ -1390,6 +1416,14 @@ app.post('/api/admin/cycle', admin, wrap(async (req, res) => {
 /* Who may put a bill before the House, and who may second one. Defaults to the
    House alone; a rule bill can open it to every citizen. */
 async function canPropose(userId) {
+  // A defector holds no seat and no signature, and offices.js already clears
+  // their seats the moment they renounce — but when bill_proposers is opened to
+  // every citizen, that check never runs, so a foreign subject could still
+  // author a Republic bill. offshore.js is optional, so ask only if it mounted.
+  if (ACT_CONTEXT.offshore?.defectors) {
+    const defected = await ACT_CONTEXT.offshore.defectors();
+    if (defected.includes(userId)) return false;
+  }
   if (CONFIG.bill_proposers === 'citizens') return true;
   const u = (await q('SELECT is_admin FROM users WHERE id=$1', [userId])).rows[0];
   return (await officesOf(userId)).some(o => o === 'mp' || o === 'speaker');
@@ -2725,14 +2759,16 @@ const ACT_CONTEXT = {
   get CONFIG() { return CONFIG; }
 };
 /* Order matters twice over. economy.js sets ctx.economy as its last act and
-   money.js borrows the ledger primitives off it. diplomacy.js is mounted before
-   both because economy's payrun calls ctx.diplomacy?.runPayrun, and because a
-   foreign power holds a real account like anyone else. */
+   money.js and offshore.js borrow the ledger primitives off it. diplomacy.js is
+   mounted before all three because economy's payrun calls ctx.diplomacy?.runPayrun,
+   and because a foreign power holds a real account like anyone else. offshore.js
+   is last: it reads ctx.war?.blockadedPowers and ctx.intel off the shared context,
+   and every table it touches belongs to a module that can be removed without it. */
 /* Say what happened to every one of them. A module that fails to mount answers
    503 for the rest of the process's life, and on Render that used to be
    invisible at boot — the same failure shape as a mismatched ALLOWED_ORIGINS,
    where the server looks healthy while half the site does not work. */
-for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war']) {
+for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war', './offshore']) {
   const name = mod.replace('./', '');
   try {
     require(mod).mount(app, ACT_CONTEXT);

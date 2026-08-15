@@ -210,8 +210,13 @@ module.exports.mount = function mount(app, ctx) {
 
     const t = await treasury();
     const citizens = (await q('SELECT id FROM users WHERE is_active AND approved')).rows;
+    // A citizen who has renounced draws no dividend — offshore.js clears their
+    // offices the moment they defect, and the dividend goes the same way, or a
+    // foreign subject would be paid by a Treasury they no longer answer to.
+    const defected = new Set(ctx.offshore?.defectors ? await ctx.offshore.defectors() : []);
     let paid = 0;
     for (const c of citizens) {
+      if (defected.has(c.id)) continue;
       const acc = await accountFor('citizen', c.id);
       // The Treasury may run a deficit on the dividend: the floor is not conditional
       // on the state being solvent, or it is not a floor.
@@ -286,13 +291,19 @@ module.exports.mount = function mount(app, ctx) {
     const t = await treasury();
     const accs = (
       await q(`
-      SELECT a.id, a.balance, u.display_name FROM accounts a
+      SELECT a.id, a.balance, u.id AS user_id, u.display_name FROM accounts a
         JOIN users u ON u.id = a.owner_id
        WHERE a.owner_kind='citizen' AND u.is_active AND u.approved AND a.balance > 0`)
     ).rows;
+    // A defector's domestic account is frozen at the database — the ledger trigger
+    // refuses any row that pays FROM it — so trying to collect tax from one would
+    // throw mid-loop and take the rest of the payrun down with it. Their holdings
+    // sit exactly where they were left; the House can move them by bill.
+    const defected = new Set(ctx.offshore?.defectors ? await ctx.offshore.defectors() : []);
     let taken = 0,
       from = 0;
     for (const a of accs) {
+      if (defected.has(a.user_id)) continue;
       const due = Math.min(taxOn(a.balance), Number(a.balance));
       if (due <= 0) continue;
       await pay(a.id, t.id, due, 'tax', `cycle ${cycleNo}`);
@@ -329,6 +340,11 @@ module.exports.mount = function mount(app, ctx) {
         out.conflicts = await ctx.war.runConflicts(cycle, req.user.id);
       if (req.body?.diplomacy !== false && ctx.diplomacy?.runPayrun)
         out.diplomacy = await ctx.diplomacy.runPayrun(cycle, req.user.id);
+      // Havens freeze or thaw, and one fixing per power for this cycle. After
+      // diplomacy and war, so this cycle's trade and pressure are the numbers
+      // the fixing reads.
+      if (req.body?.offshore !== false && ctx.offshore?.runPayrun)
+        out.offshore = await ctx.offshore.runPayrun(cycle, req.user.id);
       res.json(out);
     })
   );
