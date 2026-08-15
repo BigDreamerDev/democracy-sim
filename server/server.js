@@ -428,6 +428,9 @@ async function bootstrap() {
   // Supply, procurement and upkeep. After diplomacy: foreign offers are bought from.
   const warSchema = path.join(__dirname, 'schema-war.sql');
   if (fs.existsSync(warSchema)) await pool.query(fs.readFileSync(warSchema, 'utf8'));
+  // The generated world. After diplomacy, whose `powers` table world_powers hangs off.
+  const worldgenSchema = path.join(__dirname, 'schema-worldgen.sql');
+  if (fs.existsSync(worldgenSchema)) await pool.query(fs.readFileSync(worldgenSchema, 'utf8'));
   for (const [k, v] of Object.entries(DEFAULTS)) {
     await q('INSERT INTO config(key,value) VALUES($1,$2) ON CONFLICT (key) DO NOTHING', [k, v]);
   }
@@ -2727,12 +2730,18 @@ const ACT_CONTEXT = {
 /* Order matters twice over. economy.js sets ctx.economy as its last act and
    money.js borrows the ledger primitives off it. diplomacy.js is mounted before
    both because economy's payrun calls ctx.diplomacy?.runPayrun, and because a
-   foreign power holds a real account like anyone else. */
+   foreign power holds a real account like anyone else. worldexport and worldgen
+   go last: worldexport only reads territory tables diplomacy's schema owns,
+   and worldgen reads ctx.diplomacy and ctx.war at request time (never at mount
+   time, so the exact position among the five ahead of it does not matter) to
+   measure a generated power against the same strength a real conflict would
+   use. Both are optional like everything else here — no atlas, no diplomacy
+   schema, or no war module and they answer 503 instead of inventing a number. */
 /* Say what happened to every one of them. A module that fails to mount answers
    503 for the rest of the process's life, and on Render that used to be
    invisible at boot — the same failure shape as a mismatched ALLOWED_ORIGINS,
    where the server looks healthy while half the site does not work. */
-for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war']) {
+for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war', './worldexport', './worldgen']) {
   const name = mod.replace('./', '');
   try {
     require(mod).mount(app, ACT_CONTEXT);
