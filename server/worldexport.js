@@ -186,8 +186,8 @@ module.exports.mount = function mount(app, ctx) {
       const x = r1(vx + vw * 0.02);
       const y = r1(vy + vh - nameSize * 1.2);
       text = `
-  <text x="${x}" y="${y}" font-family="Georgia, 'Times New Roman', serif" font-size="${r1(nameSize)}" font-weight="600" fill="${pal.ink}">${nation}</text>
-  <text x="${x}" y="${r1(y + subSize * 1.5)}" font-family="Georgia, 'Times New Roman', serif" font-size="${r1(subSize)}" fill="${pal.ink}" opacity="0.7">${e(line)} · as at ${new Date().toISOString().slice(0, 10)}</text>`;
+  <text x="${x}" y="${y}" font-family="'Times New Roman', Times, serif" font-size="${r1(nameSize)}" font-weight="600" fill="${pal.ink}">${nation}</text>
+  <text x="${x}" y="${r1(y + subSize * 1.5)}" font-family="'Times New Roman', Times, serif" font-size="${r1(subSize)}" fill="${pal.ink}" opacity="0.7">${e(line)} · as at ${new Date().toISOString().slice(0, 10)}</text>`;
     }
 
     /* The union, without a geometry library.

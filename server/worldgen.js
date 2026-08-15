@@ -797,7 +797,7 @@ module.exports.mount = function mount(app, ctx) {
       if (!d) continue;
       body += `\n  <path d="${d}" fill="${e(n.colour)}" fill-rule="nonzero" stroke="#FFFFFF" stroke-width="0.3" stroke-dasharray="2 1.4" opacity="0.92"/>`;
       const c = g.cells.get(n.capital);
-      if (c) body += `\n  <text x="${Math.round(c.cx)}" y="${Math.round(c.cy)}" font-family="Georgia, serif" font-size="7" text-anchor="middle" fill="#111111">${e(n.name)}</text>`;
+      if (c) body += `\n  <text x="${Math.round(c.cx)}" y="${Math.round(c.cy)}" font-family="'Times New Roman', Times, serif" font-size="7" text-anchor="middle" fill="#111111">${e(n.name)}</text>`;
     }
 
     res.set('Content-Type', 'image/svg+xml; charset=utf-8');
