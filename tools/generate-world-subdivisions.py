@@ -477,11 +477,17 @@ def write_layout(width, height, per_country, ids, projection=None):
         stale.unlink()
 
     territories = {}
+    # Which file holds a given subdivision. The client is handed opaque ids by
+    # the API and has to know which territory file to fetch for each one; it
+    # cannot derive that without downloading everything, which is the whole
+    # thing this split exists to avoid.
+    parents = {}
     total_coarse = total_detail = 0
     for country in sorted(per_country):
         coarse, detail = {}, {}
         for iso, rings in sorted(per_country[country].items()):
             sid = ids[iso]
+            parents[sid] = country
             c = path_from_rings(rings, COARSE_TOLERANCE_PX, drop_below_px=0.8)
             d = path_from_rings(rings, DETAIL_TOLERANCE_PX)
             if c:
@@ -509,6 +515,16 @@ def write_layout(width, height, per_country, ids, projection=None):
         index["projection"] = projection
     (OUTPUT_DIR / "index.json").write_text(
         json.dumps(index, separators=(",", ":"), ensure_ascii=False), encoding="utf-8"
+    )
+    # Only for subdivisions that actually shipped a shape — a parent pointing at
+    # a file with nothing in it would send the client after a 404.
+    (OUTPUT_DIR / "parents.json").write_text(
+        json.dumps(
+            {sid: t for sid, t in sorted(parents.items()) if t in territories},
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
     )
     return territories, total_coarse, total_detail
 

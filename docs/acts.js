@@ -850,6 +850,86 @@
   const STANDING_ORDER = ['allied', 'friendly', 'neutral', 'strained', 'hostile', 'at_war'];
   const standingLabel = s => (s === 'at_war' ? 'at war' : String(s || 'neutral'));
 
+  /* Subdivision geometry, fetched when it is actually needed.
+
+     It used to be one 2.9 MB script tag in index.html, parsed on every page
+     load by every user whether or not they ever opened the map, and precached
+     by the service worker with `addAll` — which is all-or-nothing, so one
+     failed fetch left the worker permanently uninstalled. Now the geometry is
+     one file per territory and a session downloads only the territories it
+     looks at.
+
+     `window.WORLD_SUBDIVISIONS` keeps the same `{ shapes, parents }` shape the
+     rest of this file already expects, so everything downstream is unchanged;
+     it simply starts empty and fills in. */
+  const SUBDIV = (window.WORLD_SUBDIVISIONS = window.WORLD_SUBDIVISIONS || {
+    shapes: {}, parents: {}, meta: null, loaded: new Set(), detail: new Set()
+  });
+
+  async function subdivIndex() {
+    if (SUBDIV.meta) return SUBDIV.meta;
+    const [meta, parents] = await Promise.all([
+      fetch('subdiv/index.json').then(r => r.json()),
+      fetch('subdiv/parents.json').then(r => r.json())
+    ]);
+    Object.assign(SUBDIV.parents, parents);
+    SUBDIV.meta = meta;
+    return meta;
+  }
+
+  /* `codes` are opaque subdivision ids handed out by the API. The parents index
+     is the only way to know which territory file holds each one — the client
+     cannot work it out without downloading everything, which is the whole point
+     of the split. Anything whose parent we do not recognise is skipped rather
+     than guessed at. */
+  async function loadSubdivisions(codes, { detail = false } = {}) {
+    if (!codes || !codes.length) return SUBDIV;
+    await subdivIndex();
+    const want = new Set();
+    for (const c of codes) {
+      const t = SUBDIV.parents[c];
+      if (!t) continue;
+      const done = detail ? SUBDIV.detail : SUBDIV.loaded;
+      if (!done.has(t)) want.add(t);
+    }
+    await Promise.all([...want].map(async t => {
+      try {
+        const j = await fetch(`subdiv/${t}${detail ? '.d' : ''}.json`).then(r => r.ok ? r.json() : null);
+        if (!j) return;
+        Object.assign(SUBDIV.shapes, j.shapes || {});
+        (detail ? SUBDIV.detail : SUBDIV.loaded).add(t);
+      } catch { /* a territory that will not load simply does not draw */ }
+    }));
+    return SUBDIV;
+  }
+
+  /* One whole territory, by its own code. The picker needs every subdivision of
+     the country being edited, not just the ones already owned, so it cannot go
+     through the parents index. Detail geometry, because this is the view where
+     somebody is choosing individual subdivisions and needs to tell them apart. */
+  async function loadTerritoryShapes(territory) {
+    const t = String(territory);
+    if (SUBDIV.detail.has(t)) return SUBDIV;
+    await subdivIndex();
+    const j = await fetch(`subdiv/${t}.d.json`).then(r => r.ok ? r.json() : null);
+    if (j) {
+      Object.assign(SUBDIV.shapes, j.shapes || {});
+      for (const c of Object.keys(j.shapes || {})) SUBDIV.parents[c] = t;
+      SUBDIV.detail.add(t);
+      SUBDIV.loaded.add(t);
+    }
+    return SUBDIV;
+  }
+
+  /* Every subdivision the map is about to mention, so one pass fetches the lot
+     rather than one request per territory as the renderer walks them. */
+  function subdivisionCodesIn(world) {
+    const out = [];
+    for (const c of world?.republic?.subdivisions || []) out.push(c);
+    for (const p of world?.powers || []) for (const c of p.subdivisions || []) out.push(c);
+    return out;
+  }
+
   function worldMap(world) {
     const M = window.WORLD_MAP;
     const S = window.WORLD_SUBDIVISIONS || { shapes: {}, parents: {} };
@@ -1342,7 +1422,14 @@
       listEl.innerHTML = '<p class="small muted">Loading subdivisions…</p>';
       try {
         if (!loaded.has(code)) {
-          const data = await api(`/api/admin/territories/subdivisions/${encodeURIComponent(code)}`);
+          /* Names come from the server, which is the only place they exist;
+             geometry comes from that territory's own file. Both are needed
+             before the picker can draw a preview, and neither is worth having
+             until the Returning Officer opens this country. */
+          const [data] = await Promise.all([
+            api(`/api/admin/territories/subdivisions/${encodeURIComponent(code)}`),
+            loadTerritoryShapes(code).catch(() => {})
+          ]);
           loaded.set(code, data.subdivisions || []);
         }
         if (legacy.has(code) && loaded.get(code).length) {
@@ -1507,6 +1594,9 @@
       api('/api/diplomacy/foreign-office').catch(() => null),
       me?.is_admin ? api('/api/admin/republic/territories').catch(() => ({ subdivisions: [], legacy_territories: [] })) : Promise.resolve(null)
     ]);
+    /* Before the map is drawn, not while. The renderer is synchronous and
+       returns a string, so anything it needs has to be in hand first. */
+    await loadSubdivisions(subdivisionCodesIn(world)).catch(() => {});
     /* The channel belongs to the Foreign Minister. The President keeps it only
        while that office is empty — they assent to treaties, and negotiating
        what you then assent to is one person doing both halves. */
