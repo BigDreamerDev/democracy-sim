@@ -437,6 +437,10 @@ async function bootstrap() {
   if (fs.existsSync(extra)) await pool.query(fs.readFileSync(extra, 'utf8'));
   const diplomacySchema = path.join(__dirname, 'schema-diplomacy.sql');
   if (fs.existsSync(diplomacySchema)) await pool.query(fs.readFileSync(diplomacySchema, 'utf8'));
+  // Intelligence collection and operations. After diplomacy: it extends
+  // intel_service/intel_reports and hangs new tables off powers/foreign_agents.
+  const intelSchema = path.join(__dirname, 'schema-intel.sql');
+  if (fs.existsSync(intelSchema)) await pool.query(fs.readFileSync(intelSchema, 'utf8'));
   // The Treasury and the Fed. Loaded after schema-acts.sql, which owns `cases`
   // and `accounts` — the private banks hang off both.
   const moneySchema = path.join(__dirname, 'schema-money.sql');
@@ -2771,12 +2775,15 @@ const ACT_CONTEXT = {
    same strength a real conflict would use; offshore reads ctx.war?.blockadedPowers
    and ctx.intel the same way. All three are optional like everything else here —
    a missing atlas, diplomacy schema or war module and they answer 503 instead of
-   inventing a number. */
+   inventing a number. intelligence.js mounts right after war.js: it extends
+   ctx.intel (which diplomacy.js set) rather than replacing it, and a coup or
+   removal is exactly the kind of write worldgen and offshore need to already see
+   coming. */
 /* Say what happened to every one of them. A module that fails to mount answers
    503 for the rest of the process's life, and on Render that used to be
    invisible at boot — the same failure shape as a mismatched ALLOWED_ORIGINS,
    where the server looks healthy while half the site does not work. */
-for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war', './worldexport', './worldgen', './offshore']) {
+for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war', './intelligence', './worldexport', './worldgen', './offshore']) {
   const name = mod.replace('./', '');
   try {
     require(mod).mount(app, ACT_CONTEXT);

@@ -3,7 +3,7 @@
 const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 
-const SUITES = ['functional.mjs', 'attack.mjs', 'rules.mjs', 'speaker.mjs', 'flag.mjs', 'powers.mjs', 'houserule.mjs', 'initiative.mjs', 'emergency.mjs', 'people.mjs', 'pm.mjs', 'acts.mjs', 'bank.mjs', 'money.mjs', 'justice.mjs', 'diplomacy.mjs', 'foreigntrade.mjs', 'worldmap.mjs', 'foreignoffice.mjs', 'billedit.mjs', 'war.mjs', 'conflict.mjs', 'runoff.mjs', 'opacity.mjs', 'export.mjs', 'worldgen.mjs', 'offshore.mjs', 'government.mjs'];
+const SUITES = ['functional.mjs', 'attack.mjs', 'rules.mjs', 'speaker.mjs', 'flag.mjs', 'powers.mjs', 'houserule.mjs', 'initiative.mjs', 'emergency.mjs', 'people.mjs', 'pm.mjs', 'acts.mjs', 'bank.mjs', 'money.mjs', 'justice.mjs', 'diplomacy.mjs', 'foreigntrade.mjs', 'worldmap.mjs', 'foreignoffice.mjs', 'billedit.mjs', 'war.mjs', 'conflict.mjs', 'runoff.mjs', 'opacity.mjs', 'export.mjs', 'worldgen.mjs', 'offshore.mjs', 'government.mjs', 'intelligence.mjs'];
 
 /* TEST_PORT lets two runs happen at once on one machine without fighting over
    the socket. Unset, everything behaves exactly as it did. */
