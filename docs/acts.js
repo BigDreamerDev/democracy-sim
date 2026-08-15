@@ -836,22 +836,19 @@
      world-map.js; this only decides what colour each one is and what happens when
      you touch it.
 
-     Two things are readable at a glance, because those are the two the map is
-     for. STANDING is the fill, on one scale from allied to at war, so the
-     temperature of the world is legible without reading a single label.
-     RECOGNITION is the border: a recognised power is drawn solid, an
-     unrecognised one hatched and dashed — it is on the map because it exists,
-     not because the Republic says it does. Unclaimed land is flat and unlabelled;
-     it is nobody's, and naming it would invent a state that has no account, no
-     standing and no cabinet.
+     Two things are readable at a glance. A foreign power's own colour is the
+     fill, so the identity generated for a state survives when the preview is
+     committed. RECOGNITION is the border: a recognised power is drawn solid,
+     an unrecognised one hatched and dashed — it is on the map because it exists,
+     not because the Republic says it does. Standing remains explicit in the
+     detail panel rather than replacing every neutral country's colour. Unclaimed
+     land is flat and unlabelled; it is nobody's, and naming it would invent a
+     state that has no account, no standing and no cabinet.
 
      Real country names are never rendered here. A territory is called whatever
      the power holding it is called, and nothing else. */
-  /* Fixed colours, not theme variables. This is a data scale — allied through
-     at war — and it has to mean the same thing in light mode and dark, or a
-     player who switches themes learns the map twice. They run cool to warm so
-     the ordering survives most colour blindness; the at-war border and the
-     legend carry the rest. */
+  /* Standing colours are still useful for unsaved Returning Officer territory
+     previews and as a safe fallback for old powers without a valid colour. */
   const STANDING_FILL = {
     allied:   '#2C6A4F',
     friendly: '#5E9078',
@@ -860,8 +857,10 @@
     hostile:  '#A8362B',
     at_war:   '#7E241C'
   };
-  const STANDING_ORDER = ['allied', 'friendly', 'neutral', 'strained', 'hostile', 'at_war'];
   const standingLabel = s => (s === 'at_war' ? 'at war' : String(s || 'neutral'));
+  const powerFill = p => /^#[0-9a-f]{6}$/i.test(String(p?.colour || ''))
+    ? String(p.colour)
+    : (STANDING_FILL[p?.standing] || STANDING_FILL.neutral);
 
   /* Nation export: SVG straight from the server, PNG drawn from that same SVG
      on a canvas in the browser. `worldexport.js` deliberately has no
@@ -1039,7 +1038,7 @@
         if (country) countriesWithSubdivisionOwnership.add(String(country));
         subdivisionOwners.set(code, {
           kind: 'foreign', power: p, name: p.name,
-          fill: STANDING_FILL[p.standing] || STANDING_FILL.neutral
+          fill: powerFill(p)
         });
       }
     }
@@ -1065,7 +1064,7 @@
         addOwner(code, {
           kind: 'foreign', power: p, name: p.name,
           partial: partial.has(code),
-          fill: STANDING_FILL[p.standing] || STANDING_FILL.neutral
+          fill: powerFill(p)
         });
     }
 
@@ -1153,24 +1152,28 @@
       .map(([code, d]) => `<path d="${d}" class="wm-country-outline" data-outline-territory="${code}"/>`)
       .join('');
 
+    /* The country centroid is only a fallback. Once this SVG is in the DOM,
+       placeWorldLabels() measures the polygons the state actually owns. This
+       matters for generated worlds where several powers can hold subdivisions
+       of the same parent territory: using that parent's centroid put their names
+       directly on top of one another. */
     const republicLabel = (() => {
       const code = [...republicHeld]
         .filter(c => M.centroids[c])
         .sort((a, b) => (M.shapes[b] || '').length - (M.shapes[a] || '').length)[0];
-      if (!code) return '';
-      const [x, y] = M.centroids[code];
-      return `<text class="wm-label" x="${x}" y="${y}">${esc(world.republic?.name || STATE().config.nation_name)}</text>`;
+      if (!code && !republicSubs.size) return '';
+      const [x, y] = code ? M.centroids[code] : [M.width / 2, M.height / 2];
+      return `<text class="wm-label" x="${x}" y="${y}" data-world-label="republic">${esc(world.republic?.name || STATE().config.nation_name)}</text>`;
     })();
 
     const labels = republicLabel + world.powers
-      .filter(p => (p.territories || []).length)
+      .filter(p => (p.territories || []).length || (p.subdivisions || []).length)
       .map(p => {
-        const code = p.territories
+        const code = (p.territories || [])
           .filter(c => M.centroids[c])
           .sort((a, b) => (M.shapes[b] || '').length - (M.shapes[a] || '').length)[0];
-        if (!code) return '';
-        const [x, y] = M.centroids[code];
-        return `<text class="wm-label" x="${x}" y="${y}" data-power="${p.id}">${esc(p.name)}</text>`;
+        const [x, y] = code ? M.centroids[code] : [M.width / 2, M.height / 2];
+        return `<text class="wm-label" x="${x}" y="${y}" data-world-label="power" data-power="${p.id}">${esc(p.name)}</text>`;
       })
       .join('');
 
@@ -1179,13 +1182,13 @@
 
     return `<section class="card wm-card">
       <div class="dip-section-head">
-        <span class="dip-section-kicker">The world · standing and recognition</span>
+        <span class="dip-section-kicker">The world · powers and recognition</span>
         <h2>Powers of the world</h2>
       </div>
       ${world.powers.length ? '' : '<p class="small muted">No foreign powers exist yet, so the world is empty. The Returning Officer creates them below.</p>'}
       ${hasSubdivisionGeometry ? '' : '<p class="small muted territory-map-warning">Subdivision geometry has not been generated yet. Run <code>python tools/generate-world-subdivisions.py</code> from the repository root.</p>'}
       <div class="wm-frame">
-        <svg viewBox="0 0 ${M.width} ${M.height}" class="wm-svg" role="img" aria-label="Map of the world by diplomatic standing">
+        <svg viewBox="0 0 ${M.width} ${M.height}" class="wm-svg" role="img" aria-label="Map of the world by foreign power and recognition">
           <defs>
             <pattern id="wm-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
               <rect width="6" height="6" fill="none"/>
@@ -1202,7 +1205,7 @@
         </svg>
       </div>
       <div class="wm-legend">
-        ${STANDING_ORDER.map(k => `<span class="wm-key"><i style="background:${STANDING_FILL[k]}"></i>${standingLabel(k)}</span>`).join('')}
+        ${world.powers.map(p => `<span class="wm-key"><i style="background:${esc(powerFill(p))}"></i>${esc(p.name)}</span>`).join('')}
         ${(world.republic?.territories || []).length ? `<span class="wm-key"><i class="wm-key-republic"></i>${esc(world.republic?.name || STATE().config.nation_name)}</span>` : ''}
         ${hasSubdivisionGeometry ? '<span class="wm-key"><i class="wm-key-subdivision"></i>subdivision border</span>' : ''}
         <span class="wm-key" id="wm-preview-key" hidden><i class="wm-key-preview"></i>unsaved edit</span>
@@ -1215,6 +1218,77 @@
     </section>`;
   }
 
+
+  /* SVG text has no useful collision layout of its own. Measure the polygons
+     after insertion, prefer the largest pieces actually owned by each state,
+     and try nearby anchors until labels no longer collide. This keeps generated
+     states sharing one parent territory from inheriting the same centroid. */
+  function placeWorldLabels() {
+    const svg = document.querySelector('.wm-svg');
+    if (!svg) return;
+    const labels = [...svg.querySelectorAll('.wm-label[data-world-label]')];
+    if (!labels.length) return;
+
+    const vb = svg.viewBox?.baseVal;
+    const width = vb?.width || window.WORLD_MAP?.width || 800;
+    const height = vb?.height || window.WORLD_MAP?.height || 400;
+    const placed = [];
+    const intersects = (a, b, pad = 2) =>
+      a.x < b.x + b.width + pad && a.x + a.width + pad > b.x &&
+      a.y < b.y + b.height + pad && a.y + a.height + pad > b.y;
+    const boxOf = node => {
+      try {
+        const b = node.getBBox();
+        return b && Number.isFinite(b.x) && b.width >= 0 ? b : null;
+      } catch { return null; }
+    };
+
+    const entries = labels.map(label => {
+      const selector = label.dataset.worldLabel === 'republic'
+        ? '.wm-republic'
+        : `.wm-claim[data-power="${label.dataset.power}"]`;
+      const parts = [...svg.querySelectorAll(selector)]
+        .map(boxOf)
+        .filter(b => b && b.width > 0 && b.height > 0)
+        .sort((a, b) => (b.width * b.height) - (a.width * a.height));
+      const area = parts.reduce((n, b) => n + b.width * b.height, 0);
+      return { label, parts, area };
+    }).sort((a, b) => b.area - a.area);
+
+    const offsets = [
+      [0, 0], [0, -12], [0, 12], [18, 0], [-18, 0],
+      [18, -12], [-18, -12], [18, 12], [-18, 12],
+      [0, -24], [0, 24], [34, 0], [-34, 0]
+    ];
+
+    for (const { label, parts } of entries) {
+      if (!parts.length) continue;
+      const anchors = parts.slice(0, 6).map(b => [b.x + b.width / 2, b.y + b.height / 2]);
+      let best = null;
+      for (const [ax, ay] of anchors) {
+        for (const [dx, dy] of offsets) {
+          label.setAttribute('x', ax + dx);
+          label.setAttribute('y', ay + dy);
+          let b = boxOf(label);
+          if (!b) continue;
+          const x = Math.max(b.width / 2 + 2, Math.min(width - b.width / 2 - 2, ax + dx));
+          const y = Math.max(b.height / 2 + 2, Math.min(height - b.height / 2 - 2, ay + dy));
+          label.setAttribute('x', x);
+          label.setAttribute('y', y);
+          b = boxOf(label);
+          if (!b) continue;
+          const collisions = placed.reduce((n, other) => n + (intersects(b, other) ? 1 : 0), 0);
+          if (!best || collisions < best.collisions) best = { x, y, box: b, collisions };
+          if (!collisions) break;
+        }
+        if (best?.collisions === 0) break;
+      }
+      if (!best) continue;
+      label.setAttribute('x', best.x);
+      label.setAttribute('y', best.y);
+      placed.push(best.box);
+    }
+  }
 
   function setSubdivisionCountryState(code, className, on) {
     if (!code) return;
@@ -1233,6 +1307,8 @@
      internal ADM1 lines without turning the full-world view into visual noise. */
   function bindWorldMap(world) {
     if (!world) return;
+    placeWorldLabels();
+    requestAnimationFrame(placeWorldLabels);
     const detail = document.querySelector('#wm-detail');
     if (!detail) return;
     const byId = Object.fromEntries(world.powers.map(p => [String(p.id), p]));
@@ -1610,7 +1686,7 @@
       prefix: 'ro-foreign',
       adminState,
       ownerLabel: power?.name || 'foreign power',
-      previewFill: STANDING_FILL[power?.standing] || STANDING_FILL.neutral,
+      previewFill: powerFill(power),
       saveUrl: `/api/admin/foreign/powers/${powerId}/territories`,
       refresh
     });

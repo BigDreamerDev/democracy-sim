@@ -790,14 +790,49 @@ module.exports.mount = function mount(app, ctx) {
 
     const g = atlas.graph();
     /* Invented names only. There is no id, no code and no real name anywhere in
-       what follows — a preview gets screenshotted like everything else. */
+       what follows — a preview gets screenshotted like everything else. Labels
+       are nudged deterministically around their capitals so long generated names
+       do not sit directly on top of a neighbouring state's name. */
+    const nations = row.plan?.nations || [];
+    const labelBoxes = [];
+    const labelPositions = new Map();
+    const overlaps = (a, b, pad = 2) =>
+      a.x < b.x + b.w + pad && a.x + a.w + pad > b.x &&
+      a.y < b.y + b.h + pad && a.y + a.h + pad > b.y;
+    const offsets = [
+      [0, 0], [0, -10], [0, 10], [16, 0], [-16, 0],
+      [16, -10], [-16, -10], [16, 10], [-16, 10],
+      [0, -20], [0, 20], [30, 0], [-30, 0]
+    ];
+    for (const n of [...nations].sort((a, b) => (b.subdivision_count || 0) - (a.subdivision_count || 0))) {
+      const c = g.cells.get(n.capital);
+      if (!c) continue;
+      const w = Math.max(18, String(n.name || '').length * 4.1);
+      const h = 8;
+      let best = null;
+      for (const [dx, dy] of offsets) {
+        const x = Math.max(w / 2 + 2, Math.min(a.width - w / 2 - 2, c.cx + dx));
+        const y = Math.max(h / 2 + 2, Math.min(a.height - h / 2 - 2, c.cy + dy));
+        const box = { x: x - w / 2, y: y - h / 2, w, h };
+        const collisions = labelBoxes.reduce((count, other) => count + (overlaps(box, other) ? 1 : 0), 0);
+        if (!best || collisions < best.collisions) best = { x, y, box, collisions };
+        if (!collisions) break;
+      }
+      if (!best) continue;
+      labelBoxes.push(best.box);
+      labelPositions.set(n, best);
+    }
+
     let body = '';
-    for (const n of row.plan?.nations || []) {
+    for (const n of nations) {
       const d = (n.subdivisions || []).map(atlas.coarseShape).filter(Boolean).join('');
       if (!d) continue;
       body += `\n  <path d="${d}" fill="${e(n.colour)}" fill-rule="nonzero" stroke="#FFFFFF" stroke-width="0.3" stroke-dasharray="2 1.4" opacity="0.92"/>`;
-      const c = g.cells.get(n.capital);
-      if (c) body += `\n  <text x="${Math.round(c.cx)}" y="${Math.round(c.cy)}" font-family="'Times New Roman', Times, serif" font-size="7" text-anchor="middle" fill="#111111">${e(n.name)}</text>`;
+    }
+    for (const n of nations) {
+      const pos = labelPositions.get(n);
+      if (!pos) continue;
+      body += `\n  <text x="${Math.round(pos.x)}" y="${Math.round(pos.y)}" font-family="'Times New Roman', Times, serif" font-size="7" text-anchor="middle" dominant-baseline="middle" fill="#111111" paint-order="stroke" stroke="#F7F8F9" stroke-width="1.8" stroke-linejoin="round">${e(n.name)}</text>`;
     }
 
     res.set('Content-Type', 'image/svg+xml; charset=utf-8');
