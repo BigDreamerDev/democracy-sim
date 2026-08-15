@@ -63,7 +63,7 @@ OUTPUT_DIR = ROOT / "docs" / "subdiv"
 LEGACY_OUTPUT_FILE = ROOT / "docs" / "world-subdivisions.js"
 CACHE_DIR = ROOT / ".tools-cache" / "world-subdivisions"
 
-API = "https://www.geoboundaries.org/api/current/gbOpen/{alpha3}/ADM1/"
+API = "https://www.geoboundaries.org/api/current/gbOpen/{alpha3}/{level}/"
 USER_AGENT = "democracy-sim subdivision map generator/1.0"
 ROUND = 1
 DETAIL_TOLERANCE_PX = 0.20
@@ -72,6 +72,47 @@ MAX_WORKERS = 8
 MIN_CALIBRATION_SIZE_PX = 5.0
 
 CREDIT = "geoBoundaries gbOpen ADM1 (CC BY 4.0)"
+
+NE_ADMIN1_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson"
+NE_ADMIN1_CACHE = "ne_10m_admin_1.geojson"
+NE_CREDIT = "Natural Earth 10m admin-1 (public domain)"
+
+# A handful of ISO 3166-2 entries carry an official name in a regional
+# language the source only ever writes in the national language, or the
+# reverse — Spain's Basque Country, Navarre and Valencian Community. Word-order
+# and substring matching cannot bridge two different languages for a handful
+# of entries, so these are named explicitly. Each pair is a real, permanent
+# translation, not a guess, and is only consulted as one more name a feature
+# is allowed to match under — it still has to be the single candidate left.
+NAME_ALIASES = {
+    "ES-PV": ["País Vasco/Euskadi"],
+    "ES-NC": ["Comunidad Foral de Navarra"],
+    "ES-VC": ["Comunitat Valenciana"],
+}
+
+# Some ISO 3166-2 subdivisions are, in geoBoundaries, entire separate
+# countries: France's and the Netherlands' overseas territories have their own
+# alpha-3 and their own ADM0 boundary, so metropolitan France's or the
+# Netherlands' ADM1 file was never going to contain them no matter how the
+# names are compared. Where geoBoundaries hosts that alpha-3 at gbOpen, its
+# whole-country ADM0 shape stands in for the subdivision. Verified present via
+# the gbOpen API before being listed here; a code not listed either has no
+# ADM0 entry at gbOpen (Saint Pierre and Miquelon, Saint Martin, the French
+# Southern Territories, Sint Maarten, uninhabited Clipperton) or is resolved
+# some other way.
+TERRITORY_ADM0 = {
+    "FR-971": "GLP",  # Guadeloupe
+    "FR-972": "MTQ",  # Martinique
+    "FR-973": "GUF",  # French Guiana
+    "FR-974": "REU",  # Réunion
+    "FR-976": "MYT",  # Mayotte
+    "FR-PF": "PYF",  # French Polynesia
+    "FR-NC": "NCL",  # New Caledonia
+    "FR-WF": "WLF",  # Wallis and Futuna
+    "FR-BL": "BLM",  # Saint Barthélemy
+    "NL-AW": "ABW",  # Aruba
+    "NL-CW": "CUW",  # Curaçao
+}
 
 
 def fetch_json(url: str, retries: int = 3):
@@ -88,10 +129,63 @@ def fetch_json(url: str, retries: int = 3):
     raise RuntimeError(f"Could not download {url}: {last}")
 
 
+def fix_mojibake(value: str) -> str:
+    """Undo a UTF-8-decoded-as-Latin-1-then-re-encoded round trip.
+
+    geoBoundaries' Chile file ships shapeName values like "RegiÃ³n de
+    Antofagasta" instead of "Región de Antofagasta" — the bytes are fine, the
+    file was written after decoding UTF-8 as Latin-1 once too many. Detect the
+    telltale byte sequences before "fixing" text that was never broken; a name
+    with no such sequence is returned untouched."""
+    if not value or ("Ã" not in value and "Â" not in value and "â€" not in value):
+        return value
+    try:
+        repaired = value.encode("latin1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return value
+    return repaired
+
+
 def normalize(value: str) -> str:
-    value = unicodedata.normalize("NFKD", value or "")
+    value = unicodedata.normalize("NFKD", fix_mojibake(value or ""))
     value = "".join(ch for ch in value if not unicodedata.combining(ch))
     return re.sub(r"[^a-z0-9]+", "", value.casefold())
+
+
+def normalize_tokens(value: str) -> str:
+    """Same as normalize(), but order-independent: words sorted before joining.
+
+    Catches official ISO names written "Comma, Inverted de" for alphabetical
+    sorting — "Asturias, Principado de" vs the source's "Principado de
+    Asturias" — without a hand-maintained list of every language's word
+    order conventions."""
+    value = unicodedata.normalize("NFKD", fix_mojibake(value or ""))
+    value = "".join(ch for ch in value if not unicodedata.combining(ch))
+    words = re.findall(r"[a-z0-9]+", value.casefold())
+    return "".join(sorted(words))
+
+
+def country_alpha(expected, alpha_map):
+    """(alpha2, alpha3) for a country's subdivision list, however its codes
+    are prefixed.
+
+    Normally the prefix before the first "-" in a subdivision code is the
+    real ISO alpha-2 ("AZ-NX" -> "AZ"), and alpha_map (alpha2 -> alpha3) gives
+    the rest. But `adopt_source_regions` permanently rewrites a country's
+    codes to "{alpha3}-SRC01" once its ISO list matches nothing — Azerbaijan's
+    entries read "AZE-SRC01" from then on. A later run that re-derives alpha2
+    the naive way gets "AZE", which is not a key in alpha_map, so the country
+    silently drops out of every job list. Checking both directions of
+    alpha_map keeps an already-adopted country resolvable forever after."""
+    if not expected:
+        return None, None
+    prefix = expected[0]["code"].split("-", 1)[0]
+    if prefix in alpha_map:
+        return prefix, alpha_map[prefix]
+    reverse = {v: k for k, v in alpha_map.items()}
+    if prefix in reverse:
+        return reverse[prefix], prefix
+    return prefix, None
 
 
 def parse_world_map():
@@ -356,18 +450,49 @@ def calibrate_projection(downloaded, target_boxes):
     return scale, translate_x, translate_y, median_residual, p90_residual, len(keep)
 
 
-def download_country(alpha3: str):
+def download_boundary(alpha3: str, level: str = "ADM1"):
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    cache = CACHE_DIR / f"{alpha3}-ADM1-simplified.geojson"
+    cache = CACHE_DIR / f"{alpha3}-{level}-simplified.geojson"
     if cache.exists():
         return json.loads(cache.read_text(encoding="utf-8"))
-    metadata = fetch_json(API.format(alpha3=alpha3))
+    metadata = fetch_json(API.format(alpha3=alpha3, level=level))
     url = metadata.get("simplifiedGeometryGeoJSON") or metadata.get("gjDownloadURL")
     if not url:
-        raise RuntimeError(f"geoBoundaries returned no GeoJSON URL for {alpha3}")
+        raise RuntimeError(f"geoBoundaries returned no GeoJSON URL for {alpha3} {level}")
     data = fetch_json(url)
     cache.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     return data
+
+
+def download_country(alpha3: str):
+    return download_boundary(alpha3, "ADM1")
+
+
+def download_natural_earth():
+    """Natural Earth's admin-1 set, used only as a fallback and only via its
+    exact iso_3166_2 code — never by name. It predates several ISO renumbering
+    rounds (Kazakhstan's 2023 codes, several 2018+ splits), so it cannot help
+    with a subdivision ISO created after Natural Earth's own last edit, but
+    for anything ISO renumbered or renamed with the *place* unchanged, its
+    code field still names the right shape."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache = CACHE_DIR / NE_ADMIN1_CACHE
+    if cache.exists():
+        return json.loads(cache.read_text(encoding="utf-8"))
+    data = fetch_json(NE_ADMIN1_URL)
+    cache.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return data
+
+
+def natural_earth_index(data):
+    index = {}
+    for feature in data.get("features") or []:
+        props = feature.get("properties") or {}
+        code = str(props.get("iso_3166_2") or "").strip().upper()
+        if not code or code == "-99":
+            continue
+        index.setdefault(code, []).append(feature)
+    return index
 
 
 def adopt_source_regions(jobs, downloaded, subdivisions):
@@ -393,14 +518,15 @@ def adopt_source_regions(jobs, downloaded, subdivisions):
         if not features:
             revised.append((country_code, alpha3, expected))
             continue
-        matched, _ = match_features(expected, features)
+        alpha2 = expected[0]["code"].split("-", 1)[0] if expected else None
+        matched, _ = match_features(expected, features, alpha2=alpha2, alpha3=alpha3)
         if matched:
             revised.append((country_code, alpha3, expected))
             continue
 
         adopted = []
         for n, feature in enumerate(features, start=1):
-            name = str((feature.get("properties") or {}).get("shapeName") or "").strip()
+            name = fix_mojibake(str((feature.get("properties") or {}).get("shapeName") or "").strip())
             if not name:
                 continue
             # Namespaced so it can never collide with a real ISO 3166-2 code.
@@ -415,46 +541,118 @@ def adopt_source_regions(jobs, downloaded, subdivisions):
     return revised
 
 
-def match_features(expected, features):
+def repair_code(code: str, alpha2: str | None, alpha3: str | None):
+    """Plausible re-prefixings of a source shapeISO, never invented content.
+
+    Syria's ADM1 stamps shapeISO with the alpha-3 prefix ("SYR-DI" instead of
+    "SY-DI"); Belgium's drops the country prefix entirely ("WAL" instead of
+    "BE-WAL"). Both are re-prefixings of the code the source already gives —
+    the candidate is only ever used if it lands on a real expected code, so a
+    coincidental collision (e.g. North Korea's shapeISO "KP05" happens to
+    share digits with an unrelated ISO code) still has to pass that check
+    before anything is matched to it. Because "KP05" already starts with the
+    country's own alpha-2, it is not offered a candidate here at all — it
+    would otherwise silently pair the wrong province with the wrong shape,
+    since geoBoundaries' internal KP numbering is not ISO's."""
+    if not code:
+        return []
+    candidates = []
+    if "-" in code:
+        prefix, rest = code.split("-", 1)
+        if alpha3 and prefix == alpha3 and alpha2:
+            candidates.append(f"{alpha2}-{rest}")
+    elif alpha2 and not code.startswith(alpha2):
+        candidates.append(f"{alpha2}-{code}")
+    return candidates
+
+
+def match_features(expected, features, alpha2: str | None = None, alpha3: str | None = None):
     expected_by_code = {x["code"].upper(): x for x in expected}
     by_name = {}
+    by_tokens = {}
     for item in expected:
-        by_name.setdefault(normalize(item.get("name", "")), []).append(item)
+        names = [item.get("name", "")] + NAME_ALIASES.get(item["code"], [])
+        for candidate_name in names:
+            by_name.setdefault(normalize(candidate_name), []).append(item)
+            by_tokens.setdefault(normalize_tokens(candidate_name), []).append(item)
 
     used = set()
     matched = {}
     leftovers = []
     for feature in features:
         props = feature.get("properties") or {}
+        # A handful of sources punctuate shapeISO oddly (an underscore instead
+        # of a hyphen, a trailing "*" flagging a disputed shape) — cosmetic,
+        # not a different code, so it is cleaned up before comparison rather
+        # than left to defeat an otherwise exact match.
         code = str(props.get("shapeISO") or props.get("shapeiso") or "").upper().strip()
-        name = str(props.get("shapeName") or props.get("shapename") or props.get("name") or "").strip()
+        code = code.replace("_", "-").strip("*").strip()
+        name = fix_mojibake(str(props.get("shapeName") or props.get("shapename") or props.get("name") or "").strip())
         target = expected_by_code.get(code)
+        if not target:
+            for candidate_code in repair_code(code, alpha2, alpha3):
+                target = expected_by_code.get(candidate_code)
+                if target:
+                    break
         if target and target["code"] not in used:
             matched[target["code"]] = feature
             used.add(target["code"])
         else:
             leftovers.append((feature, name))
 
-    still = [x for x in expected if x["code"] not in used]
-    for feature, name in leftovers:
-        key = normalize(name)
-        candidates = [x for x in by_name.get(key, []) if x["code"] not in used]
-        if len(candidates) == 1:
-            target = candidates[0]
-            matched[target["code"]] = feature
-            used.add(target["code"])
+    # Pass 2: exact name match, either as written or word-order independent
+    # ("Comunidad de Madrid" vs the ISO list's "Madrid, Comunidad de").
+    for key_fn, table in ((normalize, by_name), (normalize_tokens, by_tokens)):
+        for feature, name in leftovers:
+            if feature in matched.values():
+                continue
+            key = key_fn(name)
+            candidates = [x for x in table.get(key, []) if x["code"] not in used]
+            if len(candidates) == 1:
+                target = candidates[0]
+                matched[target["code"]] = feature
+                used.add(target["code"])
 
+    # Pass 3: one name wholly contains the other ("Cataluña/Catalunya" source
+    # name containing the ISO list's "Catalunya"). Gated on both names being
+    # long enough that a short common word can't cause a false match, and
+    # only taken when exactly one leftover feature qualifies for a given
+    # expected entry — an ambiguous containment is left to pass 4 or unmatched.
     still = [x for x in expected if x["code"] not in used]
     unmatched_features = [(f, n) for f, n in leftovers if f not in matched.values()]
+    for item in still:
+        wanted = normalize(item.get("name", ""))
+        if len(wanted) < 5:
+            continue
+        qualifying = []
+        for feature, name in unmatched_features:
+            got = normalize(name)
+            if len(got) >= 5 and (wanted in got or got in wanted):
+                qualifying.append(feature)
+        if len(qualifying) == 1:
+            matched[item["code"]] = qualifying[0]
+            used.add(item["code"])
+            unmatched_features = [(f, n) for f, n in unmatched_features if f is not qualifying[0]]
+
+    # Pass 4: fuzzy match, tried both as written and word-order independent,
+    # so "Zhambyl oblysy" can still find "Jambyl Region" despite the
+    # transliteration difference.
+    still = [x for x in expected if x["code"] not in used]
     for item in still[:]:
         wanted = normalize(item.get("name", ""))
+        wanted_tokens = normalize_tokens(item.get("name", ""))
         if not wanted:
             continue
         scored = []
         for feature, name in unmatched_features:
             got = normalize(name)
-            if got:
-                scored.append((difflib.SequenceMatcher(None, wanted, got).ratio(), feature, name))
+            if not got:
+                continue
+            ratio = max(
+                difflib.SequenceMatcher(None, wanted, got).ratio(),
+                difflib.SequenceMatcher(None, wanted_tokens, normalize_tokens(name)).ratio(),
+            )
+            scored.append((ratio, feature, name))
         scored.sort(key=lambda x: x[0], reverse=True)
         if scored and scored[0][0] >= 0.90:
             score, feature, _ = scored[0]
@@ -464,6 +662,114 @@ def match_features(expected, features):
 
     missing = [x for x in expected if x["code"] not in matched]
     return matched, missing
+
+
+# ------------------------------------------------------------ fallback tiers
+#
+# Run in order of confidence after the primary ADM1 pass: an exact separate
+# country first, then an exact ISO code from a second source, and only then a
+# second name-matching pass one administrative level down. Each stage only
+# looks at what the previous stage left in `missing_report` and only removes
+# an entry once it actually has geometry for it.
+
+def resolve_territory_overrides(missing_report, per_country, scale, translate_x, translate_y):
+    resolved = 0
+    for country_code, codes in list(missing_report.items()):
+        still = []
+        for code in codes:
+            alpha3 = TERRITORY_ADM0.get(code)
+            if not alpha3:
+                still.append(code)
+                continue
+            try:
+                data = download_boundary(alpha3, "ADM0")
+            except Exception as exc:
+                print(f"  {code}: ADM0 fetch failed for {alpha3}: {exc}", file=sys.stderr)
+                still.append(code)
+                continue
+            rings = []
+            for feature in data.get("features") or []:
+                rings.extend(projected_rings(feature))
+            if not rings:
+                still.append(code)
+                continue
+            per_country.setdefault(country_code, {})[code] = transform_rings(rings, scale, translate_x, translate_y)
+            resolved += 1
+            print(f"  {code}: resolved via {alpha3} ADM0 (a separate geoBoundaries country)")
+        if still:
+            missing_report[country_code] = still
+        else:
+            del missing_report[country_code]
+    return resolved
+
+
+def resolve_from_natural_earth(missing_report, per_country, scale, translate_x, translate_y):
+    try:
+        data = download_natural_earth()
+    except Exception as exc:
+        print(f"Natural Earth fallback unavailable: {exc}", file=sys.stderr)
+        return 0
+    index = natural_earth_index(data)
+    resolved = 0
+    for country_code, codes in list(missing_report.items()):
+        still = []
+        for code in codes:
+            features = index.get(code.upper())
+            if not features:
+                still.append(code)
+                continue
+            rings = []
+            for feature in features:
+                rings.extend(projected_rings(feature))
+            if not rings:
+                still.append(code)
+                continue
+            per_country.setdefault(country_code, {})[code] = transform_rings(rings, scale, translate_x, translate_y)
+            resolved += 1
+        if still:
+            missing_report[country_code] = still
+        else:
+            del missing_report[country_code]
+    return resolved
+
+
+def resolve_from_adm2(missing_report, per_country, subdivisions, alpha_map, scale, translate_x, translate_y):
+    """geoBoundaries ADM2, for an entity ISO lists that ADM1 folds into a
+    larger parent — a city with county rights folded into its county, a
+    governorate under a two-part national split. Reuses match_features(), so
+    the same false-positive protections (unambiguous candidates only, a
+    length-gated containment check, a 0.90 fuzzy floor) apply one level down."""
+    resolved = 0
+    for country_code, codes in list(missing_report.items()):
+        expected_all = subdivisions.get(country_code) or []
+        still_expected = [x for x in expected_all if x["code"] in codes]
+        if not still_expected:
+            continue
+        alpha2, alpha3 = country_alpha(still_expected, alpha_map)
+        if not alpha3:
+            continue
+        try:
+            data = download_boundary(alpha3, "ADM2")
+        except Exception as exc:
+            print(f"  {country_code}: ADM2 fetch failed: {exc}", file=sys.stderr)
+            continue
+        features = data.get("features") or []
+        if not features:
+            continue
+        matched, missing = match_features(still_expected, features, alpha2=alpha2, alpha3=alpha3)
+        for iso, feature in matched.items():
+            rings = transform_rings(projected_rings(feature), scale, translate_x, translate_y)
+            if not rings:
+                continue
+            per_country.setdefault(country_code, {})[iso] = rings
+            resolved += 1
+            print(f"  {iso}: resolved via {alpha3} ADM2")
+        remaining_codes = [x["code"] for x in missing]
+        if remaining_codes:
+            missing_report[country_code] = remaining_codes
+        else:
+            del missing_report[country_code]
+    return resolved
 
 
 # ------------------------------------------------------------ opaque ids
@@ -628,8 +934,7 @@ def build_from_source():
     for country_code, expected in subdivisions.items():
         if not expected or country_code not in target_boxes:
             continue
-        alpha2 = expected[0]["code"].split("-", 1)[0]
-        alpha3 = alpha_map.get(alpha2)
+        _, alpha3 = country_alpha(expected, alpha_map)
         if alpha3:
             jobs.append((country_code, alpha3, expected))
 
@@ -674,7 +979,8 @@ def build_from_source():
             missing_report[country_code] = [x["code"] for x in expected]
             continue
         features = data.get("features") or []
-        matched, missing = match_features(expected, features)
+        alpha2, _ = country_alpha(expected, alpha_map)
+        matched, missing = match_features(expected, features, alpha2=alpha2, alpha3=alpha3)
         if missing:
             missing_report[country_code] = [x["code"] for x in missing]
         for iso, feature in matched.items():
@@ -684,6 +990,27 @@ def build_from_source():
                 continue
             per_country.setdefault(country_code, {})[iso] = rings
             matched_total += 1
+
+    if missing_report:
+        before = sum(len(v) for v in missing_report.values())
+        resolved = resolve_territory_overrides(missing_report, per_country, scale, translate_x, translate_y)
+        matched_total += resolved
+        if resolved:
+            print(f"Territory-override fallback: {resolved}/{before} resolved via a dependent territory's own ADM0.")
+
+    if missing_report:
+        before = sum(len(v) for v in missing_report.values())
+        resolved = resolve_from_natural_earth(missing_report, per_country, scale, translate_x, translate_y)
+        matched_total += resolved
+        if resolved:
+            print(f"Natural Earth fallback: {resolved}/{before} resolved by exact ISO 3166-2 code.")
+
+    if missing_report:
+        before = sum(len(v) for v in missing_report.values())
+        resolved = resolve_from_adm2(missing_report, per_country, subdivisions, alpha_map, scale, translate_x, translate_y)
+        matched_total += resolved
+        if resolved:
+            print(f"ADM2 fallback: {resolved}/{before} resolved one administrative level down.")
 
     report_layout(*write_layout(
         world["width"], world["height"], per_country, ids,
