@@ -850,6 +850,11 @@ const ARCHETYPES = {
     max_rounds: 1,
     actions_per_cycle: 3,
     posture: 'escalate',
+    /* A seat here is a chief's own warriors and his own kin's counsel — not
+       a post an outsider can be handed. A Republic defector gets no cabinet
+       role and no claim on any chief's line, whatever they renounced to
+       come here. */
+    accepts_defectors: false,
     refusals: [
       {
         kinds: ['treaty', 'ratify'],
@@ -921,6 +926,7 @@ function list() {
       max_rounds: a.max_rounds,
       actions_per_cycle: a.actions_per_cycle,
       posture: a.posture,
+      accepts_defectors: a.accepts_defectors !== false,
       refusals: a.refusals.map(r => ({ kinds: r.kinds, why: r.why })),
       cabinet: a.cabinet.map(c => ({
         role: c.role,
@@ -945,6 +951,17 @@ function list() {
         : null
     };
   });
+}
+
+/* Whether this archetype takes in a Republic defector at all. Absent field
+   means yes — most governments have no reason to turn away a citizen who has
+   already renounced their old country for this one. Only an archetype with an
+   explicit reason sets `accepts_defectors: false`; nothing here invents a
+   whole refusal category, it is one flag with a default. */
+function acceptsDefectors(archetypeId) {
+  const a = get(archetypeId);
+  if (!a) return true; // no government configured — nothing here can refuse on its behalf
+  return a.accepts_defectors !== false;
 }
 
 /* ------------------------------------------------------------- hard refusals
@@ -1429,6 +1446,7 @@ module.exports = {
   get,
   list,
   refusal,
+  acceptsDefectors,
   posturePriorityBias,
   effectiveThreshold,
   councilRequirement,
