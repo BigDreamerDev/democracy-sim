@@ -23,6 +23,20 @@
 
   --gap:18px;
   --radius:3px;
+
+  /* One curve, three durations. A ballot stock aesthetic still needs motion
+     to feel handled rather than static — this is the whole motion system,
+     reused everywhere rather than each place inventing its own timing. */
+  --ease:cubic-bezier(.16,1,.3,1);
+  --fast:120ms;
+  --base:200ms;
+  --slow:420ms;
+
+  /* Paper lifted off the table, not painted flat against it. Two depths: a
+     card at rest, and the same card on hover/focus, close enough that
+     nothing feels like it jumped. */
+  --lift-sm:0 1px 2px rgba(20,22,28,.05), 0 1px 1px rgba(20,22,28,.04);
+  --lift-md:0 4px 14px rgba(20,22,28,.09), 0 1px 3px rgba(20,22,28,.06);
 }
 
 *{box-sizing:border-box}
@@ -87,6 +101,7 @@ a:hover{text-decoration:underline}
   white-space:nowrap;padding:11px 12px;color:var(--ink-2);
   font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
   border-bottom:2px solid transparent;
+  transition:color var(--fast) var(--ease), border-color var(--fast) var(--ease), background var(--fast) var(--ease);
 }
 .rail a:hover{text-decoration:none;color:var(--ink)}
 .rail a.is-on{color:var(--ink);border-bottom-color:var(--indelible)}
@@ -109,7 +124,31 @@ main{grid-area:main;padding:22px 16px 80px;width:100%;min-width:0}
 h1.page{font-family:var(--display);font-weight:800;font-size:clamp(26px,4.4vw,34px);line-height:1.05;margin:0 0 4px;letter-spacing:-.015em}
 p.page-sub{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);margin:0 0 24px}
 
-.card{background:var(--card);border:1px solid var(--rule);padding:18px;margin-bottom:var(--gap)}
+.card{
+  background:var(--card);border:1px solid var(--rule);padding:18px;margin-bottom:var(--gap);
+  box-shadow:var(--lift-sm);border-radius:var(--radius);
+  transition:box-shadow var(--base) var(--ease), transform var(--base) var(--ease);
+  animation:card-in var(--slow) var(--ease) backwards;
+}
+/* Every card any view renders is a freshly-created node — innerHTML is
+   replaced wholesale on navigation and on refresh alike, so this replays
+   often by construction rather than by a one-off page-load hook. Kept fast
+   and small on purpose: at 6px/240ms this reads as the view settling in, the
+   same way a native app's list reads as "live" on every update, rather than
+   as an effect calling attention to itself. Capped stagger so a data-dense
+   page doesn't cascade for a full second. */
+@keyframes card-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.card:nth-of-type(1){animation-delay:0ms}
+.card:nth-of-type(2){animation-delay:35ms}
+.card:nth-of-type(3){animation-delay:70ms}
+.card:nth-of-type(4){animation-delay:105ms}
+.card:nth-of-type(5){animation-delay:140ms}
+.card:nth-of-type(n+6){animation-delay:160ms}
+.card:hover{box-shadow:var(--lift-md);transform:translateY(-1px)}
+@media(prefers-reduced-motion:reduce){
+  .card{animation:none}
+  .card:hover{transform:none}
+}
 .card > h2{font-family:var(--display);font-weight:600;font-size:19px;margin:0 0 12px;letter-spacing:-.01em}
 .card > h2:not(:first-child){margin-top:24px}
 
@@ -123,8 +162,11 @@ p.page-sub{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-tran
 
 /* rows of business */
 .list{border-top:1px solid var(--rule)}
-.item{display:block;padding:13px 2px;border-bottom:1px solid var(--rule);color:inherit}
-.item:hover{text-decoration:none;background:rgba(91,46,158,.045)}
+.item{display:block;padding:13px 2px;border-bottom:1px solid var(--rule);color:inherit;transition:background var(--fast) var(--ease)}
+/* Reads the live accent rather than a hardcoded violet, so a page that
+   re-points --indelible-fill (Intelligence to oxide, the money desk to
+   tally) gets a matching hover tint instead of a stray violet wash. */
+.item:hover{text-decoration:none;background:color-mix(in srgb, var(--indelible-fill) 6%, transparent)}
 .item-top{display:flex;gap:8px;align-items:baseline;justify-content:space-between}
 .item-title{font-weight:600;font-size:15px}
 .item-meta{font-family:var(--mono);font-size:10px;color:var(--ink-2);letter-spacing:.04em;margin-top:3px}
@@ -261,13 +303,6 @@ p.page-sub{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-tran
   --indelible-fill:var(--tally);
   --indelible-soft:#E1EDE7;
 }
-/* Faint ruled paper behind the accounts themselves — a ledger page, not a
-   card. Only on the card that actually holds the figures, not the whole page,
-   so it reads as one sheet rather than wallpaper. */
-.money-desk .card:has(.balance-figure){
-  background-image:repeating-linear-gradient(180deg, transparent 0 27px, var(--rule) 27px 28px);
-  background-position:0 64px;
-}
 /* The accountant's double rule under a total — the one universal typographic
    mark for "this figure is settled," borrowed straight from a real ledger
    rather than invented for the screen. Scoped to this page: the Economy page
@@ -316,9 +351,12 @@ input[type=color]{padding:3px;height:38px}
   font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;
   padding:10px 14px;border:1px solid var(--ink);background:var(--paper);color:var(--ink);
   border-radius:var(--radius);cursor:pointer;
+  transition:background var(--fast) var(--ease), filter var(--fast) var(--ease),
+             transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease), border-color var(--fast) var(--ease);
 }
-.btn:hover{background:#fff}
+.btn:hover{background:#fff;box-shadow:var(--lift-sm);transform:translateY(-1px)}
 .btn:disabled{opacity:.4;cursor:not-allowed}
+.btn:disabled:hover{transform:none;box-shadow:none}
 .btn-primary{background:var(--indelible-fill);border-color:var(--indelible);color:var(--on-accent)}
 .btn-primary:hover{filter:brightness(.92)}
 .btn-aye{background:var(--tally);border-color:var(--tally);color:#fff}
@@ -689,12 +727,19 @@ input[type=color]{padding:3px;height:38px}
 .btn[data-busy]{opacity:.75;cursor:progress}
 
 .skeleton{padding:4px 0}
-.sk{background:var(--rule);opacity:.45;border-radius:2px;animation:pulse 1.4s ease-in-out infinite}
+.sk{
+  background:var(--rule);border-radius:2px;position:relative;overflow:hidden;
+}
+.sk::after{
+  content:"";position:absolute;inset:0;transform:translateX(-100%);
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent);
+  animation:shimmer 1.5s ease-in-out infinite;
+}
 .sk-title{height:30px;width:min(58%,320px);margin-bottom:12px}
 .sk-line{height:11px;width:min(38%,220px);margin-bottom:22px}
 .sk-card{height:104px;margin-bottom:14px}
-@keyframes pulse{0%,100%{opacity:.28}50%{opacity:.55}}
-@media(prefers-reduced-motion:reduce){.sk,.spinner{animation:none}}
+@keyframes shimmer{to{transform:translateX(100%)}}
+@media(prefers-reduced-motion:reduce){.sk,.sk::after,.spinner{animation:none}}
 
 /* ═══════════════════════════════════════════════════ ON A PHONE
 
@@ -824,7 +869,7 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
 
 /* A tap needs to look like it landed. */
 .btn, .option, .power { -webkit-tap-highlight-color: rgba(0,0,0,.06); }
-.btn:active { transform: translateY(1px); }
+.btn:active { transform:translateY(1px) scale(.98); }
 .option:active { background: var(--indelible-soft); }
 
 @media (max-width: 700px) {
