@@ -175,16 +175,80 @@ p.page-sub{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-tran
 
 .mono{font-family:var(--mono)}
 
-/* ------------------------------------------------------ intelligence */
+/* ------------------------------------------------------ intelligence
+   The classified wing of the same paper bureaucracy the rest of the app is
+   already built from — not a different application. The Republic's own
+   palette comment already calls --oxide "rubber stamp"; the whole idea here
+   is to spend that stamp properly rather than reach for a foreign "hacker
+   terminal" look this codebase has no other use for.
+
+   The re-pointed --indelible/--indelible-fill/--indelible-soft below are the
+   single move that does the most work: every button, link, focus ring and
+   .on-violet tag inside .intel-page already reads those three variables, so
+   this page's whole primary accent goes from ballot-violet to case-file red
+   with no other markup touched anywhere. */
+.intel-page{
+  --indelible:var(--oxide);
+  --indelible-fill:var(--oxide);
+  --indelible-soft:#F4E1DD;
+  position:relative;
+}
+/* A hairline scan texture, not a pattern anyone is meant to consciously see —
+   the same restraint the rest of the app spends on a single flat --paper. */
+.intel-page::before{
+  content:"";
+  position:absolute; inset:0 0 auto 0; height:100%;
+  background:repeating-linear-gradient(180deg, rgba(20,22,28,.018) 0 1px, transparent 1px 3px);
+  pointer-events:none; z-index:0;
+}
+.intel-page > *{position:relative; z-index:1}
+.intel-page h1.page{font-family:var(--mono); letter-spacing:.02em; text-transform:uppercase; font-size:clamp(22px,3.6vw,28px)}
 
 .intel-tier-card{border-left:3px solid var(--rule)}
 .intel-tier-card.is-open{border-left-color:var(--tally)}
-.intel-tier-card.is-current{border-left-color:var(--indelible)}
+.intel-tier-card.is-current{border-left-color:var(--oxide)}
 .intel-gate-row{display:grid;grid-template-columns:104px 1fr auto;gap:10px;align-items:center}
 .intel-gate-bar{margin-top:0;flex:1}
 .intel-op-card{border-left:3px solid var(--rule);transition:opacity .15s ease}
 .intel-op-card.is-locked{opacity:.55}
 .intel-op-card.is-open{border-left-color:var(--tally)}
+
+/* A manila folder tab standing proud of the card's top edge. data-tab supplies
+   the label so no extra markup is needed beyond the attribute. Restrained on
+   purpose — only the two or three cards that anchor the page get one. */
+.intel-folder{margin-top:22px; position:relative}
+.intel-folder::before{
+  content:attr(data-tab);
+  position:absolute; top:-19px; left:16px;
+  background:var(--card); border:1px solid var(--rule); border-bottom:none;
+  padding:4px 12px 3px; border-radius:3px 3px 0 0;
+  font-family:var(--mono); font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-2);
+}
+
+/* The signature: a sealed report stands in for its own body. Widths are fixed
+   per report, not random on every render, so the same file redacts the same
+   way each time you open the page — it is standing in for real text, not
+   decorating around its absence. */
+.intel-redaction-block{display:flex; flex-direction:column; gap:5px; margin:10px 0}
+.intel-redaction{
+  display:block; height:11px; border-radius:1px;
+  background:repeating-linear-gradient(115deg, #14161c 0 2px, #1c1e26 2px 4px);
+}
+.intel-redaction-block.is-lifted{display:none}
+
+/* A rubber stamp, not a pill. Double ring, rotated, the ink slightly uneven —
+   this is the one place on the page allowed to look hand-applied. */
+.intel-stamp{
+  font-family:var(--mono); font-size:9px; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--oxide); border:1.5px solid var(--oxide); border-radius:2px;
+  padding:3px 8px 2px; background:transparent;
+  transform:rotate(-3deg);
+  box-shadow:inset 0 0 0 2px rgba(168,54,43,.15);
+}
+.intel-stamp.is-on{background:rgba(168,54,43,.07)}
+
+.intel-dossier-item{border-left:2px solid transparent}
+.intel-dossier-item:has(.intel-stamp.is-on){border-left-color:var(--oxide)}
 
 .result-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--rule)}
 .result-count{font-family:var(--mono);font-size:13px;font-weight:600}
