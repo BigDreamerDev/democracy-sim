@@ -250,6 +250,35 @@ p.page-sub{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-tran
 .intel-dossier-item{border-left:2px solid transparent}
 .intel-dossier-item:has(.intel-stamp.is-on){border-left-color:var(--oxide)}
 
+/* ------------------------------------------------------------ money desk
+   Treasury, the Fed, Offshore & Forex — the open counterpart to the
+   Intelligence wing's secrecy: everything here is counted, ruled and totalled
+   rather than redacted. --tally is already this app's name for "counted" (it
+   is the vote-tally colour); spending it here as the accent, the same
+   re-pointing trick as .intel-page, is the whole identity. */
+.money-desk{
+  --indelible:var(--tally);
+  --indelible-fill:var(--tally);
+  --indelible-soft:#E1EDE7;
+}
+/* Faint ruled paper behind the accounts themselves — a ledger page, not a
+   card. Only on the card that actually holds the figures, not the whole page,
+   so it reads as one sheet rather than wallpaper. */
+.money-desk .card:has(.balance-figure){
+  background-image:repeating-linear-gradient(180deg, transparent 0 27px, var(--rule) 27px 28px);
+  background-position:0 64px;
+}
+/* The accountant's double rule under a total — the one universal typographic
+   mark for "this figure is settled," borrowed straight from a real ledger
+   rather than invented for the screen. Scoped to this page: the Economy page
+   uses the same .balance-figure class for an ordinary citizen's balance,
+   which is not a settled institutional total and shouldn't look like one. */
+.money-desk .balance-figure{
+  padding-bottom:8px;
+  border-bottom:3px double var(--ink-3);
+  width:fit-content;
+}
+
 .result-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--rule)}
 .result-count{font-family:var(--mono);font-size:13px;font-weight:600}
 .result-row.is-elected .result-count{color:var(--tally)}

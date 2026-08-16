@@ -69,6 +69,7 @@
     const canAppoint = held(t.appointer);
 
     v.innerHTML = `
+      <div class="money-desk">
       <h1 class="page">The Treasury</h1>
       <p class="page-sub">The public accounts, answerable to the House. It may not create money.</p>
 
@@ -177,6 +178,7 @@
                 .join('')
             : '<p class="small muted">The Treasury has reported nothing yet. Part 6 says it must, each cycle.</p>'
         }
+      </div>
       </div>`;
 
     onSubmit('#appoint', b => api('/api/treasury/appoint', { method: 'POST', body: { user_id: Number(b.user_id) } }));
@@ -201,6 +203,7 @@
       k;
 
     v.innerHTML = `
+      <div class="money-desk">
       <h1 class="page">The Fed</h1>
       <p class="page-sub">The money supply, the rate of interest, and the licensing of banks. No officer may instruct it.</p>
 
@@ -441,6 +444,7 @@
           <button class="btn btn-primary">Apply for a licence</button>
         </form>`
         }
+      </div>
       </div>`;
 
     const amt = id => Number(document.querySelector(`[data-amt="${id}"]`)?.value || 0);
@@ -855,6 +859,7 @@
     }
 
     v.innerHTML = `
+      <div class="money-desk">
       <h1 class="page">Offshore &amp; Forex</h1>
       <p class="page-sub">Banking abroad is opaque, not secret: the House can find it by inquiry, take it by bill, or compel a haven to publish it by treaty. A power that has soured on the Republic can freeze what it holds — usually the moment you wanted it.</p>
 
@@ -931,6 +936,7 @@
                 .join('')}</div>`
             : '<p class="small muted" style="margin-top:10px">Nobody has renounced the Republic.</p>'
         }
+      </div>
       </div>`;
 
     onSubmit('#renounce', b => api('/api/defection', { method: 'POST', body: b }));
