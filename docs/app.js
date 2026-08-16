@@ -251,6 +251,41 @@ const statusTag = s => {
   return `<span class="tag ${map[s] ?? ''}">${esc(s)}</span>`;
 };
 
+function officeLabel(office) {
+  const key = String(office || '').trim();
+  if (!key) return '';
+  const known = {
+    mp: 'MP',
+    speaker: 'Speaker',
+    president: 'President',
+    prime_minister: 'Prime Minister',
+    justice: 'Justice',
+    treasurer: 'Treasurer',
+    fed_chair: 'Fed Chair',
+    quartermaster: 'Quartermaster',
+    foreign_minister: 'Foreign Minister',
+    intel_director: 'Intelligence Director'
+  };
+  return known[key] || key.split('_').filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function officeList(offices, separator = ' · ') {
+  return (offices || []).map(officeLabel).filter(Boolean).join(separator);
+}
+
+function drawWhoami() {
+  if (!ME) return;
+  $('#whoName').textContent = ME.display_name;
+  const offices = officeList(ME.offices);
+  const badge = $('#whoRole');
+  if (!badge) return;
+  badge.textContent = offices || (ME.is_admin ? 'Returning Officer' : 'Citizen');
+  badge.title = badge.textContent;
+  badge.hidden = false;
+}
+
 /* Every action button goes through this. It disables while the request is in
    flight, which stops the double-submits that produce "you have already voted"
    as a reward for an impatient tap, and gives the tap something to answer. */
@@ -457,10 +492,7 @@ async function start() {
   catch { localStorage.removeItem('republic.token'); TOKEN = ''; return showGate('Your session expired. Sign in again.'); }
   $('#gate').hidden = true;
   $('#shell').hidden = false;
-  $('#whoName').textContent = ME.display_name;
-  const title = (ME.offices || []).map(o => o === 'mp' ? 'MP' : o[0].toUpperCase() + o.slice(1))[0];
-  const badge = $('#whoRole');
-  if (badge) { badge.textContent = title || (ME.is_admin ? 'Returning Officer' : 'Citizen'); badge.hidden = false; }
+  drawWhoami();
   if (!location.hash) location.hash = '#/chamber';
   await route();
 }
@@ -1044,7 +1076,7 @@ async function viewPeople(v) {
           ${Object.entries(d.acts).map(([k, l]) => `<option value="${esc(k)}">${esc(l)}</option>`).join('')}
         </select></label>
         <label class="field" id="smt" hidden><span>Concerning whom</span><select name="target_user_id">
-          ${cs.map(c => `<option value="${c.id}">${esc(c.display_name)}${(c.offices || []).length ? ` — ${esc((c.offices || []).join(', '))}` : ''}</option>`).join('')}
+          ${cs.map(c => `<option value="${c.id}">${esc(c.display_name)}${(c.offices || []).length ? ` — ${esc(officeList(c.offices, ', '))}` : ''}</option>`).join('')}
         </select></label>
         <label class="field"><span>Why</span><textarea name="reasons" required></textarea></label>
         <button class="btn btn-primary">Open the motion</button>
@@ -1206,7 +1238,7 @@ async function viewPrimeMinister(v) {
       <p class="small muted">Article 17.2: appoint whoever can command a majority of the House. They take office only once the House confirms.</p>
       <form id="nom" class="stack" style="margin-top:12px">
         <label class="field"><span>Whom</span><select name="user_id">
-          ${cs.filter(c => c.id !== ME.id).map(c => `<option value="${c.id}">${esc(c.display_name)}${(c.offices || []).length ? ` — ${esc((c.offices || []).join(', '))}` : ''}</option>`).join('')}
+          ${cs.filter(c => c.id !== ME.id).map(c => `<option value="${c.id}">${esc(c.display_name)}${(c.offices || []).length ? ` — ${esc(officeList(c.offices, ', '))}` : ''}</option>`).join('')}
         </select></label>
         <button class="btn btn-primary">Put them to the House</button>
       </form>
@@ -1407,7 +1439,7 @@ async function viewBills(v) {
   if (!kindSel) return;
   api('/api/citizens').then(cs => {
     $('#who').innerHTML = '<option value="">—</option>' + cs.filter(c => (c.offices || []).length)
-      .map(c => `<option value="${c.id}">${esc(c.display_name)} — ${(c.offices || []).join(', ')}</option>`).join('');
+      .map(c => `<option value="${c.id}">${esc(c.display_name)} — ${esc(officeList(c.offices, ', '))}</option>`).join('');
   });
   const syncKind = () => {
     const isRule = kindSel.value === 'rule';
@@ -1736,7 +1768,7 @@ async function viewCitizens(v) {
       <div class="item">
         <div class="item-top">
           <span class="item-title">${esc(u.display_name)} ${u.party_abbr ? `<span class="tag" style="border-color:${esc(u.party_colour)};color:${esc(u.party_colour)}">${esc(u.party_abbr)}</span>` : ''}</span>
-          <span>${(u.offices || []).map(o => `<span class="tag on-navy">${esc(o === 'mp' ? 'MP' : o)}</span>`).join(' ')}</span>
+          <span>${(u.offices || []).map(o => `<span class="tag on-navy">${esc(officeLabel(o))}</span>`).join(' ')}</span>
         </div>
         <div class="item-meta">@${esc(u.username)} · joined ${day(u.created_at)}</div>
         ${u.bio ? `<div class="small" style="margin-top:4px">${esc(u.bio)}</div>` : ''}
@@ -1769,10 +1801,11 @@ async function viewRecord(v) {
 
 async function viewMe(v) {
   ME = await api('/api/me');
+  drawWhoami();
   const keys = await api('/api/me/keys');
   v.innerHTML = `
     <h1 class="page">${esc(ME.display_name)}</h1>
-    <p class="page-sub">@${esc(ME.username)}${ME.offices.length ? ' · ' + ME.offices.join(', ') : ''}${ME.party ? ' · ' + esc(ME.party.name) : ''}</p>
+    <p class="page-sub">@${esc(ME.username)}${ME.offices.length ? ' · ' + esc(officeList(ME.offices, ', ')) : ''}${ME.party ? ' · ' + esc(ME.party.name) : ''}</p>
     <div class="card"><h2>Profile</h2>
       <form id="pf" class="stack">
         <label class="field"><span>Display name</span><input name="display_name" value="${esc(ME.display_name)}"></label>
@@ -1783,7 +1816,7 @@ async function viewMe(v) {
     ${ME.offices.length ? `<div class="card"><h2>Resign</h2>
       <p class="small muted">Article 7.4: you may resign any office at any time, and need give no reason. Leaving the House leaves the chair with it.</p>
       <div class="row" style="margin-top:10px">${ME.offices.map(o =>
-        `<button class="btn btn-sm" data-resign="${esc(o)}">Resign as ${esc(o === 'mp' ? 'MP' : o)}</button>`).join('')}</div>
+        `<button class="btn btn-sm" data-resign="${esc(o)}">Resign as ${esc(officeLabel(o))}</button>`).join('')}</div>
     </div>` : ''}
 
     <div class="card"><h2>Password</h2>
@@ -1838,12 +1871,12 @@ async function viewMe(v) {
   $('#pf').onsubmit = async e => {
     e.preventDefault();
     await api('/api/me', { method: 'PUT', body: Object.fromEntries(new FormData(e.target)) });
-    ME = await api('/api/me'); $('#whoName').textContent = ME.display_name; toast('Saved.');
+    ME = await api('/api/me'); drawWhoami(); toast('Saved.');
   };
   onAction('[data-resign]', async btn => {
-    if (!confirm(`Resign as ${btn.dataset.resign}? It takes effect at once.`)) return;
+    if (!confirm(`Resign as ${officeLabel(btn.dataset.resign)}? It takes effect at once.`)) return;
     await api('/api/me/resign', { method: 'POST', body: { office: btn.dataset.resign } });
-    ME = await api('/api/me'); toast('Resigned.'); route();
+    ME = await api('/api/me'); drawWhoami(); toast('Resigned.'); route();
   });
 
   $('#pw').onsubmit = async e => {

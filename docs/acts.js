@@ -790,7 +790,7 @@
       <div class="list">${m.holders
         .map(
           h => `<div class="item"><div class="item-top">
-        <span class="item-title">${esc(h.display_name)} ${(h.offices || []).length ? `<span class="tag on-violet">${esc(h.offices.join(', '))}</span>` : ''}</span>
+        <span class="item-title">${esc(h.display_name)} ${(h.offices || []).length ? `<span class="tag on-violet">${esc(officeList(h.offices, ', '))}</span>` : ''}</span>
         <span class="money">${h.qty} · ${Math.round((Number(h.qty) / Number(m.business.shares_issued)) * 100)}%</span>
       </div></div>`
         )
@@ -1951,7 +1951,7 @@
       try {
         const cs = await api('/api/citizens');
         form.user_id.innerHTML = cs
-          .map(c => `<option value="${c.id}">${esc(c.display_name)}${(c.offices || []).length ? ` — ${esc((c.offices || []).join(', '))}` : ''}</option>`)
+          .map(c => `<option value="${c.id}">${esc(c.display_name)}${(c.offices || []).length ? ` — ${esc(officeList(c.offices, ', '))}` : ''}</option>`)
           .join('');
       } catch {}
       form.onsubmit = async ev => {

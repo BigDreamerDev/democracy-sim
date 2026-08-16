@@ -27,7 +27,7 @@
    "nothing here happened" is not how this codebase treats consequential action. */
 
 module.exports.mount = function mount(app, ctx) {
-  const { q, tx, log, auth, admin, wrap, canPropose, cycleNow, num, loadConfig, officesOf, holds } = ctx;
+  const { q, tx, log, auth, admin, wrap, canPropose, cycleNow, num, loadConfig, officesOf, holds, seatClash } = ctx;
 
   const cycleNo = () => cycleNow()?.number || 0;
   const clean = (s, n = 2000) => String(s ?? '').trim().slice(0, n);
@@ -323,9 +323,9 @@ module.exports.mount = function mount(app, ctx) {
       const needed = Math.max(1, Math.floor(house / 2) + 1);
       if (votes < needed) return res.json({ confirmed: false, votes, needed, house });
 
-      const held = (await officesOf(nom.user_id)).filter(o => o !== 'intel_director');
+      const held = seatClash(await officesOf(nom.user_id), 'intel_director');
       if (held.length)
-        return res.status(400).json({ error: `They hold office as ${held.join(', ')}. The Director holds no other office and must resign it first.` });
+        return res.status(400).json({ error: `They hold an incompatible office as ${held.join(', ')}. The Director may also hold Foreign Affairs, Defence and/or a House seat, but not an exclusive or economic portfolio.` });
 
       const terms = Math.max(1, num('intel_director_terms') || 4);
       const ends = new Date(Date.now() + terms * Math.max(1, num('cycle_days') || 7) * 86400000);

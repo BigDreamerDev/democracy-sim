@@ -33,7 +33,7 @@
    argument afterwards is about the decision rather than about the dice. */
 
 module.exports.mount = function mount(app, ctx) {
-  const { q, tx, log, auth, wrap, num, bool, loadConfig, officesOf, holds, slowWrites, cycleNow } = ctx;
+  const { q, tx, log, auth, wrap, num, bool, loadConfig, officesOf, holds, seatClash, slowWrites, cycleNow } = ctx;
 
   const E = () => ctx.economy;
   const money = n => Math.round(Number(n) || 0);
@@ -126,9 +126,9 @@ module.exports.mount = function mount(app, ctx) {
       });
     const target = (await q('SELECT id, display_name FROM users WHERE id=$1 AND is_active AND approved', [req.body?.user_id || 0])).rows[0];
     if (!target) return res.status(400).json({ error: 'Name a citizen to appoint.' });
-    const held = (await officesOf(target.id)).filter(o => o !== 'quartermaster');
+    const held = seatClash(await officesOf(target.id), 'quartermaster');
     if (held.length)
-      return res.status(400).json({ error: `${target.display_name} holds office as ${held.join(', ')}. Article 7.1 gives each citizen one seat — they must resign it first.` });
+      return res.status(400).json({ error: `${target.display_name} holds an incompatible office as ${held.join(', ')}. Defence may be combined with Foreign Affairs, Intelligence and House membership, but not an exclusive or economic portfolio.` });
     await q("UPDATE offices SET active=FALSE, until=now() WHERE office='quartermaster' AND active");
     await q("INSERT INTO offices(office,user_id) VALUES('quartermaster',$1)", [target.id]);
     log(req.user.id, 'war.quartermaster.appoint', `${target.display_name}, by the ${appointer.replace('_', ' ')}`);

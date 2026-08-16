@@ -571,11 +571,32 @@ function requireScope(scope) {
   };
 }
 
-/* Article 7.1 is "one seat", and Article 4.1 makes the Speaker a member of the
-   House — so mp and speaker are one seat held together, not two. */
-const SAME_SEAT = new Set(['mp', 'speaker']);
-const seatClash = (held, office) =>
-  held.filter(o => o !== office && !(SAME_SEAT.has(o) && SAME_SEAT.has(office)));
+/* Office compatibility after repeal of the old one-seat rule.
+
+   The President, Prime Minister and Justices remain constitutionally exclusive:
+   holding any one of them means holding nothing else. House membership is
+   cross-cutting, so an MP (and therefore the Speaker) may also carry a compatible
+   executive portfolio. Executive portfolios may only be combined inside their
+   own policy family: Treasury/Fed for economic management, and Foreign
+   Affairs/Defence/Intelligence for external and national-security affairs. */
+const EXCLUSIVE_OFFICES = new Set(['president', 'prime_minister', 'justice']);
+const HOUSE_OFFICES = new Set(['mp', 'speaker']);
+const OFFICE_AREA = new Map([
+  ['treasurer', 'economic'],
+  ['fed_chair', 'economic'],
+  ['quartermaster', 'statecraft'],
+  ['foreign_minister', 'statecraft'],
+  ['intel_director', 'statecraft']
+]);
+const officesCompatible = (a, b) => {
+  if (!a || !b || a === b) return true;
+  if (EXCLUSIVE_OFFICES.has(a) || EXCLUSIVE_OFFICES.has(b)) return false;
+  if (HOUSE_OFFICES.has(a) || HOUSE_OFFICES.has(b)) return true;
+  const aa = OFFICE_AREA.get(a);
+  const bb = OFFICE_AREA.get(b);
+  return !!aa && aa === bb;
+};
+const seatClash = (held, office) => held.filter(o => o !== office && !officesCompatible(o, office));
 
 async function officesOf(userId) {
   const { rows } = await q('SELECT office FROM offices WHERE user_id=$1 AND active', [userId]);
@@ -1160,11 +1181,11 @@ async function certify(e, actorId) {
      here. On a run-off that tied again, that leaves the seats empty. */
   const toSeat = tie ? winners.filter(w => w.votes > cutoff) : winners;
   for (const w of toSeat) {
-    // Article 7.1: one seat each. Someone who already holds another office is
-    // not seated in a second — they keep the one they have.
+    // A winner may keep House membership alongside a compatible portfolio, but
+    // exclusive offices and cross-area portfolio combinations remain barred.
     const clash = seatClash(await officesOf(w.user_id), office);
     if (clash.length) {
-      log(actorId, 'election.unseated', `${w.display_name} won but holds ${clash.join(', ')} — Article 7.1`);
+      log(actorId, 'election.unseated', `${w.display_name} won but the office conflicts with ${clash.join(', ')}`);
       continue;
     }
     await q('INSERT INTO offices(office,user_id,seat,election_id) VALUES($1,$2,$3,$4)',
@@ -2177,8 +2198,8 @@ app.post('/api/prime-minister/confirm', auth, wrap(async (req, res) => {
   if (votes < needed) return res.json({ confirmed: false, votes, needed });
 
   const clash = seatClash(await officesOf(nom.user_id), 'prime_minister');
-  if (clash.filter(o => o !== 'mp' && o !== 'speaker').length)
-    return res.status(400).json({ error: `They hold office as ${clash.join(', ')}. Article 17.10 excuses a seat in the House and nothing else.` });
+  if (clash.length)
+    return res.status(400).json({ error: `They hold office as ${clash.join(', ')}. The Prime Minister may hold no other office and must resign it first.` });
 
   await q("INSERT INTO offices(office,user_id) VALUES('prime_minister',$1)", [nom.user_id]);
   await q("UPDATE pm_nominations SET status='confirmed', settled_at=now() WHERE id=$1", [nom.id]);
@@ -2867,12 +2888,10 @@ app.post('/api/admin/office', admin, wrap(async (req, res) => {
   if (RO_MAY_NOT_FILL[office]) return res.status(403).json({ error: RO_MAY_NOT_FILL[office] });
   if (!['president', 'prime_minister', 'speaker', 'mp', 'justice'].includes(office)) return res.status(400).json({ error: 'Unknown office.' });
   if (!remove) {
-    // Article 7.1 — no Citizen holds more than one seat. The Speaker is a member
-    // of the House (4.1), so those two are one seat and may be held together.
     const held = await officesOf(user_id);
     const clash = seatClash(held, office);
     if (clash.length)
-      return res.status(400).json({ error: `Article 7.1: that citizen already holds office as ${clash.join(', ')}. They must resign it first.` });
+      return res.status(400).json({ error: `That office conflicts with ${clash.join(', ')}. Exclusive offices cannot be combined, and executive portfolios may only be combined within the same policy area.` });
   }
   if (remove) {
     await q('UPDATE offices SET active=FALSE, until=now() WHERE user_id=$1 AND office=$2 AND active', [user_id, office]);
@@ -2950,7 +2969,7 @@ app.put('/api/admin/constitution', admin, wrap(async (req, res) => {
    touching anything above. Each is optional: if the file is not there, the
    Republic simply does not have that institution yet. */
 const ACT_CONTEXT = {
-  q, tx, log, auth, admin, wrap, num, bool, loadConfig, officesOf, holds,
+  q, tx, log, auth, admin, wrap, num, bool, loadConfig, officesOf, holds, seatClash, officesCompatible,
   citizenCount, slowWrites, requireOffice, requireScope, attribute, events, enact, canPropose, cycleNow, addEnactHook, bcrypt, crypto,
   justiceTermEnds,
   get CONFIG() { return CONFIG; }

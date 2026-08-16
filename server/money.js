@@ -29,7 +29,7 @@
 
 module.exports.mount = function mount(app, ctx) {
   const {
-    q, log, auth, admin, wrap, num, bool, loadConfig, officesOf, holds,
+    q, log, auth, admin, wrap, num, bool, loadConfig, officesOf, holds, seatClash,
     wrap: _w, slowWrites, cycleNow
   } = ctx;
 
@@ -167,10 +167,9 @@ module.exports.mount = function mount(app, ctx) {
       [req.body?.user_id || 0])).rows[0];
     if (!target) return res.status(400).json({ error: 'Name a citizen to appoint.' });
 
-    // Article 7.1: one seat each. The Treasury is a seat like any other.
-    const held = (await officesOf(target.id)).filter(o => o !== 'treasurer');
+    const held = seatClash(await officesOf(target.id), 'treasurer');
     if (held.length)
-      return res.status(400).json({ error: `${target.display_name} holds office as ${held.join(', ')}. Article 7.1 gives each citizen one seat — they must resign it first.` });
+      return res.status(400).json({ error: `${target.display_name} holds an incompatible office as ${held.join(', ')}. The Treasurer may also be an MP/Speaker or head of the Fed, but not hold an exclusive or different-area portfolio.` });
 
     await q("UPDATE offices SET active=FALSE, until=now() WHERE office='treasurer' AND active");
     await q("INSERT INTO offices(office,user_id) VALUES('treasurer',$1)", [target.id]);
@@ -315,9 +314,9 @@ module.exports.mount = function mount(app, ctx) {
     const needed = Math.max(1, Math.floor(house / 2) + 1);
     if (votes < needed) return res.json({ confirmed: false, votes, needed, house });
 
-    const held = (await officesOf(nom.user_id)).filter(o => o !== 'fed_chair');
+    const held = seatClash(await officesOf(nom.user_id), 'fed_chair');
     if (held.length)
-      return res.status(400).json({ error: `They hold office as ${held.join(', ')}. The head of the Fed holds no other office and must resign it first.` });
+      return res.status(400).json({ error: `They hold an incompatible office as ${held.join(', ')}. The head of the Fed may also be Treasurer and/or sit in the House, but may not hold an exclusive or different-area portfolio.` });
     if (await businessInterest(nom.user_id))
       return res.status(400).json({ error: 'They hold a business interest. Whoever sets the rate of interest must not be able to profit by it — they must close it out first.' });
 

@@ -58,6 +58,7 @@ module.exports.mount = function mount(app, ctx) {
     bool,
     loadConfig,
     officesOf,
+    seatClash,
     canPropose,
     cycleNow,
     addEnactHook,
@@ -2866,11 +2867,10 @@ module.exports.mount = function mount(app, ctx) {
       ).rows[0];
       if (!target) return res.status(400).json({ error: 'Name a citizen to appoint.' });
 
-      // Article 7.1: one seat each. The Foreign Office is a seat like any other.
-      const held = (await officesOf(target.id)).filter(o => o !== 'foreign_minister');
+      const held = seatClash(await officesOf(target.id), 'foreign_minister');
       if (held.length)
         return res.status(400).json({
-          error: `${target.display_name} holds office as ${held.join(', ')}. Article 7.1 gives each citizen one seat — they must resign it first.`
+          error: `${target.display_name} holds an incompatible office as ${held.join(', ')}. Foreign Affairs may be combined with Defence, Intelligence and House membership, but not an exclusive or economic portfolio.`
         });
 
       await q("UPDATE offices SET active=FALSE, until=now() WHERE office='foreign_minister' AND active");

@@ -75,7 +75,7 @@ a:hover{text-decoration:underline}
 .brand-text{display:flex;flex-direction:column;line-height:1.1}
 .brand-text strong{font-family:var(--display);font-weight:800;font-size:16px;letter-spacing:-.01em}
 .brand-text em{font-family:var(--mono);font-style:normal;font-size:9px;letter-spacing:.06em;text-transform:uppercase;opacity:.65}
-.whoami{display:flex;align-items:center;gap:10px;font-size:13px}
+.whoami{display:flex;align-items:center;justify-content:flex-end;gap:10px;font-size:13px;flex-wrap:wrap}
 .whoami a{color:#fff;font-weight:600}
 
 .rail{
@@ -566,8 +566,8 @@ input[type=color]{padding:3px;height:38px}
 
 /* The office you hold, said out loud rather than inferred from what you can click. */
 .who-role{
-  font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
-  border:1px solid rgba(255,255,255,.45);padding:2px 7px;color:#fff;white-space:nowrap;
+  font-family:var(--mono);font-size:9px;letter-spacing:.06em;line-height:1.35;text-align:right;
+  border:1px solid rgba(255,255,255,.45);padding:2px 7px;color:#fff;white-space:normal;max-width:52vw;
 }
 
 /* ══════════════════════════════════════════════ WAITING, VISIBLY

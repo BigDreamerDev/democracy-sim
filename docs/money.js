@@ -56,7 +56,7 @@
     cs
       .map(
         c =>
-          `<option value="${c.id}">${esc(c.display_name)}${(c.offices || []).length ? ` — ${esc((c.offices || []).join(', '))}` : ''}</option>`
+          `<option value="${c.id}">${esc(c.display_name)}${(c.offices || []).length ? ` — ${esc(officeList(c.offices, ', '))}` : ''}</option>`
       )
       .join('');
 
@@ -640,7 +640,7 @@
     if (sel) {
       try {
         const cs = await api('/api/citizens');
-        sel.innerHTML = cs.map(c => `<option value="${c.id}">${esc(c.display_name)}${(c.offices || []).length ? ` — ${esc((c.offices || []).join(', '))}` : ''}</option>`).join('');
+        sel.innerHTML = cs.map(c => `<option value="${c.id}">${esc(c.display_name)}${(c.offices || []).length ? ` — ${esc(officeList(c.offices, ', '))}` : ''}</option>`).join('');
       } catch {}
     }
     if (mine) await drawProcurement();
