@@ -2764,19 +2764,31 @@
       cleared && service ? api('/api/intel/foreign-agents/compromised').catch(() => []) : Promise.resolve([])
     ]);
     const completedFor = tier => tier === 2 ? Number(progress.successful_tier1 || 0) : tier === 3 ? Number(progress.successful_tier2 || 0) : 0;
+    // Three numbers have to clear at once to open a tier, and a number alone
+    // reads the same whether it is one point short or ninety short. A bar per
+    // requirement says which one is actually holding the gate shut.
+    const gateBar = (have, need, label, fmt = n => n.toLocaleString()) => {
+      const pct = need > 0 ? Math.min(100, Math.round((have / need) * 100)) : 100;
+      const met = have >= need;
+      return `<div class="intel-gate-row"><span class="small ${met ? '' : 'muted'}">${label}</span><div class="bar intel-gate-bar"><span style="width:${pct}%;${met ? '' : 'background:var(--ink-3)'}"></span></div><span class="small mono ${met ? '' : 'muted'}">${fmt(have)} / ${fmt(need)}</span></div>`;
+    };
     const tierCards = [1, 2, 3].map(tier => {
       const gate = gates[tier] || {};
       const open = !!service && Number(progress.tier || 0) >= tier;
-      return `<div class="item">
-        <div class="item-top"><span class="item-title">Tier ${tier} · ${esc(gate.name || '')}</span><span class="tag ${open ? 'on-green' : ''}">${open ? 'Open' : 'Locked'}</span></div>
-        <div class="item-meta">Tradecraft ${Number(progress.tradecraft || 0).toLocaleString()} / ${Number(gate.tradecraft || 0).toLocaleString()} · committed budget ${cash(progress.committed_budget)} / ${cash(gate.budget)} · qualifying missions ${completedFor(tier)} / ${Number(gate.completed || 0)}</div>
-        ${!open && service ? `<p class="small muted">Still needed: ${esc(intelGateNeeds(tier, progress, gates).join(' · ') || 'open the previous tier')}</p>` : tier === 1 ? '<p class="small muted">Collection opens with the charter.</p>' : ''}
+      const current = Number(progress.tier || 0) === tier && service;
+      return `<div class="item intel-tier-card ${open ? 'is-open' : ''} ${current ? 'is-current' : ''}">
+        <div class="item-top"><span class="item-title">Tier ${tier} · ${esc(gate.name || '')}</span><span class="tag ${open ? 'on-green' : ''}">${open ? (current ? 'Current' : 'Open') : 'Locked'}</span></div>
+        ${tier === 1 ? '<p class="small muted" style="margin-top:6px">Collection opens with the charter — no gate to clear.</p>' : `<div class="stack" style="gap:6px;margin-top:8px">
+          ${gateBar(Number(progress.tradecraft || 0), Number(gate.tradecraft || 0), 'Tradecraft')}
+          ${gateBar(Number(progress.committed_budget || 0), Number(gate.budget || 0), 'Committed budget', cash)}
+          ${gateBar(completedFor(tier), Number(gate.completed || 0), 'Qualifying missions')}
+        </div>`}
       </div>`;
     }).join('');
     const operationCatalogue = Object.entries(ops).map(([kind, op]) => {
       const open = !!service && Number(progress.tier || 0) >= Number(op.tier || 0);
       const locked = !service ? 'charter the service first' : intelGateNeeds(Number(op.tier), progress, gates).join(' · ') || 'open the previous tier';
-      return `<div class="item"><div class="item-top"><span class="item-title">${esc(intelOpName(kind))}</span><span class="tag ${open ? 'on-green' : ''}">Tier ${Number(op.tier || 0)}${open ? '' : ' · Locked'}</span></div>
+      return `<div class="item intel-op-card ${open ? 'is-open' : 'is-locked'}"><div class="item-top"><span class="item-title">${open ? '' : '🔒 '}${esc(intelOpName(kind))}</span><span class="tag ${open ? 'on-green' : ''}">Tier ${Number(op.tier || 0)}${open ? '' : ' · Locked'}</span></div>
         <div class="item-meta">${cash(op.costUnit)} per score point · base difficulty ${Number(op.difficulty || 0)}${op.needsAsset ? ' · asset required' : ''}</div>
         ${open ? '' : `<p class="small muted">Needs ${esc(locked)}.</p>`}</div>`;
     }).join('');

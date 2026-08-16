@@ -171,7 +171,20 @@ p.page-sub{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-tran
 .option.is-mine{background:var(--indelible-soft)}
 
 .bar{height:8px;background:var(--paper);border:1px solid var(--rule);overflow:hidden;margin-top:6px}
-.bar > span{display:block;height:100%;background:var(--indelible-fill)}
+.bar > span{display:block;height:100%;background:var(--indelible-fill);transition:width .3s ease}
+
+.mono{font-family:var(--mono)}
+
+/* ------------------------------------------------------ intelligence */
+
+.intel-tier-card{border-left:3px solid var(--rule)}
+.intel-tier-card.is-open{border-left-color:var(--tally)}
+.intel-tier-card.is-current{border-left-color:var(--indelible)}
+.intel-gate-row{display:grid;grid-template-columns:104px 1fr auto;gap:10px;align-items:center}
+.intel-gate-bar{margin-top:0;flex:1}
+.intel-op-card{border-left:3px solid var(--rule);transition:opacity .15s ease}
+.intel-op-card.is-locked{opacity:.55}
+.intel-op-card.is-open{border-left-color:var(--tally)}
 
 .result-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--rule)}
 .result-count{font-family:var(--mono);font-size:13px;font-weight:600}
