@@ -850,6 +850,30 @@ app.get('/api/citizens', wrap(async (_req, res) => {
   res.json(rows);
 }));
 
+/* A citizen's political career, assembled from tables that already hold the
+   whole history — nothing here is a new record of anything. Offices going
+   inactive already leaves a row (since/until/active on `offices`), a
+   withdrawn candidacy is still a row in `candidacies`, and an author_id
+   survives a bill through every status it passes. This just joins them and
+   sorts them, the same way /api/audit reads a log it never writes outside
+   of the actions it already records. */
+app.get('/api/citizens/:id/career', wrap(async (req, res) => {
+  const id = req.params.id;
+  const user = (await q('SELECT id,username,display_name FROM users WHERE id=$1', [id])).rows[0];
+  if (!user) return res.status(404).json({ error: 'No such citizen.' });
+  const offices = await q(
+    `SELECT office, seat, since, until, active FROM offices WHERE user_id=$1 ORDER BY since DESC`, [id]);
+  const bills = await q(
+    `SELECT id, ref, title, kind, status, created_at, resolved_at FROM bills
+      WHERE author_id=$1 ORDER BY created_at DESC`, [id]);
+  const elections = await q(
+    `SELECT e.id AS election_id, e.title, e.kind, e.status, c.withdrawn, c.created_at,
+            EXISTS(SELECT 1 FROM offices o WHERE o.election_id=e.id AND o.user_id=$1) AS won
+       FROM candidacies c JOIN elections e ON e.id=c.election_id
+      WHERE c.user_id=$1 ORDER BY c.created_at DESC`, [id]);
+  res.json({ user, offices: offices.rows, bills: bills.rows, elections: elections.rows });
+}));
+
 /* -------------------------------------------------------------- parties */
 
 app.get('/api/parties', wrap(async (_req, res) => {
