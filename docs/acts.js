@@ -2787,10 +2787,10 @@
     // Three numbers have to clear at once to open a tier, and a number alone
     // reads the same whether it is one point short or ninety short. A bar per
     // requirement says which one is actually holding the gate shut.
-    const gateBar = (have, need, label, fmt = n => n.toLocaleString()) => {
+    const gateBar = (have, need, label, fmt = n => n.toLocaleString(), prefix = '') => {
       const pct = need > 0 ? Math.min(100, Math.round((have / need) * 100)) : 100;
       const met = have >= need;
-      return `<div class="intel-gate-row"><span class="small ${met ? '' : 'muted'}">${label}</span><div class="bar intel-gate-bar"><span style="width:${pct}%;${met ? '' : 'background:var(--ink-3)'}"></span></div><span class="small mono ${met ? '' : 'muted'}">${fmt(have)} / ${fmt(need)}</span></div>`;
+      return `<div class="intel-gate-row"><span class="small ${met ? '' : 'muted'}">${label}</span><div class="bar intel-gate-bar"><span style="width:${pct}%;${met ? '' : 'background:var(--ink-3)'}"></span></div><span class="small mono ${met ? '' : 'muted'}"><span data-count="${Math.round(have)}" data-prefix="${esc(prefix)}">${prefix}0</span> / ${fmt(need)}</span></div>`;
     };
     const tierCards = [1, 2, 3].map(tier => {
       const gate = gates[tier] || {};
@@ -2800,7 +2800,7 @@
         <div class="item-top"><span class="item-title">Tier ${tier} · ${esc(gate.name || '')}</span><span class="tag ${open ? 'on-green' : ''}">${open ? (current ? 'Current' : 'Open') : 'Locked'}</span></div>
         ${tier === 1 ? '<p class="small muted" style="margin-top:6px">Collection opens with the charter — no gate to clear.</p>' : `<div class="stack" style="gap:6px;margin-top:8px">
           ${gateBar(Number(progress.tradecraft || 0), Number(gate.tradecraft || 0), 'Tradecraft')}
-          ${gateBar(Number(progress.committed_budget || 0), Number(gate.budget || 0), 'Committed budget', cash)}
+          ${gateBar(Number(progress.committed_budget || 0), Number(gate.budget || 0), 'Committed budget', cash, sym())}
           ${gateBar(completedFor(tier), Number(gate.completed || 0), 'Qualifying missions')}
         </div>`}
       </div>`;
@@ -2875,6 +2875,7 @@
       <div class="card"><h2>Public operations register</h2><div class="list">${operationRows}</div></div>
       </div>`;
 
+    animateCounts(v);
     if ($('#intel-charter')) $('#intel-charter').onsubmit = e => {
       e.preventDefault();
       busy(e.submitter || e.target.querySelector('button'), async () => {

@@ -35,6 +35,32 @@ async function api(path, { method = 'GET', body } = {}) {
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+/* A figure that arrives is felt; one that's just there isn't. Markup renders
+   a target once as data-count (a citizen's balance, a tier's tradecraft) and
+   this walks in afterward and tweens toward it. Deliberately not a template
+   helper that also formats — callers already have cash()/toLocaleString for
+   that, so the prefix/suffix travel as plain data attributes and this only
+   ever owns the animation. A plain top-level function, not wrapped in an
+   IIFE, so acts.js and money.js — each their own module — can call it
+   directly the same way they already call esc()/api(). */
+function animateCounts(root = document) {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  root.querySelectorAll('[data-count]').forEach(el => {
+    const target = Number(el.dataset.count);
+    if (!Number.isFinite(target)) return;
+    const prefix = el.dataset.prefix || '', suffix = el.dataset.suffix || '';
+    if (reduce) { el.textContent = prefix + target.toLocaleString() + suffix; return; }
+    const start = performance.now(), dur = 700;
+    const tick = now => {
+      const p = Math.min(1, (now - start) / dur);
+      const eased = 1 - Math.pow(1 - p, 3); // ease-out cubic
+      el.textContent = prefix + Math.round(eased * target).toLocaleString() + suffix;
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
 let toastTimer;
 function toast(msg, bad = false) {
   const t = $('#toast');
@@ -394,11 +420,30 @@ const ROUTES = [
   ['admin', 'Returning officer', viewAdmin]
 ];
 
+/* The rail is one flat array that three separate files append to over the
+   page's lifetime — app.js's own routes at load, then whatever acts.js and
+   money.js register once their modules answer. Grouping by hand here rather
+   than changing what addRoute stores: a route neither of those files knows
+   about yet still renders, just in the trailing unlabelled group, so a new
+   module never goes missing from the rail for want of being taught the
+   grouping. */
+const RAIL_GROUPS = [
+  { label: 'The House', keys: ['chamber', 'elections', 'bills', 'laws', 'constitution', 'prime-minister', 'emergency'] },
+  { label: 'The Republic', keys: ['parties', 'citizens', 'people'] },
+  { label: 'Institutions', keys: ['court', 'economy', 'treasury', 'fed', 'war', 'offshore', 'diplomacy', 'intel'] },
+  { label: null, keys: ['record', 'me', 'admin'] }
+];
 function drawRail() {
   const path = (location.hash.slice(2) || 'chamber').split('/')[0];
-  $('#rail').innerHTML = ROUTES
-    .filter(r => r[0] !== 'admin' || isAdmin())
-    .map(([k, label]) => `<a href="#/${k}" class="${k === path ? 'is-on' : ''}">${label}</a>`).join('');
+  const routes = ROUTES.filter(r => r[0] !== 'admin' || isAdmin());
+  const link = ([k, label]) => `<a href="#/${k}" class="${k === path ? 'is-on' : ''}">${label}</a>`;
+  const grouped = new Set(RAIL_GROUPS.flatMap(g => g.keys));
+  const groups = RAIL_GROUPS.map(g => routes.filter(r => g.keys.includes(r[0])))
+    .map((rs, i) => rs.length ? `${RAIL_GROUPS[i].label ? `<p class="rail-group">${RAIL_GROUPS[i].label}</p>` : ''}${rs.map(link).join('')}` : '');
+  // Anything a future module registers under a key this list doesn't know
+  // yet — rendered, just without a heading, rather than silently dropped.
+  const leftover = routes.filter(r => !grouped.has(r[0])).map(link).join('');
+  $('#rail').innerHTML = groups.join('') + leftover;
 }
 
 async function route() {
@@ -532,13 +577,26 @@ function seatLayout(n, W, H) {
   }
 }
 
-function hemicycle(offices, seats) {
+const VOTE_FILL = { aye: 'var(--tally)', no: 'var(--oxide)', abstain: 'var(--ink-3)' };
+
+/* opts.division: the live vote array off a bill in division (display_name,
+   vote), matched by name against the same offices this function already
+   receives — there is no seat id on a division row, and matching by name is
+   reliable at the size this House actually runs. Presence of opts.division
+   is what switches the whole hemicycle from party colour to vote colour;
+   the caller decides when that's true, this function just renders it. */
+function hemicycle(offices, seats, opts = {}) {
+  const { division = null, cycleStart = null } = opts;
   const mps = offices.filter(o => o.office === 'mp').sort((a, b) => (a.seat || 0) - (b.seat || 0));
   const speaker = offices.find(o => o.office === 'speaker');
   const n = Math.max(Number(seats) || 1, 1);
   const W = 640, H = 300;
   const L = seatLayout(n, W, H);
   const named = L.r >= 15 && L.radii.length === 1;      // names only fit on a single roomy row
+  const voteOf = m => m && division ? division.find(d => d.display_name === m.display_name)?.vote : null;
+  // A seat counts as "just changed" only inside the current cycle, so a
+  // Republic that has run for months doesn't read every seat as fresh.
+  const changed = m => !!(m?.since && cycleStart && new Date(m.since) >= new Date(cycleStart));
 
   let svg = `<svg viewBox="0 0 ${W} ${H + (named ? 0 : 0)}" role="img" aria-label="Seating of the chamber">`;
   if (L.floor > 20) {
@@ -553,13 +611,15 @@ function hemicycle(offices, seats) {
       const t = deg * Math.PI / 180;
       const x = L.cx + R * Math.cos(t), y = L.cy - R * Math.sin(t);
       const m = mps[seat];
-      const fill = m ? (m.party_colour || 'var(--ink-3)') : 'none';
-      svg += `<circle class="seat ${m ? '' : 'vacant'}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${L.r.toFixed(1)}" fill="${esc(fill)}"><title>${esc(m ? `Seat ${seat + 1}: ${m.display_name}` : `Seat ${seat + 1}: vacant`)}</title></circle>`;
+      const vote = voteOf(m);
+      const fill = vote ? VOTE_FILL[vote] : m ? (m.party_colour || 'var(--ink-3)') : 'none';
+      const info = m ? `data-name="${esc(m.display_name)}" data-seatno="${seat + 1}" data-party="${esc(m.party_name || '')}"${vote ? ` data-vote="${esc(vote)}"` : ''}` : `data-seatno="${seat + 1}"`;
+      svg += `<circle class="seat ${m ? '' : 'vacant'} ${changed(m) ? 'is-new' : ''}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${L.r.toFixed(1)}" fill="${esc(fill)}" tabindex="${m ? '0' : '-1'}" ${info}></circle>`;
       if (L.r >= 9) {
-        svg += `<text class="seat-no" x="${x.toFixed(1)}" y="${(y + L.r * 0.34).toFixed(1)}" style="font-size:${Math.min(11, L.r * 0.75).toFixed(1)}px" fill="${m ? '#fff' : 'var(--ink-3)'}">${seat + 1}</text>`;
+        svg += `<text class="seat-no" x="${x.toFixed(1)}" y="${(y + L.r * 0.34).toFixed(1)}" style="font-size:${Math.min(11, L.r * 0.75).toFixed(1)}px" fill="${m ? '#fff' : 'var(--ink-3)'}" pointer-events="none">${seat + 1}</text>`;
       }
       if (named) {
-        svg += `<text class="seat-name" x="${x.toFixed(1)}" y="${(y + L.r + 14).toFixed(1)}">${esc(m ? m.display_name : 'vacant')}</text>`;
+        svg += `<text class="seat-name" x="${x.toFixed(1)}" y="${(y + L.r + 14).toFixed(1)}" pointer-events="none">${esc(m ? m.display_name : 'vacant')}</text>`;
       }
     }
   });
@@ -577,6 +637,31 @@ function hemicycle(offices, seats) {
     }).join('')}</div>`;
   }
   return svg;
+}
+
+/* One strip, proportioned by seats held — the standard companion to a
+   hemicycle in any real parliament visualisation, and the thing that was
+   actually missing: without it, "who has a majority" means counting
+   coloured dots by eye. Vacant seats get their own honest grey segment
+   rather than being left out of the total, so the bar's width always reads
+   as "of all seats," not "of all filled seats." */
+function partyShareBar(offices, seats) {
+  const mps = offices.filter(o => o.office === 'mp');
+  const n = Math.max(Number(seats) || 1, mps.length);
+  const byParty = new Map();
+  for (const m of mps) {
+    const key = m.party_name || ' independent';
+    const row = byParty.get(key) || { name: m.party_name || 'Independent', colour: m.party_colour || 'var(--ink-3)', n: 0 };
+    row.n++;
+    byParty.set(key, row);
+  }
+  const parties = [...byParty.values()].sort((a, b) => b.n - a.n);
+  const vacant = n - mps.length;
+  const segs = [...parties, ...(vacant > 0 ? [{ name: 'Vacant', colour: 'var(--rule)', n: vacant, vacant: true }] : [])];
+  return `<div class="seat-share" role="img" aria-label="Seats by party">
+    ${segs.map(s => `<span class="seat-share-seg ${s.vacant ? 'is-vacant' : ''}" style="width:${(s.n / n * 100).toFixed(2)}%;background:${esc(s.colour)}" title="${esc(s.name)}: ${s.n} of ${n}"></span>`).join('')}
+  </div>
+  <div class="seat-share-key">${parties.map(s => `<span class="seat-share-chip"><i style="background:${esc(s.colour)}"></i>${esc(s.name)} · ${s.n}</span>`).join('')}${vacant > 0 ? `<span class="seat-share-chip"><i style="background:var(--rule)"></i>Vacant · ${vacant}</span>` : ''}</div>`;
 }
 
 /* The desk.
@@ -736,13 +821,24 @@ async function viewChamber(v) {
   const spk = offices.find(o => o.office === 'speaker');
   const pm = offices.find(o => o.office === 'prime_minister');
 
+  // Division mode: only when exactly one bill is actually in division, so the
+  // hemicycle never has to choose between two live votes. Fetched, not
+  // inferred from the summary list on STATE, because per-seat votes aren't
+  // part of that summary.
+  const inDivision = bills.filter(b => b.status === 'division');
+  const divisionBill = inDivision.length === 1
+    ? await api(`/api/bills/${inDivision[0].id}`).catch(() => null)
+    : null;
+
+  const phaseClass = STATE.cycle ? `is-${esc(STATE.cycle.phase)}` : '';
+
   v.innerHTML = `
     <h1 class="page">${esc(config.nation_name)}</h1>
     <p class="page-sub">${esc(config.motto)}</p>
 
     <div id="desk"></div>
 
-    ${STATE.cycle ? `<div class="cycle">
+    ${STATE.cycle ? `<div class="cycle ${phaseClass}">
       <div>
         <p class="eyebrow">Cycle ${STATE.cycle.number} · day ${Math.max(1, Math.floor((Date.now() - new Date(STATE.cycle.start)) / 86400000) + 1)} of ${config.cycle_days}</p>
         <strong>${PHASE[STATE.cycle.phase][0]}</strong>
@@ -764,9 +860,11 @@ async function viewChamber(v) {
       </div>
     </section>` : ''}
 
-    <section class="chamber">
-      <p class="eyebrow">The chamber · ${config.seats} seats</p>
-      ${hemicycle(offices, Number(config.seats))}
+    <section class="chamber ${phaseClass}${divisionBill ? ' is-dividing' : ''}">
+      <p class="eyebrow">The chamber · ${config.seats} seats${divisionBill ? ` · voting on <a href="#/bill/${divisionBill.id}" style="color:inherit">${esc(divisionBill.ref)}</a>` : ''}</p>
+      ${hemicycle(offices, Number(config.seats), { division: divisionBill?.division, cycleStart: STATE.cycle?.start })}
+      <div id="seat-card" class="seat-card" hidden></div>
+      ${partyShareBar(offices, Number(config.seats))}
       <div class="offices">
         <div class="office"><p class="eyebrow">President</p><strong>${esc(pres?.display_name || 'Vacant')}</strong>
           <p class="office-note">Appoints the Prime Minister · assents to constitutional bills</p></div>
@@ -816,7 +914,41 @@ async function viewChamber(v) {
         <span class="tag">${parties.length} parties</span>
       </div>
     </div>`;
+  animateCounts(v);
+  wireSeatCards(v);
   drawDesk();
+}
+
+/* A real card instead of the browser's own tiny grey tooltip — party, seat
+   number, and (in division mode) how they voted. One shared card element
+   reused and repositioned rather than one per seat, so a chamber of two
+   hundred seats doesn't mean two hundred hidden popovers sitting in the DOM. */
+function wireSeatCards(v) {
+  const card = v.querySelector('#seat-card');
+  const chamber = v.querySelector('.chamber');
+  const svg = v.querySelector('.chamber svg');
+  if (!card || !svg) return;
+  const show = seatEl => {
+    const name = seatEl.dataset.name;
+    if (!name) { card.hidden = true; return; }
+    const vote = seatEl.dataset.vote;
+    card.innerHTML = `<strong>${esc(name)}</strong>
+      <span class="small muted">Seat ${esc(seatEl.dataset.seatno)}${seatEl.dataset.party ? ` · ${esc(seatEl.dataset.party)}` : ''}</span>
+      ${vote ? `<span class="tag ${vote === 'aye' ? 'on-green' : vote === 'no' ? 'on-oxide' : ''}" style="margin-top:6px">${esc(vote)}</span>` : ''}`;
+    // Positioned relative to .chamber, which is what CSS anchors #seat-card
+    // to — measuring against the svg's own box instead would drift by
+    // whatever space the eyebrow label above it takes up.
+    const box = chamber.getBoundingClientRect(), seatBox = seatEl.getBoundingClientRect();
+    card.style.left = `${seatBox.left - box.left + seatBox.width / 2}px`;
+    card.style.top = `${seatBox.top - box.top}px`;
+    card.hidden = false;
+  };
+  svg.querySelectorAll('.seat').forEach(s => {
+    s.addEventListener('mouseenter', () => show(s));
+    s.addEventListener('focus', () => show(s));
+    s.addEventListener('mouseleave', () => { card.hidden = true; });
+    s.addEventListener('blur', () => { card.hidden = true; });
+  });
 }
 
 /* ----------------------------------------------------------- elections */
@@ -1474,10 +1606,12 @@ async function viewBill(v, id) {
   const c = b.counts;
 
   const strip = () => {
-    const votes = b.division.map(d => `<span class="blk ${d.vote}" title="${esc(d.display_name)}: ${d.vote}"></span>`).join('');
+    // Staggered only for the first row or so — a large House filling in one
+    // block after another for a full second would read as slow, not alive.
+    const votes = b.division.map((d, i) => `<span class="blk ${d.vote}" style="--i:${Math.min(i, 14)}" title="${esc(d.display_name)}: ${d.vote}"></span>`).join('');
     const blanks = '<span class="blk"></span>'.repeat(Math.max(0, c.eligible - b.division.length));
     return `<div class="strip">${votes}${blanks}</div>
-      <p class="item-meta">${c.aye} aye · ${c.no} no · ${c.abstain} abstain · ${c.eligible - b.division.length} yet to vote</p>`;
+      <p class="item-meta"><span data-count="${Number(c.aye) || 0}" data-suffix=" aye">0 aye</span> · <span data-count="${Number(c.no) || 0}" data-suffix=" no">0 no</span> · <span data-count="${Number(c.abstain) || 0}" data-suffix=" abstain">0 abstain</span> · ${c.eligible - b.division.length} yet to vote</p>`;
   };
 
   let action = '';
@@ -1531,7 +1665,12 @@ async function viewBill(v, id) {
       ? `Vetoed by the President. The House may override with ${Math.round(Number(STATE.config.veto_override) * 100)}% of the division.`
       : 'Vetoed by the President. That is the end of it — assent is required for a bill to become law. The House would first have to pass a rule bill setting <span class="code">allow_veto_override = true</span>.'}</p>
       ${canOverride && has('speaker') ? '<button class="btn btn-primary" data-act="override">Move the override</button>' : ''}`;
-  } else if (b.status === 'failed' || b.status === 'enacted') {
+  } else if (b.status === 'enacted') {
+    // Same stamp device the ballot uses for "you voted" — a bill becoming
+    // law is the legislative equivalent of that moment, so it gets the same
+    // mark rather than a second, competing one.
+    action = `${strip()}<div class="stamp" style="border-color:var(--tally);color:var(--tally)">Enacted</div>`;
+  } else if (b.status === 'failed') {
     action = strip();
   }
 
@@ -1573,6 +1712,7 @@ async function viewBill(v, id) {
         <button class="btn">Add to the debate</button>
       </form>
     </div>`;
+  animateCounts(v);
 
   if ($('#signbox')) {
     const box = $('#signbox');

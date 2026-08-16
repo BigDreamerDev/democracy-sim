@@ -108,12 +108,12 @@
         <div class="grid2" style="margin-top:12px">
           <div>
             <p class="eyebrow">Treasury balance</p>
-            <span class="balance-figure">${cash(t.balance)}</span>
+            <span class="balance-figure" data-count="${Number(t.balance)||0}" data-prefix="${sym()}">0</span>
             <p class="small muted">${t.balance < 0 ? 'In deficit. The dividend is unconditional, so this is allowed to go negative.' : 'In surplus.'}</p>
           </div>
           <div>
             <p class="eyebrow">In circulation</p>
-            <span class="balance-figure">${cash(t.circulating)}</span>
+            <span class="balance-figure" data-count="${Number(t.circulating)||0}" data-prefix="${sym()}">0</span>
             <p class="small muted">Held by citizens, businesses and banks. Issued by the Fed, which the Treasury cannot do.</p>
           </div>
         </div>
@@ -181,6 +181,7 @@
       </div>
       </div>`;
 
+    animateCounts(v);
     onSubmit('#appoint', b => api('/api/treasury/appoint', { method: 'POST', body: { user_id: Number(b.user_id) } }));
     onSubmit('#currency', b => api('/api/treasury/currency', { method: 'POST', body: b }));
     onSubmit('#cap', b =>
@@ -216,7 +217,7 @@
           </div>
           <div>
             <p class="eyebrow">In issue</p>
-            <span class="balance-figure">${cash(f.issued)}</span>
+            <span class="balance-figure" data-count="${Number(f.issued)||0}" data-prefix="${sym()}">0</span>
             <p class="small muted">${cash(f.circulating)} is in the hands of citizens, businesses and banks.</p>
           </div>
         </div>
@@ -447,6 +448,7 @@
       </div>
       </div>`;
 
+    animateCounts(v);
     const amt = id => Number(document.querySelector(`[data-amt="${id}"]`)?.value || 0);
     const reasons = id => String(document.querySelector(`[data-reasons="${id}"]`)?.value || '');
 

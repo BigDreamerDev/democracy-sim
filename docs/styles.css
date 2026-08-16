@@ -62,7 +62,14 @@ a:hover{text-decoration:underline}
 /* ---------------------------------------------------------------- gate */
 
 .gate{min-height:100dvh;display:grid;place-items:center;padding:24px}
-.gate-card{width:100%;max-width:380px;background:var(--card);border:1px solid var(--rule);padding:28px 24px 22px}
+.gate-card{
+  width:100%;max-width:380px;background:var(--card);border:1px solid var(--rule);padding:28px 24px 22px;
+  box-shadow:var(--lift-md);
+  animation:gate-in var(--slow) var(--ease) both;
+}
+.gate-flag{animation:gate-in var(--slow) var(--ease) 90ms both}
+@keyframes gate-in{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+@media(prefers-reduced-motion:reduce){.gate-card,.gate-flag{animation:none}}
 .gate-title{font-family:var(--display);font-weight:800;font-size:30px;line-height:1.05;margin:0}
 .gate-sub{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);margin:6px 0 20px}
 .gate-msg{font-size:13px;margin:14px 0 0;min-height:18px;color:var(--oxide)}
@@ -105,6 +112,10 @@ a:hover{text-decoration:underline}
 }
 .rail a:hover{text-decoration:none;color:var(--ink)}
 .rail a.is-on{color:var(--ink);border-bottom-color:var(--indelible)}
+/* Group headings only make sense in the vertical desktop rail — inline text
+   in the horizontal mobile scroller would just break the row. The routes
+   still render grouped on mobile, just without a visible heading. */
+.rail-group{display:none}
 
 main{grid-area:main;padding:22px 16px 80px;width:100%;min-width:0}
 
@@ -116,6 +127,11 @@ main{grid-area:main;padding:22px 16px 80px;width:100%;min-width:0}
   }
   .rail a{border-bottom:0;border-left:2px solid transparent;padding:8px 18px}
   .rail a.is-on{border-left-color:var(--indelible);background:var(--indelible-soft)}
+  .rail-group{
+    display:block;font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--ink-3);padding:16px 18px 6px;
+  }
+  .rail-group:first-child{padding-top:0}
   main{padding:30px 40px 90px;max-width:1500px}
 }
 
@@ -184,14 +200,65 @@ p.page-sub{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-tran
 
 /* ------------------------------------------------------- the hemicycle */
 
-.chamber{background:var(--card);border:1px solid var(--rule);padding:20px 18px 14px;margin-bottom:var(--gap)}
+.chamber{
+  background:var(--card);border:1px solid var(--rule);padding:20px 18px 14px;margin-bottom:var(--gap);
+  position:relative;
+  transition:background var(--slow) var(--ease);
+}
 .chamber svg{display:block;width:100%;height:auto;max-width:660px;margin:0 auto}
-.seat{stroke:var(--rule);stroke-width:1.5}
-.seat.vacant{fill:none;stroke:var(--ink-3);stroke-dasharray:3 3}
+.seat{stroke:var(--rule);stroke-width:1.5;cursor:pointer;transition:stroke-width var(--fast) var(--ease),transform var(--fast) var(--ease);transform-origin:center;transform-box:fill-box}
+.seat:hover,.seat:focus{stroke:var(--ink);stroke-width:2.5;transform:scale(1.08);outline:none}
+.seat.vacant{fill:none;stroke:var(--ink-3);stroke-dasharray:3 3;cursor:default}
+.seat.vacant:hover,.seat.vacant:focus{stroke:var(--ink-3);stroke-width:1.5;transform:none}
 .seat-no{font-family:var(--mono);font-size:8px;fill:var(--ink-2);text-anchor:middle}
 .seat-name{font-family:var(--body);font-size:9.5px;font-weight:600;fill:var(--ink);text-anchor:middle}
 .chair{fill:var(--box)}
 .chair-label{font-family:var(--mono);font-size:8px;fill:#fff;text-anchor:middle;letter-spacing:.08em}
+
+/* A seat whose holder changed this cycle gets a slow ring pulse — noticeable
+   without demanding attention, and it stops on its own once the cycle turns
+   over rather than needing to be dismissed. */
+.seat.is-new{animation:seat-pulse 2.2s ease-in-out infinite}
+@keyframes seat-pulse{0%,100%{filter:drop-shadow(0 0 0 transparent)}50%{filter:drop-shadow(0 0 5px var(--indelible-fill))}}
+@media(prefers-reduced-motion:reduce){.seat.is-new{animation:none}.seat:hover,.seat:focus{transform:none}}
+
+/* The hover/focus card — one shared element, repositioned per seat rather
+   than one popover per circle. */
+.seat-card{
+  position:absolute;transform:translate(-50%,-100%) translateY(-10px);
+  background:var(--ink);color:#fff;padding:9px 12px;border-radius:var(--radius);
+  font-size:12.5px;line-height:1.4;pointer-events:none;z-index:5;white-space:nowrap;
+  box-shadow:var(--lift-md);
+}
+.seat-card strong{display:block;font-family:var(--display);font-size:14px}
+.seat-card .tag{display:inline-block}
+
+/* The seat-share strip beneath the hemicycle. */
+.seat-share{display:flex;height:10px;border-radius:2px;overflow:hidden;margin-top:16px;background:var(--rule)}
+.seat-share-seg{transition:width var(--slow) var(--ease)}
+.seat-share-seg.is-vacant{background-image:repeating-linear-gradient(45deg,transparent 0 3px,rgba(0,0,0,.08) 3px 6px)}
+.seat-share-key{display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:10px}
+.seat-share-chip{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;letter-spacing:.04em;color:var(--ink-2)}
+.seat-share-chip i{width:8px;height:8px;border-radius:50%;display:inline-block}
+
+/* Division mode: the chamber itself says a vote is live, not just the strip
+   of seat colours. A slow-breathing accent border reads as "in progress"
+   without the flashing-banner urgency the emergency declaration already
+   owns — those two states must never look alike. */
+.chamber.is-dividing{border-color:var(--indelible);animation:dividing-breathe 3s ease-in-out infinite}
+@keyframes dividing-breathe{0%,100%{box-shadow:inset 0 0 0 1px var(--indelible)}50%{box-shadow:inset 0 0 0 1px transparent}}
+@media(prefers-reduced-motion:reduce){.chamber.is-dividing{animation:none;box-shadow:inset 0 0 0 1px var(--indelible)}}
+
+/* Ambient phase tint — felt, not read. Each phase gets a whisper of its own
+   colour on the chamber, reusing meanings this palette already carries
+   (tally green for the settled voting phase, oxide for the campaign's
+   sharper contest) rather than inventing new ones. Scoped to .chamber only
+   — .cycle already has its own established violet identity elsewhere in the
+   app, and layering a second, phase-dependent meaning onto that same box
+   would just compete with it. */
+.chamber.is-nominations{background:color-mix(in srgb, var(--box) 4%, var(--card))}
+.chamber.is-campaign{background:color-mix(in srgb, var(--oxide) 4%, var(--card))}
+.chamber.is-poll{background:color-mix(in srgb, var(--tally) 5%, var(--card))}
 
 .office{border:1px solid var(--rule);padding:10px 12px;background:var(--paper)}
 .office .eyebrow{margin-bottom:2px}
@@ -320,10 +387,18 @@ p.page-sub{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-tran
 
 /* division strip — one block per eligible voter */
 .strip{display:flex;gap:3px;margin:10px 0 4px;flex-wrap:wrap}
-.blk{width:22px;height:26px;border:1px solid var(--rule);background:var(--paper)}
+.blk{
+  width:22px;height:26px;border:1px solid var(--rule);background:var(--paper);
+  animation:blk-in var(--base) var(--ease) backwards;
+}
 .blk.aye{background:var(--tally);border-color:var(--tally)}
 .blk.no{background:var(--oxide);border-color:var(--oxide)}
 .blk.abstain{background:var(--ink-3);border-color:var(--ink-3)}
+@keyframes blk-in{from{opacity:0;transform:scaleY(.3)}to{opacity:1;transform:scaleY(1)}}
+/* A ballot strip can run to fifty-plus blocks; stagger only the first
+   handful so a large House doesn't take a visible second to finish landing. */
+.strip .blk:nth-child(n+1){animation-delay:calc(var(--fast) * var(--i, 0))}
+@media(prefers-reduced-motion:reduce){.blk{animation:none}}
 
 /* the stamp — shown once, after you cast */
 .stamp{
@@ -459,10 +534,15 @@ input[type=color]{padding:3px;height:38px}
   font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);
   display:block;margin-bottom:10px;
 }
+/* --box over --indelible: the one accent difference between the bench and
+   the rest of the app. Navy is already this palette's name for the chair
+   (.chair reads --box too) — a Justice sits on the bench the same way the
+   Speaker sits in the chair, so the seal borrows the same authority colour
+   rather than the ballot violet everything else uses. */
 .justice-mark{
   width:34px;height:34px;margin:0 auto 10px;border-radius:50%;
-  border:1.5px solid var(--indelible);display:grid;place-items:center;
-  font-family:var(--display);font-weight:800;font-size:14px;color:var(--indelible);
+  border:1.5px solid var(--box);display:grid;place-items:center;
+  font-family:var(--display);font-weight:800;font-size:14px;color:var(--box);
 }
 .justice.vacant .justice-mark{border-style:dashed;border-color:var(--ink-3);color:var(--ink-3)}
 .justice-name{font-family:var(--display);font-weight:600;font-size:17px;display:block;line-height:1.2}
