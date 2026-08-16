@@ -1193,3 +1193,7 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
 .wm-draft-preview.is-subdivision{stroke-width:.62;fill-opacity:.48}
 .wm-boundary-credit{margin:9px 0 0;font-size:10.5px}
 .territory-map-warning{margin:10px 0 0;padding:8px 10px;border:1px solid var(--rule);border-radius:8px}
+
+/* The Press: articles read closer to print than to a form. */
+.prose h1,.prose h2,.prose h3{font-family:var(--font-display,inherit);margin:0.9em 0 0.35em}
+.prose p{margin:0 0 0.8em;line-height:1.6}

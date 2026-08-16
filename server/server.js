@@ -464,6 +464,11 @@ async function bootstrap() {
   // last because it is the newest and least tangled with anything else here.
   const apikeysSchema = path.join(__dirname, 'schema-apikeys.sql');
   if (fs.existsSync(apikeysSchema)) await pool.query(fs.readFileSync(apikeysSchema, 'utf8'));
+  // The Press Act. Independent of every schema above — it only references
+  // users(id), deliberately not schema-acts.sql's businesses — so it can
+  // load anywhere.
+  const pressSchema = path.join(__dirname, 'schema-press.sql');
+  if (fs.existsSync(pressSchema)) await pool.query(fs.readFileSync(pressSchema, 'utf8'));
   for (const [k, v] of Object.entries(DEFAULTS)) {
     await q('INSERT INTO config(key,value) VALUES($1,$2) ON CONFLICT (key) DO NOTHING', [k, v]);
   }
@@ -2992,7 +2997,7 @@ const ACT_CONTEXT = {
    503 for the rest of the process's life, and on Render that used to be
    invisible at boot — the same failure shape as a mismatched ALLOWED_ORIGINS,
    where the server looks healthy while half the site does not work. */
-for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war', './intelligence', './budget', './worldexport', './worldgen', './offshore', './publicapi']) {
+for (const mod of ['./judiciary', './diplomacy', './economy', './money', './war', './intelligence', './budget', './worldexport', './worldgen', './offshore', './publicapi', './press']) {
   const name = mod.replace('./', '');
   try {
     require(mod).mount(app, ACT_CONTEXT);
