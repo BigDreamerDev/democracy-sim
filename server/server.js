@@ -464,6 +464,10 @@ async function bootstrap() {
   // last because it is the newest and least tangled with anything else here.
   const apikeysSchema = path.join(__dirname, 'schema-apikeys.sql');
   if (fs.existsSync(apikeysSchema)) await pool.query(fs.readFileSync(apikeysSchema, 'utf8'));
+  // Named historical eras. Independent of everything else — only references
+  // users(id) — so it loads anywhere; goes last for the same reason apikeys does.
+  const erasSchema = path.join(__dirname, 'schema-eras.sql');
+  if (fs.existsSync(erasSchema)) await pool.query(fs.readFileSync(erasSchema, 'utf8'));
   for (const [k, v] of Object.entries(DEFAULTS)) {
     await q('INSERT INTO config(key,value) VALUES($1,$2) ON CONFLICT (key) DO NOTHING', [k, v]);
   }
@@ -2103,6 +2107,31 @@ app.get('/api/flag', wrap(async (_req, res) => {
 app.get('/api/constitution', wrap(async (_req, res) => {
   const { rows } = await q('SELECT * FROM constitution ORDER BY version DESC');
   res.json({ current: rows[0] || null, history: rows });
+}));
+
+/* Named historical eras. Naturally prompted by a major constitutional change,
+   but never inferred from one automatically — a constitutional bill bumps a
+   version number on its own; someone still has to decide the era it opened
+   deserves a name, and what to call it. A label on history, not a power over
+   anyone, so it is RO-settable the same way the RO may edit a config value —
+   see CLAUDE.md on offices vs is_admin: this deliberately has no office of
+   its own to check. */
+app.get('/api/eras', wrap(async (_req, res) => {
+  const { rows } = await q(`
+    SELECT e.*, u.display_name AS created_by_name FROM eras e
+      LEFT JOIN users u ON u.id=e.created_by
+     ORDER BY e.starts_cycle DESC NULLS LAST, e.created_at DESC`);
+  res.json(rows);
+}));
+
+app.post('/api/eras', admin, wrap(async (req, res) => {
+  const { name, starts_cycle, description } = req.body || {};
+  if (!name?.trim()) return res.status(400).json({ error: 'Name the era.' });
+  const { rows } = await q(
+    `INSERT INTO eras(name, starts_cycle, description, created_by) VALUES($1,$2,$3,$4) RETURNING *`,
+    [name.trim(), starts_cycle != null ? Number(starts_cycle) : null, description?.trim() || '', req.user.id]);
+  log(req.user.id, 'era.name', rows[0].name);
+  res.json(rows[0]);
 }));
 
 app.get('/api/audit', wrap(async (_req, res) => {
