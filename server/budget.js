@@ -25,6 +25,17 @@ module.exports.mount = function mount(app, ctx) {
     intelligence: 'Intelligence Service'
   };
 
+  /* Only these three have anything in the Republic that actually spends
+     against them — classify() below is the single place that decides, and
+     this set has to name exactly the keys it can return. The other four are
+     the President's stated priorities with nowhere yet for that money to
+     leave the Treasury by name: there is no "the House spends X" or "a
+     Justice orders Judiciary spending" feature in this codebase. Showing
+     "0 spent, all remaining" for those forever would read as an enforced
+     ceiling that silently isn't one — the public summary says so instead of
+     implying it. */
+  const ENFORCED_DEPARTMENTS = new Set(['defence', 'foreign_affairs', 'intelligence']);
+
   const cleanDepartments = value => {
     const src = value && typeof value === 'object' ? value : {};
     return Object.fromEntries(Object.keys(DEPARTMENTS).map(k => [k, money(src[k])]));
@@ -224,7 +235,11 @@ module.exports.mount = function mount(app, ctx) {
       const actual = p.status === 'provisional' ? 0 : await spent(key, cycle);
       const supplements = p.status === 'provisional' ? 0 : await supplemental(key, cycle);
       total += allocation;
-      departments.push({ key, label, allocation, supplements, spent: actual, remaining: Math.max(0, allocation + supplements - actual) });
+      departments.push({
+        key, label, allocation, supplements, spent: actual,
+        remaining: Math.max(0, allocation + supplements - actual),
+        enforced: ENFORCED_DEPARTMENTS.has(key)
+      });
     }
     const accounts = (await q(`SELECT a.balance,u.id FROM accounts a JOIN users u ON u.id=a.owner_id
                                 WHERE a.owner_kind='citizen' AND u.is_active AND u.approved AND a.balance > 0`)).rows;
