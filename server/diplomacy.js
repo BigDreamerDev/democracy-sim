@@ -638,13 +638,23 @@ module.exports.mount = function mount(app, ctx) {
     let arrived=0, delayed=0, lost=0;
     for(const row of due) {
       const liveRisk=Math.max(Number(row.risk),await routeRisk(row.origin_power_id||row.destination_power_id),await bilateralRouteRisk(row.origin_power_id,row.destination_power_id));
-      const roll=(Number(row.id)*37+Number(cycle)*17)%100;
+      /* No dice, same rule the war system holds itself to: a route this
+         dangerous costs the shipment a fixed step of exposure every cycle it
+         sits in it, seized only once that has happened twice running. A trader
+         watching risk stay at 80+ across a cycle sees the second hit coming
+         and can act — reroute, insure, accept the loss — rather than losing a
+         shipment to a formula nobody could see or influence. */
+      if(liveRisk>=80) {
+        const exposure=Number(row.risk_exposure||0)+1;
+        if(exposure>=2) {
+          await q("UPDATE foreign_shipments SET status='seized',risk=$2,risk_exposure=$3,detail=detail || $4 WHERE id=$1",[row.id,liveRisk,exposure,' · seized in transit']); lost++; continue;
+        }
+        await q("UPDATE foreign_shipments SET status='delayed',eta_cycle=eta_cycle+1,risk=$2,risk_exposure=$3,detail=detail || $4 WHERE id=$1",[row.id,liveRisk,exposure,' · delayed by conflict']); delayed++; continue;
+      }
       if(liveRisk>=70 && row.status!=='delayed') {
-        await q("UPDATE foreign_shipments SET status='delayed',eta_cycle=eta_cycle+1,risk=$2,detail=detail || $3 WHERE id=$1",[row.id,liveRisk,' · delayed by conflict']); delayed++; continue;
+        await q("UPDATE foreign_shipments SET status='delayed',eta_cycle=eta_cycle+1,risk=$2,risk_exposure=0,detail=detail || $3 WHERE id=$1",[row.id,liveRisk,' · delayed by conflict']); delayed++; continue;
       }
-      if(liveRisk>=80 && roll<Math.floor(liveRisk/5)) {
-        await q("UPDATE foreign_shipments SET status='seized',risk=$2,detail=detail || $3 WHERE id=$1",[row.id,liveRisk,' · seized in transit']); lost++; continue;
-      }
+      if(Number(row.risk_exposure||0)>0) await q('UPDATE foreign_shipments SET risk_exposure=0 WHERE id=$1',[row.id]);
       await tx(async run=>{
         const locked=(await run(`SELECT * FROM foreign_shipments WHERE id=$1 AND status IN ('in_transit','delayed') FOR UPDATE`,[row.id])).rows[0];
         if(!locked) return;
@@ -902,10 +912,12 @@ module.exports.mount = function mount(app, ctx) {
     for(const w of wars) {
       const age=Number(cycle)-Number(w.cycle_no||0);
       if(age<2) continue;
+      // No dice: the margin is real strength, full stop. A close fight (under
+      // 8) is left open while it's still young so the players sponsoring each
+      // side have time to change it by actually building strength, the same
+      // reason war.js never lets a single cycle decide a conflict on its own.
       const a=await bilateralMilitaryStrength(w.aggressor_id), t=await bilateralMilitaryStrength(w.target_id);
-      const aRoll=((Number(w.id)*29+Number(cycle)*17)%21)-10;
-      const tRoll=((Number(w.id)*13+Number(cycle)*23)%21)-10;
-      const margin=(a+aRoll)-(t+tRoll);
+      const margin=a-t;
       if(Math.abs(margin)<8 && age<4) continue;
       let outcome, transfer=null;
       if(margin>0) {

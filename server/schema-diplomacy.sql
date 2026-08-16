@@ -537,6 +537,11 @@ CREATE TABLE IF NOT EXISTS foreign_shipments (
   created_at             TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_foreign_shipments_status ON foreign_shipments(status,eta_cycle,id);
+-- How many consecutive high-risk cycles this specific shipment has now sat
+-- through. Replaces a die roll: seizure escalates by a fixed step, the same
+-- way the war system's readiness does, so a trader watching risk climb sees
+-- the loss coming rather than losing a shipment to an unseen coin flip.
+ALTER TABLE foreign_shipments ADD COLUMN IF NOT EXISTS risk_exposure INT NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS foreign_bilateral_trade (
   id              BIGSERIAL PRIMARY KEY,
   buyer_power_id  INT NOT NULL REFERENCES powers(id) ON DELETE CASCADE,
