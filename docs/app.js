@@ -98,26 +98,370 @@ const PHASE = {
   poll:        ['Polls open', 'poll closes']
 };
 
-/* Minimal markdown: headings, lists, bold, italic, paragraphs. */
+/* --------------------------------------------------------- markdown
+   Safe, dependency-free Markdown renderer.
+   Raw HTML is escaped before Markdown is processed. */
+
 function md(src) {
-  const lines = esc(src || '').split('\n');
-  let out = '', list = null;
-  const inline = s => s
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|\W)\*(?!\s)(.+?)\*/g, '$1<em>$2</em>');
-  const close = () => { if (list) { out += `</${list}>`; list = null; } };
-  for (const raw of lines) {
-    const l = raw.trimEnd();
-    let m;
-    if ((m = l.match(/^(#{1,3})\s+(.*)$/))) { close(); out += `<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`; }
-    else if ((m = l.match(/^\s*\d+[.)]\s+(.*)$/))) { if (list !== 'ol') { close(); out += '<ol>'; list = 'ol'; } out += `<li>${inline(m[1])}</li>`; }
-    else if ((m = l.match(/^\s*[-*•]\s+(.*)$/))) { if (list !== 'ul') { close(); out += '<ul>'; list = 'ul'; } out += `<li>${inline(m[1])}</li>`; }
-    else if (!l.trim()) { close(); }
-    else { close(); out += `<p>${inline(l)}</p>`; }
+  const input = String(src || '').replace(/\r\n?/g, '\n');
+  const lines = input.split('\n');
+
+  const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[c]));
+
+  const safeUrl = url => {
+    const value = String(url || '').trim();
+
+    // Allow local/relative URLs, anchors and normal web links.
+    if (
+      value.startsWith('#') ||
+      value.startsWith('/') ||
+      value.startsWith('./') ||
+      value.startsWith('../')
+    ) return value;
+
+    try {
+      const parsed = new URL(value, location.origin);
+      if (['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
+        return value;
+      }
+    } catch {}
+
+    return '#';
+  };
+
+  const inline = source => {
+    let text = escapeHtml(source);
+
+    // Protect inline code before processing other Markdown.
+    const code = [];
+    text = text.replace(/`([^`\n]+)`/g, (_, value) => {
+      const token = `\u0000CODE${code.length}\u0000`;
+      code.push(`<code>${value}</code>`);
+      return token;
+    });
+
+    // Images.
+    text = text.replace(
+      /!\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;([^"]*)&quot;)?\)/g,
+      (_, alt, url, title) => {
+        const href = escapeHtml(safeUrl(url));
+        const titleAttr = title
+          ? ` title="${escapeHtml(title)}"`
+          : '';
+
+        return `<img src="${href}" alt="${alt}"${titleAttr}>`;
+      }
+    );
+
+    // Links.
+    text = text.replace(
+      /\[([^\]]+)\]\(([^)\s]+)(?:\s+&quot;([^"]*)&quot;)?\)/g,
+      (_, label, url, title) => {
+        const href = escapeHtml(safeUrl(url));
+        const titleAttr = title
+          ? ` title="${escapeHtml(title)}"`
+          : '';
+
+        return `<a href="${href}"${titleAttr}>${label}</a>`;
+      }
+    );
+
+    // Automatic http/https URLs.
+    text = text.replace(
+      /(^|[\s(])((?:https?:\/\/)[^\s<]+)/g,
+      (all, before, url) => {
+        // Don't touch a URL already inside a generated href/src attribute.
+        if (/href=&quot;$|src=&quot;$/.test(before)) return all;
+
+        const clean = url.replace(/[.,!?;:]+$/, '');
+        const tail = url.slice(clean.length);
+        const href = escapeHtml(safeUrl(clean));
+
+        return `${before}<a href="${href}">${clean}</a>${tail}`;
+      }
+    );
+
+    // Strong + emphasis.
+    text = text
+      .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+      .replace(/___(.+?)___/g, '<strong><em>$1</em></strong>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/__(.+?)__/g, '<strong>$1</strong>')
+      .replace(/(^|[\s([{"'])\*([^*\n]+?)\*(?=$|[\s).,!?:;\]}])/g, '$1<em>$2</em>')
+      .replace(/(^|[\s([{"'])_([^_\n]+?)_(?=$|[\s).,!?:;\]}])/g, '$1<em>$2</em>');
+
+    // Strikethrough.
+    text = text.replace(/~~(.+?)~~/g, '<del>$1</del>');
+
+    // Highlight.
+    text = text.replace(/==(.+?)==/g, '<mark>$1</mark>');
+
+    // Restore inline code.
+    text = text.replace(/\u0000CODE(\d+)\u0000/g, (_, i) => code[Number(i)]);
+
+    return text;
+  };
+
+  const isTableDivider = line => {
+    const cells = line
+      .trim()
+      .replace(/^\||\|$/g, '')
+      .split('|')
+      .map(x => x.trim());
+
+    return cells.length > 0 && cells.every(cell =>
+      /^:?-{3,}:?$/.test(cell)
+    );
+  };
+
+  const splitTableRow = line =>
+    line
+      .trim()
+      .replace(/^\||\|$/g, '')
+      .split('|')
+      .map(x => x.trim());
+
+  const getAlignment = cell => {
+    const left = cell.startsWith(':');
+    const right = cell.endsWith(':');
+
+    if (left && right) return 'center';
+    if (right) return 'right';
+    if (left) return 'left';
+    return '';
+  };
+
+  let out = '';
+  let i = 0;
+
+  let listType = null;
+  let listIndent = 0;
+
+  const closeList = () => {
+    if (listType) {
+      out += `</${listType}>`;
+      listType = null;
+      listIndent = 0;
+    }
+  };
+
+  while (i < lines.length) {
+    const raw = lines[i];
+    const trimmed = raw.trim();
+
+    // Blank line.
+    if (!trimmed) {
+      closeList();
+      i++;
+      continue;
+    }
+
+    /* ------------------------------ fenced code */
+
+    const fence = trimmed.match(/^```([\w-]+)?\s*$/);
+
+    if (fence) {
+      closeList();
+
+      const lang = fence[1] || '';
+      const buffer = [];
+
+      i++;
+
+      while (i < lines.length && !lines[i].trim().startsWith('```')) {
+        buffer.push(lines[i]);
+        i++;
+      }
+
+      if (i < lines.length) i++;
+
+      out += `<pre><code${
+        lang ? ` class="language-${escapeHtml(lang)}"` : ''
+      }>${escapeHtml(buffer.join('\n'))}</code></pre>`;
+
+      continue;
+    }
+
+    /* ------------------------------ horizontal rule */
+
+    if (/^(?:---+|\*\*\*+|___+)$/.test(trimmed)) {
+      closeList();
+      out += '<hr>';
+      i++;
+      continue;
+    }
+
+    /* ------------------------------ table */
+
+    if (
+      trimmed.includes('|') &&
+      i + 1 < lines.length &&
+      isTableDivider(lines[i + 1])
+    ) {
+      closeList();
+
+      const headers = splitTableRow(raw);
+      const divider = splitTableRow(lines[i + 1]);
+      const aligns = divider.map(getAlignment);
+
+      out += '<table><thead><tr>';
+
+      headers.forEach((cell, index) => {
+        const align = aligns[index];
+        out += `<th${align ? ` style="text-align:${align}"` : ''}>${inline(cell)}</th>`;
+      });
+
+      out += '</tr></thead><tbody>';
+
+      i += 2;
+
+      while (
+        i < lines.length &&
+        lines[i].trim() &&
+        lines[i].includes('|')
+      ) {
+        const cells = splitTableRow(lines[i]);
+
+        out += '<tr>';
+
+        headers.forEach((_, index) => {
+          const value = cells[index] || '';
+          const align = aligns[index];
+
+          out += `<td${align ? ` style="text-align:${align}"` : ''}>${inline(value)}</td>`;
+        });
+
+        out += '</tr>';
+
+        i++;
+      }
+
+      out += '</tbody></table>';
+      continue;
+    }
+
+    /* ------------------------------ headings */
+
+    const heading = raw.match(/^\s*(#{1,6})\s+(.+?)\s*#*\s*$/);
+
+    if (heading) {
+      closeList();
+
+      const level = heading[1].length;
+
+      out += `<h${level}>${inline(heading[2])}</h${level}>`;
+
+      i++;
+      continue;
+    }
+
+    /* ------------------------------ blockquote */
+
+    if (/^\s*>\s?/.test(raw)) {
+      closeList();
+
+      const quote = [];
+
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
+        quote.push(lines[i].replace(/^\s*>\s?/, ''));
+        i++;
+      }
+
+      // Run quoted text back through md() so it can contain
+      // headings, lists, bold, etc.
+      out += `<blockquote>${md(quote.join('\n'))}</blockquote>`;
+
+      continue;
+    }
+
+    /* ------------------------------ task list */
+
+    const task = raw.match(/^(\s*)[-*+]\s+\[([ xX])\]\s+(.+)$/);
+
+    if (task) {
+      const indent = task[1].length;
+
+      if (listType !== 'ul' || listIndent !== indent) {
+        closeList();
+        listType = 'ul';
+        listIndent = indent;
+        out += '<ul class="task-list">';
+      }
+
+      const checked = task[2].toLowerCase() === 'x';
+
+      out += `
+        <li class="task-list-item">
+          <input type="checkbox" disabled ${checked ? 'checked' : ''}>
+          ${inline(task[3])}
+        </li>`;
+
+      i++;
+      continue;
+    }
+
+    /* ------------------------------ unordered list */
+
+    const ul = raw.match(/^(\s*)[-*+•]\s+(.+)$/);
+
+    if (ul) {
+      const indent = ul[1].length;
+
+      if (listType !== 'ul' || listIndent !== indent) {
+        closeList();
+        listType = 'ul';
+        listIndent = indent;
+        out += '<ul>';
+      }
+
+      out += `<li>${inline(ul[2])}</li>`;
+
+      i++;
+      continue;
+    }
+
+    /* ------------------------------ ordered list */
+
+    const ol = raw.match(/^(\s*)\d+[.)]\s+(.+)$/);
+
+    if (ol) {
+      const indent = ol[1].length;
+
+      if (listType !== 'ol' || listIndent !== indent) {
+        closeList();
+        listType = 'ol';
+        listIndent = indent;
+        out += '<ol>';
+      }
+
+      out += `<li>${inline(ol[2])}</li>`;
+
+      i++;
+      continue;
+    }
+
+    /* ------------------------------ normal paragraph */
+
+    closeList();
+
+    // Preserve the old behaviour: each non-empty source line becomes
+    // its own paragraph rather than unexpectedly joining old laws together.
+    out += `<p>${inline(raw.trim())}</p>`;
+
+    i++;
   }
-  close();
+
+  closeList();
+
   return out;
 }
+
 
 /* ------------------------------------------------------------------- the flag
 
