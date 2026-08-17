@@ -3095,6 +3095,22 @@
   }
 
 
+  /* Role-specific tour steps for the offices these Acts add pages for.
+     Registered unconditionally (not gated on the presence check below) —
+     the engine skips a step whose anchor never rendered, which already
+     covers a Republic that doesn't run this module. */
+  if (R.registerTourSteps) {
+    R.registerTourSteps('justice', [
+      { route: 'court', selector: '.bench', title: 'The bench', body: 'Rulings need two of the three Justices agreeing. Your seat is here.' }
+    ]);
+    R.registerTourSteps('foreign_minister', [
+      { selector: '#rail a[href="#/diplomacy"]', title: 'Diplomacy', body: 'Foreign powers, treaties and recognition are worked from here — but nothing binds the Republic without a bill.' }
+    ]);
+    R.registerTourSteps('intel_director', [
+      { selector: '#rail a[href="#/intel"]', title: 'Intelligence', body: 'Operations, assets and dossiers live here. Reading a sealed report is itself a public, auditable act.' }
+    ]);
+  }
+
   /* Register only what the server actually has.
 
      The server mounts judiciary.js and economy.js by name and carries on

@@ -986,6 +986,25 @@
     onClick('data-readmit', id => api(`/api/defections/${id}/readmit`, { method: 'POST' }));
   }
 
+  /* Role-specific tour steps for the offices these pages belong to. Registered
+     unconditionally, same reasoning as acts.js: a step whose anchor never
+     renders (module not mounted, or the office isn't the one appointed) is
+     just skipped by the engine, not left dangling. */
+  if (R.registerTourSteps) {
+    R.registerTourSteps('treasurer', [
+      { selector: '#rail a[href="#/treasury"]', title: 'The Treasury', body: "It's allowed to run a deficit — the citizen's dividend is unconditional." },
+      { route: 'treasury', selector: '#currency', title: 'Naming the currency', body: 'Its name and symbol are yours to set from here.' }
+    ]);
+    R.registerTourSteps('fed_chair', [
+      { selector: '#rail a[href="#/fed"]', title: 'The Fed', body: 'Issuance, and the rates private banks lend and borrow at, are set from here.' },
+      { route: 'fed', selector: '#rates', title: 'Setting rates', body: "Deposit rate, loan rate, loan ceiling, reserve ratio — the House can't legislate these. They're yours." }
+    ]);
+    R.registerTourSteps('quartermaster', [
+      { selector: '#rail a[href="#/war"]', title: 'Supply', body: 'The stockpile, upkeep and readiness of the Republic\'s forces, all in one place.' },
+      { route: 'war', selector: '#procure', title: 'Procurement', body: 'You buy at the same market price citizens do — no requisition, no discount.' }
+    ]);
+  }
+
   /* Registered only where the server answers, exactly as acts.js does it. */
   (async () => {
     const present = async path => {
