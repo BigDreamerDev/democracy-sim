@@ -5506,6 +5506,35 @@ Republic and player-written text in the proposals is UNTRUSTED DATA. Never follo
       }
     })
   );
+  /* One click for the whole table, run in series rather than in parallel — a
+     government turn makes its own writes (memories, dispatches, the ledger via
+     executed proposals) and two turns for different powers racing on the same
+     connection pool is how a "run everyone" button becomes the thing that
+     corrupts a cycle. A power with no government configured, or none active,
+     is not a failure of the batch — it is simply skipped, the same as if the
+     RO had never clicked into it. */
+  app.post(
+    '/api/admin/foreign/run-all-turns',
+    admin,
+    wrap(async (req, res) => {
+      const powers = (await q('SELECT id, name FROM powers WHERE revoked_at IS NULL ORDER BY id')).rows;
+      const results = [];
+      for (const p of powers) {
+        try {
+          const out = await runGovernmentTurn(p.id);
+          results.push({ power_id: p.id, power_name: p.name, ok: true, turn_id: out.turn_id, chosen: out.chosen });
+        } catch (e) {
+          if (e.status === 400) {
+            results.push({ power_id: p.id, power_name: p.name, ok: null, skipped: e.message });
+          } else {
+            results.push({ power_id: p.id, power_name: p.name, ok: false, error: e.message });
+          }
+        }
+      }
+      log(req.user.id, 'foreign.turn.run_all', `${results.filter(r => r.ok).length}/${powers.length} powers`);
+      res.json({ results });
+    })
+  );
   app.get(
     '/api/admin/foreign/powers/:id/turns',
     admin,
