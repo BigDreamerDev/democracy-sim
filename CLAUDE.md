@@ -1,6 +1,6 @@
 # CLAUDE.md — the Republic
 
-A parliamentary democracy simulator for a WhatsApp group of ~19 people, called
+A parliamentary democracy simulator for a WhatsApp group of \~19 people, called
 **McServerLandia**. Static front end on GitHub Pages (`docs/`), Express API on
 Render (`server/`), Postgres on Neon.
 
@@ -20,7 +20,7 @@ npm run test:layout    # 7 frontend checks (needs jsdom)
 `test/layout.js` reports 5 failures. They predate all current work and are a
 jsdom-version issue, not app breakage. Everything else must be green.
 
----
+\---
 
 ## Shape
 
@@ -43,7 +43,7 @@ server/
 
 docs/
 ├── index.html
-├── config.js         API_BASE — NEVER overwrite this from a local copy
+├── config.js         API\_BASE — NEVER overwrite this from a local copy
 ├── app.js            core UI + window.Republic hook
 ├── acts.js           Court, Economy, Diplomacy pages
 ├── money.js          Treasury, Fed, Supply pages
@@ -57,7 +57,7 @@ docs/
 
 A missing module file is logged and skipped — every one can be removed.
 
----
+\---
 
 ## Invariants
 
@@ -66,7 +66,7 @@ accounts. This survives Fed issuance (the Fed's own account goes negative — th
 negative balance *is* the money supply), foreign trade, bank failure and army
 wages. Asserted by `money.mjs`, `bank.mjs`, `foreigntrade.mjs`, `war.mjs`.
 
-**Shares are conserved.** A business's holdings total exactly `shares_issued`.
+**Shares are conserved.** A business's holdings total exactly `shares\_issued`.
 
 **One person, one vote.** Held by database constraints, not application code.
 Asserted by `attack.mjs`, which is why anyone can trust a result.
@@ -74,37 +74,36 @@ Asserted by `attack.mjs`, which is why anyone can trust a result.
 **Nothing binds the Republic without a bill.** Treaties, recognition, war,
 peace, territory transfer, emergencies. All of them.
 
----
+\---
 
 ## Offices
 
-`offices` is the single source of truth. `president`, `prime_minister`,
-`speaker`, `mp`, `justice`, `treasurer`, `fed_chair`, `foreign_minister`,
+`offices` is the single source of truth. `president`, `prime\_minister`,
+`speaker`, `mp`, `justice`, `treasurer`, `fed\_chair`, `foreign\_minister`,
 `quartermaster`.
 
 Article 7.1: one seat each, enforced everywhere.
 
-| Office | Appointed by | Removed by |
-|---|---|---|
-| President, Speaker, MPs | election | election |
-| Prime Minister | President, confirmed by the House | House no-confidence |
-| Justices ×3 | House seat = Speaker; President's = themselves; **People's = elected ballot** | term expiry, resignation, impeachment |
-| Treasurer | PM, or President if none | the appointer, or resignation |
-| Foreign Minister | same | same |
-| Quartermaster | same | same |
-| **Head of the Fed** | President nominates, House confirms | **impeachment or resignation only** |
+|Office|Appointed by|Removed by|
+|-|-|-|
+|President, Speaker, MPs|election|election|
+|Prime Minister|President, confirmed by the House|House no-confidence|
+|Justices ×3|House seat = Speaker; President's = themselves; **People's = elected ballot**|term expiry, resignation, impeachment|
+|Treasurer|PM, or President if none|the appointer, or resignation|
+|Foreign Minister|same|same|
+|Quartermaster|same|same|
+|**Head of the Fed**|President nominates, House confirms|**impeachment or resignation only**|
 
----
+\---
 
 ## Traps that have already caused bugs
 
-**Check offices before `is_admin`. Never short-circuit.** Uzair is the RO *and*
-plays, so one account routinely holds an office too. `if (user.is_admin) return
-X` at the top of a permission check silently removes powers the office grants —
+**Check offices before `is\_admin`. Never short-circuit.** Uzair is the RO *and*
+plays, so one account routinely holds an office too. `if (user.is\_admin) return X` at the top of a permission check silently removes powers the office grants —
 it did exactly that to a sitting Speaker in `mayAppoint`. Ask what office
 someone holds, then ask whether they are also the RO.
 
-**`/api/admin/office` refuses `treasurer`, `fed_chair`, `foreign_minister`,
+**`/api/admin/office` refuses `treasurer`, `fed\_chair`, `foreign\_minister`,
 `quartermaster`.** Those have routes of their own that mean something. The RO
 may edit every *setting* on the admin page, including the Fed's rates — that is
 logged and someone has to be able to fix a typo. Setting a value is not holding
@@ -114,7 +113,7 @@ an office.
 An appointee who can be dismissed is an employee. The front end hides the
 control too and `money-view.js` asserts it stays hidden.
 
-**`deposit_rate`, `loan_rate`, `loan_ceiling`, `reserve_ratio` are not
+**`deposit\_rate`, `loan\_rate`, `loan\_ceiling`, `reserve\_ratio` are not
 legislatable.** A rule bill setting the rate of interest is the House
 instructing the Fed with a vote attached.
 
@@ -138,7 +137,7 @@ had.
 orders, no dice. Readiness moves by fixed steps so a losing player sees it
 coming cycles out. Do not add randomness.
 
-**Real country names never reach a player.** `TERRITORY_NAMES` in
+**Real country names never reach a player.** `TERRITORY\_NAMES` in
 `docs/world-map.js` is for the RO's console only. `worldmap-view.js` asserts the
 leak cannot happen.
 
@@ -151,25 +150,25 @@ is worse. Editing and withdrawing both stop the moment a division is called.
 **Editing a bill clears its seconds.** A signature was for the text signed.
 
 **Intelligence: reading is an audit write.** `/api/intel/reports/:id/read`
-inserts into `intel_reads` before it answers, and that register is public even
-while the report is sealed. Nothing but a row in `intel_clearance` grants sight;
+inserts into `intel\_reads` before it answers, and that register is public even
+while the report is sealed. Nothing but a row in `intel\_clearance` grants sight;
 no office does.
 
 **Tribute used to destroy money.** The diplomacy payrun debited the Treasury and
-wrote a ledger row with `to_id NULL` for as long as the feature existed;
+wrote a ledger row with `to\_id NULL` for as long as the feature existed;
 `foreigntrade.mjs` never ran a payrun so it stayed green. Any new movement
 writes both sides, and any new suite touching money asserts the total across a
 payrun, not just across a request.
 
 **Other sharp edges:** `bigint` params need explicit `::bigint` casts. Escrow is
-a separate account from the Treasury. The electoral roll freezes at `opened_at`.
-Re-anchoring the cycle clock mints duplicate elections. `campaign_at` in the past
-closes nominations early. `[hidden]{display:none!important}` must stay in the
-CSS. A mismatched `ALLOWED_ORIGINS` returns 200 with no CORS header, so the
+a separate account from the Treasury. The electoral roll freezes at `opened\_at`.
+Re-anchoring the cycle clock mints duplicate elections. `campaign\_at` in the past
+closes nominations early. `\[hidden]{display:none!important}` must stay in the
+CSS. A mismatched `ALLOWED\_ORIGINS` returns 200 with no CORS header, so the
 server looks healthy while the site fails. A division never closes itself.
-`term_days` is dead and read by nothing.
+`term\_days` is dead and read by nothing.
 
----
+\---
 
 ## Deployment
 
@@ -177,4 +176,46 @@ server looks healthy while the site fails. A division never closes itself.
 data. Schema files run on boot and are additive and idempotent — **snapshot Neon
 before any push that adds one.**
 
-Never push `docs/config.js` from a local tree. It holds the real `API_BASE`.
+Never push `docs/config.js` from a local tree. It holds the real `API\_BASE`.
+
+\---
+
+## Frontend design
+
+
+You tend to converge toward generic, "on distribution" outputs. In frontend design, this creates what users call the "AI slop" aesthetic. Avoid this: make creative, distinctive frontends that surprise and delight. Focus on:
+
+
+
+Typography: Choose fonts that are beautiful, unique, and interesting. Avoid generic fonts like Arial and Inter; opt instead for distinctive choices that elevate the frontend's aesthetics.
+
+
+
+Color \& Theme: Commit to a cohesive aesthetic. Use CSS variables for consistency. Dominant colors with sharp accents outperform timid, evenly-distributed palettes. Draw from IDE themes and cultural aesthetics for inspiration.
+
+
+
+Motion: Use animations for effects and micro-interactions. Prioritize CSS-only solutions for HTML. Use Motion library for React when available. Focus on high-impact moments: one well-orchestrated page load with staggered reveals (animation-delay) creates more delight than scattered micro-interactions.
+
+
+
+Backgrounds: Create atmosphere and depth rather than defaulting to solid colors. Layer CSS gradients, use geometric patterns, or add contextual effects that match the overall aesthetic.
+
+
+
+Avoid generic AI-generated aesthetics:
+
+\- Overused font families (Inter, Roboto, Arial, system fonts)
+
+\- Clichéd color schemes (particularly purple gradients on white backgrounds)
+
+\- Predictable layouts and component patterns
+
+\- Cookie-cutter design that lacks context-specific character
+
+
+
+Interpret creatively and make unexpected choices that feel genuinely designed for the context. Vary between light and dark themes, different fonts, different aesthetics. You still tend to converge on common choices (Space Grotesk, for example) across generations. Avoid this: it is critical that you think outside the box!
+
+"""
+

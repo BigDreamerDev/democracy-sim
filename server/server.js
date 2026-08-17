@@ -469,6 +469,10 @@ async function bootstrap() {
   // load anywhere.
   const pressSchema = path.join(__dirname, 'schema-press.sql');
   if (fs.existsSync(pressSchema)) await pool.query(fs.readFileSync(pressSchema, 'utf8'));
+  // Named historical eras. Independent of everything else — only references
+  // users(id) — so it loads anywhere; goes last for the same reason apikeys does.
+  const erasSchema = path.join(__dirname, 'schema-eras.sql');
+  if (fs.existsSync(erasSchema)) await pool.query(fs.readFileSync(erasSchema, 'utf8'));
   for (const [k, v] of Object.entries(DEFAULTS)) {
     await q('INSERT INTO config(key,value) VALUES($1,$2) ON CONFLICT (key) DO NOTHING', [k, v]);
   }
@@ -853,6 +857,30 @@ app.get('/api/citizens', wrap(async (_req, res) => {
       LEFT JOIN parties p ON p.id=m.party_id
      WHERE u.is_active AND u.approved ORDER BY u.created_at`);
   res.json(rows);
+}));
+
+/* A citizen's political career, assembled from tables that already hold the
+   whole history — nothing here is a new record of anything. Offices going
+   inactive already leaves a row (since/until/active on `offices`), a
+   withdrawn candidacy is still a row in `candidacies`, and an author_id
+   survives a bill through every status it passes. This just joins them and
+   sorts them, the same way /api/audit reads a log it never writes outside
+   of the actions it already records. */
+app.get('/api/citizens/:id/career', wrap(async (req, res) => {
+  const id = req.params.id;
+  const user = (await q('SELECT id,username,display_name FROM users WHERE id=$1', [id])).rows[0];
+  if (!user) return res.status(404).json({ error: 'No such citizen.' });
+  const offices = await q(
+    `SELECT office, seat, since, until, active FROM offices WHERE user_id=$1 ORDER BY since DESC`, [id]);
+  const bills = await q(
+    `SELECT id, ref, title, kind, status, created_at, resolved_at FROM bills
+      WHERE author_id=$1 ORDER BY created_at DESC`, [id]);
+  const elections = await q(
+    `SELECT e.id AS election_id, e.title, e.kind, e.status, c.withdrawn, c.created_at,
+            EXISTS(SELECT 1 FROM offices o WHERE o.election_id=e.id AND o.user_id=$1) AS won
+       FROM candidacies c JOIN elections e ON e.id=c.election_id
+      WHERE c.user_id=$1 ORDER BY c.created_at DESC`, [id]);
+  res.json({ user, offices: offices.rows, bills: bills.rows, elections: elections.rows });
 }));
 
 /* -------------------------------------------------------------- parties */
@@ -2084,6 +2112,31 @@ app.get('/api/flag', wrap(async (_req, res) => {
 app.get('/api/constitution', wrap(async (_req, res) => {
   const { rows } = await q('SELECT * FROM constitution ORDER BY version DESC');
   res.json({ current: rows[0] || null, history: rows });
+}));
+
+/* Named historical eras. Naturally prompted by a major constitutional change,
+   but never inferred from one automatically — a constitutional bill bumps a
+   version number on its own; someone still has to decide the era it opened
+   deserves a name, and what to call it. A label on history, not a power over
+   anyone, so it is RO-settable the same way the RO may edit a config value —
+   see CLAUDE.md on offices vs is_admin: this deliberately has no office of
+   its own to check. */
+app.get('/api/eras', wrap(async (_req, res) => {
+  const { rows } = await q(`
+    SELECT e.*, u.display_name AS created_by_name FROM eras e
+      LEFT JOIN users u ON u.id=e.created_by
+     ORDER BY e.starts_cycle DESC NULLS LAST, e.created_at DESC`);
+  res.json(rows);
+}));
+
+app.post('/api/eras', admin, wrap(async (req, res) => {
+  const { name, starts_cycle, description } = req.body || {};
+  if (!name?.trim()) return res.status(400).json({ error: 'Name the era.' });
+  const { rows } = await q(
+    `INSERT INTO eras(name, starts_cycle, description, created_by) VALUES($1,$2,$3,$4) RETURNING *`,
+    [name.trim(), starts_cycle != null ? Number(starts_cycle) : null, description?.trim() || '', req.user.id]);
+  log(req.user.id, 'era.name', rows[0].name);
+  res.json(rows[0]);
 }));
 
 app.get('/api/audit', wrap(async (_req, res) => {

@@ -453,7 +453,7 @@ async function route() {
   const view = $('#view');
   view.innerHTML = `<div class="skeleton"><div class="sk sk-title"></div><div class="sk sk-line"></div>
     <div class="sk sk-card"></div><div class="sk sk-card"></div></div>`;
-  const single = { election: viewElection, bill: viewBill, party: viewParty, ...SUBROUTES }[parts[0]];
+  const single = { election: viewElection, bill: viewBill, party: viewParty, citizen: viewCitizen, ...SUBROUTES }[parts[0]];
   const fn = single || (ROUTES.find(r => r[0] === parts[0])?.[2]) || viewChamber;
   try {
     await fn(view, parts[1]);
@@ -1047,7 +1047,7 @@ async function viewElection(v, id) {
             ${elected.includes(c.id) ? '<span class="tag on-green">elected</span>' : ''}</div>
           ${c.votes !== null ? `<div class="bar"><span style="width:${Math.round((c.votes / top) * 100)}%"></span></div>` : ''}
         </div>
-        <div class="result-count">${c.votes === null ? '—' : c.votes}</div>
+        <div class="result-count">${c.votes === null ? '—' : `<span data-count="${c.votes}">0</span>`}</div>
       </div>`).join('') : '<div class="empty">No candidates.</div>'}
     <p class="item-meta" style="margin-top:12px">Turnout ${e.turnout} of ${e.eligible}${e.status === 'voting' && STATE.config.secret_ballot === 'true' ? ' · counts hidden until the poll closes' : ''}</p>
   </div>`;
@@ -1072,6 +1072,7 @@ async function viewElection(v, id) {
       </div>
       <p class="small muted" style="margin-top:10px">Certifying seats the winners and vacates the previous holders. Closing a parliamentary election also vacates the Speaker. Touching any of these takes the election off the clock and you run it by hand from then on.</p>
     </div>` : ''}`;
+  animateCounts(v);
 
   if ($('#stand')) $('#stand').onsubmit = async ev => {
     ev.preventDefault();
@@ -1905,14 +1906,56 @@ async function viewCitizens(v) {
     <h1 class="page">Citizens</h1>
     <p class="page-sub">${list.length} on the roll</p>
     <div class="list">${list.map(u => `
-      <div class="item">
+      <a class="item" href="#/citizen/${u.id}">
         <div class="item-top">
           <span class="item-title">${esc(u.display_name)} ${u.party_abbr ? `<span class="tag" style="border-color:${esc(u.party_colour)};color:${esc(u.party_colour)}">${esc(u.party_abbr)}</span>` : ''}</span>
           <span>${(u.offices || []).map(o => `<span class="tag on-navy">${esc(officeLabel(o))}</span>`).join(' ')}</span>
         </div>
         <div class="item-meta">@${esc(u.username)} · joined ${day(u.created_at)}</div>
         ${u.bio ? `<div class="small" style="margin-top:4px">${esc(u.bio)}</div>` : ''}
-      </div>`).join('')}</div>`;
+      </a>`).join('')}</div>`;
+}
+
+/* A citizen's political career: every office ever held, every bill they
+   authored, every election they contested — reverse-chronological, built
+   from rows that already existed for other reasons (offices going inactive
+   leaves a row rather than deleting one; a candidacy is never removed, only
+   withdrawn). Shared between a citizen's own account page and their public
+   profile so the two never drift apart. */
+function careerTimeline(c) {
+  const items = [];
+  (c.offices || []).forEach(o => items.push({
+    date: o.since,
+    html: `<div class="item-top"><span class="item-title">${esc(officeLabel(o.office))}</span>
+        ${o.active ? '<span class="tag on-green">serving</span>' : ''}</div>
+      <div class="item-meta">${o.active ? `since ${day(o.since)}` : `${day(o.since)} – ${day(o.until)}`}</div>`
+  }));
+  (c.bills || []).forEach(b => items.push({
+    date: b.created_at,
+    html: `<div class="item-top"><span class="item-title">${b.ref ? `<span class="ref">${esc(b.ref)}</span> ` : ''}${esc(b.title)}</span>${statusTag(b.status)}</div>
+      <div class="item-meta">authored · ${esc(b.kind)} · ${day(b.created_at)}</div>`
+  }));
+  (c.elections || []).forEach(e => items.push({
+    date: e.created_at,
+    html: `<div class="item-top"><span class="item-title">${esc(e.title)}</span>
+        ${e.withdrawn ? '<span class="tag">withdrawn</span>'
+          : e.won ? '<span class="tag on-green">won</span>'
+          : e.status === 'closed' ? '<span class="tag">not elected</span>'
+          : '<span class="tag">standing</span>'}</div>
+      <div class="item-meta">stood for ${esc(e.kind)} · ${day(e.created_at)}</div>`
+  }));
+  items.sort((a, b) => new Date(b.date) - new Date(a.date));
+  return items.length
+    ? `<div class="list">${items.map(i => `<div class="item">${i.html}</div>`).join('')}</div>`
+    : '<div class="empty">No career history yet.</div>';
+}
+
+async function viewCitizen(v, id) {
+  const c = await api(`/api/citizens/${id}/career`);
+  v.innerHTML = `
+    <h1 class="page">${esc(c.user.display_name)}</h1>
+    <p class="page-sub">@${esc(c.user.username)}</p>
+    <div class="card"><h2>Career</h2>${careerTimeline(c)}</div>`;
 }
 
 /* -------------------------------------------------------------- record */
@@ -1943,6 +1986,7 @@ async function viewMe(v) {
   ME = await api('/api/me');
   drawWhoami();
   const keys = await api('/api/me/keys');
+  const career = await api(`/api/citizens/${ME.id}/career`);
   v.innerHTML = `
     <h1 class="page">${esc(ME.display_name)}</h1>
     <p class="page-sub">@${esc(ME.username)}${ME.offices.length ? ' · ' + esc(officeList(ME.offices, ', ')) : ''}${ME.party ? ' · ' + esc(ME.party.name) : ''}</p>
@@ -1953,6 +1997,7 @@ async function viewMe(v) {
         <button class="btn btn-primary">Save</button>
       </form>
     </div>
+    <div class="card"><h2>Career</h2>${careerTimeline(career)}</div>
     ${ME.offices.length ? `<div class="card"><h2>Resign</h2>
       <p class="small muted">Article 7.4: you may resign any office at any time, and need give no reason. Leaving the House leaves the chair with it.</p>
       <div class="row" style="margin-top:10px">${ME.offices.map(o =>
