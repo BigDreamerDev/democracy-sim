@@ -540,6 +540,7 @@ async function start() {
   drawWhoami();
   if (!location.hash) location.hash = '#/chamber';
   await route();
+  maybeRunTour().catch(err => console.error('[republic] tour failed', err));
 }
 
 /* ------------------------------------------------------------- chamber */
@@ -650,7 +651,7 @@ function partyShareBar(offices, seats) {
   const n = Math.max(Number(seats) || 1, mps.length);
   const byParty = new Map();
   for (const m of mps) {
-    const key = m.party_name || ' independent';
+    const key = m.party_name || ' independent';
     const row = byParty.get(key) || { name: m.party_name || 'Independent', colour: m.party_colour || 'var(--ink-3)', n: 0 };
     row.n++;
     byParty.set(key, row);
@@ -1998,6 +1999,11 @@ async function viewMe(v) {
       </form>
     </div>
     <div class="card"><h2>Career</h2>${careerTimeline(career)}</div>
+    <div class="card"><h2>Guided tour</h2>
+      <p class="small muted">A coachmark points at one thing on screen at a time and explains it. It runs once on your first visit, and again — briefly — whenever you're newly appointed to an office.</p>
+      <label class="field"><span><input type="checkbox" id="tourToggle" style="width:auto;margin-right:6px" ${tourEnabled() ? 'checked' : ''}>Show these tours</span></label>
+      <div class="row" style="margin-top:10px"><button class="btn btn-sm" id="tourReplay" type="button">Replay the tour</button></div>
+    </div>
     ${ME.offices.length ? `<div class="card"><h2>Resign</h2>
       <p class="small muted">Article 7.4: you may resign any office at any time, and need give no reason. Leaving the House leaves the chair with it.</p>
       <div class="row" style="margin-top:10px">${ME.offices.map(o =>
@@ -2057,6 +2063,12 @@ async function viewMe(v) {
     e.preventDefault();
     await api('/api/me', { method: 'PUT', body: Object.fromEntries(new FormData(e.target)) });
     ME = await api('/api/me'); drawWhoami(); toast('Saved.');
+  };
+
+  $('#tourToggle').onchange = e => setTourEnabled(e.target.checked);
+  $('#tourReplay').onclick = () => {
+    const steps = tourStepsFor('general').concat((ME.offices || []).flatMap(o => tourStepsFor(o)));
+    runTour(steps);
   };
   onAction('[data-resign]', async btn => {
     if (!confirm(`Resign as ${officeLabel(btn.dataset.resign)}? It takes effect at once.`)) return;
@@ -2296,6 +2308,166 @@ async function viewAdmin(v) {
 
 async function viewParty(v, id) { location.hash = '#/parties'; }
 
+/* ----------------------------------------------------------------- tour
+
+   A small, generic coachmark engine. Steps are contributed under a key —
+   'general' for the orientation tour, an office name (e.g. 'treasurer')
+   for a role-specific one — by whichever file owns that page, the same
+   file-ownership boundary the router already keeps: a step for the
+   Treasury belongs in money.js, not hardcoded here. app.js registers
+   'general' and the core-office keys (president, prime_minister, speaker,
+   mp) below, since those all live in app.js's own routes. */
+const TOUR_STEPS = {};
+function registerTourSteps(key, steps) {
+  (TOUR_STEPS[key] || (TOUR_STEPS[key] = [])).push(...steps);
+}
+const tourStepsFor = key => TOUR_STEPS[key] || [];
+
+const TOUR_SEEN_KEY = 'republic.tour.seen.v1';   // bump the .vN to re-show after a content rewrite
+const tourEnabled = () => localStorage.getItem('republic.tour.enabled') !== '0';
+function setTourEnabled(on) {
+  if (on) localStorage.removeItem('republic.tour.enabled'); else localStorage.setItem('republic.tour.enabled', '0');
+}
+function officeSnapshot() {
+  try { return JSON.parse(localStorage.getItem('republic.tour.offices') || '[]'); } catch { return []; }
+}
+const saveOfficeSnapshot = offices => localStorage.setItem('republic.tour.offices', JSON.stringify(offices || []));
+
+/* Only one tour can be on screen. Closing an old one (Escape, Skip, or a
+   fresh runTour() call stomping it) always resolves its promise, so a
+   caller awaiting a tour never hangs because a second one started. */
+let closeActiveTour = null;
+function endTour() { if (closeActiveTour) closeActiveTour(); }
+
+function runTour(steps) {
+  return new Promise(resolve => {
+    endTour();
+    const seq = (steps || []).filter(Boolean);
+    if (!seq.length) return resolve();
+    let i = 0;
+    const overlay = document.createElement('div'); overlay.className = 'tour-overlay';
+    const spot = document.createElement('div'); spot.className = 'tour-spot';
+    const pop = document.createElement('div'); pop.className = 'tour-pop';
+    pop.setAttribute('role', 'dialog');
+    pop.setAttribute('aria-label', 'Guided tour');
+    pop.tabIndex = -1;
+    document.body.append(overlay, spot, pop);
+
+    const cleanup = () => {
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', reposition);
+      overlay.remove(); spot.remove(); pop.remove();
+      closeActiveTour = null;
+      resolve();
+    };
+    closeActiveTour = cleanup;
+    const onKey = e => { if (e.key === 'Escape') cleanup(); };
+    document.addEventListener('keydown', onKey);
+
+    let target = null;
+    const reposition = () => {
+      if (!target || !target.isConnected) return;
+      const r = target.getBoundingClientRect(), pad = 6;
+      spot.style.left = `${r.left - pad}px`;
+      spot.style.top = `${r.top - pad}px`;
+      spot.style.width = `${r.width + pad * 2}px`;
+      spot.style.height = `${r.height + pad * 2}px`;
+      const pr = pop.getBoundingClientRect();
+      let top = r.bottom + 14;
+      const left = Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - pr.width - 8));
+      if (top + pr.height > window.innerHeight - 8) top = Math.max(8, r.top - pr.height - 14);
+      pop.style.left = `${left}px`;
+      pop.style.top = `${top}px`;
+    };
+    window.addEventListener('resize', reposition);
+
+    // Anchor missing (a step written for a page this citizen navigated away
+    // from, or a module this Republic never mounted) — skip it, not break.
+    const advance = async () => {
+      while (i < seq.length) {
+        const step = seq[i];
+        const curPath = (location.hash.slice(2) || 'chamber').split('/')[0];
+        if (step.route && curPath !== step.route) {
+          location.hash = '#/' + step.route;
+          try { await route(); } catch {}
+        }
+        target = document.querySelector(step.selector);
+        if (target) break;
+        i++;
+      }
+      if (i >= seq.length) return cleanup();
+      const step = seq[i];
+      const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      target.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+      pop.innerHTML = `<p class="tour-count">${i + 1} of ${seq.length}</p>
+        <h3>${esc(step.title)}</h3><p>${esc(step.body)}</p>
+        <div class="tour-actions">
+          <button class="btn btn-sm btn-ghost" type="button" data-tour="skip">Skip tour</button>
+          <button class="btn btn-sm btn-primary" type="button" data-tour="next">${i === seq.length - 1 ? 'Done' : 'Next'}</button>
+        </div>`;
+      pop.querySelector('[data-tour="skip"]').onclick = cleanup;
+      pop.querySelector('[data-tour="next"]').onclick = () => { i++; advance(); };
+      requestAnimationFrame(reposition);
+      pop.focus();
+    };
+    advance();
+  });
+}
+
+/* Runs once, unprompted: the first-boot orientation the first time this ships,
+   then — every load after that — a short tour of whatever office a citizen
+   was newly appointed to since the last time they loaded the app. Both are
+   skipped outright if the citizen has turned tours off, though the office
+   snapshot still advances underneath so re-enabling later doesn't dump every
+   office gained while it was off into one tour. */
+async function maybeRunTour() {
+  if (!ME) return;
+  const current = ME.offices || [];
+  if (!tourEnabled()) { saveOfficeSnapshot(current); return; }
+
+  if (!localStorage.getItem(TOUR_SEEN_KEY)) {
+    await runTour(tourStepsFor('general'));
+    localStorage.setItem(TOUR_SEEN_KEY, '1');
+    saveOfficeSnapshot(current);
+    return;
+  }
+
+  const before = officeSnapshot();
+  const gained = current.filter(o => !before.includes(o));
+  saveOfficeSnapshot(current);
+  if (gained.length) {
+    const steps = gained.flatMap(o => tourStepsFor(o));
+    if (steps.length) await runTour(steps);
+  }
+}
+
+registerTourSteps('general', [
+  { selector: '#rail a[href="#/chamber"]', title: 'The Chamber is home', body: 'Bills, elections, the sitting House — everything else branches off from here.' },
+  { route: 'chamber', selector: '#desk', title: 'Your desk', body: "When an office you hold has something waiting on it — a bill to assent, a division to call — it appears here, with the action right on it." },
+  { selector: '#rail a[href="#/bills"]', title: 'Bills', body: 'Every bill the Republic has ever seen: drafts, seconders, divisions, and what became law.' },
+  { selector: '#rail a[href="#/elections"]', title: 'Elections', body: 'Parliament, President, Speaker, referenda — every ballot the Republic has run lives here.' },
+  { selector: '#rail', title: 'Institutional desks', body: "Further down the rail sit the Republic's institutions — Court, Economy, Treasury and the rest, if this Republic runs them. Each is its own desk, worked by whoever holds that office." },
+  { selector: '#whoName', title: 'Your account', body: "Your profile, resignations, developer keys, and this tour's own on/off switch all live here." }
+]);
+
+registerTourSteps('president', [
+  { route: 'chamber', selector: '#desk', title: 'Assent is yours', body: 'Nothing the House passes becomes law until you assent to it here. A veto is final.' },
+  { selector: '#rail a[href="#/emergency"]', title: 'Article 12', body: 'Only you may declare extraordinary circumstances, and only the House can end one once declared.' },
+  { selector: '#rail a[href="#/prime-minister"]', title: 'Appointing a Prime Minister', body: 'When the seat is vacant, you nominate here — the House still has to confirm your choice.' }
+]);
+registerTourSteps('prime_minister', [
+  { selector: '#rail a[href="#/prime-minister"]', title: 'The Government', body: 'Confirmation and no-confidence both happen here. You hold office for as long as the House allows.' },
+  { route: 'chamber', selector: '#desk', title: 'Ordinary bills wait on you', body: 'The way constitutional bills wait on the President, ordinary ones wait on your assent.' }
+]);
+registerTourSteps('speaker', [
+  { route: 'chamber', selector: '#desk', title: 'You run the order paper', body: 'Tabling bills, calling divisions, breaking ties on a tied vote — it all queues up here first.' },
+  { route: 'chamber', selector: '.chamber .chair', title: 'The chair', body: "That's you, at the front of the hemicycle." }
+]);
+registerTourSteps('mp', [
+  { route: 'chamber', selector: '#desk', title: 'Votes waiting on you', body: "A live division you haven't voted in shows up here first." },
+  { selector: '#rail a[href="#/bills"]', title: 'Seconding a bill', body: 'Add your name to a draft here before the Speaker can table it.' }
+]);
+
 /* What acts.js is allowed to reach. Deliberately narrow. */
 window.Republic = {
   api, esc, md, toast, $, when, day, statusTag,
@@ -2306,7 +2478,8 @@ window.Republic = {
     if (!ROUTES.some(r => r[0] === path)) ROUTES.splice(ROUTES.length - 2, 0, [path, label, fn]);
   },
   addSubRoute: (path, fn) => { SUBROUTES[path] = fn; },
-  refreshNav: () => { if (ME) drawRail(); }
+  refreshNav: () => { if (ME) drawRail(); },
+  registerTourSteps
 };
 
 start();

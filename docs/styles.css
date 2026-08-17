@@ -1197,3 +1197,33 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
 /* The Press: articles read closer to print than to a form. */
 .prose h1,.prose h2,.prose h3{font-family:var(--font-display,inherit);margin:0.9em 0 0.35em}
 .prose p{margin:0 0 0.8em;line-height:1.6}
+
+/* ------------------------------------------------------------ guided tour
+
+   Coachmarks, not a modal dialog: one popover anchored to a real element's
+   bounding rect, same technique as .seat-card, plus a spotlight cut with the
+   classic oversized box-shadow trick so the dimming reads as a single hole
+   in the page rather than a painted mask. Built and torn down per tour by
+   app.js rather than sitting in index.html, so a step for an element that
+   never rendered just never gets an anchor — nothing left behind. */
+.tour-overlay{position:fixed;inset:0;z-index:200;background:transparent}
+.tour-spot{
+  position:fixed;z-index:201;pointer-events:none;border-radius:6px;
+  box-shadow:0 0 0 9999px rgba(10,11,14,.62),0 0 0 2px var(--indelible-fill);
+  transition:left var(--base) var(--ease),top var(--base) var(--ease),
+             width var(--base) var(--ease),height var(--base) var(--ease);
+}
+.tour-pop{
+  position:fixed;z-index:202;width:290px;max-width:calc(100vw - 16px);
+  background:var(--card);color:var(--ink);border-radius:var(--radius);
+  box-shadow:var(--lift-md);padding:14px 16px;
+  animation:card-in var(--base) var(--ease) both;
+}
+.tour-pop h3{margin:2px 0 6px;font-family:var(--display);font-size:15px}
+.tour-pop p{margin:0 0 10px;font-size:13px;line-height:1.5;color:var(--ink-2)}
+.tour-count{margin:0 0 6px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3)}
+.tour-actions{display:flex;justify-content:space-between;gap:8px}
+@media(prefers-reduced-motion:reduce){
+  .tour-spot{transition:none}
+  .tour-pop{animation:none}
+}
