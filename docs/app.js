@@ -1003,7 +1003,7 @@ function partyShareBar(offices, seats) {
   const n = Math.max(Number(seats) || 1, mps.length);
   const byParty = new Map();
   for (const m of mps) {
-    const key = m.party_name || ' independent';
+    const key = m.party_name || ' independent';
     const row = byParty.get(key) || { name: m.party_name || 'Independent', colour: m.party_colour || 'var(--ink-3)', n: 0 };
     row.n++;
     byParty.set(key, row);
