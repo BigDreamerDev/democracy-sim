@@ -2029,6 +2029,57 @@
         public_statement: 'Public statement',
         other: 'Other'
       })[k] || 'Dispatch';
+    /* Shared by the initial render and refreshDispatchThread() below, so a
+       government turn (single or batched) can update the feed in place —
+       the RO used to need a hard reload to see what a power just sent. */
+    const dispatchThreadHtml = list =>
+      list.length
+        ? list
+            .slice(0, 50)
+            .map(
+              d =>
+                `<article class="dip-message ${d.direction === 'outgoing' ? 'is-republic' : d.direction === 'public' ? 'is-statement' : 'is-foreign'} ${d.in_reply_to ? 'is-reply' : ''}"><div class="dip-message-route"><span class="dip-route-mark">${d.direction === 'outgoing' ? 'R' : d.direction === 'public' ? 'P' : 'F'}</span><div><span class="dip-sender">${d.direction === 'outgoing' ? 'Republic Foreign Office' : esc(d.power_name)}</span><span class="dip-route-detail">${d.direction === 'outgoing' ? `To ${esc(d.power_name)}` : d.direction === 'public' ? 'To the public record' : 'To the Republic'}</span></div><span class="dip-message-id">#${d.id}</span></div><div class="dip-message-head"><h3>${esc(d.subject)}</h3><div class="dip-message-tags"><span class="tag ${d.message_kind === 'ultimatum' ? 'on-oxide' : d.message_kind === 'treaty_proposal' ? 'on-violet' : d.message_kind === 'trade_proposal' ? 'on-green' : d.message_kind === 'public_statement' ? 'on-violet' : ''}">${kindLabel(d.message_kind)}</span><span class="tag">${d.direction}</span></div></div><p class="dip-meta">${d.in_reply_to ? `In reply to cable #${d.in_reply_to}` : d.direction === 'public' ? 'Wire statement · no diplomatic relationship required to read it' : 'New diplomatic thread'}${d.author_name ? ` · authorised by ${esc(d.author_name)}` : ''}</p><div class="dip-message-body">${esc(d.body).replace(/\n/g, '<br>')}</div>${canDiplomat && d.direction !== 'public' ? `<div class="dip-message-actions"><button class="btn btn-sm" data-reply="${d.id}" data-reply-kind="${esc(d.message_kind || 'dispatch')}" data-reply-subject="${esc(d.subject)}">Reply on this channel</button></div>` : ''}</article>`
+            )
+            .join('')
+        : '<p class="muted">No dispatches.</p>';
+    const bindReplyButtons = () =>
+      document.querySelectorAll('[data-reply]').forEach(
+        btn =>
+          (btn.onclick = async () => {
+            const subject = prompt('Reply subject', `Re: ${btn.dataset.replySubject || ''}`);
+            if (!subject) return;
+            const body = prompt('Official reply text');
+            if (!body) return;
+            const payload = { subject, body, message_kind: btn.dataset.replyKind || 'dispatch' };
+            if (isSpeaker && !isPresident) {
+              const r = prompt('Enacted House resolution bill ID');
+              if (!r) return;
+              payload.resolution_bill_id = Number(r);
+            }
+            try {
+              await api(`/api/diplomacy/dispatches/${btn.dataset.reply}/reply`, {
+                method: 'POST',
+                body: payload
+              });
+              toast('Reply entered in the public record.');
+              viewDiplomacy();
+            } catch (err) {
+              toast(err.message, true);
+            }
+          })
+      );
+    /* Refetches just the cable feed and swaps it in place — the point being
+       a government turn's dispatches show up without navigating away and
+       back, let alone a browser reload. */
+    const refreshDispatchThread = async () => {
+      try {
+        const fresh = await api('/api/diplomacy/dispatches');
+        const el = document.querySelector('#dip-thread');
+        if (!el) return;
+        el.innerHTML = dispatchThreadHtml(fresh);
+        bindReplyButtons();
+      } catch { /* a failed refresh just leaves the last-known feed showing */ }
+    };
     const goodLabel = k =>
       ({
         food: 'Food',
@@ -2152,17 +2203,7 @@
 
       <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Recognised contacts</span><h2>Powers</h2></div><div class="list dip-powers">${powers.length ? powers.map(p => `<div class="item"><div class="item-top"><span class="item-title"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${esc(p.colour)};margin-right:7px"></span>${esc(p.name)}</span><span>${standing(p)}</span></div><div class="row"><button class="btn btn-sm" data-dossier="${p.id}">Open country dossier</button>${me && !p.recognised ? `<button class="btn btn-sm" data-recognise="${p.id}">Move recognition</button>` : ''}${me && p.recognised ? `<button class="btn btn-sm" data-sanction="${p.id}" data-power-name="${esc(p.name)}">Move sanctions</button>` : ''}</div></div>`).join('') : '<p class="muted">No foreign powers.</p>'}</div><div id="country-dossier" style="margin-top:12px"></div></section>
 
-      <section class="dip-section dip-correspondence"><div class="dip-section-head"><span class="dip-section-kicker">Cable traffic · public record</span><h2>Diplomatic correspondence</h2></div><div class="dip-thread">${
-        dispatches.length
-          ? dispatches
-              .slice(0, 50)
-              .map(
-                d =>
-                  `<article class="dip-message ${d.direction === 'outgoing' ? 'is-republic' : d.direction === 'public' ? 'is-statement' : 'is-foreign'} ${d.in_reply_to ? 'is-reply' : ''}"><div class="dip-message-route"><span class="dip-route-mark">${d.direction === 'outgoing' ? 'R' : d.direction === 'public' ? 'P' : 'F'}</span><div><span class="dip-sender">${d.direction === 'outgoing' ? 'Republic Foreign Office' : esc(d.power_name)}</span><span class="dip-route-detail">${d.direction === 'outgoing' ? `To ${esc(d.power_name)}` : d.direction === 'public' ? 'To the public record' : 'To the Republic'}</span></div><span class="dip-message-id">#${d.id}</span></div><div class="dip-message-head"><h3>${esc(d.subject)}</h3><div class="dip-message-tags"><span class="tag ${d.message_kind === 'ultimatum' ? 'on-oxide' : d.message_kind === 'treaty_proposal' ? 'on-violet' : d.message_kind === 'trade_proposal' ? 'on-green' : d.message_kind === 'public_statement' ? 'on-violet' : ''}">${kindLabel(d.message_kind)}</span><span class="tag">${d.direction}</span></div></div><p class="dip-meta">${d.in_reply_to ? `In reply to cable #${d.in_reply_to}` : d.direction === 'public' ? 'Wire statement · no diplomatic relationship required to read it' : 'New diplomatic thread'}${d.author_name ? ` · authorised by ${esc(d.author_name)}` : ''}</p><div class="dip-message-body">${esc(d.body).replace(/\n/g, '<br>')}</div>${canDiplomat && d.direction !== 'public' ? `<div class="dip-message-actions"><button class="btn btn-sm" data-reply="${d.id}" data-reply-kind="${esc(d.message_kind || 'dispatch')}" data-reply-subject="${esc(d.subject)}">Reply on this channel</button></div>` : ''}</article>`
-              )
-              .join('')
-          : '<p class="muted">No dispatches.</p>'
-      }</div></section>
+      <section class="dip-section dip-correspondence"><div class="dip-section-head"><span class="dip-section-kicker">Cable traffic · public record</span><h2>Diplomatic correspondence</h2></div><div class="dip-thread" id="dip-thread">${dispatchThreadHtml(dispatches)}</div></section>
 
       <div class="dip-grid">
         <section class="dip-section"><div class="dip-section-head"><span class="dip-section-kicker">Ratification desk</span><h2>Treaties</h2></div><div class="list">${treaties.length ? treaties.map(t => { const terms=treatyTerms(t.terms); return `<div class="item"><div class="item-top"><span class="item-title">${esc(t.title)}</span><span class="tag">${esc(t.republic_status)}</span></div><p class="small muted">${esc(t.power_name)} · ${esc(t.bill_ref || '')}</p>${terms.length ? `<p>${terms.map(x => `<span class="tag">${esc(x)}</span>`).join(' ')}</p>` : ''}</div>`; }).join('') : '<p class="muted">No treaties.</p>'}</div></section>
@@ -2405,31 +2446,7 @@
           }
         })
     );
-    document.querySelectorAll('[data-reply]').forEach(
-      btn =>
-        (btn.onclick = async () => {
-          const subject = prompt('Reply subject', `Re: ${btn.dataset.replySubject || ''}`);
-          if (!subject) return;
-          const body = prompt('Official reply text');
-          if (!body) return;
-          const payload = { subject, body, message_kind: btn.dataset.replyKind || 'dispatch' };
-          if (isSpeaker && !isPresident) {
-            const r = prompt('Enacted House resolution bill ID');
-            if (!r) return;
-            payload.resolution_bill_id = Number(r);
-          }
-          try {
-            await api(`/api/diplomacy/dispatches/${btn.dataset.reply}/reply`, {
-              method: 'POST',
-              body: payload
-            });
-            toast('Reply entered in the public record.');
-            viewDiplomacy();
-          } catch (err) {
-            toast(err.message, true);
-          }
-        })
-    );
+    bindReplyButtons();
     document.querySelectorAll('[data-foreign-buy]').forEach(
       btn =>
         (btn.onclick = async () => {
@@ -2679,6 +2696,7 @@
                the cabinet just argued about is the thing you came to read. */
             const d = await api(`/api/admin/foreign/powers/${id}/deliberation`).catch(() => null);
             document.querySelector('#ro-delib').innerHTML = deliberationHtml(d);
+            refreshDispatchThread();
           } catch (err) {
             toast(err.message, true);
           }
@@ -2750,6 +2768,7 @@
                 skipped = results.filter(r => r.ok === null).length,
                 failed = results.filter(r => r.ok === false);
               toast(`Ran ${ran} government turn(s)${skipped ? `, skipped ${skipped}` : ''}${failed.length ? `, ${failed.length} failed` : ''}.`, !!failed.length);
+              if (ran) refreshDispatchThread();
             }
           });
         } catch (err) {
