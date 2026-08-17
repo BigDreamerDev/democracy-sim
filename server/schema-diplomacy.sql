@@ -228,9 +228,15 @@ CREATE TABLE IF NOT EXISTS foreign_government_turns (
   status             TEXT NOT NULL DEFAULT 'open',
   chosen_proposal_id BIGINT,
   created_at         TIMESTAMPTZ DEFAULT now(),
-  completed_at       TIMESTAMPTZ,
-  UNIQUE (power_id, cycle_number)
+  completed_at       TIMESTAMPTZ
 );
+/* One turn per power per cycle used to be a hard DB constraint. The RO can
+   now force a fresh deliberation within the same cycle (runGovernmentTurn's
+   `force` argument) without waiting for the next one, so uniqueness is
+   enforced in application code instead — a SELECT before the INSERT, not
+   ON CONFLICT — and every forced re-run is kept as its own row rather than
+   overwriting history. */
+ALTER TABLE foreign_government_turns DROP CONSTRAINT IF EXISTS foreign_government_turns_power_id_cycle_number_key;
 
 /* What the chosen action actually did, and what the government refused on the
    way there. Without it the Returning Officer can see that a turn happened and
