@@ -1401,3 +1401,10 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
   .tour-spot{transition:none}
   .tour-pop{animation:none}
 }
+
+/* Progress for the RO's "run all foreign turns" batch — a plain bar, no
+   percentage theatre, since what the RO actually wants to know is which
+   power is running right now, printed just under it. */
+.turn-progress{height:6px;border-radius:3px;background:var(--rule);overflow:hidden;margin-top:10px}
+.turn-progress-fill{height:100%;background:var(--indelible-fill);transition:width var(--base) var(--ease)}
+@media(prefers-reduced-motion:reduce){.turn-progress-fill{transition:none}}

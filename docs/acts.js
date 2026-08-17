@@ -9,7 +9,7 @@
     console.warn('[republic] acts.js loaded without app.js');
     return;
   }
-  const { api, esc, md, toast, $, when, day } = R;
+  const { api, apiStream, esc, md, toast, $, when, day } = R;
   const ME = () => R.me();
   const STATE = () => R.state();
 
@@ -2210,7 +2210,7 @@
         me?.is_admin
           ? `<section class="dip-ro"><div class="dip-ro-head"><span class="dip-section-kicker">Restricted operations console</span><h2>Returning Officer — foreign powers</h2></div><p class="small muted">Operational control of foreign powers and their LLM governments. Recognition and treaties still follow the Republic's political rules. Every change made here is written to the public record.</p>
         ${republicTerritoryPicker(world, republicTerritoryAdmin)}
-        <div class="card"><h3 style="margin-top:0">All foreign powers</h3><p class="small muted">Runs every active power's government turn in sequence — powers with no government configured are skipped, not failed.</p><button class="btn btn-primary" id="ro-run-all-turns">Run all foreign turns</button><div id="ro-run-all-result"></div></div>
+        <div class="card"><h3 style="margin-top:0">All foreign powers</h3><p class="small muted">Runs every active power's government turn in sequence — powers with no government configured are skipped, not failed.</p><button class="btn btn-primary" id="ro-run-all-turns">Run all foreign turns</button><div id="ro-run-all-progress"></div><div id="ro-run-all-result"></div></div>
         <div class="card dip-ro-console"><label class="field"><span>Manage power</span><select id="ro-power-select">${adminPowers.map(p => `<option value="${p.id}">${esc(p.name)}${p.revoked_at ? ' (revoked)' : ''}</option>`).join('')}</select></label><div id="ro-power-panel"></div></div>
         <details class="card dip-ro-create" open><summary><strong>Create a foreign power</strong></summary><form id="newpower" class="stack" style="margin-top:12px"><p class="small muted">A name, a government and a rough strength is the whole of it. The cabinet, its ministers and their instructions come with the archetype, and the models are configured for you${govCatalogue?.default_agent ? ` — this server will use <strong>${esc(govCatalogue.default_agent.provider)}</strong>` : ''}. Everything below the button is optional.</p><div class="grid2"><label class="field"><span>Power name</span><input name="name" required></label><label class="field"><span>Government</span><select name="archetype" id="newpower-archetype">${(govCatalogue?.archetypes || []).map(a => `<option value="${esc(a.id)}">${esc(a.label)}</option>`).join('')}<option value="">(no government — configure by hand)</option></select></label></div><label class="field"><span>Rough strength</span><select name="strength">${Object.entries(govCatalogue?.strengths || {}).map(([k, v]) => `<option value="${esc(k)}" ${k === 'matched' ? 'selected' : ''}>${esc(k)} (${v})</option>`).join('')}</select></label><p class="small muted" id="newpower-blurb"></p><button class="btn btn-primary">Create power</button><details><summary class="small muted">Appearance and standing</summary><div class="grid2" style="margin-top:8px"><label class="field"><span>Adjective</span><input name="adjective"></label><label class="field"><span>Colour</span><input name="colour" type="color" value="#5B2E9E"></label></div><label class="field"><span>Standing</span><select name="standing"><option>neutral</option><option>friendly</option><option>allied</option><option>strained</option><option>hostile</option><option>at_war</option></select></label></details><div id="newpowerkey"></div></form></details>
         ${worldgenGens ? worldgenSectionHtml(worldgenGens) : ''}
@@ -2711,14 +2711,47 @@
     const runAll = document.querySelector('#ro-run-all-turns');
     if (runAll) {
       runAll.onclick = () => busy(runAll, async () => {
+        const bar = document.querySelector('#ro-run-all-progress');
         const out = document.querySelector('#ro-run-all-result');
+        if (out) out.innerHTML = '';
+        let total = 0;
+        const rows = new Map(); // power_id -> row element, so 'start' and 'done' update the same card
+        const renderBar = (doneCount, currentName) => {
+          if (!bar) return;
+          const pct = total ? Math.round((doneCount / total) * 100) : 0;
+          bar.innerHTML = `<div class="turn-progress"><div class="turn-progress-fill" style="width:${pct}%"></div></div><p class="small muted">${doneCount} of ${total}${currentName ? ` — running ${esc(currentName)}…` : ''}</p>`;
+        };
         try {
-          const { results } = await api('/api/admin/foreign/run-all-turns', { method: 'POST' });
-          const ran = results.filter(r => r.ok).length,
-            skipped = results.filter(r => r.ok === null).length,
-            failed = results.filter(r => r.ok === false);
-          toast(`Ran ${ran} government turn(s)${skipped ? `, skipped ${skipped}` : ''}${failed.length ? `, ${failed.length} failed` : ''}.`, !!failed.length);
-          if (out) out.innerHTML = `<div class="list" style="margin-top:10px">${results.map(r => `<div class="item"><div class="item-top"><span class="item-title">${esc(r.power_name)}</span><span class="tag${r.ok ? ' on-green' : r.ok === false ? ' on-oxide' : ''}">${r.ok ? 'ran' : r.ok === false ? 'failed' : 'skipped'}</span></div>${r.ok && r.chosen ? `<p class="small muted">${esc(r.chosen.action_kind)}</p>` : ''}${r.error ? `<p class="small muted">${esc(r.error)}</p>` : ''}${r.skipped ? `<p class="small muted">${esc(r.skipped)}</p>` : ''}</div>`).join('')}</div>`;
+          await apiStream('/api/admin/foreign/run-all-turns', { method: 'POST' }, line => {
+            if (line.type === 'total') {
+              total = line.count;
+              renderBar(0, null);
+            } else if (line.type === 'start') {
+              renderBar(line.index, line.power_name);
+              if (out) {
+                const row = document.createElement('div');
+                row.className = 'item';
+                row.innerHTML = `<div class="item-top"><span class="item-title">${esc(line.power_name)}</span><span class="tag">running…</span></div>`;
+                out.appendChild(row);
+                rows.set(line.power_id, row);
+              }
+            } else if (line.type === 'done') {
+              renderBar(line.index + 1, null);
+              const row = rows.get(line.power_id);
+              if (row) {
+                const tag = line.ok ? 'ran' : line.ok === false ? 'failed' : 'skipped';
+                const cls = line.ok ? ' on-green' : line.ok === false ? ' on-oxide' : '';
+                const note = line.ok && line.chosen ? line.chosen.action_kind : line.error || line.skipped || '';
+                row.innerHTML = `<div class="item-top"><span class="item-title">${esc(line.power_name)}</span><span class="tag${cls}">${tag}</span></div>${note ? `<p class="small muted">${esc(note)}</p>` : ''}`;
+              }
+            } else if (line.type === 'complete') {
+              const results = line.results;
+              const ran = results.filter(r => r.ok).length,
+                skipped = results.filter(r => r.ok === null).length,
+                failed = results.filter(r => r.ok === false);
+              toast(`Ran ${ran} government turn(s)${skipped ? `, skipped ${skipped}` : ''}${failed.length ? `, ${failed.length} failed` : ''}.`, !!failed.length);
+            }
+          });
         } catch (err) {
           toast(err.message, true);
         }

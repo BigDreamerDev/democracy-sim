@@ -32,6 +32,52 @@ async function api(path, { method = 'GET', body } = {}) {
   return data;
 }
 
+/* Same request/auth shape as api(), but for an endpoint that streams
+   newline-delimited JSON progress instead of answering once at the end —
+   a batch job (e.g. running every foreign power's turn) where the caller
+   wants to render "how far along" rather than stare at a spinner. Each
+   parsed line is handed to onLine as it arrives; the promise resolves once
+   the stream ends. A non-OK status is read as plain text and thrown, same
+   error shape as api(). */
+async function apiStream(path, { method = 'GET', body } = {}, onLine) {
+  let res;
+  try {
+    res = await fetch(API + path, {
+      method,
+      headers: {
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {})
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+  } catch (err) {
+    console.error('[republic] request to ' + API + path + ' failed before it got a reply:', err);
+    const e = new Error('NETWORK');
+    e.network = true;
+    throw e;
+  }
+  if (!res.ok || !res.body) {
+    const text = await res.text();
+    let data; try { data = JSON.parse(text); } catch { data = text; }
+    throw new Error(data?.error || 'The server could not be reached.');
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+      if (!line.trim()) continue;
+      try { onLine(JSON.parse(line)); } catch { /* a malformed line just doesn't render */ }
+    }
+  }
+  if (buf.trim()) { try { onLine(JSON.parse(buf)); } catch {} }
+}
+
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -2826,7 +2872,7 @@ registerTourSteps('mp', [
 
 /* What acts.js is allowed to reach. Deliberately narrow. */
 window.Republic = {
-  api, esc, md, toast, $, when, day, statusTag,
+  api, apiStream, esc, md, toast, $, when, day, statusTag,
   state: () => STATE,
   me: () => ME,
   reload: () => route(),
