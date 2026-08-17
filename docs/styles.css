@@ -1216,3 +1216,158 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
    deliberately plain: attribution, not drama. */
 .intel-leak-row{padding:8px 0;border-top:1px solid var(--rule)}
 .intel-leak-row:first-child{border-top:none}
+
+/* ═══════════════════════════════════════════════════════ RICH MARKDOWN
+
+   .prose is used for legislation, judgments, reports and press copy. Keep the
+   treatment document-like: ruled tables, restrained quotations and mono code,
+   all using the same ballot-paper palette rather than introducing a separate
+   "Markdown theme". These rules are harmless until the Markdown renderer emits
+   the corresponding elements. */
+
+.prose a{
+  color:var(--indelible);
+  text-decoration:underline;
+  text-decoration-thickness:1px;
+  text-underline-offset:.16em;
+  overflow-wrap:anywhere;
+}
+.prose a:hover{text-decoration-thickness:2px}
+.prose em{font-style:italic}
+.prose del{color:var(--ink-2);text-decoration-thickness:1.5px}
+.prose mark{
+  background:var(--indelible-soft);color:var(--ink);
+  padding:.05em .18em;
+}
+
+/* Lower heading levels stay subordinate to the document's H1–H3 hierarchy. */
+.prose h4,.prose h5,.prose h6{
+  margin:18px 0 6px;
+  color:var(--ink);
+}
+.prose h4{font-family:var(--display);font-size:14px;font-weight:600}
+.prose h5{
+  font-family:var(--mono);font-size:10px;font-weight:600;
+  letter-spacing:.08em;text-transform:uppercase;
+}
+.prose h6{
+  font-family:var(--mono);font-size:9px;font-weight:600;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);
+}
+
+/* Inline code is a docket reference; blocks read like filed technical text. */
+.prose code{
+  font-family:var(--mono);font-size:.86em;
+  background:var(--paper);border:1px solid var(--rule);
+  border-radius:2px;padding:.12em .34em;
+  overflow-wrap:anywhere;
+}
+.prose pre{
+  margin:0 0 14px;padding:14px 16px;
+  max-width:100%;overflow:auto;
+  background:var(--ink);color:var(--card);
+  border:1px solid var(--ink);border-radius:var(--radius);
+  font-family:var(--mono);font-size:12px;line-height:1.65;
+  tab-size:2;
+}
+.prose pre code{
+  display:block;padding:0;border:0;border-radius:0;
+  background:transparent;color:inherit;font-size:inherit;
+  overflow-wrap:normal;white-space:pre;
+}
+
+/* Quotations look like extracts clipped into the file, not decorative callouts. */
+.prose blockquote{
+  margin:0 0 14px;padding:10px 14px;
+  border-left:3px solid var(--indelible);
+  background:color-mix(in srgb,var(--indelible-soft) 55%,var(--card));
+  color:var(--ink-2);
+}
+.prose blockquote > :last-child{margin-bottom:0}
+.prose blockquote blockquote{
+  margin-top:10px;
+  border-left-color:var(--ink-3);
+  background:var(--paper);
+}
+
+/* A proper document divider. */
+.prose hr{
+  border:0;border-top:1px solid var(--rule);
+  margin:24px 0;
+}
+
+/* Nested lists retain readable indentation without rapidly drifting right. */
+.prose ol ol,.prose ol ul,.prose ul ol,.prose ul ul{
+  margin:5px 0 3px;
+  padding-left:20px;
+}
+.prose li > p{margin-bottom:5px}
+
+/* GitHub-style task-list markup and plain <li><input type=checkbox> both work. */
+.prose .task-list-item,
+.prose li:has(> input[type="checkbox"]){
+  list-style:none;
+  margin-left:-20px;
+}
+.prose .task-list-item > input[type="checkbox"],
+.prose li > input[type="checkbox"]{
+  width:16px;height:16px;margin:0 7px 0 0;
+  vertical-align:-2px;accent-color:var(--indelible-fill);
+}
+
+/* Tables are deliberately ledger-like. display:block provides horizontal
+   scrolling on a phone without forcing the whole document wider than the page. */
+.prose table{
+  display:block;width:max-content;max-width:100%;
+  overflow-x:auto;border-collapse:collapse;
+  margin:0 0 16px;
+  background:var(--card);
+  border:1px solid var(--rule);
+  font-size:14px;
+}
+.prose thead{background:var(--paper)}
+.prose th,.prose td{
+  padding:8px 11px;border-right:1px solid var(--rule);
+  border-bottom:1px solid var(--rule);
+  text-align:left;vertical-align:top;
+}
+.prose th:last-child,.prose td:last-child{border-right:0}
+.prose tr:last-child td{border-bottom:0}
+.prose th{
+  font-family:var(--mono);font-size:9.5px;font-weight:600;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);
+}
+.prose tbody tr:nth-child(even){
+  background:color-mix(in srgb,var(--paper) 55%,transparent);
+}
+
+/* Media may appear in press copy or reports, but never overflow the document. */
+.prose img{
+  display:block;max-width:100%;height:auto;
+  margin:12px 0 16px;
+  border:1px solid var(--rule);
+}
+.prose figure{margin:12px 0 16px}
+.prose figure img{margin:0}
+.prose figcaption{
+  margin-top:6px;color:var(--ink-2);
+  font-family:var(--mono);font-size:9px;line-height:1.45;
+  letter-spacing:.04em;
+}
+
+/* Footnote-style output, superscript/subscript and definition-list output are
+   styled too if the renderer grows support for them later. */
+.prose sup,.prose sub{font-size:.72em;line-height:0}
+.prose .footnotes{
+  margin-top:26px;padding-top:12px;border-top:1px solid var(--rule);
+  color:var(--ink-2);font-size:13px;
+}
+.prose .footnotes ol{margin-bottom:0}
+.prose dl{margin:0 0 14px}
+.prose dt{font-weight:600;margin-top:8px}
+.prose dd{margin:2px 0 8px 18px;color:var(--ink-2)}
+
+@media(max-width:700px){
+  .prose pre{padding:12px;font-size:11.5px}
+  .prose th,.prose td{padding:7px 9px}
+}
