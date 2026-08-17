@@ -1193,3 +1193,14 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
 .wm-draft-preview.is-subdivision{stroke-width:.62;fill-opacity:.48}
 .wm-boundary-credit{margin:9px 0 0;font-size:10.5px}
 .territory-map-warning{margin:10px 0 0;padding:8px 10px;border:1px solid var(--rule);border-radius:8px}
+
+/* A public wire statement is neither a cable to the Republic nor from it —
+   dashed rather than solid so it reads as broadcast, not correspondence, at a
+   glance in the same dispatch feed. */
+.dip-message.is-statement{box-shadow:inset 3px 0 0 var(--indelible);border-style:dashed}
+.is-statement .dip-route-mark{color:var(--indelible)}
+
+/* The register a leak writes to (server/intelligence.js POST .../leak) is
+   deliberately plain: attribution, not drama. */
+.intel-leak-row{padding:8px 0;border-top:1px solid var(--rule)}
+.intel-leak-row:first-child{border-top:none}

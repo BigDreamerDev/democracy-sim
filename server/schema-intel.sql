@@ -165,3 +165,16 @@ CREATE TABLE IF NOT EXISTS intel_funding_requests (
 -- paid once per cycle from the Service operating account; mission fees are paid
 -- only when the Director actually assigns that agent to an operation.
 ALTER TABLE intel_service_agents ADD COLUMN IF NOT EXISTS salary_per_cycle BIGINT NOT NULL DEFAULT 0 CHECK (salary_per_cycle >= 0);
+
+/* A citizen leaking a sealed report before its declassification cycle. This is
+   the opposite of intel_reads: reading is anonymous-to-the-content but public
+   that it happened; a leak is the act that actually opens the content early,
+   and it is attributed by name, permanently, for the same reason a defection
+   needs an actual sentence of reasons rather than a checkbox — a leak that
+   cost nothing to attribute would not be a real political act. One row per
+   report: a report can only be leaked once, by whoever got there first. */
+CREATE TABLE IF NOT EXISTS intel_leaks (
+  report_id BIGINT PRIMARY KEY REFERENCES intel_reports(id) ON DELETE CASCADE,
+  user_id   INT REFERENCES users(id) ON DELETE CASCADE,
+  at        TIMESTAMPTZ DEFAULT now()
+);
