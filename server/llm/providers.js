@@ -10,6 +10,9 @@
 
 const archetypes = require('./archetypes');
 
+/* llama-3.1-8b-instant was Groq's decommissioned; kept on the allowlist so an
+   already-configured cabinet gets a clear "not on this build's allowlist"
+   refusal instead of a silent swap, but no longer the default. */
 const GROQ_FREE_MODELS = new Set([
   'llama-3.1-8b-instant',
   'llama-3.3-70b-versatile',
@@ -21,19 +24,24 @@ const GROQ_FREE_MODELS = new Set([
   'groq/compound-mini'
 ]);
 
+/* gemini-2.5-flash-lite stopped serving new callers ("no longer available to
+   new users") and Google's own 404 names gemini-3.5-flash-lite as its
+   replacement — kept on the allowlist for the same reason as above. */
 const GEMINI_FREE_MODELS = new Set([
   'gemini-2.5-pro',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
-  'gemini-2.5-flash-lite-preview-09-2025'
+  'gemini-2.5-flash-lite-preview-09-2025',
+  'gemini-3.5-flash-lite',
+  'gemini-3.5-flash'
 ]);
 /* No TTS or image models here. Everything on this list has to return a JSON
    object from a text prompt; a speech model accepted at configuration time
    fails at the only moment that matters, which is a cabinet meeting. */
 
 const DEFAULTS = Object.freeze({
-  groq: process.env.GROQ_FREE_MODEL || 'llama-3.1-8b-instant',
-  gemini: process.env.GEMINI_FREE_MODEL || 'gemini-2.5-flash-lite',
+  groq: process.env.GROQ_FREE_MODEL || 'llama-3.3-70b-versatile',
+  gemini: process.env.GEMINI_FREE_MODEL || 'gemini-3.5-flash-lite',
   openrouter: process.env.OPENROUTER_FREE_MODEL || 'openrouter/free'
 });
 
