@@ -221,10 +221,19 @@ function applyFlagTheme(flag) {
   const bar = night ? mix(legible(primary, '#FFFFFF', 3.5), '#000000', 0.35)
                     : legible(primary, '#FFFFFF', 3.5);
 
+  // Overlay chips (the seat-card hover tooltip, the toast log line) are
+  // always a dark chip with white text, on purpose — they float above the
+  // page rather than belonging to its surface. --ink flips to near-white in
+  // dark mode so it can't be reused here without going illegible; --overlay
+  // stays dark in both themes, just deepened relative to --card in dark mode
+  // so it still reads as raised above it.
+  const overlay = night ? mix(card, '#000000', 0.5) : ink;
+
   const set = (k, v) => root.style.setProperty(k, v);
   set('--paper', paper);
   set('--card', card);
   set('--ink', ink);
+  set('--overlay', overlay);
   set('--rule', mix(paper, ink, 0.22));
   set('--ink-2', mix(paper, ink, 0.62));
   set('--ink-3', mix(paper, ink, 0.42));

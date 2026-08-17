@@ -6,6 +6,7 @@
   --paper:#E9EAEC;
   --card:#F5F6F7;
   --ink:#14161C;
+  --overlay:#14161C;
   --ink-2:#5C6270;
   --ink-3:#8B909B;
   --rule:#C8CBD1;
@@ -184,6 +185,13 @@ p.page-sub{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-tran
    tally) gets a matching hover tint instead of a stray violet wash. */
 .item:hover{text-decoration:none;background:color-mix(in srgb, var(--indelible-fill) 6%, transparent)}
 .item-top{display:flex;gap:8px;align-items:baseline;justify-content:space-between}
+/* A header row's h2 (the intel charter card, the Director card) sits inside
+   item-top's flex layout rather than as a direct .card child, so it never
+   picks up .card > h2's type or margin — it falls back to the browser
+   default heading size and weight instead, and that default's bottom
+   margin doesn't collapse out of a flex item the way it would in normal
+   flow, so it silently padded out whatever card content came next. */
+.item-top h2{font-family:var(--display);font-weight:600;font-size:19px;letter-spacing:-.01em;margin:0}
 .item-title{font-weight:600;font-size:15px}
 .item-meta{font-family:var(--mono);font-size:10px;color:var(--ink-2);letter-spacing:.04em;margin-top:3px}
 
@@ -226,7 +234,7 @@ p.page-sub{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-tran
    than one popover per circle. */
 .seat-card{
   position:absolute;transform:translate(-50%,-100%) translateY(-10px);
-  background:var(--ink);color:#fff;padding:9px 12px;border-radius:var(--radius);
+  background:var(--overlay);color:#fff;padding:9px 12px;border-radius:var(--radius);
   font-size:12.5px;line-height:1.4;pointer-events:none;z-index:5;white-space:nowrap;
   box-shadow:var(--lift-md);
 }
@@ -463,7 +471,7 @@ input[type=color]{padding:3px;height:38px}
 
 .toast{
   position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(14px);
-  background:var(--ink);color:#fff;padding:11px 16px;font-size:13.5px;max-width:min(92vw,420px);
+  background:var(--overlay);color:#fff;padding:11px 16px;font-size:13.5px;max-width:min(92vw,420px);
   opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;z-index:60;
 }
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
