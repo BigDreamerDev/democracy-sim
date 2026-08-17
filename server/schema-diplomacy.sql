@@ -268,6 +268,14 @@ ALTER TABLE foreign_offers ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'unit';
 
 ALTER TABLE foreign_dispatches ADD COLUMN IF NOT EXISTS message_kind TEXT NOT NULL DEFAULT 'dispatch';
 
+/* `direction` has never had a CHECK, so a third value needs no migration: a
+   'public_statement' row is written with direction='public' rather than
+   'incoming'/'outgoing' — it is not addressed to the Republic, it is a press
+   release to the general record. The feed route (GET /api/diplomacy/dispatches)
+   already answers with no auth, so nothing here newly exposes anything; the
+   distinct direction only lets the front end tag it apart from real cable
+   traffic instead of it reading as a message that was sent to nobody. */
+
 /* The export cap is measured per cycle, so a trade has to know which cycle it
    happened in. A power account now represents that government's reserve of
    Republic marks; its domestic currency is tracked separately by offshore.sql. */

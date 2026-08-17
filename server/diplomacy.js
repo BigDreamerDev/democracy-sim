@@ -65,7 +65,7 @@ module.exports.mount = function mount(app, ctx) {
     bcrypt,
     crypto
   } = ctx;
-  const ACTIONS = new Set(['nothing', 'dispatch', 'treaty', 'ratify', 'denounce', 'offer', 'buy', 'accept_export', 'reject_export', 'issue_currency', 'distribute_currency', 'establish_intel', 'recruit_agent', 'spy_operation', 'embassy', 'private_dispatch', 'bilateral_message', 'bilateral_propose', 'bilateral_respond', 'bilateral_declare', 'crisis_respond', 'declare']);
+  const ACTIONS = new Set(['nothing', 'dispatch', 'treaty', 'ratify', 'denounce', 'offer', 'buy', 'accept_export', 'reject_export', 'issue_currency', 'distribute_currency', 'establish_intel', 'recruit_agent', 'spy_operation', 'embassy', 'private_dispatch', 'bilateral_message', 'bilateral_propose', 'bilateral_respond', 'bilateral_declare', 'crisis_respond', 'declare', 'public_statement']);
   const STANDINGS = new Set(['allied', 'friendly', 'neutral', 'strained', 'hostile', 'at_war']);
   const DECISIONS = new Set(['executive', 'cabinet', 'weighted', 'consensus']);
   const MESSAGE_KINDS = new Set(['dispatch', 'treaty_proposal', 'trade_proposal', 'ultimatum', 'other']);
@@ -1140,6 +1140,39 @@ module.exports.mount = function mount(app, ctx) {
     return row;
   }
 
+  /* A press release, not a cable. `dispatch` addresses the Republic on the
+     government channel; a public statement addresses nobody in particular and
+     needs no recognition, no embassy, no relationship to have been struck
+     first — a foreign cabinet can put a position on the record even toward a
+     power that has never been recognised. It shares the dispatch feed and
+     table (the feed is already unauthenticated, so "readable by anyone" was
+     already true of it) but is stamped with its own direction so the front
+     end can tag it apart from real cable traffic instead of it reading as a
+     message TO the Republic that was never sent. */
+  async function issuePublicStatement(power, body, forcedKey) {
+    const subject = text(body?.subject, 200),
+      content = text(body?.body, 4000);
+    const key = text(forcedKey || body?.idempotency_key, 200);
+    if (!subject || !content || !key)
+      throw Object.assign(new Error('A public statement needs a subject, body and idempotency_key.'), {
+        status: 400
+      });
+    const old = (
+      await q('SELECT * FROM foreign_dispatches WHERE power_id=$1 AND idempotency_key=$2', [power.id, key])
+    ).rows[0];
+    if (old) return old;
+    await useAction(power.id, key);
+    const row = (
+      await q(
+        `INSERT INTO foreign_dispatches(power_id,direction,message_kind,subject,body,idempotency_key)
+      VALUES($1,'public','public_statement',$2,$3,$4) RETURNING *`,
+        [power.id, subject, content, key]
+      )
+    ).rows[0];
+    log(null, 'foreign.public_statement', `${power.name}: ${subject}`);
+    return row;
+  }
+
   async function proposeTreaty(power, body, forcedKey) {
     if (!power.recognised)
       throw Object.assign(
@@ -2109,6 +2142,8 @@ module.exports.mount = function mount(app, ctx) {
         return respondCrisis(power, p, key);
       case 'declare':
         return declare(power, p, key);
+      case 'public_statement':
+        return issuePublicStatement(power, p, key);
       default:
         throw Object.assign(new Error('That proposal action is not executable by the controller.'), {
           status: 400

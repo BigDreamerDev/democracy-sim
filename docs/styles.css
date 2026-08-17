@@ -1197,3 +1197,14 @@ button, .btn, a, label, .option, .power, .tab, .rail a, input, select, textarea,
 /* The Press: articles read closer to print than to a form. */
 .prose h1,.prose h2,.prose h3{font-family:var(--font-display,inherit);margin:0.9em 0 0.35em}
 .prose p{margin:0 0 0.8em;line-height:1.6}
+
+/* A public wire statement is neither a cable to the Republic nor from it —
+   dashed rather than solid so it reads as broadcast, not correspondence, at a
+   glance in the same dispatch feed. */
+.dip-message.is-statement{box-shadow:inset 3px 0 0 var(--indelible);border-style:dashed}
+.is-statement .dip-route-mark{color:var(--indelible)}
+
+/* The register a leak writes to (server/intelligence.js POST .../leak) is
+   deliberately plain: attribution, not drama. */
+.intel-leak-row{padding:8px 0;border-top:1px solid var(--rule)}
+.intel-leak-row:first-child{border-top:none}

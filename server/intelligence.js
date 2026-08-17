@@ -1001,6 +1001,51 @@ Purpose: ${purpose}`;
     })
   );
 
+  /* -------------------------------------------------------------- leaks
+
+     Declassification is a clock nobody controls; a leak is a citizen jumping
+     that clock deliberately, and it costs them: it is logged with their name
+     attached, permanently, the same discipline that already makes reading a
+     sealed report a public act via intel_reads. Clearance gates it exactly
+     the way it gates /api/intel/reports/:id/read — requireCleared, nothing
+     narrower and nothing wider. Leaking report A only lifts the seal on
+     report A; it is not a side door into the rest of the register, and it
+     never touches money or the diplomacy action allowlist. */
+  app.post(
+    '/api/intel/reports/:id/leak',
+    auth,
+    wrap(async (req, res) => {
+      const svc = I()?.intelService ? await I().intelService() : null;
+      if (!svc) return res.status(400).json({ error: 'The Republic has no intelligence service.' });
+      const r = (await q('SELECT * FROM intel_reports WHERE id=$1', [Number(req.params.id) || 0])).rows[0];
+      if (!r) return res.status(404).json({ error: 'No such report.' });
+      if (r.declassified) return res.status(409).json({ error: 'That report is already public. There is nothing left to leak.' });
+      if (!(await requireCleared(req, res))) return;
+      await tx(async run => {
+        await run('UPDATE intel_reports SET declassified=TRUE WHERE id=$1', [r.id]);
+        await run('INSERT INTO intel_leaks(report_id,user_id) VALUES($1,$2) ON CONFLICT (report_id) DO NOTHING', [r.id, req.user.id]);
+      });
+      log(req.user.id, 'intel.leak', `${r.ref}`);
+      res.json({ ok: true, report_id: r.id, ref: r.ref });
+    })
+  );
+
+  /* Public and permanent, same register discipline as intel_reads: who leaked
+     what, and when. No auth — attribution is the whole point, and it would be
+     a strange kind of "public" if you had to be logged in to see it. */
+  app.get(
+    '/api/intel/leaks',
+    wrap(async (_req, res) => {
+      const rows = (await q(`
+        SELECT l.report_id, l.at, u.display_name, r.ref, r.subject
+          FROM intel_leaks l
+          JOIN intel_reports r ON r.id=l.report_id
+          LEFT JOIN users u ON u.id=l.user_id
+         ORDER BY l.at DESC LIMIT 100`)).rows;
+      res.json(rows);
+    })
+  );
+
   async function runPayrun(cycle, actorId) {
     const svc = I()?.intelService ? await I().intelService() : null;
     if (!svc || !E()) return { funded: 0, salaries_paid: 0, salaries_unpaid: 0, reason: 'no active Service economy' };
