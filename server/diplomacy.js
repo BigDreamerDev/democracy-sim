@@ -72,6 +72,14 @@ module.exports.mount = function mount(app, ctx) {
      one batch at a time; reset in a finally so a mid-batch crash can't wedge
      it permanently open. */
   let allTurnsRunning = false;
+  /* Shared between runGovernmentTurn's round loop and applyArchetype's
+     max_calls_per_turn sizing below, so the call budget a cabinet is given
+     always has real headroom for the number of rounds it's actually allowed
+     to take — the two used to be two unrelated numbers, and the budget
+     formula was small enough that a cabinet of 6+ ministers could exhaust it
+     on one or two voting rounds and never reach agreement no matter how many
+     rounds the loop itself was willing to try. */
+  const DELIBERATION_SAFETY_ROUNDS = 8;
   const STANDINGS = new Set(['allied', 'friendly', 'neutral', 'strained', 'hostile', 'at_war']);
   const DECISIONS = new Set(['executive', 'cabinet', 'weighted', 'consensus']);
   const MESSAGE_KINDS = new Set(['dispatch', 'treaty_proposal', 'trade_proposal', 'ultimatum', 'other']);
@@ -4037,7 +4045,12 @@ module.exports.mount = function mount(app, ctx) {
         {
           archetype: arch.id,
           actions_per_cycle: arch.actions_per_cycle,
-          max_calls_per_turn: Math.max(4, (arch.cabinet.length + 1) * 2),
+          /* One proposal call per minister, then up to DELIBERATION_SAFETY_ROUNDS
+             more voting calls per minister — the old formula (cabinet size *
+             2) gave a cabinet of 6+ ministers barely enough budget for one
+             voting round, so it would exhaust its calls and record "no
+             agreement" long before the round loop's own ceiling ever mattered. */
+          max_calls_per_turn: Math.max(4, arch.cabinet.length * (DELIBERATION_SAFETY_ROUNDS + 1)),
           memory_entries: 50,
           /* Succession starts counting from the cycle the crown was installed,
              at the first name in the archetype's line. Re-applying an
@@ -4647,6 +4660,20 @@ module.exports.mount = function mount(app, ctx) {
     ).rows;
     if (!agents.length)
       throw Object.assign(new Error('This government has no active agents.'), { status: 400 });
+    /* Self-heals a government installed under the old max_calls_per_turn
+       formula (cabinet size * 2 — barely enough for one voting round on a
+       cabinet of 6+), which is why a cabinet already running in production
+       could exhaust its call budget mid-deliberation and record "no
+       agreement" regardless of how many rounds the loop below is willing to
+       try. Runs once per power, the first turn after this ships; every turn
+       after that reads the corrected value straight off gov.config. */
+    {
+      const floor = Math.max(4, agents.length * (DELIBERATION_SAFETY_ROUNDS + 1));
+      if ((Number(gov.config?.max_calls_per_turn) || 0) < floor) {
+        gov.config = { ...gov.config, max_calls_per_turn: floor };
+        await q('UPDATE foreign_governments SET config=$2 WHERE power_id=$1', [powerId, gov.config]);
+      }
+    }
     const c = cycleNo(),
       snapshot = await publicState(power),
       national = (
@@ -5381,10 +5408,11 @@ Do not add commentary after the JSON.`,
     let votes = [];
     let chosen = null;
     /* A cabinet keeps re-voting past its configured max_rounds as long as calls
-       remain in budget, up to this hard ceiling — a safety valve, not a target,
-       so "keep deliberating until they agree" can't hang a turn forever or
-       burn the whole day's free-tier quota on one power that will never agree. */
-    const DELIBERATION_SAFETY_ROUNDS = 8;
+       remain in budget, up to DELIBERATION_SAFETY_ROUNDS (module-level, shared
+       with applyArchetype's call-budget sizing) — a safety valve, not a
+       target, so "keep deliberating until they agree" can't hang a turn
+       forever or burn the whole day's free-tier quota on one power that will
+       never agree. */
     for (let round = 1; round <= DELIBERATION_SAFETY_ROUNDS && calls < maxCalls; round++) {
       votes = [];
       for (const a of agents) {
