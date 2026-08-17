@@ -2778,7 +2778,11 @@ async function maybeRunTour() {
   if (!tourEnabled()) { saveOfficeSnapshot(current); return; }
 
   if (!localStorage.getItem(TOUR_SEEN_KEY)) {
-    await runTour(tourStepsFor('general'));
+    // Include role steps for whatever's already held — a citizen appointed
+    // before their first load since this shipped would otherwise have their
+    // office folded silently into the baseline snapshot below and never see it.
+    const steps = tourStepsFor('general').concat(current.flatMap(o => tourStepsFor(o)));
+    await runTour(steps);
     localStorage.setItem(TOUR_SEEN_KEY, '1');
     saveOfficeSnapshot(current);
     return;
