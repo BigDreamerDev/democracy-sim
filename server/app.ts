@@ -4,7 +4,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Q, SCHEMA } from './db';
-import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette } from '../engine/index';
+import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate } from '../engine/index';
 
 export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void };
 
@@ -18,7 +18,7 @@ export async function makeApp(o: Options) {
   let world: any;
   const people = async () => (await q('SELECT id, display_name, is_admin FROM users WHERE is_active AND approved ORDER BY id')).rows.map((u: any) => ({ id: 'u' + u.id, name: u.display_name, admin: !!u.is_admin }));
   const saved = (await q('SELECT state FROM v2_world WHERE id = 1')).rows[0];
-  if (saved) world = saved.state;
+  if (saved) world = migrate(saved.state);
   else {
     world = createLiveWorld(await people(), now(), (now() % 2147483647) | 0);
     await q('INSERT INTO v2_world (id, state) VALUES (1, $1)', [JSON.stringify(world)]);

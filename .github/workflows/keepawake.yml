@@ -1,4 +1,4 @@
-# Render's free tier sleeps after 15 idle minutes. This pings the API every 10 minutes from 07:00 to 01:00 UK time
+# Render's free tier sleeps after 15 idle minutes. This pings the API every 10 minutes from 06:00 to 00:59 UTC
 # so players rarely meet a cold start. The game clock is safe either way: deadlines are caught up on wake.
 name: keep awake
 on:

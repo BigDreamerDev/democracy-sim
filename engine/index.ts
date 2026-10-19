@@ -12,6 +12,7 @@ import { advanceTo } from './clock';
 export * from './core';
 export { createWorld, createLiveWorld, NAMES } from './world';
 export { viewFor } from './view';
+export { migrate } from './migrate';
 export { advanceTo, nextDeadline, upcoming } from './clock';
 
 type Cmd = (w: W, me: Id, a: any) => any;
