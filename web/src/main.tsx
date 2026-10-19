@@ -94,7 +94,7 @@ function Game() {
   const known = TABS.some((x) => x[3].includes(r.tab));
   const marked = TABS.map(([href, label, icon, tabs]) => [href, label, icon, tabs.includes(r.tab) || (!known && !tabs.length)] as [string, string, string, boolean]);
   return (
-    <div class="app">
+    <div class={'app' + (ONLINE ? ' online' : '')}>
       <Sidebar tabs={marked} current={'#/' + hash.replace(/^#\/?/, '').split('?')[0]} />
       <main key={r.key}>{r.view}</main>
       <nav class="nav" aria-label="Main"><div class="in">

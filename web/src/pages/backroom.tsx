@@ -1,12 +1,42 @@
 import { useState } from 'preact/hooks';
-import { useStore, act } from '../store';
+import { useStore, act, ONLINE, unlockIntrigue } from '../store';
 import { Page, Sec, Card, Btn, Left, When, Empty, Field, Pick } from '../ui';
-import { nm, allCitizens, canSeeCard, intrigueOpen, exiled, fmtTime, DAY } from '../../../engine/index';
+import { nm, allCitizens, canSeeCard, intrigueOpen, exiled, fmtTime, fmtDay, fmtLeft, DAY } from '../../../engine/index';
 import { ASKS, plotNeeds } from '../../../engine/backroom';
 
-function Closed() {
+// shown until the backroom opens: what's coming, and when
+const SEALED: [string, string, string][] = [
+  ['Cards', 'Secrets about real players: a quiet loan, a leaked memo, a broken promise. Hold them, leak them to the press, or use one to make a demand.', 'I'],
+  ['Deals', 'Private promises between two players. Nobody else sees them, unless one of you decides to expose the other.', 'II'],
+  ['Plots', 'Recruit enough of the right people and seize power for three days. Get reported and every plotter goes into exile.', 'III']
+];
+function Closed({ title = 'The backroom' }: { title?: string }) {
   const { world: w } = useStore();
-  return <Page dark back={['#/realm', 'The realm']} kicker="Opens in week 3" title="The backroom" intro={<>Private deals, secret cards and coups open once everyone knows the basics, on {new Date(w.startedAt + w.config.intrigueDelayDays * DAY).toUTCString().slice(0, 11)}. The demo controls can unlock it now.</>} />;
+  const opensAt = w.phase === 'running' ? w.startedAt + w.config.intrigueDelayDays * DAY : null;
+  return (
+    <Page dark back={['#/realm', 'The realm']} kicker="Sealed until week 3" title={title}
+      intro={opensAt
+        ? <>Private deals, secret cards and coups open two weeks into the first Parliament, once everyone knows how the House works.</>
+        : <>Private deals, secret cards and coups open two weeks after the Founding Convention adopts the constitution.</>}>
+      <div class="sealed">
+        <div class="sealed-when">
+          <span class="sealed-stamp" aria-hidden="true"><b>Sealed</b><small>by order</small></span>
+          <div>
+            <div class="kicker">{opensAt ? 'Opens' : 'Opens'}</div>
+            <div class="sealed-date">{opensAt ? fmtDay(opensAt) : 'Two weeks after the constitution'}</div>
+            {opensAt && <div class="small muted tnum">in {fmtLeft(w, opensAt)}</div>}
+          </div>
+        </div>
+        <ol class="sealed-list">
+          {SEALED.map(([h, t, n]) => (
+            <li><span class="sealed-n" aria-hidden="true">{n}</span><div><b>{h}</b><p>{t}</p></div></li>
+          ))}
+        </ol>
+        <p class="small muted" style={{ margin: 0 }}>Until then, the ledger already keeps a note of anything worth knowing. Some of it will be waiting for you.</p>
+        {!ONLINE && w.phase === 'running' && <Btn kind="ghost" small onClick={unlockIntrigue}>Demo: unlock it now</Btn>}
+      </div>
+    </Page>
+  );
 }
 
 export function Backroom() {
@@ -78,7 +108,7 @@ export function Plots() {
   const { world: w, me } = useStore();
   const [name, setName] = useState('Operation Nightjar');
   const [inv, setInv] = useState('');
-  if (!intrigueOpen(w)) return <Closed />;
+  if (!intrigueOpen(w)) return <Closed title="Plots" />;
   const mine = Object.values(w.plots).find((p: any) => p.status === 'planning' && p.members.includes(me)) as any;
   const invites = Object.values(w.plots).filter((p: any) => p.status === 'planning' && p.invited[me] === 'pending') as any[];
   return (
@@ -114,6 +144,7 @@ export function Exile() {
   const [n, setN] = useState('kessmark');
   const c = w.citizens[me];
   const ex = allCitizens(w).filter((x: any) => exiled(w, x.id));
+  if (!intrigueOpen(w) && !exiled(w, me) && !ex.length) return <Closed title="Exile" />;
   return (
     <Page dark back={['#/realm', 'The realm']} title="Exile" intro="Exiles cannot vote, stand or act for a week. They can seek asylum abroad and ask for a pardon.">
       {exiled(w, me) && <Sec title="You are in exile"><Card><p style={{ margin: 0 }}>Until <When at={c.exiledUntil} />.{c.asylum ? ` Sheltered by ${w.nations[c.asylum].name}.` : ''}</p><div class="grid2" style={{ marginTop: 10 }}><Pick value={n} onChange={setN} options={Object.values(w.nations).map((x: any) => [x.id, x.name])} /><Btn onClick={() => act('exile.asylum', { nation: n }, 'Asylum granted.')}>Seek asylum</Btn></div><Btn kind="ghost" full style={{ marginTop: 8 }} onClick={() => act('exile.pardonRequest', {}, 'Request sent.')}>Ask for a pardon</Btn></Card></Sec>}

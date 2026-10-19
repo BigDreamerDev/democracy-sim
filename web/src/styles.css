@@ -338,9 +338,9 @@ html[data-nav="theme"]::view-transition-new(root) { animation: vt-wipe .6s var(-
 @media (min-width: 960px) {
   .app { max-width: none; display: grid; grid-template-columns: 264px minmax(0, 1fr); padding-bottom: 0; }
   .nav, .today-brand { display: none; }
-  main { min-width: 0; padding: 12px 48px 64px; }
+  main { --mx: 48px; min-width: 0; padding: 12px var(--mx) 64px; }
   main > .page { max-width: 860px; margin: 0 auto; padding-inline: 0; }
-  main > .page.dark { max-width: none; margin: -12px -48px -64px; padding: 12px 48px 64px; }
+  main > .page.dark { max-width: none; margin: -12px calc(-1 * var(--mx)) -64px; padding: 12px var(--mx) 64px; min-height: 100vh; }
   main > .page.dark > * { max-width: 860px; margin-left: auto; margin-right: auto; }
   main > .page.dark > .sec, main > .page.dark > .card { margin-top: 28px; }
 
@@ -522,7 +522,7 @@ html[data-nav="theme"]::view-transition-new(root) { animation: vt-wipe .6s var(-
   .today-b { display: grid; grid-template-columns: 1fr; }
 }
 @media (min-width: 1600px) {
-  main { padding-left: 56px; padding-right: 56px; }
+  main { --mx: 56px; padding-left: var(--mx); padding-right: var(--mx); }
   main > .page { max-width: 1480px; }
   main > .page.dark > * { max-width: 1480px; }
   .page.today { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
@@ -545,3 +545,33 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .via { display: inline-block; margin-left: 6px; padding: 0 6px; border: 1px solid currentColor; border-radius: 3px; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; opacity: .6; vertical-align: 2px; }
 .door .bad { color: var(--red); }
 .stars { color: #b8860b; letter-spacing: 1px; }
+
+/* the live site has no demo rail, so the third column goes */
+@media (min-width: 1280px) {
+  .app.online { grid-template-columns: 264px minmax(0, 1fr); }
+  .app.online .toast { right: 32px; }
+}
+
+/* ---------- the backroom while it's sealed ---------- */
+.sealed { display: grid; gap: 22px; margin-top: 26px; max-width: 760px; }
+.sealed-when { justify-self: start; }
+@media (min-width: 1280px) { .sealed { max-width: 1100px; } .sealed-list p { font-size: 16px; } }
+/* on phones the dark page runs under the tab bar instead of stopping short of it */
+@media (max-width: 959px) { .page.dark { margin-bottom: -104px; padding-bottom: 128px; } }
+.sealed-when { display: flex; align-items: center; gap: 20px; padding: 18px 20px; border: 1px solid var(--night-line); background: var(--night-2); box-shadow: 3px 3px 0 rgba(0, 0, 0, .35); }
+.sealed-stamp { flex: none; width: 92px; height: 92px; border-radius: 50%; border: 3px solid var(--rose); box-shadow: inset 0 0 0 3px var(--night-2), inset 0 0 0 5px var(--rose); color: var(--rose); display: flex; flex-direction: column; align-items: center; justify-content: center; transform: rotate(-9deg); animation: land .5s var(--ease) both .2s; }
+.sealed-stamp b { font-family: var(--serif); font-weight: 400; font-size: 22px; line-height: 1; }
+.sealed-stamp small { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; margin-top: 3px; }
+.sealed-date { font-family: var(--serif); font-size: 30px; line-height: 1.1; color: var(--night-ink); }
+.sealed-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border-top: 1px solid var(--night-line); }
+.sealed-list li { display: flex; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--night-line); animation: rise .45s var(--ease) both; }
+.sealed-list li:nth-child(2) { animation-delay: .08s; } .sealed-list li:nth-child(3) { animation-delay: .16s; }
+.sealed-list b { font-size: 17px; color: var(--night-ink); }
+.sealed-list p { margin: 4px 0 0; color: var(--night-muted); font-size: 15px; max-width: 60ch; }
+.sealed-n { flex: none; width: 34px; font-family: var(--serif); font-size: 22px; color: var(--rose); text-align: center; }
+@media (min-width: 960px) {
+  .sealed-list { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 28px; border-top: 0; }
+  .sealed-list li { flex-direction: column; gap: 8px; border-bottom: 0; border-top: 2px solid var(--rose); padding-top: 14px; }
+  .sealed-n { text-align: left; }
+}
+@media (max-width: 480px) { .sealed-when { gap: 14px; padding: 14px; } .sealed-stamp { width: 74px; height: 74px; } .sealed-stamp b { font-size: 17px; } .sealed-stamp small { font-size: 8px; } .sealed-date { font-size: 24px; } }
