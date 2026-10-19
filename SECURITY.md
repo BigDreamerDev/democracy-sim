@@ -48,6 +48,17 @@ Rated by impact for *this* game. ✓ = fixed in this review.
 | O8 | You can't unlink your last way to sign in. | Avoids locking yourself out. |
 | O9 | Return addresses are limited to `ALLOWED_ORIGINS`. | No open redirect. |
 
+### Passkeys
+
+| # | Design choice | Why |
+|-|-|-|
+| P1 | WebAuthn via `@simplewebauthn/server` (`server/passkeys.ts`). The relying party is the site's own origin (`bigdreamerdev.github.io`), taken from the request's `Origin` and only if it's in `ALLOWED_ORIGINS`; the browser's signed `clientDataJSON` must name the same origin. | A passkey can't be used on a look-alike site, so it can't be phished. |
+| P2 | User verification required (face, fingerprint or device PIN) when adding and when signing in. | A passkey is two factors in one: the device and you. |
+| P3 | Challenges are random, single-use, bound to the origin (and, when adding, to the account), and expire after 5 minutes. They live in server memory. | Stops replay. A Render restart mid-ceremony just means "try again". |
+| P4 | Only public keys are stored (`v2_passkeys`). The signature counter must go up, and the user handle, when sent, must match the account. | A database leak gives nothing usable; a cloned authenticator is caught where the device counts. |
+| P5 | Passkeys are only added while signed in; there's no "sign up with a passkey". | Same as O6/O7: the RO still vets every citizen, and nobody can attach a key to someone else's account. |
+| P6 | You can't remove your last way to sign in; unlinking a provider counts passkeys too. Max 10 per account. | Avoids locking yourself out. |
+
 ### The API and the site
 
 | # | Finding | Risk | Fix |
@@ -76,8 +87,8 @@ kept in the public log**. A password reset also clears any lockout.
   is what really protects you.
 - **Render's free tier** restarts often; rate-limit counters live in memory and reset with it. Lockouts
   are in the database and survive.
-- **No two-factor login.** Linking a provider that has 2FA (Google, Microsoft, Apple, Discord) and using
-  that to sign in is the practical equivalent.
+- **No two-factor login on passwords.** Add a passkey (it needs your device *and* your face, fingerprint or
+  PIN) and sign in with that instead, or link a provider that has 2FA. A password, while set, still works alone.
 - **Apple needs a paid Apple Developer account** (about $99 a year). The other three are free. Apple's
   button only appears once it's configured.
 

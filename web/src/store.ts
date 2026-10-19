@@ -325,6 +325,56 @@ async function finishOAuth() {
   return true;
 }
 export const securityInfo = () => api('/api/me/security');
+// ---------- passkeys (WebAuthn): the server sends JSON options, the browser wants bytes ----------
+const toBytes = (s: string) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+const fromBytes = (b: ArrayBuffer | null) => (b ? btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') : undefined);
+export const passkeysWork = () => ONLINE && typeof window !== 'undefined' && !!window.PublicKeyCredential && !!navigator.credentials;
+function credentialJSON(c: any) {
+  const r = c.response;
+  return {
+    id: c.id,
+    rawId: fromBytes(c.rawId),
+    type: c.type,
+    authenticatorAttachment: c.authenticatorAttachment || undefined,
+    clientExtensionResults: c.getClientExtensionResults?.() || {},
+    response: {
+      clientDataJSON: fromBytes(r.clientDataJSON),
+      ...(r.attestationObject ? { attestationObject: fromBytes(r.attestationObject), transports: r.getTransports?.() || [] } : {}),
+      ...(r.authenticatorData ? { authenticatorData: fromBytes(r.authenticatorData), signature: fromBytes(r.signature), userHandle: fromBytes(r.userHandle) } : {}),
+    },
+  };
+}
+// a cancelled prompt is not an error worth shouting about
+const ceremony = async <T,>(p: Promise<T>) => {
+  try {
+    return await p;
+  } catch (e: any) {
+    if (e?.name === 'NotAllowedError' || e?.name === 'AbortError') throw new Error('Passkey cancelled.');
+    if (e?.name === 'InvalidStateError') throw new Error('This device already has a passkey for your account.');
+    throw new Error('Your device could not use a passkey: ' + (e?.message || e));
+  }
+};
+function deviceName() {
+  const ua = navigator.userAgent;
+  return /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /CrOS/.test(ua) ? 'Chromebook' : /Linux/.test(ua) ? 'Linux' : 'Passkey';
+}
+export async function addPasskey() {
+  const { flow, options: o } = await api('/api/passkeys/register/begin', {});
+  const publicKey: any = { ...o, challenge: toBytes(o.challenge), user: { ...o.user, id: toBytes(o.user.id) }, excludeCredentials: (o.excludeCredentials || []).map((c: any) => ({ ...c, id: toBytes(c.id) })) };
+  const c = await ceremony(navigator.credentials.create({ publicKey }));
+  await api('/api/passkeys/register/finish', { flow, response: credentialJSON(c), name: deviceName() });
+}
+export async function signInWithPasskey() {
+  const { flow, options: o } = await api('/api/passkeys/login/begin', {});
+  const publicKey: any = { ...o, challenge: toBytes(o.challenge), allowCredentials: (o.allowCredentials || []).map((c: any) => ({ ...c, id: toBytes(c.id) })) };
+  const c = await ceremony(navigator.credentials.get({ publicKey }));
+  const d = await api('/api/passkeys/login/finish', { flow, response: credentialJSON(c) });
+  setToken(d.token);
+  set({ signedIn: true, loading: true });
+  await refresh();
+}
+export const removePasskey = (id: string) => api('/api/passkeys/remove', { id });
+export const renamePasskey = (id: string, name: string) => api('/api/passkeys/rename', { id, name });
 export const unlinkProvider = (provider: string) => api('/api/oauth/unlink', { provider });
 export async function signOutEverywhere() {
   const d = await api('/api/logout-all', {});

@@ -1,6 +1,7 @@
 // One quick end-to-end check on an in-memory Postgres: logins, an action, secrecy, and the clock.
 import assert from 'node:assert/strict';
 import bcrypt from 'bcryptjs';
+import { createHash, generateKeyPairSync, sign as ecSign, randomBytes } from 'node:crypto';
 import { connect, SCHEMA } from './db';
 import { makeApp } from './app';
 
@@ -219,6 +220,50 @@ try {
   assert.equal(sec.body.identities[0].provider, 'google');
   assert.equal((await call('/api/oauth/unlink', { provider: 'google' }, gl.body.token)).status, 200, 'can unlink when a password exists');
   globalThis.fetch = realFetch;
+
+  // passkeys, with a software authenticator: add one while signed in, then sign in with it alone
+  const cbor = (v: any): Buffer => {
+    const head = (major: number, n: number) => (n < 24 ? Buffer.from([(major << 5) | n]) : n < 256 ? Buffer.from([(major << 5) | 24, n]) : Buffer.from([(major << 5) | 25, n >> 8, n & 255]));
+    if (typeof v === 'number') return v >= 0 ? head(0, v) : head(1, -1 - v);
+    if (typeof v === 'string') return Buffer.concat([head(3, Buffer.byteLength(v)), Buffer.from(v)]);
+    if (Buffer.isBuffer(v)) return Buffer.concat([head(2, v.length), v]);
+    const es = v instanceof Map ? [...v] : Object.entries(v);
+    return Buffer.concat([head(5, es.length), ...es.flatMap(([k, x]: any) => [cbor(k), cbor(x)])]);
+  };
+  const b64 = (b: Buffer) => b.toString('base64url');
+  const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const jwk: any = publicKey.export({ format: 'jwk' });
+  const credId = randomBytes(16);
+  const rpHash = createHash('sha256').update('ok.test').digest();
+  const clientData = (type: string, challenge: string, origin = 'http://ok.test') => Buffer.from(JSON.stringify({ type, challenge, origin, crossOrigin: false }));
+  const C = (await call('/api/login', { username: 'cara', password: 'password' })).body.token;
+  assert.equal((await call('/api/passkeys/register/begin', {}, C)).status, 400, 'passkeys need the site origin');
+  const rb = await call('/api/passkeys/register/begin', {}, C, 'http://ok.test');
+  assert.equal(rb.body.options.rp.id, 'ok.test');
+  const cose = cbor(new Map<number, any>([[1, 2], [3, -7], [-1, 1], [-2, Buffer.from(jwk.x, 'base64url')], [-3, Buffer.from(jwk.y, 'base64url')]]));
+  const regData = Buffer.concat([rpHash, Buffer.from([0x45]), Buffer.alloc(4), Buffer.alloc(16), Buffer.from([0, credId.length]), credId, cose]);
+  const regResp = (cd: Buffer) => ({ id: b64(credId), rawId: b64(credId), type: 'public-key', clientExtensionResults: {}, response: { clientDataJSON: b64(cd), attestationObject: b64(cbor({ fmt: 'none', attStmt: {}, authData: regData })), transports: ['internal'] } });
+  assert.equal((await call('/api/passkeys/register/finish', { flow: rb.body.flow, response: regResp(clientData('webauthn.create', 'wrong')), name: 'Phone' }, C, 'http://ok.test')).status, 400, 'wrong challenge refused');
+  const rb2 = await call('/api/passkeys/register/begin', {}, C, 'http://ok.test');
+  const rf = await call('/api/passkeys/register/finish', { flow: rb2.body.flow, response: regResp(clientData('webauthn.create', rb2.body.options.challenge)), name: 'Phone' }, C, 'http://ok.test');
+  assert.equal(rf.status, 200, JSON.stringify(rf.body));
+  assert.equal((await call('/api/me/security', undefined, C)).body.passkeys[0].name, 'Phone');
+  const login = async (counter: number, origin = 'http://ok.test') => {
+    const lb = await call('/api/passkeys/login/begin', {}, undefined, 'http://ok.test');
+    const ad = Buffer.concat([rpHash, Buffer.from([0x05]), Buffer.from([0, 0, 0, counter])]);
+    const cd = clientData('webauthn.get', lb.body.options.challenge, origin);
+    const sig = ecSign('sha256', Buffer.concat([ad, createHash('sha256').update(cd).digest()]), privateKey);
+    const response = { id: b64(credId), rawId: b64(credId), type: 'public-key', clientExtensionResults: {}, response: { clientDataJSON: b64(cd), authenticatorData: b64(ad), signature: b64(sig), userHandle: b64(Buffer.from('u4')) } };
+    return call('/api/passkeys/login/finish', { flow: lb.body.flow, response }, undefined, 'http://ok.test');
+  };
+  const pl = await login(1);
+  assert.equal(pl.status, 200, JSON.stringify(pl.body));
+  assert.equal(pl.body.me, 'u4', 'the passkey signs Cara in');
+  assert.equal((await login(1)).status, 401, 'a replayed counter is refused');
+  assert.equal((await login(2, 'http://evil.test')).status, 401, 'a passkey used on another site is refused');
+  assert.equal((await call('/api/passkeys/remove', { id: b64(credId) }, C)).status, 200, 'can remove when a password exists');
+  assert.equal((await login(3)).status, 401, 'a removed passkey no longer works');
+
   const out = await call('/api/logout-all', {}, gl.body.token);
   assert.equal((await call('/api/state', undefined, gl.body.token)).status, 401, 'sign out everywhere kills old tokens');
   assert.equal((await call('/api/state', undefined, out.body.token)).status, 200);

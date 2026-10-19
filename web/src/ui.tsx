@@ -216,6 +216,7 @@ export function Icon({ name }: { name: string }) {
     laws: 'M4 4h11a3 3 0 013 3v13H7a3 3 0 01-3-3zM4 17a3 3 0 013-3h11',
     you: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c1.5-4 4.5-6 8-6s6.5 2 8 6',
     lock: 'M5 11h14v10H5zM8 11V8a4 4 0 018 0v3',
+    key: 'M11 15a4 4 0 11-8 0 4 4 0 018 0zM10 12l10-10M15 7l3 3M18 4l2 2',
     chev: 'M9 5l7 7-7 7'
   };
   return (

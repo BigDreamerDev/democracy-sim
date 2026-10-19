@@ -2,13 +2,16 @@
   "name": "realm-server",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "tsx server.ts",
     "dev": "tsx watch server.ts",
     "test": "tsx test.ts"
   },
   "dependencies": {
+    "@simplewebauthn/server": "^13.3.3",
     "bcryptjs": "^2.4.3",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",

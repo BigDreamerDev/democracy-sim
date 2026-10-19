@@ -67,6 +67,7 @@ web/src/     Preact + Vite. main.tsx (router, tabs), store.ts, ui.tsx (shared co
              Sidebar.tsx, DemoPanel.tsx (demo only), pages/*.tsx, styles.css
 server/      app.ts (first-party routes), public.ts (/api/v1 for players' own apps), db.ts (pg or PGlite + SCHEMA),
              security.ts (passwords, lockout, headers, rate limits), oauth.ts (Discord/Google/Microsoft/Apple),
+             passkeys.ts (WebAuthn: v2_passkeys, routes),
              server.ts (boot/env), test.ts
 SECURITY.md  threat model, every finding and fix, what's accepted, and how to set up each sign-in provider
 API.md       public API docs for players. examples/ holds starter kits (one-file client, WhatsApp/Discord
@@ -114,6 +115,9 @@ scripts/     smoke.ts
 | `GET/POST /api/oauth/:p/callback` | — | provider redirects here; sits *before* the CORS check (Apple POSTs from its own origin) |
 | `POST /api/oauth/finish` | — | `{flow, browser}` → `{token, me}` / `{linked}` / `{waiting}`; single-use, same browser only |
 | `POST /api/oauth/unlink` | user | `{provider}`; refused if it's your last sign-in method |
+| `GET /api/passkeys`, `POST /api/passkeys/register/begin` → `/finish` | user | `{flow, options}` → `{flow, response, name}`; max 10; needs an allowed `Origin` (it's the WebAuthn RP ID) |
+| `POST /api/passkeys/login/begin` → `/finish` | — | `{flow, options}` → `{flow, response}` → `{token, me}`; usernameless (discoverable keys) |
+| `POST /api/passkeys/rename`, `/remove` | user | `{id, name}` / `{id}`; remove refused if it's your last sign-in method |
 | `GET /api/admin/export` | RO | full unredacted world |
 | `POST /api/admin/password` | RO | `{citizen}` → `{temp}`; announced in the Gazette |
 | `POST /api/admin/reset` | RO | `{confirm:'RESET THE REALM'}`; snapshots first |

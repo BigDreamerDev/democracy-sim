@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { useStore, act, ONLINE, signOut, changePassword, toast, securityInfo, unlinkProvider, beginOAuth, signOutEverywhere } from '../store';
+import { useStore, act, ONLINE, signOut, changePassword, toast, securityInfo, unlinkProvider, beginOAuth, signOutEverywhere, passkeysWork, addPasskey, removePasskey } from '../store';
 import { TUTORIAL } from '../../../engine/tutorial';
 import { Page, Sec, Card, Btn, Who, Left, When, Seal, Empty, LinkRow, Seg, Meter, Field, Pick, PasswordField } from '../ui';
 import { nm, isMP, isPM, isHOS, bal, ca, intrigueOpen, fmtTime, fmtDay, ordinal, METERS, standing, inDanger, canSeeCard, CAL_EVENTS, DAYS, nextAt, hosTitle, upcoming, officesOf, exiled } from '../../../engine/index';
@@ -321,11 +321,23 @@ function Account() {
   return (
     <Sec title="Account and security" sub={sec ? <>Signed in as <b>{sec.username}</b>{sec.lastLogin && <> · last sign-in <When at={new Date(sec.lastLogin).getTime()} /></>}</> : undefined}>
       <div class="stack">
-        {sec && sec.providers.length > 0 && (
+        {sec && (
           <Card><div class="stack">
             <b>Sign-in methods</b>
             <ul class="list">
               <li class="row"><span>Password</span><span class="small muted">{sec.password ? 'Set' : 'Not set'}</span></li>
+              {(sec.passkeys || []).map((k: any) => (
+                <li class="row">
+                  <span>Passkey · {k.name}<span class="small muted"> · {k.last_used ? <>used <When at={new Date(k.last_used).getTime()} /></> : <>added <When at={new Date(k.created_at).getTime()} /></>}</span></span>
+                  <Btn small kind="plain" onClick={() => confirm(`Remove the passkey "${k.name}"? Delete it from that device too.`) && removePasskey(k.id).then(() => (toast('Passkey removed.'), load())).catch(err)}>Remove</Btn>
+                </li>
+              ))}
+              {passkeysWork() && (
+                <li class="row">
+                  <span>{sec.passkeys?.length ? 'Another passkey' : 'Passkey'}<span class="small muted"> · your face, fingerprint or device PIN</span></span>
+                  <Btn small kind="ghost" onClick={() => addPasskey().then(() => (toast('Passkey added. Next time, tap "Sign in with a passkey".'), load())).catch(err)}>Add</Btn>
+                </li>
+              )}
               {sec.providers.map((x: any) => (
                 <li class="row">
                   <span>{x.name}{linked(x.id)?.email && <span class="small muted"> · {linked(x.id).email}</span>}</span>
@@ -335,7 +347,7 @@ function Account() {
                 </li>
               ))}
             </ul>
-            <span class="small muted">Linking lets you sign in with that account instead of your password. We only learn its name and email, and never post anything.</span>
+            <span class="small muted">A passkey lives on your device and can't be guessed or phished. {sec.providers.length > 0 && 'Linking lets you sign in with that account instead of your password. We only learn its name and email, and never post anything.'}</span>
           </div></Card>
         )}
         {open ? (

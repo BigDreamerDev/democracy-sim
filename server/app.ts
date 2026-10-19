@@ -8,6 +8,7 @@ import { publicApi, newKey, keyHash, MAX_KEYS } from './public';
 import { apps, APPS_SCHEMA, Sender } from './apps';
 import { SECURITY_SCHEMA, passwordProblem, hash, dummyCompare, needsRehash, account, lockedFor, failed, succeeded, headers, limiter } from './security';
 import { providers, authorizeUrl, exchange, random } from './oauth';
+import { passkeys, PASSKEY_SCHEMA } from './passkeys';
 import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate, needs, adminDid } from '../engine/index';
 
 export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void; send?: Sender; site?: string; devOrigins?: boolean; env?: Record<string, string | undefined>; publicUrl?: string };
@@ -19,6 +20,7 @@ export async function makeApp(o: Options) {
   await q(SCHEMA);
   await q(APPS_SCHEMA);
   await q(SECURITY_SCHEMA);
+  await q(PASSKEY_SCHEMA);
   const env = o.env || process.env;
   const OAUTH = providers(env);
   const rate = limiter(now);
@@ -233,7 +235,7 @@ export async function makeApp(o: Options) {
     if (acc.no_password || !(await bcrypt.compare(pw, u.password_hash))) {
       const lock = await failed(q, u.id, now());
       audit('u' + u.id, 'auth.login', false, lock ? 'locked' : 'wrong password');
-      return res.status(401).json({ error: lock ? `Wrong password. The account is now locked for ${Math.round(lock / 60_000)} minutes.` : acc.no_password ? 'This account signs in with Discord, Google, Microsoft or Apple.' : 'Wrong username or password.' });
+      return res.status(401).json({ error: lock ? `Wrong password. The account is now locked for ${Math.round(lock / 60_000)} minutes.` : acc.no_password ? 'This account signs in with a passkey, Discord, Google, Microsoft or Apple.' : 'Wrong username or password.' });
     }
     if (!u.approved) return res.status(403).json({ error: 'Your account is waiting for the Returning Officer to approve it.' });
     if (needsRehash(u.password_hash)) await q('UPDATE users SET password_hash = $1 WHERE id = $2', [await hash(pw), u.id]);
@@ -291,12 +293,14 @@ export async function makeApp(o: Options) {
   app.get('/api/me/security', auth, async (req: any, res) => {
     const acc = await account(q, req.user.id);
     const ids = (await q('SELECT provider, email, created_at FROM v2_identities WHERE user_id = $1 ORDER BY created_at', [req.user.id])).rows;
-    res.json({ username: req.user.username, password: !acc.no_password, lastLogin: acc.last_login, identities: ids, providers: Object.values(OAUTH).map((p) => ({ id: p.id, name: p.name })) });
+    const keys = (await q('SELECT id, name, created_at, last_used FROM v2_passkeys WHERE user_id = $1 ORDER BY created_at', [req.user.id])).rows;
+    res.json({ username: req.user.username, password: !acc.no_password, lastLogin: acc.last_login, identities: ids, passkeys: keys, providers: Object.values(OAUTH).map((p) => ({ id: p.id, name: p.name })) });
   });
   app.post('/api/oauth/unlink', auth, async (req: any, res) => {
     const acc = await account(q, req.user.id);
     const ids = (await q('SELECT provider FROM v2_identities WHERE user_id = $1', [req.user.id])).rows;
-    if (acc.no_password && ids.length <= 1) return res.status(400).json({ error: 'That is your only way to sign in. Set a password or link another account first.' });
+    const keys = (await q('SELECT count(*)::int AS n FROM v2_passkeys WHERE user_id = $1', [req.user.id])).rows[0].n;
+    if (acc.no_password && ids.length <= 1 && !keys) return res.status(400).json({ error: 'That is your only way to sign in. Set a password, add a passkey or link another account first.' });
     await q('DELETE FROM v2_identities WHERE user_id = $1 AND provider = $2', [req.user.id, String(req.body?.provider || '')]);
     audit(req.cid, 'auth.unlink.' + req.body?.provider, true);
     res.json({ ok: true });
@@ -344,6 +348,14 @@ export async function makeApp(o: Options) {
     if (!u.approved) return res.json({ waiting: true });
     audit('u' + u.id, 'auth.login.' + flow.provider, true);
     res.json(await welcome(u, req));
+  });
+
+  // ---------- passkeys (passkeys.ts) ----------
+  passkeys(app, {
+    q, now, auth, limited, welcome, audit,
+    allowedOrigin: (origin) => o.origins.includes(origin) || (!!o.devOrigins && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)),
+    hasPassword: async (id) => !(await account(q, id)).no_password,
+    identities: async (id) => (await q('SELECT count(*)::int AS n FROM v2_identities WHERE user_id = $1', [id])).rows[0].n,
   });
 
   app.get('/api/state', auth, async (req: any, res) => {
