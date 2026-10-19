@@ -6,9 +6,9 @@ import jwt from 'jsonwebtoken';
 import { Q, SCHEMA } from './db';
 import { publicApi, newKey, keyHash, MAX_KEYS } from './public';
 import { apps, APPS_SCHEMA, Sender } from './apps';
-import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate } from '../engine/index';
+import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate, needs } from '../engine/index';
 
-export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void; send?: Sender };
+export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void; send?: Sender; site?: string };
 
 export async function makeApp(o: Options) {
   const { q, secret } = o;
@@ -17,6 +17,9 @@ export async function makeApp(o: Options) {
   await q(SCHEMA);
   await q(APPS_SCHEMA);
   const A = apps(q, (...a: any[]) => log(...a), o.send);
+  const SITE = o.site || 'https://bigdreamerdev.github.io/democracy-sim/';
+  // a player's alerts, from their own redacted view only, so a personal webhook can never carry someone else's secret
+  const alertsFor = (uid: number) => (world.citizens['u' + uid] ? needs(viewFor(world, 'u' + uid), 'u' + uid) : null);
 
   // ---------- the world ----------
   let world: any;
@@ -43,6 +46,7 @@ export async function makeApp(o: Options) {
       lastGz = top;
       A.broadcast(fresh, world.config.realmName, version).catch((e) => log('webhooks failed', e));
     }
+    A.notify(alertsFor, world.config.realmName, SITE);
     const w = waiters;
     waiters = [];
     w.forEach((f) => f());
@@ -119,7 +123,7 @@ export async function makeApp(o: Options) {
   app.set('trust proxy', 1);
   app.use(express.json({ limit: '200kb' }));
   // the public API for players' own apps: any origin, API keys only (see public.ts and API.md)
-  const v1 = publicApi({ q, now, log, world: () => world, setWorld: (w) => (world = w), version: () => version, waitForChange, serial, catchUp, save, schedule, apps: A, loadUser: async (id) => userCache.get(id) || loadUser(id) });
+  const v1 = publicApi({ q, now, log, world: () => world, setWorld: (w) => (world = w), version: () => version, waitForChange, serial, catchUp, save, schedule, apps: A, alertsFor, loadUser: async (id) => userCache.get(id) || loadUser(id) });
   app.use('/api/v1', v1);
   // CORS that fails loudly: an unknown origin gets a clear 403 instead of a silent 200 with no header
   app.use((req, res, next) => {
@@ -260,13 +264,35 @@ export async function makeApp(o: Options) {
     return { redirect: r.redirect };
   }));
   app.get('/api/hooks', auth, handle((req) => A.listHooks(req.user.id)));
-  app.post('/api/hooks', auth, handle((req) => A.addHook(req.user.id, req.body?.url)));
+  app.post('/api/hooks', auth, handle((req) => A.addHook(req.user.id, req.body?.url, req.body?.kind || 'gazette', (alertsFor(req.user.id) || []).map((a: any) => a.key))));
+  app.post('/api/apps/review', auth, handle((req) => A.review(req.user.id, req.body)));
+  app.post('/api/apps/unreview', auth, handle((req) => A.unreview(req.user.id, String(req.body?.app || ''))));
   app.post('/api/hooks/delete', auth, handle(async (req) => (await A.removeHook(req.user.id, Number(req.body?.id) || 0), { ok: true })));
   app.post('/api/hooks/test', auth, handle((req) => A.testHook(req.user.id, Number(req.body?.id) || 0, world.config.realmName)));
 
   // the Returning Officer's tools that sit outside the game
   const admin = (req: any, res: any, next: any) => (req.user?.is_admin ? next() : res.status(403).json({ error: 'Returning Officer only.' }));
   app.get('/api/admin/export', auth, admin, (_req, res) => res.json(world));
+  // a misbehaving app: out of the directory, no new sign-ins, every key revoked, and the realm is told why
+  app.get('/api/admin/apps', auth, admin, handle(() => A.allApps()));
+  app.post('/api/admin/apps/remove', auth, admin, handle(async (req) => {
+    const r = await A.takeDown(String(req.body?.app || ''), req.body?.reason);
+    r.keys.forEach((h: string) => v1.forgetKey(h));
+    await serial(async () => {
+      world.adminLog.unshift({ at: now(), by: req.cid, text: `Removed the app ${r.name}: ${String(req.body.reason).trim()}` });
+      gazette(world, 'quiet', `The Returning Officer removed the app ${r.name}: ${String(req.body.reason).trim()}`);
+      await save();
+    });
+    return { ok: true, revoked: r.keys.length };
+  }));
+  app.post('/api/admin/apps/restore', auth, admin, handle(async (req) => {
+    const r = await A.restore(String(req.body?.app || ''));
+    await serial(async () => {
+      world.adminLog.unshift({ at: now(), by: req.cid, text: `Restored the app ${r.name}` });
+      await save();
+    });
+    return { ok: true };
+  }));
   // a forgotten password: the RO gets a temporary one to send privately, and the realm sees that it happened
   app.post('/api/admin/password', auth, admin, async (req: any, res) => {
     const cid = String(req.body?.citizen || '');

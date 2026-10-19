@@ -544,3 +544,4 @@ pre.code code { background: none; padding: 0; font-size: inherit; }
 code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px; }
 .via { display: inline-block; margin-left: 6px; padding: 0 6px; border: 1px solid currentColor; border-radius: 3px; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; opacity: .6; vertical-align: 2px; }
 .door .bad { color: var(--red); }
+.stars { color: #b8860b; letter-spacing: 1px; }

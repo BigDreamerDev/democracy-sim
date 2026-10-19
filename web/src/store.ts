@@ -260,7 +260,13 @@ export const appInfo = (id: string) => api('/api/apps/info?app=' + encodeURIComp
 export const authorizeApp = (b: any) => api('/api/authorize', b);
 export const appDirectory = () => api('/api/v1/apps');
 export const listHooks = () => api('/api/hooks');
-export const addHook = (url: string) => api('/api/hooks', { url });
+export const addHook = (url: string, kind: 'gazette' | 'personal' = 'gazette') => api('/api/hooks', { url, kind });
+export const appDetails = (id: string) => api('/api/v1/apps/' + encodeURIComponent(id));
+export const reviewApp = (app: string, stars: number, text: string) => api('/api/apps/review', { app, stars, text });
+export const unreviewApp = (app: string) => api('/api/apps/unreview', { app });
+export const adminApps = () => api('/api/admin/apps');
+export const removeApp = (app: string, reason: string) => api('/api/admin/apps/remove', { app, reason });
+export const restoreApp = (app: string) => api('/api/admin/apps/restore', { app });
 export const deleteHook = (id: number) => api('/api/hooks/delete', { id });
 export const testHook = (id: number) => api('/api/hooks/test', { id });
 export async function downloadExport() {

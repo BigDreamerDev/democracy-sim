@@ -55,6 +55,7 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   world.ts     createWorld('convention'|'running') for the demo; createLiveWorld(people) for real
   view.ts      viewFor(world, me) — the redacted copy one player may see
   migrate.ts   migrate(world) — upgrades a saved world on server boot
+  alerts.ts    needs(view, me) — what needs a player now; Today, the sidebar badge and personal webhooks
   catalog.ts   CATALOG — public description of every player command and its args (served by /api/v1/commands)
   index.ts     COMMANDS table; run(world, actor, cmd, args) applies one to a structuredClone
   bots.ts      demo and smoke only — never imported by the server
@@ -62,7 +63,8 @@ web/src/     Preact + Vite. main.tsx (router, tabs), store.ts, ui.tsx (shared co
              Sidebar.tsx, DemoPanel.tsx (demo only), pages/*.tsx, styles.css
 server/      app.ts (first-party routes), public.ts (/api/v1 for players' own apps), db.ts (pg or PGlite + SCHEMA),
              server.ts (boot/env), test.ts
-API.md       public API docs for players. examples/minimal.html is a one-file client.
+API.md       public API docs for players. examples/ holds starter kits (one-file client, WhatsApp/Discord
+             Gazette bots, vote reminder, webhook receiver); keep them working when the API changes.
 docs/        GitHub Pages output. Hand-kept: config.js, icons/, manifest.webmanifest, sw.js
 scripts/     smoke.ts
 ```
@@ -108,7 +110,9 @@ scripts/     smoke.ts
 | `GET/POST /api/apps`, `/api/apps/update`, `/api/apps/delete` | user | register your apps (max 3); delete revokes every key it issued |
 | `GET /api/apps/info?app=` | user | app details for the consent screen |
 | `POST /api/authorize` | user | `{app, scope, state}` → `{redirect}` = registered redirect + `#key=…&scope=…&state=…` |
-| `GET/POST /api/hooks`, `/api/hooks/delete`, `/api/hooks/test` | user | webhooks (max 3, https) |
+| `GET/POST /api/hooks`, `/api/hooks/delete`, `/api/hooks/test` | user | webhooks (max 3, https); `kind` `gazette` or `personal` |
+| `POST /api/apps/review`, `/api/apps/unreview` | user | `{app, stars 1–5, text}`; one per player per app, not your own |
+| `GET /api/admin/apps`, `POST /api/admin/apps/remove` `{app, reason}`, `/restore` | RO | take-down revokes all its keys, published |
 
 **Public API `/api/v1/*`** (`server/public.ts`, documented for players in `API.md`):
 `GET /`, `GET /commands` and `GET /apps` (directory) need no key; `GET /me`, `GET /state`
@@ -118,6 +122,9 @@ Apps, Sign in with the Realm and webhooks live in `server/apps.ts` (tables `v2_a
 `v2_api_keys.app_id`). After every save, new Gazette entries are POSTed to webhooks, signed
 `X-Realm-Signature: sha256=HMAC(secret, body)`; hosts resolving to private IPs are refused (SSRF).
 Gazette entries made through `/api/v1/act` get `via: <key name>` (the bot badge).
+**Personal hooks** get `needs()` from `engine/alerts.ts`, computed on `viewFor(world, owner)` (never the
+full world) after every save; `v2_hooks.seen` holds the alert keys already sent. If you add a new kind
+of alert, give it a stable `key`. `GET /api/v1/alerts` returns the same list.
 The consent page (`#/authorize`) refuses to render inside a frame (clickjacking).
 Keys are stored as sha256 in `v2_api_keys`; session JWTs are refused there and keys are
 refused everywhere else. CORS is `*` (no cookies exist, so nothing ambient to steal).
@@ -148,7 +155,8 @@ Citizen id = `'u' + users.id`.
    server. Hiding a button is cosmetic.
 4. **Rules change only through Parliament.** The RO's powers are exactly: approve
    sign-ups, toggle `requireApproval`/`openSignup`, move the calendar, force-enact a
-   stuck bill (logged), reset a password (announced), export, reset the realm.
+   stuck bill (logged), reset a password (announced), remove or restore a player app (announced),
+   export, reset the realm.
    Don't add RO powers over game rules.
 5. **Check offices before admin. Never short-circuit.** Uzair holds offices too;
    `if (admin) return` at the top of a permission check removes his office powers.

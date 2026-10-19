@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
-import { useStore, act, ONLINE, resetRealm, downloadExport, resetPassword, toast } from '../store';
+import { useEffect } from 'preact/hooks';
+import { useStore, act, ONLINE, resetRealm, downloadExport, resetPassword, adminApps, removeApp, restoreApp, toast } from '../store';
 import { Page, Sec, Card, Btn, Empty, LinkRow, Field, Pick } from '../ui';
 import { nm, ledgerTotal, fmtTime, acctLabel } from '../../../engine/index';
 
@@ -8,6 +9,10 @@ export function Admin() {
   const [confirm, setConfirm] = useState('');
   const [who, setWho] = useState('');
   const [temp, setTemp] = useState('');
+  const [apps, setApps] = useState<any[]>([]);
+  const [why, setWhy] = useState<Record<string, string>>({});
+  const loadApps = () => adminApps().then(setApps).catch(() => {});
+  useEffect(() => void (ONLINE && w.citizens[me]?.admin && loadApps()), []);
   if (!w.citizens[me].admin) return <Page back={['#/realm', 'The realm']} title="Returning Officer only" intro={ONLINE ? 'This page is for the person running the game.' : 'Switch to Uzair in the demo controls.'} />;
   const stuck = Object.values(w.proposals).filter((p: any) => p.stage === 'assent') as any[];
   // online, the server checks the whole ledger; this device only holds public accounts and yours
@@ -33,6 +38,19 @@ export function Admin() {
             <Btn disabled={!who} onClick={() => resetPassword(who).then((t) => setTemp(`${nm(w, who)}: ${t}`)).catch((e) => toast(e.message, true))}>Reset it</Btn>
           </div>
           {temp && <Card kind="tint" style={{ marginTop: 10 }}><b class="tnum" style={{ userSelect: 'all' }}>{temp}</b><div class="small muted">Send it privately. They can change it on their passport.</div></Card>}
+        </Sec>
+      )}
+      {ONLINE && (
+        <Sec title="Player apps" sub="Removing an app takes it out of the directory, stops new sign-ins and revokes every key it holds. The reason is published in the Gazette.">
+          {apps.length ? <ul class="list">{apps.map((a) => (
+            <li><div class="row"><span><b>{a.name}</b> <span class="small muted">by {a.by}{a.listed ? '' : ' · unlisted'}</span></span>
+              {a.removed ? <Btn small kind="ghost" onClick={() => restoreApp(a.client_id).then(() => (toast('Restored. Players must sign in again.'), loadApps())).catch((e) => toast(e.message, true))}>Restore</Btn> : null}</div>
+              {a.removed ? <div class="small err-line">Removed: {a.removed}</div> : (
+                <div class="grid2" style={{ marginTop: 6 }}><Field label="Reason (public)" value={why[a.client_id] || ''} onInput={(v) => setWhy({ ...why, [a.client_id]: v })} />
+                  <Btn small kind="danger" style={{ alignSelf: 'end' }} disabled={(why[a.client_id] || '').trim().length < 4} onClick={() => removeApp(a.client_id, why[a.client_id]).then((r) => (toast(`Removed. ${r.revoked} key${r.revoked === 1 ? '' : 's'} revoked.`), loadApps())).catch((e) => toast(e.message, true))}>Remove</Btn></div>
+              )}
+            </li>
+          ))}</ul> : <Empty>No apps registered.</Empty>}
         </Sec>
       )}
       {ONLINE && (

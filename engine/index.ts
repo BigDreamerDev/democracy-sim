@@ -14,6 +14,8 @@ export { createWorld, createLiveWorld, NAMES } from './world';
 export { viewFor } from './view';
 export { migrate } from './migrate';
 export { CATALOG } from './catalog';
+export { needs } from './alerts';
+export type { Alert } from './alerts';
 export { advanceTo, nextDeadline, upcoming } from './clock';
 
 type Cmd = (w: W, me: Id, a: any) => any;

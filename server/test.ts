@@ -132,6 +132,37 @@ try {
   assert.equal(g.body.entries.at(-1).via, 'Realm Bot');
   const { createHmac } = await import('node:crypto');
   assert.equal(g.headers['X-Realm-Signature'], 'sha256=' + createHmac('sha256', hook.secret).update(JSON.stringify(g.body)).digest('hex'), 'signed');
+  // personal alerts: Bilal is named co-founder of Amara's new party, and only Bilal's hook hears of it
+  const mineHook = (await call('/api/hooks', { url: 'https://bilal.test/alerts', kind: 'personal' }, T)).body;
+  assert.equal(mineHook.kind, 'personal');
+  const before = deliveries.length;
+  assert.equal((await call('/api/act', { cmd: 'party.found', args: { name: 'Amara Party', colour: '#225588', cofounders: ['u3', 'u4'] } }, A2())).status, 200);
+  await new Promise((r) => setTimeout(r, 100));
+  const alerts = deliveries.slice(before).filter((d) => d.body.event === 'alert');
+  assert.equal(alerts.length, 1, 'one personal alert');
+  assert.equal(alerts[0].url, 'https://bilal.test/alerts');
+  assert.ok(alerts[0].body.alerts[0].key.startsWith('cofound:'));
+  assert.ok(alerts[0].body.alerts[0].url.includes('#/parties'));
+  await call('/api/state', undefined, T);
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(deliveries.slice(before).filter((d) => d.body.event === 'alert').length, 1, 'not sent twice');
+  assert.ok((await call('/api/v1/alerts', undefined, appKey)).body.some((x: any) => x.key.startsWith('cofound:')));
+
+  // reviews and the RO's take-down
+  assert.equal((await call('/api/apps/review', { app: made.client_id, stars: 5 }, A2())).status, 400, 'no reviewing your own app');
+  assert.equal((await call('/api/apps/review', { app: made.client_id, stars: 4, text: 'Handy' }, T)).status, 200);
+  const det = (await call('/api/v1/apps/' + made.client_id)).body;
+  assert.equal(det.rating, 4);
+  assert.equal(det.reviewList[0].text, 'Handy');
+  assert.equal((await call('/api/admin/apps/remove', { app: made.client_id, reason: 'Spamming the Gazette' }, T)).status, 403, 'RO only');
+  const RO = (await call('/api/login', { username: 'admin', password: 'password' })).body.token;
+  assert.equal((await call('/api/admin/apps/remove', { app: made.client_id, reason: 'Spamming the Gazette' }, RO)).body.revoked, 1);
+  assert.equal((await call('/api/v1/me', undefined, appKey)).status, 401, 'removed app loses its keys');
+  assert.equal((await call('/api/v1/apps')).body.length, 0, 'gone from the directory');
+  assert.equal((await call('/api/apps/info?app=' + made.client_id, undefined, T)).status, 400, 'no new sign-ins');
+  assert.ok(getWorld().gazette[0].text.includes('removed the app'));
+  await call('/api/admin/apps/restore', { app: made.client_id }, RO);
+  assert.equal((await call('/api/v1/apps')).body.length, 1);
   await call('/api/apps/delete', { id: made.id }, A2());
   assert.equal((await call('/api/v1/me', undefined, appKey)).status, 401, 'deleting an app revokes its keys');
   console.log('server ok');

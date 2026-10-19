@@ -23,6 +23,16 @@ CREATE TABLE IF NOT EXISTS v2_apps (
   created_at  TIMESTAMPTZ DEFAULT now()
 );
 ALTER TABLE v2_api_keys ADD COLUMN IF NOT EXISTS app_id BIGINT;
+ALTER TABLE v2_apps ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT 'read';
+ALTER TABLE v2_apps ADD COLUMN IF NOT EXISTS removed TEXT;
+CREATE TABLE IF NOT EXISTS v2_app_reviews (
+  app_id     BIGINT NOT NULL,
+  user_id    INT NOT NULL,
+  stars      INT NOT NULL,
+  text       TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (app_id, user_id)
+);
 CREATE TABLE IF NOT EXISTS v2_hooks (
   id          BIGSERIAL PRIMARY KEY,
   user_id     INT NOT NULL,
@@ -35,6 +45,8 @@ CREATE TABLE IF NOT EXISTS v2_hooks (
   deleted     BOOLEAN DEFAULT FALSE,
   created_at  TIMESTAMPTZ DEFAULT now()
 );
+ALTER TABLE v2_hooks ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'gazette';
+ALTER TABLE v2_hooks ADD COLUMN IF NOT EXISTS seen JSONB NOT NULL DEFAULT '[]';
 `;
 
 // ---------- URLs from players are untrusted ----------
@@ -78,7 +90,7 @@ export const defaultSender: Sender = async (url, body, headers) => {
 
 export function apps(q: Q, log: (...a: any[]) => void, send: Sender = defaultSender) {
   // ---------- the app registry ----------
-  const view = (a: any) => ({ id: a.id, client_id: a.client_id, name: a.name, description: a.description, homepage: a.homepage, redirect: a.redirect, listed: a.listed, created_at: a.created_at });
+  const view = (a: any) => ({ id: a.id, client_id: a.client_id, name: a.name, description: a.description, homepage: a.homepage, redirect: a.redirect, scope: a.scope, listed: a.listed, removed: a.removed || null, created_at: a.created_at });
   async function create(userId: number, b: any) {
     const name = String(b?.name || '').trim().slice(0, 40);
     if (name.length < 2) throw new Error('Name your app.');
@@ -88,7 +100,7 @@ export function apps(q: Q, log: (...a: any[]) => void, send: Sender = defaultSen
     const n = (await q('SELECT count(*)::int AS n FROM v2_apps WHERE user_id = $1 AND NOT deleted', [userId])).rows[0].n;
     if (n >= MAX_APPS) throw new Error(`You can register ${MAX_APPS} apps. Delete one first.`);
     const client_id = 'app_' + randomBytes(9).toString('base64url');
-    return view((await q('INSERT INTO v2_apps (client_id, user_id, name, description, homepage, redirect, listed) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *', [client_id, userId, name, description, homepage, redirect, b?.listed !== false])).rows[0]);
+    return view((await q('INSERT INTO v2_apps (client_id, user_id, name, description, homepage, redirect, listed, scope) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *', [client_id, userId, name, description, homepage, redirect, b?.listed !== false, b?.scope === 'act' ? 'act' : 'read'])).rows[0]);
   }
   async function update(userId: number, b: any) {
     const a = (await q('SELECT * FROM v2_apps WHERE id = $1 AND user_id = $2 AND NOT deleted', [Number(b?.id) || 0, userId])).rows[0];
@@ -98,10 +110,11 @@ export function apps(q: Q, log: (...a: any[]) => void, send: Sender = defaultSen
       description: b.description !== undefined ? String(b.description).trim().slice(0, 280) : a.description,
       homepage: b.homepage !== undefined ? (b.homepage ? checkUrl(b.homepage, { https: false }) : '') : a.homepage,
       redirect: b.redirect !== undefined ? (b.redirect ? checkRedirect(b.redirect) : '') : a.redirect,
-      listed: b.listed !== undefined ? !!b.listed : a.listed
+      listed: b.listed !== undefined ? !!b.listed : a.listed,
+      scope: b.scope !== undefined ? (b.scope === 'act' ? 'act' : 'read') : a.scope
     };
     if (next.name.length < 2) throw new Error('Name your app.');
-    return view((await q('UPDATE v2_apps SET name=$1, description=$2, homepage=$3, redirect=$4, listed=$5 WHERE id=$6 RETURNING *', [next.name, next.description, next.homepage, next.redirect, next.listed, a.id])).rows[0]);
+    return view((await q('UPDATE v2_apps SET name=$1, description=$2, homepage=$3, redirect=$4, listed=$5, scope=$6 WHERE id=$7 RETURNING *', [next.name, next.description, next.homepage, next.redirect, next.listed, next.scope, a.id])).rows[0]);
   }
   async function remove(userId: number, id: number) {
     const a = (await q('UPDATE v2_apps SET deleted = TRUE WHERE id = $1 AND user_id = $2 AND NOT deleted RETURNING id', [id, userId])).rows[0];
@@ -111,22 +124,62 @@ export function apps(q: Q, log: (...a: any[]) => void, send: Sender = defaultSen
   }
   const mine = async (userId: number) => (await q('SELECT a.*, (SELECT count(*)::int FROM v2_api_keys k WHERE k.app_id = a.id AND NOT k.revoked) AS users FROM v2_apps a WHERE user_id = $1 AND NOT deleted ORDER BY id', [userId])).rows.map((a: any) => ({ ...view(a), users: a.users }));
   const directory = async () =>
-    (await q(`SELECT a.client_id, a.name, a.description, a.homepage, a.created_at, u.display_name AS by,
-      (SELECT count(*)::int FROM v2_api_keys k WHERE k.app_id = a.id AND NOT k.revoked) AS users
-      FROM v2_apps a JOIN users u ON u.id = a.user_id WHERE a.listed AND NOT a.deleted ORDER BY users DESC, a.id`)).rows;
+    (await q(`SELECT a.client_id, a.name, a.description, a.homepage, a.scope, a.created_at, u.display_name AS by, (a.redirect <> '') AS can_sign_in,
+      (SELECT count(*)::int FROM v2_api_keys k WHERE k.app_id = a.id AND NOT k.revoked) AS users,
+      (SELECT round(avg(stars)::numeric, 1)::float FROM v2_app_reviews r WHERE r.app_id = a.id) AS rating,
+      (SELECT count(*)::int FROM v2_app_reviews r WHERE r.app_id = a.id) AS reviews
+      FROM v2_apps a JOIN users u ON u.id = a.user_id WHERE a.listed AND NOT a.deleted AND a.removed IS NULL ORDER BY users DESC, a.id`)).rows;
+
+  // ---------- reviews, and the Returning Officer's power to pull a bad app ----------
+  async function details(clientId: string) {
+    const a = (await directory()).find((x: any) => x.client_id === clientId);
+    if (!a) throw new Error('That app is not in the directory.');
+    const reviews = (await q(`SELECT r.stars, r.text, r.created_at, u.display_name AS by FROM v2_app_reviews r JOIN v2_apps a ON a.id = r.app_id JOIN users u ON u.id = r.user_id WHERE a.client_id = $1 ORDER BY r.created_at DESC LIMIT 50`, [clientId])).rows;
+    return { ...a, reviewList: reviews };
+  }
+  async function review(userId: number, b: any) {
+    const a = (await q('SELECT id, user_id FROM v2_apps WHERE client_id = $1 AND NOT deleted AND removed IS NULL', [String(b?.app || '')])).rows[0];
+    if (!a) throw new Error('No such app.');
+    if (a.user_id === userId) throw new Error('You cannot review your own app.');
+    const stars = Math.round(Number(b?.stars));
+    if (!(stars >= 1 && stars <= 5)) throw new Error('Give it 1 to 5 stars.');
+    const text = String(b?.text || '').trim().slice(0, 500);
+    await q('INSERT INTO v2_app_reviews (app_id, user_id, stars, text) VALUES ($1,$2,$3,$4) ON CONFLICT (app_id, user_id) DO UPDATE SET stars = EXCLUDED.stars, text = EXCLUDED.text, created_at = now()', [a.id, userId, stars, text]);
+    return { ok: true };
+  }
+  async function unreview(userId: number, clientId: string) {
+    await q('DELETE FROM v2_app_reviews r USING v2_apps a WHERE a.id = r.app_id AND a.client_id = $1 AND r.user_id = $2', [clientId, userId]);
+    return { ok: true };
+  }
+  // pulls the app from the directory, stops new sign-ins and revokes every key it was given
+  async function takeDown(clientId: string, reason: string) {
+    const why = String(reason || '').trim().slice(0, 200);
+    if (why.length < 4) throw new Error('Give a reason. It is published.');
+    const a = (await q('UPDATE v2_apps SET removed = $1 WHERE client_id = $2 AND NOT deleted RETURNING id, name', [why, clientId])).rows[0];
+    if (!a) throw new Error('No such app.');
+    const keys = (await q('UPDATE v2_api_keys SET revoked = TRUE WHERE app_id = $1 AND NOT revoked RETURNING key_hash', [a.id])).rows.map((r: any) => r.key_hash);
+    return { name: a.name, keys };
+  }
+  async function restore(clientId: string) {
+    const a = (await q('UPDATE v2_apps SET removed = NULL WHERE client_id = $1 AND NOT deleted RETURNING name', [clientId])).rows[0];
+    if (!a) throw new Error('No such app.');
+    return a;
+  }
+  const allApps = async () => (await q(`SELECT a.client_id, a.name, a.removed, a.listed, u.display_name AS by FROM v2_apps a JOIN users u ON u.id = a.user_id WHERE NOT a.deleted ORDER BY a.id`)).rows;
 
   // ---------- Sign in with the Realm ----------
   async function info(clientId: string) {
     const a = (await q('SELECT a.*, u.display_name AS by FROM v2_apps a JOIN users u ON u.id = a.user_id WHERE client_id = $1 AND NOT deleted', [String(clientId || '')])).rows[0];
     if (!a) throw new Error('That app does not exist, or its maker deleted it.');
-    return { client_id: a.client_id, name: a.name, description: a.description, homepage: a.homepage, by: a.by, redirect: a.redirect, id: a.id };
+    if (a.removed) throw new Error(`The Returning Officer removed this app: ${a.removed}`);
+    return { client_id: a.client_id, name: a.name, description: a.description, homepage: a.homepage, by: a.by, redirect: a.redirect, scope: a.scope, id: a.id };
   }
   // the player said yes: make (or replace) this app's key for them and send them back with it
   async function authorize(userId: number, b: any, newKey: () => string) {
     const a = await info(b?.app);
     if (!a.redirect) throw new Error('This app has no redirect address set, so it cannot sign people in.');
     if (b.redirect && b.redirect !== a.redirect) throw new Error('That redirect address does not match the one the app registered.');
-    const scope = b.scope === 'act' ? 'act' : 'read';
+    const scope = (b.scope || a.scope) === 'act' ? 'act' : 'read';
     const old = (await q('UPDATE v2_api_keys SET revoked = TRUE WHERE user_id = $1 AND app_id = $2 AND NOT revoked RETURNING key_hash', [userId, a.id])).rows.map((r: any) => r.key_hash);
     const key = newKey();
     await q('INSERT INTO v2_api_keys (user_id, name, prefix, key_hash, scope, app_id) VALUES ($1,$2,$3,$4,$5,$6)', [userId, a.name, key.slice(0, 10), hash(key), scope, a.id]);
@@ -136,13 +189,14 @@ export function apps(q: Q, log: (...a: any[]) => void, send: Sender = defaultSen
   }
 
   // ---------- webhooks ----------
-  const hookView = (h: any) => ({ id: h.id, url: h.url, failures: h.failures, last_status: h.last_status, last_at: h.last_at, disabled: h.disabled, created_at: h.created_at });
-  async function addHook(userId: number, url: string) {
+  const hookView = (h: any) => ({ id: h.id, kind: h.kind, url: h.url, failures: h.failures, last_status: h.last_status, last_at: h.last_at, disabled: h.disabled, created_at: h.created_at });
+  async function addHook(userId: number, url: string, kind: string = 'gazette', seen: string[] = []) {
     const href = checkUrl(url);
+    if (kind !== 'gazette' && kind !== 'personal') throw new Error("A webhook is 'gazette' (public news) or 'personal' (your alerts).");
     const n = (await q('SELECT count(*)::int AS n FROM v2_hooks WHERE user_id = $1 AND NOT deleted', [userId])).rows[0].n;
     if (n >= MAX_HOOKS) throw new Error(`You can have ${MAX_HOOKS} webhooks. Delete one first.`);
     const secret = 'whsec_' + randomBytes(18).toString('base64url');
-    const h = (await q('INSERT INTO v2_hooks (user_id, url, secret) VALUES ($1,$2,$3) RETURNING *', [userId, href, secret])).rows[0];
+    const h = (await q('INSERT INTO v2_hooks (user_id, url, secret, kind, seen) VALUES ($1,$2,$3,$4,$5) RETURNING *', [userId, href, secret, kind, JSON.stringify(seen)])).rows[0];
     return { ...hookView(h), secret };
   }
   const listHooks = async (userId: number) => (await q('SELECT * FROM v2_hooks WHERE user_id = $1 AND NOT deleted ORDER BY id', [userId])).rows.map(hookView);
@@ -173,10 +227,29 @@ export function apps(q: Q, log: (...a: any[]) => void, send: Sender = defaultSen
   // called after every save with the Gazette entries that are new since the last call
   async function broadcast(entries: any[], realm: string, version: number) {
     if (!entries.length) return;
-    const hooks = (await q('SELECT * FROM v2_hooks WHERE NOT deleted AND NOT disabled')).rows;
+    const hooks = (await q("SELECT * FROM v2_hooks WHERE NOT deleted AND NOT disabled AND kind = 'gazette'")).rows;
     const payload = { event: 'gazette', realm, version, sentAt: Date.now(), entries: entries.map((g) => ({ id: g.id, at: g.at, kind: g.kind, text: g.text, link: g.link, via: g.via || null })) };
     await Promise.all(hooks.map((h: any) => deliver(h, payload)));
   }
 
-  return { create, update, remove, mine, directory, info, authorize, addHook, listHooks, removeHook, testHook, broadcast };
+  // personal hooks: after every save, each owner's alerts (worked out from their own redacted view) are
+  // compared with what that hook has already been told; only new ones are sent. One run at a time.
+  let personalChain: Promise<any> = Promise.resolve();
+  function notify(alertsFor: (userId: number) => any[] | null, realm: string, site: string) {
+    personalChain = personalChain.then(async () => {
+      const hooks = (await q("SELECT * FROM v2_hooks WHERE NOT deleted AND NOT disabled AND kind = 'personal'")).rows;
+      for (const h of hooks) {
+        const cur = alertsFor(h.user_id);
+        if (!cur) continue;
+        const seen: string[] = h.seen || [];
+        const fresh = cur.filter((a) => !seen.includes(a.key));
+        const keys = cur.map((a) => a.key);
+        if (keys.length !== seen.length || fresh.length) await q('UPDATE v2_hooks SET seen = $1 WHERE id = $2', [JSON.stringify(keys), h.id]);
+        if (fresh.length) await deliver(h, { event: 'alert', realm, sentAt: Date.now(), alerts: fresh.map((a) => ({ ...a, url: site + a.href })) });
+      }
+    }).catch((e) => log('personal webhooks failed', e));
+    return personalChain;
+  }
+
+  return { create, update, remove, mine, directory, details, review, unreview, takeDown, restore, allApps, info, authorize, addHook, listHooks, removeHook, testHook, broadcast, notify };
 }

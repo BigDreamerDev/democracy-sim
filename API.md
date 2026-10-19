@@ -77,17 +77,29 @@ Refused: `400 { "ok": false, "error": "Voting opens when the debate ends." }`
 
 Error messages are written for players. Show them as they are.
 
-### `GET /api/v1/apps` — no key
-The app directory: apps players have registered and listed.
-`[{ client_id, name, description, homepage, by, users, created_at }]`
+### `GET /api/v1/alerts`
+What needs you right now, the same list as the badge on Today:
+`[{ key, label, title, href, at?, urgent? }]`. `key` is stable per item (`prop:p57:vote`, `deal:d12`, …),
+`at` is when it closes, `href` is a path in the site (`#/p/p57`).
+
+### `GET /api/v1/apps` and `GET /api/v1/apps/<client_id>` — no key
+The app directory: apps players have registered and listed, most used first.
+`[{ client_id, name, description, homepage, scope, by, users, rating, reviews, can_sign_in, created_at }]`.
+The single-app form adds `reviewList: [{ stars, text, by, created_at }]`. Players review apps on
+their directory page; one review each, and makers can't review their own.
 
 ### Webhooks — any key
-Rather than polling, have the realm POST to you whenever something enters the Gazette.
+Rather than polling, have the realm POST to you. Two kinds:
+
+- **`gazette`**: every new public Gazette entry, for news bots.
+- **`personal`**: your own alerts (the `/alerts` list) the moment a new one appears: a vote opens,
+  a bill needs your signature, someone offers you a deal or makes a demand. Each alert is sent once.
+  These can mention private things, so point them only at something you control.
 
 | | |
 |-|-|
 | `GET /api/v1/hooks` | your webhooks |
-| `POST /api/v1/hooks` `{ url }` | add one (https only, up to 3). The reply includes `secret`, shown once. |
+| `POST /api/v1/hooks` `{ url, kind? }` | add one: `kind` is `gazette` (default) or `personal`. https only, up to 3. The reply includes `secret`, shown once. |
 | `POST /api/v1/hooks/test` `{ id }` | send a `ping` now; replies `{ ok, status }` |
 | `POST /api/v1/hooks/delete` `{ id }` | remove one |
 
@@ -103,7 +115,10 @@ X-Realm-Signature: sha256=<hex HMAC-SHA256 of the raw body, keyed with your secr
   "entries": [ { "id": "g881", "at": 1792432799000, "kind": "law", "text": "The Defence Act becomes law.", "link": "#/law/L004", "via": null } ] }
 ```
 
-Entries come oldest first and are public news only (nothing secret is ever sent). Answer with
+A personal delivery has `"event": "alert"` and `"alerts": [{ key, label, title, href, url, at, urgent }]`,
+where `url` is the full link into the site.
+
+Gazette entries come oldest first and are public news only. Answer with
 any 2xx within 5 seconds. Deliveries are not retried; after 20 failures in a row the hook
 switches off until a successful test. Check the signature before trusting a delivery:
 
@@ -133,6 +148,10 @@ Let other players use your app without copying keys around.
    ```
 4. Read it with `new URLSearchParams(location.hash.slice(1))`, store it, and use it as a normal key.
 
+The **Use it** button in the in-game directory sends players to the same consent page, without a
+`state`. Treat a callback with no `state` as an install from the directory.
+
+When you register, choose whether your app asks for `read` or `act`; a `scope` in the link overrides it.
 Signing in again replaces the old key. The player can revoke it at any time, and deleting your app
 revokes every key it was given. Apps don't count towards a player's 5 personal keys.
 
@@ -223,6 +242,10 @@ for p in w["proposals"].values():
         print(p["title"], r.json().get("error", "voted"))
 ```
 
+### More starter kits
+[`examples/`](examples/): a WhatsApp Gazette bot, a Discord Gazette bot, a phone reminder for your
+votes, and a webhook receiver. Each is one file.
+
 ### A whole frontend in one file
 [`examples/minimal.html`](examples/minimal.html): open it in a browser, paste a key, and you
 have a working (ugly) client in ~80 lines. Start from there.
@@ -230,6 +253,8 @@ have a working (ugly) client in ~80 lines. Start from there.
 ## 8. Fair play
 
 - Bots play by the same rules as people and are logged with the key's prefix.
+- The Returning Officer can remove an app that misbehaves: it leaves the directory, can't sign
+  anyone in, and every key it holds stops working. The reason is published in the Gazette.
 - Automating your own play is fine. Flooding, or scraping someone else's key, isn't.
 - Found a way to see something you shouldn't? Tell the Returning Officer rather than using it.
 - The API is versioned: `/api/v1` won't change in ways that break your app. New fields and

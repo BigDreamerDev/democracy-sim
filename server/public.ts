@@ -20,6 +20,7 @@ export type Ctx = {
   schedule: () => void;
   loadUser: (id: number) => Promise<any>;
   apps: any;
+  alertsFor: (userId: number) => any[] | null;
 };
 
 const hash = (k: string) => createHash('sha256').update(k).digest('hex');
@@ -50,13 +51,20 @@ export function publicApi(c: Ctx) {
       version: 1,
       docs: 'https://github.com/BigDreamerDev/democracy-sim/blob/main/API.md',
       auth: 'Authorization: Bearer rlm_… (make a key on your passport in the app)',
-      endpoints: ['GET /api/v1/me', 'GET /api/v1/state', 'GET /api/v1/gazette', 'GET /api/v1/commands', 'GET /api/v1/apps', 'POST /api/v1/act', 'GET|POST /api/v1/hooks', 'POST /api/v1/hooks/delete', 'POST /api/v1/hooks/test'],
+      endpoints: ['GET /api/v1/me', 'GET /api/v1/state', 'GET /api/v1/gazette', 'GET /api/v1/commands', 'GET /api/v1/apps', 'GET /api/v1/apps/:client_id', 'GET /api/v1/alerts', 'POST /api/v1/act', 'GET|POST /api/v1/hooks', 'POST /api/v1/hooks/delete', 'POST /api/v1/hooks/test'],
       signIn: 'Send players to <site>/#/authorize?app=<client_id>&scope=read|act&state=<anything>; they come back to your redirect with #key=…&scope=…&state=…'
     })
   );
   r.get('/commands', (_req, res) => res.json(CATALOG));
   // the app directory: apps players have made and listed
   r.get('/apps', async (_req, res) => res.json(await c.apps.directory()));
+  r.get('/apps/:id', async (req, res) => {
+    try {
+      res.json(await c.apps.details(req.params.id));
+    } catch (e: any) {
+      res.status(404).json({ error: e.message });
+    }
+  });
 
   r.use(async (req: any, res, next) => {
     const k = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
@@ -157,7 +165,12 @@ export function publicApi(c: Ctx) {
     }
   };
   r.get('/hooks', wrap((req) => c.apps.listHooks(req.key.user_id)));
-  r.post('/hooks', wrap((req) => c.apps.addHook(req.key.user_id, req.body?.url)));
+  r.post('/hooks', wrap((req) => c.apps.addHook(req.key.user_id, req.body?.url, req.body?.kind || 'gazette', (c.alertsFor(req.key.user_id) || []).map((a: any) => a.key))));
+  // your alerts right now, the same list a personal webhook works from
+  r.get('/alerts', async (req: any, res) => {
+    await c.serial(c.catchUp);
+    res.json(c.alertsFor(req.key.user_id) || []);
+  });
   r.post('/hooks/delete', wrap(async (req) => (await c.apps.removeHook(req.key.user_id, Number(req.body?.id) || 0), { ok: true })));
   r.post('/hooks/test', wrap((req) => c.apps.testHook(req.key.user_id, Number(req.body?.id) || 0, c.world().config.realmName)));
 
