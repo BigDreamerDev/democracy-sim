@@ -8,12 +8,14 @@ import * as B from './backroom';
 import * as S from './society';
 import * as O from './offices';
 import { advanceTo } from './clock';
+import * as T from './tutorial';
 
 export * from './core';
 export { createWorld, createLiveWorld, NAMES } from './world';
 export { viewFor } from './view';
 export { migrate } from './migrate';
 export { CATALOG } from './catalog';
+export { TUTORIAL } from './tutorial';
 export { needs } from './alerts';
 export type { Alert } from './alerts';
 export { advanceTo, nextDeadline, upcoming } from './clock';
@@ -21,6 +23,9 @@ export { advanceTo, nextDeadline, upcoming } from './clock';
 type Cmd = (w: W, me: Id, a: any) => any;
 export const COMMANDS: Record<string, Cmd> = {
   'convention.vote': (w, me, a) => P.conventionVote(w, me, a.clause, a.option),
+  'convention.suggest': (w, me, a) => P.conventionSuggest(w, me, a.clause, a),
+  'convention.propose': (w, me, a) => P.conventionPropose(w, me, a),
+  'tutorial.visit': (w, me, a) => T.visitMission(w, me, a.mission),
   'election.stand': (w, me, a) => P.stand(w, me, a.election),
   'election.withdraw': (w, me, a) => P.withdraw(w, me, a.election),
   'election.vote': (w, me, a) => P.castBallot(w, me, a.election, a.candidate),
@@ -114,6 +119,12 @@ export const COMMANDS: Record<string, Cmd> = {
     w.flags[a.key] = !!a.value;
     adminDid(w, me, a.key === 'openSignup' ? `${a.value ? 'opened' : 'closed'} the sign-up page` : `${a.value ? 'now requires' : 'no longer requires'} approval for new accounts`);
   },
+  'admin.endInduction': (w, me) => {
+    if (!w.citizens[me]?.admin) fail('Only the Returning Officer can end induction early.');
+    if (!w.induction || w.induction.done) fail('Induction week is not running.');
+    adminDid(w, me, 'ended induction week early');
+    P.endInduction(w);
+  },
   'admin.crisis': (w, me, a) => {
     if (!w.citizens[me]?.admin) fail('Only the Returning Officer starts a crisis.');
     const id = S.spawnCrisis(w, a.type || undefined);
@@ -139,6 +150,7 @@ export function run(world: W, actor: Id, cmd: string, args: any = {}): W {
   const w = structuredClone(world);
   cit(w, actor);
   f(w, actor, args || {});
+  T.afterCommand(w, actor, cmd);
   P.checkObjectives(w, actor);
   Object.keys(w.citizens).forEach((id) => P.checkObjectives(w, id));
   return w;

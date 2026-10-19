@@ -12,7 +12,7 @@ function blank(seed: number, now: number): W {
     flags: { intrigueNow: false, requireApproval: true, openSignup: false },
     config: {
       realmName: 'The Realm', seats: 5, termDays: 21, hos: 'monarchy', hosMethod: 'life', hosTitle: 'Queen',
-      debateHours: 24, voteHours: 24, intrigueDelayDays: 14, conventionThreshold: 10,
+      debateHours: 24, voteHours: 24, intrigueDelayDays: 14, conventionThreshold: 10, inductionDays: 7, conventionDays: 3,
       mpPay: 8, ministerPay: 5, dividend: 5, taxRate: 10, tariff: 10
     },
     calendar: { payday: { dow: 1, hour: 9 }, pmqs: { dow: 3, hour: 20 }, frontpage: { dow: 5, hour: 18 } },
@@ -20,7 +20,7 @@ function blank(seed: number, now: number): W {
     permits: { banks: false },
     citizens: {}, pending: [], seats: [], lastRanked: [], speaker: null, hos: { holder: null, since: now, until: null },
     pm: null, pmInviteDue: null, minority: false, coalition: null, shadow: {}, confidence: null,
-    convention: { clauses: conventionClauses() }, parties: {}, elections: {}, nextGeneralAt: null,
+    convention: { clauses: conventionClauses(), closesAt: now + 3 * DAY }, parties: {}, elections: {}, nextGeneralAt: null,
     proposals: {}, propCount: 0, laws: [], questions: [], lobbying: [],
     offices: {}, accounts: { reserve: 0, treasury: 0 }, ledger: [],
     economy: { lent: 0, rate: 2, prices: [2], lentThisWeek: 0, lastInflation: 0 },
@@ -50,7 +50,7 @@ export function createWorld(scenario: 'convention' | 'running', seed = 20261019)
   w.accounts.treasury = 300;
   seedNations(w);
   if (scenario === 'convention') {
-    gazette(w, 'convention', 'The Founding Convention is open. Every citizen votes on each clause; 10 votes for one option adopts it.', '#/convention');
+    gazette(w, 'convention', 'The Founding Convention is open for 3 days. Vote on each clause, add your own options, or table new clauses. A majority of citizens for one option settles a clause at once.', '#/convention');
     return w;
   }
   return running(w);
@@ -211,6 +211,6 @@ export function createLiveWorld(people: { id: string; name: string; admin: boole
   w.accounts.reserve -= 300;
   w.accounts.treasury = 300;
   seedNations(w);
-  gazette(w, 'convention', 'The Founding Convention is open. Every citizen votes on each clause; 10 votes for one option adopts it.', '#/convention');
+  gazette(w, 'convention', 'The Founding Convention is open for 3 days. Vote on each clause, add your own options, or table new clauses. A majority of citizens for one option settles a clause at once.', '#/convention');
   return w;
 }

@@ -1,5 +1,6 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { useStore, act, ONLINE, signOut, changePassword, toast } from '../store';
+import { TUTORIAL } from '../../../engine/tutorial';
 import { Page, Sec, Card, Btn, Who, Left, When, Seal, Empty, LinkRow, Seg, Meter, Field, Pick } from '../ui';
 import { nm, isMP, isPM, isHOS, bal, ca, intrigueOpen, fmtTime, fmtDay, ordinal, METERS, standing, inDanger, canSeeCard, CAL_EVENTS, DAYS, nextAt, hosTitle, upcoming, officesOf, exiled } from '../../../engine/index';
 import { canVote } from '../../../engine/politics';
@@ -99,6 +100,24 @@ export function SeatMap() {
   );
 }
 
+function InductionBanner() {
+  const { world: w, me } = useStore();
+  const done = Object.keys(w.citizens[me].tutorial || {}).length;
+  const ind = w.induction && !w.induction.done;
+  if (!ind && done >= TUTORIAL.length) return null;
+  if (!ind && w.phase === 'running' && done >= 3) return null;
+  return (
+    <a class={'induct rise' + (ind ? ' on' : '')} href="#/learn" style={{ gridColumn: '1 / -1' }}>
+      <span class="induct-stamp" aria-hidden="true">{ind ? 'Practice' : 'New?'}</span>
+      <span style={{ minWidth: 0 }}>
+        <b>{ind ? 'Induction week' : 'How to play'}</b>
+        <span class="small">{ind ? <>Everything is practice until {fmtDay(w.induction.until)}. Try it all; it resets, then the real first election opens.</> : 'A two-minute guide and missions that walk you through each part.'}</span>
+      </span>
+      <span class="induct-n tnum">{done}/{TUTORIAL.length}</span>
+    </a>
+  );
+}
+
 export function Today() {
   const { world: w, me } = useStore();
   const c = w.citizens[me];
@@ -113,12 +132,13 @@ export function Today() {
           <Seal />
           <div>
             <div class="serif" style={{ fontSize: 19, lineHeight: 1.15 }}>{w.config.realmName}</div>
-            <div class="small muted">{w.phase === 'convention' ? 'Founding Convention' : `${ordinal(Math.max(1, w.season.n))} Parliament. ${w.pm ? nm(w, w.pm) + ' is Prime Minister' : 'No government'}.`}</div>
+            <div class="small muted">{w.phase === 'convention' ? 'Founding Convention' : w.induction && !w.induction.done ? 'Induction week: practice, resets at the end' : `${ordinal(Math.max(1, w.season.n))} Parliament. ${w.pm ? nm(w, w.pm) + ' is Prime Minister' : 'No government'}.`}</div>
           </div>
         </div>
         <h1 class="title today-title" style={{ marginTop: 30 }}>{list.length ? `${list.length} thing${list.length > 1 ? 's' : ''} need${list.length > 1 ? '' : 's'} you` : 'All caught up'}</h1>
-        <p class="intro">{w.phase === 'convention' ? 'Write the constitution together. 10 votes for one option adopts it.' : 'Everything closes on its own. Miss a vote and it goes ahead without you.'}</p>
+        <p class="intro">{w.phase === 'convention' ? <>Write the constitution together. The Convention closes in <Left at={w.convention.closesAt} />.</> : 'Everything closes on its own. Miss a vote and it goes ahead without you.'}</p>
       </div>
+      <InductionBanner />
       {exiled(w, me) && <Card kind="warn" style={{ marginTop: 16, gridColumn: '1 / -1' }}><b>You are in exile</b> until <When at={c.exiledUntil} />. <a href="#/exile">What you can still do</a></Card>}
       <div class="today-a">
         <div class="stack o1" style={{ marginTop: 18 }}>
@@ -167,7 +187,7 @@ export function GazetteList({ items }: { items: any[] }) {
       {items.map((g) => (
         <li class={hot.includes(g.kind) ? 'hot' : bad.includes(g.kind) ? 'bad' : g.kind === 'admin' ? 'ro' : ''}>
           <div class="small muted">{fmtTime(w, g.at)}</div>
-          <div style={{ fontSize: 15 }}>{g.link ? <a href={g.link} style={{ color: 'inherit' }}>{g.text}</a> : g.text}{g.via && <span class="via" title="Done through a player-made app">via {g.via}</span>}</div>
+          <div style={{ fontSize: 15 }}>{g.practice && <span class="via" style={{ marginLeft: 0, marginRight: 6 }}>practice</span>}{g.link ? <a href={g.link} style={{ color: 'inherit' }}>{g.text}</a> : g.text}{g.via && <span class="via" title="Done through a player-made app">via {g.via}</span>}</div>
         </li>
       ))}
     </ol>
@@ -282,6 +302,7 @@ export function Passport({ id }: { id?: string }) {
         </Sec>
         {c.titles.length > 0 && <Sec title="Honours"><p style={{ margin: 0 }}>{c.titles.join(' · ')}</p></Sec>}
         {pid === me && <Sec title="Recent Influence"><ul class="list small">{c.log.slice(0, 10).map((l: any) => <li class="row"><span>{l.why}</span><b class="tnum">{l.n > 0 ? '+' : ''}{l.n}</b></li>)}</ul></Sec>}
+        {pid === me && <Sec title="Learning"><a class="btn ghost small" href="#/learn">How to play · {Object.keys(c.tutorial || {}).length}/{TUTORIAL.length} missions</a></Sec>}
         {pid === me && ONLINE && <Account />}
         <p class="mrz" aria-hidden="true">P&lt;{w.config.realmName.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)}&lt;{c.name.toUpperCase()}&lt;&lt;{'<'.repeat(Math.max(0, 22 - c.name.length))}</p>
       </div>
@@ -349,8 +370,9 @@ function Constitution() {
 export function Law({ refId }: { refId: string }) {
   const { world: w } = useStore();
   const l = w.laws.find((x: any) => x.ref === refId);
+  const me = useStore().me;
+  useEffect(() => void (l?.ref === 'L001' && !w.citizens[me]?.tutorial?.law && act('tutorial.visit', { mission: 'law' })), [refId]);
   if (!l) return <Page title="No such law" back={['#/laws', 'Laws']} />;
-  if (typeof window !== 'undefined') (window as any).__readLaw = true;
   return (
     <Page back={['#/laws', 'Laws']} kicker={`${l.ref}, ${fmtDay(l.at)}, ${l.how}`} title={l.classified ? 'Classified Act' : l.title} intro={l.classified ? 'This Act created a secret body. Its contents are known only to its members.' : l.summary}>
       {!l.classified && <Sec><ol class="stack" style={{ paddingLeft: 22, margin: 0 }}>{l.text.map((t: string) => <li style={{ fontSize: 17 }}>{t}</li>)}</ol></Sec>}

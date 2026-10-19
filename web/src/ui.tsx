@@ -299,3 +299,54 @@ export function noteBreakdown(n: number) {
   }
   return out;
 }
+
+// ---------- ballot paper: one shared look for every vote in the realm ----------
+// `confirm` makes it two-step (pick, then cast) for ballots that are final; otherwise a tap votes and can be changed.
+export type BallotOpt = { key: string | number; label: ComponentChildren; sub?: ComponentChildren; count?: number; tag?: ComponentChildren };
+export function BallotPaper(p: { head: ComponentChildren; options: BallotOpt[]; value?: any; onPick?: (k: any) => void; need?: number; confirm?: string; locked?: boolean; adopted?: any; foot?: ComponentChildren; empty?: ComponentChildren }) {
+  const [pending, setPending] = useState<any>(null);
+  const counted = p.options.some((o) => o.count !== undefined);
+  const top = counted ? Math.max(0, ...p.options.map((o) => o.count || 0)) : 0;
+  const leaders = p.options.filter((o) => (o.count || 0) === top && top > 0);
+  const pick = (k: any) => {
+    if (p.locked || !p.onPick) return;
+    if (p.confirm) setPending(pending === k ? null : k);
+    else p.onPick(k);
+  };
+  const shown = p.confirm ? pending ?? p.value : p.value;
+  return (
+    <div class={'ballot' + (p.locked ? ' locked' : '')}>
+      <p>{p.head}</p>
+      {p.options.map((o) => {
+        const on = shown === o.key;
+        const lead = counted && leaders.length === 1 && leaders[0].key === o.key;
+        return (
+          <button type="button" class={(on ? 'on ' : '') + (p.adopted === o.key ? 'won' : '')} onClick={() => pick(o.key)} disabled={p.locked || !p.onPick} aria-pressed={on ? 'true' : 'false'}>
+            <span class="b-main">
+              <span class="b-label">{o.label}{p.adopted === o.key && <span class="chip teal" style={{ marginLeft: 8 }}>Adopted</span>}{lead && p.adopted === undefined && <span class="chip ink" style={{ marginLeft: 8 }}>Leading</span>}{o.tag}</span>
+              {o.sub && <span class="small muted">{o.sub}</span>}
+              {counted && (
+                <span class="b-tally">
+                  <i style={{ width: `${Math.min(100, ((o.count || 0) / Math.max(1, p.need || top || 1)) * 100)}%` }} />
+                  <em class="tnum">{o.count || 0}{p.need ? ` / ${p.need}` : ''}</em>
+                </span>
+              )}
+            </span>
+            <span class="box" aria-hidden="true">{on && <svg width="34" height="34" viewBox="0 0 24 24"><path d="M4 4l16 16M20 4L4 20" stroke-width="3" /></svg>}</span>
+          </button>
+        );
+      })}
+      {!p.options.length && <div class="b-empty">{p.empty || 'Nothing on the ballot yet.'}</div>}
+      {p.confirm && pending !== null && pending !== p.value && (
+        <div class="b-confirm">
+          <span>{p.confirm}</span>
+          <div class="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" class="btn plain small" onClick={() => setPending(null)}>Not yet</button>
+            <button type="button" class="btn small" onClick={() => (p.onPick!(pending), setPending(null))}>Cast my ballot</button>
+          </div>
+        </div>
+      )}
+      {p.foot && <div class="b-foot">{p.foot}</div>}
+    </div>
+  );
+}

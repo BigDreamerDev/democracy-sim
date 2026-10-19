@@ -108,13 +108,22 @@ export function Proposal({ id }: { id: string }) {
               <div class="yesno"><i style={{ width: `${ayes + noes ? (ayes / (ayes + noes)) * 100 : 50}%` }} /></div>
             )}
             <div class="row small" style={{ justifyContent: 'flex-start', gap: 16, margin: '10px 0' }}><span><b style={{ color: 'var(--teal)' }}>{ayes}</b> {p.voters === 'all' ? 'yes' : 'aye'}</span><span><b style={{ color: 'var(--red)' }}>{noes}</b> no</span><span class="muted">{voters.length - Object.keys(book).filter((k) => voters.includes(k)).length} yet to vote</span></div>
-            {(p.stage === 'vote' || p.stage === 'override') && canVoteOn(w, p, me) && !(p.voters === 'all' && mine) && (
-              <div class="grid3">
-                <Btn onClick={() => act('prop.vote', { prop: p.id, vote: 'aye' }, 'Vote cast. +2 Influence.')} kind={mine === 'aye' ? undefined : 'ghost'}>{p.voters === 'all' ? 'Yes' : 'Aye'}</Btn>
-                <Btn onClick={() => act('prop.vote', { prop: p.id, vote: 'no' })} kind={mine === 'no' ? 'danger' : 'danger ghost'}>No</Btn>
-                <Btn onClick={() => act('prop.vote', { prop: p.id, vote: 'abstain' })} kind="plain">Abstain</Btn>
+            {p.voters !== 'all' && (p.stage === 'vote' || p.stage === 'override') && (
+              <div class="division-bar" aria-hidden="true">
+                <i class="aye" style={{ width: `${(ayes / Math.max(1, w.config.seats)) * 100}%` }} />
+                <i class="no" style={{ width: `${(noes / Math.max(1, w.config.seats)) * 100}%` }} />
+                <span class="need" style={{ left: `${(need / Math.max(1, w.config.seats)) * 100}%` }} title={`${need} needed`} />
               </div>
             )}
+            {(p.stage === 'vote' || p.stage === 'override') && p.voters !== 'all' && <p class="small" style={{ margin: '6px 0 10px', fontWeight: 700 }}>{ayes >= need ? 'On course to pass.' : noes > w.config.seats - need ? 'On course to fall.' : `${need - ayes} more aye${need - ayes === 1 ? '' : 's'} needed to pass.`}</p>}
+            {(p.stage === 'vote' || p.stage === 'override') && canVoteOn(w, p, me) && !(p.voters === 'all' && mine) && (
+              <div class="lobbies" role="group" aria-label="Your vote">
+                <button type="button" class={'lobby aye' + (mine === 'aye' ? ' on' : '')} aria-pressed={mine === 'aye' ? 'true' : 'false'} onClick={() => act('prop.vote', { prop: p.id, vote: 'aye' }, mine ? 'Vote changed.' : 'Vote cast. +2 Influence.')}><b>{p.voters === 'all' ? 'Yes' : 'Aye'}</b><small>{p.voters === 'all' ? 'I agree' : 'Content'}</small></button>
+                <button type="button" class={'lobby no' + (mine === 'no' ? ' on' : '')} aria-pressed={mine === 'no' ? 'true' : 'false'} onClick={() => act('prop.vote', { prop: p.id, vote: 'no' }, mine ? 'Vote changed.' : 'Vote cast. +2 Influence.')}><b>No</b><small>{p.voters === 'all' ? 'I disagree' : 'Not content'}</small></button>
+                <button type="button" class={'lobby abstain' + (mine === 'abstain' ? ' on' : '')} aria-pressed={mine === 'abstain' ? 'true' : 'false'} onClick={() => act('prop.vote', { prop: p.id, vote: 'abstain' }, 'Abstention recorded.')}><b>Abstain</b><small>Present, not voting</small></button>
+              </div>
+            )}
+            {mine && p.voters !== 'all' && (p.stage === 'vote' || p.stage === 'override') && <p class="small muted" style={{ margin: '8px 0 0' }}>You voted <b>{mine}</b>. You can change your vote until it closes.</p>}
             {p.voters === 'all' && mine && <p class="small" style={{ margin: 0 }}>Your ballot is in.</p>}
             {p.stage === 'vote' && w.speaker === me && p.voters === 'mps' && (
               <div style={{ marginTop: 10 }}><div class="small" style={{ fontWeight: 700, marginBottom: 6 }}>Your casting vote, used only on a tie</div><Seg value={p.casting || 'no'} onChange={(v) => act('prop.casting', { prop: p.id, vote: v })} options={[['aye', 'Aye'], ['no', 'No']]} /></div>

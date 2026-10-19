@@ -4,7 +4,10 @@ import { W, Id, canSeeCard, hasPower, isPM } from './core';
 const canSeeIntel = (w: W, id: Id) => hasPower(w, id, 'intel') || isPM(w, id);
 
 export function viewFor(full: W, me: Id): W {
-  const w = structuredClone(full);
+  // copy everything except the induction snapshot (a whole world of its own, and never sent)
+  const { induction, ...rest } = full;
+  const w = structuredClone(rest) as W;
+  if (induction) w.induction = { ...induction, snapshot: undefined };
   const mine = (id: Id) => id === me;
   // randomness must not leak, or draws could be predicted
   w.rng = 0;

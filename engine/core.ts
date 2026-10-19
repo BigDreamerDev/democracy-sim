@@ -100,7 +100,8 @@ export const ledgerTotal = (w: W) => Object.values(w.accounts).reduce((s: number
 
 // ---------- the Gazette: the public record ----------
 export function gazette(w: W, kind: string, text: string, link?: string) {
-  w.gazette.unshift({ id: newId(w, 'g'), at: w.now, kind, text, link: link || null });
+  const practice = !!w.induction && !w.induction.done && kind !== 'induction';
+  w.gazette.unshift({ id: newId(w, 'g'), at: w.now, kind, text, link: link || null, ...(practice ? { practice: true } : {}) });
   if (w.gazette.length > 300) w.gazette.length = 300;
 }
 
@@ -215,7 +216,8 @@ export const superMajority = (w: W) => Math.ceil(w.config.seats * 0.8);
 export const hosTitle = (w: W) => (w.config.hos === 'monarchy' ? w.config.hosTitle : 'President');
 
 // ---------- the backroom opens in week 3 ----------
-export const intrigueOpen = (w: W) => w.phase === 'running' && (w.flags.intrigueNow || w.now >= w.startedAt + w.config.intrigueDelayDays * DAY);
+// the backroom opens two weeks into the real game, and is open for practice all through induction week
+export const intrigueOpen = (w: W) => w.phase === 'running' && ((!!w.induction && !w.induction.done) || w.flags.intrigueNow || w.now >= w.startedAt + w.config.intrigueDelayDays * DAY);
 export function needIntrigue(w: W) {
   if (!intrigueOpen(w)) fail('The backroom opens in week 3, once everyone knows the basics.');
 }

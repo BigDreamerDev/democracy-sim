@@ -1,7 +1,7 @@
 // Desktop navigation: the five sections, live counts, and shortcuts into the realm.
 import { useStore } from './store';
 import { Icon, Seal, ThemeSwitch } from './ui';
-import { nm, bal, ca, intrigueOpen, fmtTime, ordinal, standing, canSeeCard } from '../../engine/index';
+import { nm, bal, ca, intrigueOpen, fmtTime, ordinal, standing, canSeeCard, TUTORIAL } from '../../engine/index';
 import { needs } from './pages/today';
 
 export function Sidebar({ tabs, current }: { tabs: [string, string, string, boolean][]; current: string }) {
@@ -9,7 +9,9 @@ export function Sidebar({ tabs, current }: { tabs: [string, string, string, bool
   const c = w.citizens[me];
   const n = needs(w, me).length;
   const cards = w.cards.filter((k: any) => canSeeCard(w, k, me)).length;
+  const tut = Object.keys(c.tutorial || {}).length;
   const short: [string, string, string?][] = [
+    ['#/learn', 'How to play', tut < TUTORIAL.length ? `${tut}/${TUTORIAL.length}` : ''],
     ['#/proposals', 'Proposals', String(Object.values(w.proposals).filter((p: any) => ['debate', 'vote'].includes(p.stage)).length || '')],
     ['#/questions', 'Questions'],
     ['#/elections', 'Elections', String(Object.values(w.elections).filter((e: any) => e.status === 'open').length || '')],
@@ -30,7 +32,7 @@ export function Sidebar({ tabs, current }: { tabs: [string, string, string, bool
     <aside class="side" aria-label="Sections">
       <a class="side-brand" href="#/">
         <Seal size={46} />
-        <span><b class="serif">{w.config.realmName}</b><small>{w.phase === 'convention' ? 'Founding Convention' : `${ordinal(Math.max(1, w.season.n))} Parliament`}</small></span>
+        <span><b class="serif">{w.config.realmName}</b><small>{w.phase === 'convention' ? 'Founding Convention' : w.induction && !w.induction.done ? 'Induction week' : `${ordinal(Math.max(1, w.season.n))} Parliament`}</small></span>
       </a>
       {w.phase === 'running' && (
         <div class="side-meters" aria-label="National meters">

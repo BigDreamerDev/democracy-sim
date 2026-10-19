@@ -7,6 +7,12 @@ export function migrate(w: W): W {
   w.flags ??= {};
   w.lastEvent ??= {};
   w.crisisQueue ??= [];
+  w.config.inductionDays ??= 7;
+  if (w.phase === 'convention') {
+    w.convention.closesAt ??= w.now + 3 * 86400_000;
+    w.convention.clauses.forEach((c: any) => ((c.optBy ??= c.options.map(() => null)), (c.vals ??= c.options.slice()), (c.kind ??= 'core'), (c.def ??= 0)));
+  }
+  Object.values(w.citizens || {}).forEach((c: any) => (c.tutorial ??= {}));
   Object.values(w.crises || {}).forEach((c: any) => (c.votes ??= {}));
   return w;
 }

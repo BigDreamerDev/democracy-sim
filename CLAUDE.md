@@ -44,7 +44,9 @@ if web/ or engine/ changed, and commit the rebuilt `docs/`.
 engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on the server.
   core.ts      W/Id types, fail()/GameError, ids, rng, transfer(), gazette(), earn/spend Influence,
                meters, cards, office lookups (hasPower, holderOf), calendar (nextAt), formatting
-  politics.ts  convention, parties, elections (national top-N + countback), PM, coalitions, HOS, objectives
+  politics.ts  convention (players add options and clauses; majority settles, deadline closes), induction week,
+               parties, elections (national top-N + countback), PM, coalitions, HOS, objectives
+  tutorial.ts  TUTORIAL induction missions; ticked by command in run(), or by 'tutorial.visit' for reading ones
   proposals.ts proposal kinds and clauses, debate → vote → assent → enact, PMQs, lobbying
   offices.ts   POWERS, TEMPLATES, createOffice, appoint, grant/fine
   economy.ts   payday, tax, Reserve rate, banks, ventures
@@ -187,8 +189,14 @@ Citizen id = `'u' + users.id`.
 - **Engine must stay isomorphic**: no `node:` imports, no `window`/`document`.
 - Intrigue (backroom, plots, leaks) is locked for `config.intrigueDelayDays` (14) after
   the realm starts running. `flags.intrigueNow` overrides, demo only.
-- The Convention adopts a clause at `config.conventionThreshold` (10) votes for one
-  option and has **no deadline**.
+- **The Convention** settles a clause when a majority of all citizens (`conventionNeed`) back one
+  option, and closes at `convention.closesAt` (3 days), when every open clause takes its leading option
+  (ties → `def`). Player-tabled clauses (`kind` 'custom' or 'setting') need more Adopt than Reject.
+- **Induction week**: `finishConvention` snapshots the world into `w.induction.snapshot`, then 7 days of
+  practice (everything works, the backroom too; Gazette entries carry `practice: true`). `endInduction`
+  restores the snapshot in place, keeping citizens' `tutorial`, new citizens, `pending`, `adminLog`, rng
+  and flags, then opens the real first election. `viewFor` never copies the snapshot. Anything that must
+  survive induction has to be added to the keep-list in `endInduction`.
 
 ## Playbooks
 

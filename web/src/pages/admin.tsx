@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { useEffect } from 'preact/hooks';
 import { useStore, act, ONLINE, resetRealm, downloadExport, resetPassword, adminApps, removeApp, restoreApp, toast } from '../store';
-import { Page, Sec, Card, Btn, Empty, LinkRow, Field, Pick } from '../ui';
+import { Page, Sec, Card, Btn, Empty, LinkRow, Field, Pick, When } from '../ui';
 import { CRISES } from '../../../engine/crises';
 import { nm, ledgerTotal, fmtTime, acctLabel } from '../../../engine/index';
 
@@ -27,6 +27,11 @@ export function Admin() {
         <Btn href="#/calendar" kind="ghost" small style={{ marginTop: 10 }}>Change the calendar</Btn>
         <p class="small muted">Game rules change only through Parliament.</p>
       </Sec>
+      {w.induction && !w.induction.done && (
+        <Sec title="Induction week" sub="Everything is practice until it ends. Ending it early is announced.">
+          <Card kind="tint"><div class="row"><span>Ends <When at={w.induction.until} /></span><Btn small kind="danger ghost" onClick={() => act('admin.endInduction', {}, 'Induction is over. The real game begins.')}>End it now</Btn></div></Card>
+        </Sec>
+      )}
       <Sec title="Start a crisis" sub="One lands every payday anyway. Starting one now is announced, and the PM still decides it.">
         {w.phase !== 'running' ? <Empty>Crises begin once Parliament is running.</Empty> : Object.values(w.crises).some((c: any) => c.status === 'open') ? <Empty>A crisis is already open.</Empty> : (
           <div class="grid2">

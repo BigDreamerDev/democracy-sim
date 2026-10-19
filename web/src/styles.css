@@ -579,3 +579,87 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .fp-flash { display: inline-block; margin-top: 14px; padding: 2px 10px; background: #A8321F; color: #F6F0E2; font: 700 12px/1.6 var(--sans); letter-spacing: .18em; text-transform: uppercase; }
 .fp-flash + .fp-head { margin-top: 8px; }
 .fp-quote { margin: 0 0 14px; padding-left: 12px; border-left: 3px solid #A8321F; font-family: var(--serif); font-size: 19px; line-height: 1.3; }
+
+/* ---------- ballot paper (shared) ---------- */
+.ballot button.on { background: var(--teal-tint); }
+.ballot button.won { background: color-mix(in srgb, var(--teal) 10%, transparent); }
+.ballot.locked button { cursor: default; }
+.ballot .b-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.ballot .b-label { font-family: var(--serif); font-size: 19px; line-height: 1.15; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.ballot .b-tally { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
+.ballot .b-tally i { display: block; height: 6px; flex: 1; max-width: 260px; background: var(--teal); border-radius: 3px; transition: width .5s var(--ease); box-shadow: 0 0 0 1px var(--rule); }
+.ballot .b-tally em { font-style: normal; font-size: 12px; font-weight: 700; color: var(--muted); min-width: 44px; }
+.ballot .b-confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; background: var(--soft); border-bottom: 1.5px solid var(--ink); font-weight: 700; animation: rise .25s var(--ease) both; }
+.ballot .b-foot, .ballot .b-empty { padding: 12px 16px; font-size: 14px; color: var(--muted); }
+.ballot button:last-of-type { border-bottom: 0; }
+.ballot .b-confirm + .b-foot, .ballot button + .b-foot { border-top: 1.5px solid var(--ink); }
+.dark .ballot { background: var(--night-2); border-color: var(--night-line); box-shadow: 4px 4px 0 rgba(0,0,0,.4); }
+
+/* ---------- the Convention ---------- */
+.conv-head { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin-top: 18px; border: 1.5px solid var(--ink); background: var(--card); }
+.conv-head > div { padding: 12px 14px; border-left: 1.5px solid var(--ink); display: flex; flex-direction: column; gap: 2px; }
+.conv-head > div:first-child { border-left: 0; }
+.conv-head b { font-family: var(--serif); font-weight: 400; font-size: 28px; line-height: 1; }
+.conv-head span { font-size: 12px; color: var(--muted); }
+.clause { display: grid; gap: 10px; padding: 16px 0 18px; border-top: 3px double var(--ink); animation: rise .4s var(--ease) both; }
+.clause.settled { opacity: .92; }
+.clause-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.clause-q { margin: 0; font-family: var(--serif); font-weight: 400; font-size: 22px; line-height: 1.2; text-wrap: balance; }
+.clause-more { justify-self: start; background: none; border: 0; padding: 4px 0; color: var(--teal); font-weight: 700; font-size: 14px; text-decoration: underline; text-underline-offset: 3px; }
+.clause-add { display: grid; gap: 10px; padding: 12px; border: 1.5px dashed var(--ink); background: var(--soft); }
+@media (max-width: 480px) { .conv-head b { font-size: 22px; } .clause-q { font-size: 19px; } }
+@media (min-width: 1280px) { .page-body .clause { break-inside: avoid; } }
+
+/* ---------- the division: aye and no lobbies ---------- */
+.lobbies { display: grid; grid-template-columns: 1fr 1fr 0.7fr; gap: 8px; }
+.lobby { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 76px; border: 2px solid var(--ink); background: var(--card); border-radius: 3px; transition: transform .15s var(--spring), background-color .2s ease, color .2s ease; }
+.lobby b { font-family: var(--serif); font-weight: 400; font-size: 26px; line-height: 1; }
+.lobby small { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; opacity: .75; }
+.lobby:active { transform: scale(.97); }
+.lobby.aye { border-color: var(--teal); color: var(--teal); }
+.lobby.no { border-color: var(--red); color: var(--red); }
+.lobby.abstain { border-style: dashed; color: var(--muted); }
+.lobby.aye.on { background: var(--teal); color: var(--paper); }
+.lobby.no.on { background: var(--red); color: var(--paper); }
+.lobby.abstain.on { background: var(--soft); color: var(--ink); }
+.division-bar { position: relative; display: flex; height: 12px; margin-top: 10px; background: var(--soft); border: 1.5px solid var(--ink); }
+.division-bar i { display: block; height: 100%; transition: width .5s var(--ease); }
+.division-bar i.aye { background: var(--teal); } .division-bar i.no { background: var(--red); margin-left: auto; }
+.division-bar .need { position: absolute; top: -5px; bottom: -5px; width: 0; border-left: 2px dashed var(--ink); }
+.party-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; box-shadow: 0 0 0 1.5px var(--ink); }
+.dark .lobby { background: var(--night-2); }
+
+/* ---------- learning: missions, systems, the tour, the induction banner ---------- */
+.tut-bar { height: 8px; margin: 10px 0 4px; background: var(--card); border: 1.5px solid var(--ink); }
+.tut-bar i { display: block; height: 100%; background: var(--teal); transition: width .6s var(--ease); }
+.missions { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 0; }
+.missions li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--rule); }
+.missions li b { display: block; font-size: 15px; }
+.missions li .small { display: block; }
+.missions li.done b { text-decoration: line-through; text-decoration-thickness: 2px; opacity: .7; }
+.missions .tickbox { flex: none; width: 28px; height: 28px; display: grid; place-items: center; border: 2px solid var(--ink); font-weight: 700; font-size: 13px; }
+.missions li.done .tickbox { background: var(--teal); border-color: var(--teal); color: var(--paper); }
+.learn-sys { border: 1.5px solid var(--ink); background: var(--card); }
+.learn-sys summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; list-style: none; }
+.learn-sys summary::-webkit-details-marker { display: none; }
+.learn-sys summary b { font-family: var(--serif); font-weight: 400; font-size: 20px; }
+.learn-sys summary::after { content: '+'; font-weight: 700; font-size: 20px; }
+.learn-sys[open] summary::after { content: '−'; }
+.learn-sys p { margin: 0; padding: 0 14px 8px; font-size: 15.5px; }
+.learn-sys a { display: inline-block; padding: 0 14px 14px; font-weight: 700; }
+.tour { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(20, 24, 22, .55); backdrop-filter: blur(3px); animation: fadein .25s ease both; }
+.tour-card { width: min(440px, 100%); padding: 26px 24px 20px; background: var(--card); border: 2px solid var(--ink); box-shadow: 6px 6px 0 var(--ink); display: grid; gap: 4px; animation: rise .35s var(--spring) both; }
+.tour-card p { font-size: 16px; line-height: 1.5; }
+.tour-dots { display: flex; gap: 6px; margin: 16px 0 10px; }
+.tour-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--rule); transition: background-color .2s ease, transform .2s var(--spring); }
+.tour-dots i.on { background: var(--teal); transform: scale(1.3); }
+@keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+.induct { display: flex; align-items: center; gap: 14px; margin-top: 16px; padding: 12px 14px; border: 1.5px dashed var(--ink); background: var(--card); color: inherit; text-decoration: none; }
+.induct.on { border-style: solid; border-color: var(--gold); box-shadow: 4px 4px 0 var(--gold); }
+.induct b { display: block; font-family: var(--serif); font-weight: 400; font-size: 20px; }
+.induct .small { display: block; }
+.induct-stamp { flex: none; display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; border: 3px solid var(--gold); color: #8a6a12; font: 700 11px/1 var(--sans); letter-spacing: .1em; text-transform: uppercase; transform: rotate(-10deg); }
+.induct-n { margin-left: auto; font-family: var(--serif); font-size: 22px; }
+.dark .tour-card, .dark .learn-sys, .dark .induct { background: var(--night-2); }
+.lobby.abstain b { font-size: 19px; }
+.lobby.abstain small { font-size: 10px; }

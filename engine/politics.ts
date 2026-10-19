@@ -2,9 +2,10 @@
 // parties, forming a government, coalitions, the shadow cabinet, seasons, ambitions and weekly objectives.
 import {
   W, Id, DAY, fail, newId, pick, rand, shuffle, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, stamp, approve,
-  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal
+  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal, fmtDay
 } from './core';
 import { createOffice } from './offices';
+import { TUTORIAL } from './tutorial';
 
 // ================= Founding Convention =================
 export const HOS_METHODS: Record<string, { id: string; label: string }[]> = {
@@ -19,31 +20,123 @@ export const HOS_METHODS: Record<string, { id: string; label: string }[]> = {
     { id: 'lot', label: 'Drawn by lot each term' }
   ]
 };
+// The Convention: every citizen votes on each clause. A majority of all citizens for one option settles a clause
+// at once; when the Convention closes (3 days) every open clause takes its leading option. Players can add their
+// own options to most clauses and table whole new clauses: a rule in words, or a different starting setting.
+export const DOW = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+const hh = (h: number) => String(h).padStart(2, '0') + ':00';
+export const calLabel = (v: { dow: number; hour: number }) => `${DOW[v.dow]} at ${hh(v.hour)}`;
+// suggestion kinds: what a player may add to a clause, and how it's parsed
+type Kind = 'name' | 'number' | 'calendar' | 'none';
+const CLAUSE_SPECS: Record<string, { kind: Kind; min?: number; max?: number; unit?: string }> = {
+  principle: { kind: 'none' }, hos: { kind: 'none' }, method: { kind: 'none' },
+  name: { kind: 'name' }, seats: { kind: 'number', min: 3, max: 9, unit: 'seats' }, term: { kind: 'number', min: 1, max: 6, unit: 'weeks' },
+  dividend: { kind: 'number', min: 0, max: 20, unit: 'crowns' }, payday: { kind: 'calendar' }, pmqs: { kind: 'calendar' }
+};
+export const conventionSpec = (id: string) => CLAUSE_SPECS[id] || { kind: 'none' as Kind };
+const clause = (id: string, q: string, options: string[], vals: any[], def: number, extra: any = {}) => ({ id, q, options, vals, def, optBy: options.map(() => null), votes: {}, adopted: null, kind: 'core', ...extra });
 export function conventionClauses() {
   return [
-    { id: 'principle', q: 'Every citizen has one vote, and nothing binds the realm without a law.', options: ['Adopt', 'Reject'], votes: {}, adopted: null },
-    { id: 'name', q: 'What should the realm be called?', options: ['Kingdom of Aldmere', 'Realm of Westerly', 'Commonwealth of the Isles'], votes: {}, adopted: null },
-    { id: 'seats', q: 'How many seats in Parliament? The candidates with the most votes nationwide take them.', options: ['3', '5', '7'], votes: {}, adopted: null },
-    { id: 'hos', q: 'Who is head of state?', options: ['A Monarch: reigns, signs every law', 'A President: elected, can veto bills'], votes: {}, adopted: null },
-    { id: 'method', q: 'How is the head of state chosen?', options: [], votes: {}, adopted: null, needs: 'hos' },
-    { id: 'term', q: 'How long between general elections?', options: ['2 weeks', '3 weeks', '4 weeks'], votes: {}, adopted: null }
+    clause('principle', 'Every citizen has one vote, and nothing binds the realm without a law.', ['Adopt', 'Reject'], [1, 0], 0),
+    clause('name', 'What should the realm be called?', ['Kingdom of Aldmere', 'Realm of Westerly', 'Commonwealth of the Isles'], ['Kingdom of Aldmere', 'Realm of Westerly', 'Commonwealth of the Isles'], 0),
+    clause('seats', 'How many seats in Parliament? The candidates with the most votes nationwide take them.', ['3', '5', '7'], [3, 5, 7], 1),
+    clause('hos', 'Who is head of state?', ['A Monarch: reigns, signs every law', 'A President: elected, can veto bills'], ['monarchy', 'republic'], 0),
+    clause('method', 'How is the head of state chosen?', [], [], 0, { needs: 'hos' }),
+    clause('term', 'How long between general elections?', ['2 weeks', '3 weeks', '4 weeks'], [2, 3, 4], 1),
+    clause('payday', 'When is payday? The dividend and wages are paid, and the week’s crisis lands.', ['Mondays at 09:00', 'Fridays at 18:00', 'Sundays at 12:00'], [{ dow: 1, hour: 9 }, { dow: 5, hour: 18 }, { dow: 0, hour: 12 }], 0),
+    clause('pmqs', 'When are Prime Minister’s Questions?', ['Wednesdays at 20:00', 'Tuesdays at 19:00', 'Thursdays at 20:00'], [{ dow: 3, hour: 20 }, { dow: 2, hour: 19 }, { dow: 4, hour: 20 }], 0),
+    clause('dividend', 'How much does every citizen get each payday?', ['3 crowns', '5 crowns', '8 crowns'], [3, 5, 8], 1)
   ];
 }
-export function conventionVote(w: W, actor: Id, clauseId: string, option: number) {
+// how many votes for one option settle a clause outright: a majority of all citizens
+export const conventionNeed = (w: W) => Math.max(2, Math.floor(allCitizens(w).length / 2) + 1);
+const openClause = (w: W, id: string) => {
   if (w.phase !== 'convention') fail('The convention has finished.');
-  const c = w.convention.clauses.find((x: any) => x.id === clauseId);
+  const c = w.convention.clauses.find((x: any) => x.id === id);
   if (!c || c.adopted !== null) fail('That clause is settled.');
   if (c.needs && w.convention.clauses.find((x: any) => x.id === c.needs).adopted === null) fail('This opens once the head of state clause is settled.');
-  if (!(option >= 0 && option < c.options.length)) fail('Pick an option.');
+  return c;
+};
+export function conventionVote(w: W, actor: Id, clauseId: string, option: number) {
+  const c = openClause(w, clauseId);
+  if (!(Number.isInteger(option) && option >= 0 && option < c.options.length)) fail('Pick an option.');
   if (c.votes[actor] === undefined) {
     earn(w, actor, 2, 'Voted at the Convention');
     tick(w, actor, 'votes');
   }
   c.votes[actor] = option;
   const counts = c.options.map((_: any, i: number) => Object.values(c.votes).filter((v) => v === i).length);
-  const top = counts.findIndex((n: number) => n >= w.config.conventionThreshold);
+  const top = counts.findIndex((n: number) => n >= conventionNeed(w));
   if (top >= 0) adoptClause(w, c, top);
 }
+const mineCount = (w: W, actor: Id) =>
+  w.convention.clauses.reduce((n: number, c: any) => n + c.optBy.filter((b: any) => b === actor).length + (c.by === actor ? 1 : 0), 0);
+// add an option to a clause: a name, a number, or a day and hour
+export function conventionSuggest(w: W, actor: Id, clauseId: string, raw: any) {
+  const c = openClause(w, clauseId);
+  const spec = conventionSpec(c.kind === 'core' ? c.id : '');
+  if (spec.kind === 'none') fail('This clause has fixed options.');
+  if (c.options.length >= 8) fail('This clause already has 8 options. Vote for one of them.');
+  if (mineCount(w, actor) >= 4) fail('You have made 4 suggestions already. Leave room for others.');
+  let label = '', val: any;
+  if (spec.kind === 'name') {
+    val = String(raw?.text || '').trim().replace(/\s+/g, ' ');
+    if (val.length < 3 || val.length > 40) fail('A name of 3 to 40 characters.');
+    if (!/^[\p{L}\p{N} '’\-.&]+$/u.test(val)) fail('Letters, numbers, spaces and simple punctuation only.');
+    label = val;
+  } else if (spec.kind === 'number') {
+    val = Math.round(Number(raw?.value));
+    if (!(val >= spec.min! && val <= spec.max!)) fail(`Pick a number from ${spec.min} to ${spec.max}.`);
+    label = `${val} ${val === 1 ? spec.unit!.replace(/s$/, '') : spec.unit}`;
+  } else {
+    const dow = Number(raw?.dow), hour = Number(raw?.hour);
+    if (!(Number.isInteger(dow) && dow >= 0 && dow <= 6 && Number.isInteger(hour) && hour >= 0 && hour <= 23)) fail('Pick a day and an hour.');
+    val = { dow, hour };
+    label = calLabel(val);
+  }
+  if (c.options.some((o: string) => o.toLowerCase() === label.toLowerCase())) fail('That option is already on the ballot.');
+  c.options.push(label);
+  c.vals.push(val);
+  c.optBy.push(actor);
+  tick(w, actor, 'conventionIdeas');
+  gazette(w, 'convention', `${nm(w, actor)} adds an option to “${c.q}”: ${label}.`, '#/convention');
+}
+// table a whole new clause: a rule in words, or a different starting value for a setting
+export function conventionPropose(w: W, actor: Id, a: any) {
+  if (w.phase !== 'convention') fail('The convention has finished.');
+  if (mineCount(w, actor) >= 4) fail('You have made 4 suggestions already. Leave room for others.');
+  if (w.convention.clauses.filter((c: any) => c.kind !== 'core').length >= 14) fail('The Convention has enough extra clauses. Vote on those.');
+  if (w.convention.clauses.filter((c: any) => c.by === actor).length >= 2) fail('You can table 2 clauses of your own.');
+  let c: any;
+  if (a?.setting) {
+    const s = SETTABLE_START[a.setting];
+    if (!s) fail('Pick a setting to change.');
+    const v = Math.round(Number(a.value));
+    if (!(v >= s.min && v <= s.max)) fail(`${s.label}: pick from ${s.min} to ${s.max}.`);
+    if (v === w.config[a.setting]) fail('That is already the starting value.');
+    if (w.convention.clauses.some((x: any) => x.kind === 'setting' && x.setting === a.setting && x.adopted === null && x.vals[0] === v)) fail('Someone has already tabled exactly that.');
+    c = { kind: 'setting', setting: a.setting, q: `Start with ${s.label.toLowerCase()} at ${v}${s.unit} (normally ${w.config[a.setting]}${s.unit}).` };
+    c.vals = [v, null];
+  } else {
+    const text = String(a?.text || '').trim().replace(/\s+/g, ' ');
+    if (text.length < 12 || text.length > 300) fail('Write the rule in 12 to 300 characters.');
+    c = { kind: 'custom', q: text, vals: [true, false] };
+  }
+  const id = newId(w, 'cl');
+  w.convention.clauses.push({ ...c, id, options: ['Adopt', 'Reject'], optBy: [null, null], def: 1, by: actor, votes: {}, adopted: null, at: w.now });
+  tick(w, actor, 'conventionIdeas');
+  gazette(w, 'convention', `${nm(w, actor)} tables a new clause: “${c.q}”`, '#/convention');
+}
+// starting values players may ask the Convention to change (the House can change them later too)
+export const SETTABLE_START: Record<string, { label: string; unit: string; min: number; max: number }> = {
+  taxRate: { label: 'Income tax', unit: '%', min: 0, max: 50 },
+  mpPay: { label: 'MP pay each week', unit: ' crowns', min: 0, max: 30 },
+  ministerPay: { label: 'Minister pay each week', unit: ' crowns', min: 0, max: 30 },
+  tariff: { label: 'Tariff on trade ventures', unit: '%', min: 0, max: 40 },
+  debateHours: { label: 'Debate length', unit: ' hours', min: 12, max: 48 },
+  voteHours: { label: 'Voting length', unit: ' hours', min: 12, max: 48 },
+  intrigueDelayDays: { label: 'Days before the backroom opens', unit: ' days', min: 0, max: 28 }
+};
 function adoptClause(w: W, c: any, i: number) {
   if (c.id === 'principle' && i === 1) {
     c.votes = {};
@@ -51,22 +144,54 @@ function adoptClause(w: W, c: any, i: number) {
     return;
   }
   c.adopted = i;
-  gazette(w, 'convention', `The convention adopts: ${c.options[i]}.`, '#/convention');
-  if (c.id === 'name') w.config.realmName = c.options[i];
-  if (c.id === 'seats') w.config.seats = Number(c.options[i]);
-  if (c.id === 'hos') {
-    w.config.hos = i === 0 ? 'monarchy' : 'republic';
-    const m = w.convention.clauses.find((x: any) => x.id === 'method');
-    m.options = HOS_METHODS[w.config.hos].map((o) => o.label);
+  const v = c.vals[i];
+  if (c.kind === 'custom' || c.kind === 'setting') {
+    gazette(w, 'convention', `The convention ${i === 0 ? 'adopts' : 'rejects'}: “${c.q}”`, '#/convention');
+    if (c.kind === 'setting' && i === 0) w.config[c.setting] = v;
+  } else {
+    gazette(w, 'convention', `The convention settles “${c.q}”: ${c.options[i]}.`, '#/convention');
+    if (c.id === 'name') w.config.realmName = v;
+    if (c.id === 'seats') w.config.seats = v;
+    if (c.id === 'hos') {
+      w.config.hos = v;
+      const m = w.convention.clauses.find((x: any) => x.id === 'method');
+      m.options = HOS_METHODS[w.config.hos].map((o) => o.label);
+      m.vals = HOS_METHODS[w.config.hos].map((o) => o.id);
+      m.optBy = m.options.map(() => null);
+    }
+    if (c.id === 'method') w.config.hosMethod = v;
+    if (c.id === 'term') w.config.termDays = v * 7;
+    if (c.id === 'payday') w.calendar.payday = { ...v };
+    if (c.id === 'pmqs') w.calendar.pmqs = { ...v };
+    if (c.id === 'dividend') w.config.dividend = v;
   }
-  if (c.id === 'method') w.config.hosMethod = HOS_METHODS[w.config.hos][i].id;
-  if (c.id === 'term') w.config.termDays = [14, 21, 28][i];
   if (w.convention.clauses.every((x: any) => x.adopted !== null)) finishConvention(w);
 }
+// the deadline: every open clause takes its leading option (ties go to the default); new clauses need more
+// Adopt than Reject. The principle clause can't fail at the deadline: the realm needs it to exist.
+export function closeConvention(w: W) {
+  if (w.phase !== 'convention') return;
+  gazette(w, 'convention', 'The Convention closes. Every open clause takes its leading option.', '#/convention');
+  const order = (c: any) => (c.id === 'hos' ? 0 : c.id === 'method' ? 1 : 2);
+  w.convention.closing = true; // adoptClause must not finish the Convention halfway through this loop
+  [...w.convention.clauses].sort((a: any, b: any) => order(a) - order(b)).forEach((c: any) => {
+    if (c.adopted !== null) return;
+    const counts = c.options.map((_: any, i: number) => Object.values(c.votes).filter((v) => v === i).length);
+    const top = Math.max(0, ...counts);
+    let pick = top > 0 && counts.filter((n: number) => n === top).length === 1 ? counts.indexOf(top) : c.def;
+    if (c.id === 'principle') pick = 0;
+    if (!(pick < c.options.length)) pick = 0;
+    adoptClause(w, c, pick);
+  });
+  w.convention.closing = false;
+  finishConvention(w);
+}
 export function finishConvention(w: W) {
+  if (w.convention.closing) return;
   w.phase = 'running';
   w.startedAt = w.now;
   w.seats = Array(w.config.seats).fill(null);
+  const extra = w.convention.clauses.filter((c: any) => c.kind !== 'core' && c.adopted === 0).map((c: any) => (c.kind === 'custom' ? c.q : c.q.replace(/^Start with/, 'The realm starts with').replace(/ \(normally.*\)\.$/, '.')));
   w.laws.push({
     ref: 'L001', title: 'Founding Act', summary: `Adopts the constitution of the ${w.config.realmName}.`, at: w.now, how: 'Founding Convention', repealed: false, classified: false, rulings: [], propId: null,
     text: [
@@ -74,15 +199,73 @@ export function finishConvention(w: W) {
       `The realm is the ${w.config.realmName}.`,
       `Parliament has ${w.config.seats} seats. At each general election the ${w.config.seats} candidates with the most votes nationwide take them. A seat that falls empty goes to the next candidate in line.`,
       `${w.config.hos === 'monarchy' ? 'A Monarch' : 'A President'} is head of state, ${HOS_METHODS[w.config.hos].find((m) => m.id === w.config.hosMethod)!.label.toLowerCase()}.`,
-      `A general election every ${w.config.termDays / 7} weeks.`,
-      'There is a Chief Whip, appointed by the Prime Minister.'
+      `A general election every ${w.config.termDays / 7} week${w.config.termDays === 7 ? '' : 's'}.`,
+      `Payday is ${calLabel(w.calendar.payday)}, when every citizen receives ${w.config.dividend} crowns. Prime Minister’s Questions are ${calLabel(w.calendar.pmqs)}.`,
+      'There is a Chief Whip, appointed by the Prime Minister.',
+      ...extra
     ]
   });
   createOffice(w, { template: 'whip' }, 'L001');
-  gazette(w, 'law', `The constitution is adopted. The ${w.config.realmName} is founded. Polls open now.`, '#/law/L001');
+  gazette(w, 'law', `The constitution is adopted. The ${w.config.realmName} is founded.`, '#/law/L001');
+  startInduction(w);
   callGeneralElection(w, w.now + 2 * DAY);
   if (w.config.hos === 'monarchy') startHosSelection(w);
 }
+
+// ================= Induction week =================
+// The first week after the Convention is practice. Everything works, the backroom included, so people can learn
+// by doing. When it ends the realm goes back to the moment the constitution was adopted (keeping new citizens,
+// tutorial progress and the public admin log) and the real first election opens.
+export function startInduction(w: W) {
+  const days = w.config.inductionDays ?? 7;
+  if (!days) return;
+  const snap = structuredClone(w);
+  delete snap.induction;
+  w.induction = { until: w.now + days * DAY, startedAt: w.now, snapshot: snap, done: false };
+  gazette(w, 'induction', `Induction week begins. For ${days} days everything is practice: stand, vote, legislate, scheme. On ${fmtDay(w.induction.until)} the realm resets and the real first election opens.`, '#/learn');
+}
+export function endInduction(w: W) {
+  const ind = w.induction;
+  if (!ind || ind.done) return;
+  const snap = ind.snapshot;
+  const keep = { citizens: w.citizens, pending: w.pending, adminLog: w.adminLog, rng: w.rng, nextId: w.nextId, flags: w.flags, now: w.now, gazette: w.gazette };
+  Object.keys(w).forEach((k) => delete w[k]);
+  Object.assign(w, structuredClone(snap));
+  w.now = keep.now;
+  w.rng = keep.rng;
+  w.nextId = Math.max(keep.nextId, w.nextId);
+  w.pending = keep.pending;
+  w.adminLog = keep.adminLog;
+  w.flags = keep.flags;
+  // the Gazette keeps everything from before induction, then a line for the week of practice
+  const before = new Set(snap.gazette.map((g: any) => g.id));
+  const practised = keep.gazette.filter((g: any) => !before.has(g.id)).length;
+  w.gazette = snap.gazette;
+  Object.values(keep.citizens).forEach((c: any) => {
+    const fresh = w.citizens[c.id];
+    if (!fresh) {
+      // joined during induction: a clean start like everyone else
+      w.citizens[c.id] = { ...c, party: null, influence: 10, seasonEarned: 0, approval: 50, log: [], stamps: [], titles: [], censures: 0, stats: {}, whip: { loyal: 0, rebel: 0 }, week: {}, objectives: [], exiledUntil: null, asylum: null, ambition: null, weekIncome: 0 };
+      w.accounts.reserve = (w.accounts.reserve || 0) - 100;
+      w.accounts['c:' + c.id] = 100;
+    } else fresh.admin = c.admin;
+    const now = w.citizens[c.id];
+    now.tutorial = c.tutorial || {};
+    // real Influence for every induction mission done
+    const n = Object.keys(now.tutorial).length;
+    if (n) earn(w, c.id, n, 'Completed induction missions');
+    if (n >= TUTORIAL.length) stamp(w, c.id, 'Inducted', 'All missions', 'ink');
+  });
+  w.induction = { until: ind.until, startedAt: ind.startedAt, done: true, endedAt: w.now };
+  w.startedAt = w.now;
+  w.phase = 'running';
+  w.seats = Array(w.config.seats).fill(null);
+  w.nextGeneralAt = null;
+  gazette(w, 'induction', `Induction week is over: ${practised} practice events are wiped. Everyone starts fresh, and the real first general election opens now.`, '#/elections');
+  callGeneralElection(w, w.now + 2 * DAY);
+  if (w.config.hos === 'monarchy') startHosSelection(w);
+}
+export const inInduction = (w: W) => !!w.induction && !w.induction.done && w.now < w.induction.until;
 
 // ================= Elections =================
 // stand: who may stand ('all' or 'party:<id>'); voters: 'all', 'mps' or 'party:<id>'; winners: how many win
