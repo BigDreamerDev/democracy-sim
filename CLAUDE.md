@@ -1,221 +1,96 @@
-# CLAUDE.md — the Republic
+# CLAUDE.md — The Realm (v2)
 
-A parliamentary democracy simulator for a WhatsApp group of \~19 people, called
-**McServerLandia**. Static front end on GitHub Pages (`docs/`), Express API on
-Render (`server/`), Postgres on Neon.
+A political game for a WhatsApp group of ~19 people. Static front end on GitHub
+Pages (`docs/`), Express API on Render (`server/`), Postgres on Neon. All free tier.
 
-Owner is **Uzair**, who is the Returning Officer (admin) and also plays.
-
-Read this before changing code. **Tests have caught more real bugs here than
-reading has — run them after any server change.**
+Owner is **Uzair** (username `admin`), the Returning Officer, who also plays.
 
 ```
-cd server
-npm install
-npm run dev            # localhost:4321, seeded, nothing deployed
-npm test               # 22 suites, fresh in-memory Postgres each
-npm run test:layout    # 7 frontend checks (needs jsdom)
+npm install && npm run dev          # the demo: whole game in the browser, one person plays everyone
+npm run smoke                       # engine smoke test, two scenarios, ledger must balance
+cd server && npm install
+npm run dev                         # API on :4321, in-memory Postgres, users admin/amara/bilal pw "password"
+npm test                            # server end-to-end on PGlite: auth, act, secrecy, clock, restart
+cd .. && npm run dev:online         # the real UI against that local server
+npm run build                       # builds into docs/ (only docs/assets and docs/index.html change)
 ```
-
-`test/layout.js` reports 5 failures. They predate all current work and are a
-jsdom-version issue, not app breakage. Everything else must be green.
-
-\---
 
 ## Shape
 
 ```
-server/
-├── server.js         core: auth, bills, elections, offices, config, the clock
-├── judiciary.js      the Supreme Court            (optional module)
-├── diplomacy.js      foreign powers, treaties, intelligence, the map (optional)
-├── economy.js        money, tax, business, bank, shares (optional)
-├── money.js          the Treasury, the Fed, private banks (optional)
-├── war.js            supply, procurement, upkeep, conflict pressure (optional)
-├── llm/providers.js  model calls for foreign cabinets; free tiers by default
-├── schema.sql            core tables
-├── schema-acts.sql       court + economy tables
-├── schema-money.sql      Treasury, Fed, private banks
-├── schema-diplomacy.sql  powers, cabinets, territories, intelligence
-├── schema-war.sql        stockpile, formations, upkeep, conflict pressure
-├── dev.js            local preview, in-memory database, fully seeded
-└── test/             22 API suites + 7 frontend checks
-
-docs/
-├── index.html
-├── config.js         API\_BASE — NEVER overwrite this from a local copy
-├── app.js            core UI + window.Republic hook
-├── acts.js           Court, Economy, Diplomacy pages
-├── money.js          Treasury, Fed, Supply pages
-├── world-map.js      precomputed SVG country paths (generated, 121KB)
-└── styles.css
+engine/    pure TS, no I/O. The world is one JSON object. Shared by the browser and the server.
+  core.ts       types, ids, money (move), gazette, influence, meters, calendar helpers
+  politics/proposals/offices/economy/foreign/backroom/society.ts   the six systems
+  clock.ts      collect() lists every deadline; advanceTo(t) runs them in order
+  world.ts      createWorld (demo scenarios), createLiveWorld (real accounts)
+  view.ts       viewFor(world, me): what one player may see. The server only ever sends this.
+  index.ts      COMMANDS table and run(world, actor, cmd, args) on a clone
+  bots.ts       demo only
+web/src/   Preact UI. store.ts is demo or online depending on window.API_BASE.
+server/    app.ts (routes), db.ts (pg or PGlite, schema), server.ts (boot), test.ts
+docs/      GitHub Pages output. config.js, icons/, manifest, sw.js are hand-kept.
 ```
 
-**Module mount order matters:** `judiciary`, `diplomacy`, `economy`, `money`,
-`war`. `economy.js` sets `ctx.economy` as its last act and `money.js` and
-`war.js` borrow the ledger primitives off it. Reorder and they answer 503.
+## How the server works
 
-A missing module file is logged and skipped — every one can be removed.
-
-\---
+- One world row (`v2_world.state`, jsonb), loaded at boot, saved after every change.
+- Every write goes through one promise queue (`serial`), so requests never interleave.
+- Before every read or action the world is caught up to the real clock (`catchUp`).
+  A server that slept for hours replays every missed deadline in order on wake.
+- `v2_log` records every action, `v2_snapshots` holds the world before a reset.
+- Citizens are `'u' + users.id`. The `users` table is v1's, unchanged: bcrypt cost 10,
+  JWT `{id, tv}`, `tv` = `token_version`. Bumping `token_version` signs a user out everywhere.
+- Admin-only routes outside the game: `/api/admin/export`, `/api/admin/reset`, `/api/admin/password`.
 
 ## Invariants
 
-**`sum(accounts.balance) = 0`, always.** Money is only ever moved between
-accounts. This survives Fed issuance (the Fed's own account goes negative — that
-negative balance *is* the money supply), foreign trade, bank failure and army
-wages. Asserted by `money.mjs`, `bank.mjs`, `foreigntrade.mjs`, `war.mjs`.
+**The ledger sums to zero.** Money only moves between accounts; the Reserve's negative
+balance is the money supply. `npm run smoke` and `server/test.ts` both assert it.
 
-**Shares are conserved.** A business's holdings total exactly `shares\_issued`.
+**Secrets live only on the server.** Ballots, other wallets, cards, deals, plots, ambitions,
+objectives, intel and classified offices are stripped in `viewFor`. Any new secret field
+must be stripped there too, or every player can read it from devtools.
 
-**One person, one vote.** Held by database constraints, not application code.
-Asserted by `attack.mjs`, which is why anyone can trust a result.
+**The rng never leaves the server** (`viewFor` zeroes it), or draws could be predicted.
 
-**Nothing binds the Republic without a bill.** Treaties, recognition, war,
-peace, territory transfer, emergencies. All of them.
+**The client is untrusted.** It runs commands locally only to show a result instantly;
+the server re-runs them and its reply replaces local state.
 
-\---
+**Rules change only through Parliament.** The RO can approve sign-ups, toggle the two
+sign-up flags, move the calendar, force-enact a stuck bill (logged), reset passwords
+(announced in the Gazette) and reset the realm. Nothing else.
 
-## Offices
+## Traps
 
-`offices` is the single source of truth. `president`, `prime\_minister`,
-`speaker`, `mp`, `justice`, `treasurer`, `fed\_chair`, `foreign\_minister`,
-`quartermaster`.
+**Check offices before `admin`. Never short-circuit.** Uzair is the RO and plays.
 
-Article 7.1: one seat each, enforced everywhere.
+**A mismatched `ALLOWED_ORIGINS` used to return 200 with no CORS header.** Now it
+returns 403 with the origin named and logs it. If the site says it can't reach the
+server, check Render's logs for "Refused origin".
 
-|Office|Appointed by|Removed by|
-|-|-|-|
-|President, Speaker, MPs|election|election|
-|Prime Minister|President, confirmed by the House|House no-confidence|
-|Justices ×3|House seat = Speaker; President's = themselves; **People's = elected ballot**|term expiry, resignation, impeachment|
-|Treasurer|PM, or President if none|the appointer, or resignation|
-|Foreign Minister|same|same|
-|Quartermaster|same|same|
-|**Head of the Fed**|President nominates, House confirms|**impeachment or resignation only**|
+**Deadlines are lazy.** Never write code that assumes a deadline ran "on time". It runs
+when the world is next caught up, with `w.now` set to the deadline's own time.
 
-\---
+**Don't put functions or class instances in the world.** It is JSON in, JSON out.
 
-## Traps that have already caused bugs
-
-**Check offices before `is\_admin`. Never short-circuit.** Uzair is the RO *and*
-plays, so one account routinely holds an office too. `if (user.is\_admin) return X` at the top of a permission check silently removes powers the office grants —
-it did exactly that to a sitting Speaker in `mayAppoint`. Ask what office
-someone holds, then ask whether they are also the RO.
-
-**`/api/admin/office` refuses `treasurer`, `fed\_chair`, `foreign\_minister`,
-`quartermaster`.** Those have routes of their own that mean something. The RO
-may edit every *setting* on the admin page, including the Fed's rates — that is
-logged and someone has to be able to fix a typo. Setting a value is not holding
-an office.
-
-**There is no endpoint that dismisses the head of the Fed.** Not an oversight.
-An appointee who can be dismissed is an employee. The front end hides the
-control too and `money-view.js` asserts it stays hidden.
-
-**`deposit\_rate`, `loan\_rate`, `loan\_ceiling`, `reserve\_ratio` are not
-legislatable.** A rule bill setting the rate of interest is the House
-instructing the Fed with a vote attached.
-
-**A constitutional bill replaces the entire constitution** — its body becomes
-the whole new text.
-
-**Issuance and procurement cannot go through `pay()`.** It refuses an overdraft
-and the Treasury is normally overdrawn from the dividend. `issue()` and
-`spendFromTreasury()` write both sides themselves and still write the ledger.
-
-**Every stockpile change goes through `move()`.** It refuses to take a category
-below zero rather than clamping. Supplying an army from an empty store silently
-is the one bug that would make the war system meaningless.
-
-**A conflict never resolves itself.** `runConflicts` moves pressure and
-escalates a stage — no territory, no treaty, no surrender. If pressure hitting
-100 ever does something automatic, the House has lost a decision it should have
-had.
-
-**War is supply, not manoeuvre — by the group's decision.** No positions, no
-orders, no dice. Readiness moves by fixed steps so a losing player sees it
-coming cycles out. Do not add randomness.
-
-**Real country names never reach a player.** `TERRITORY\_NAMES` in
-`docs/world-map.js` is for the RO's console only. `worldmap-view.js` asserts the
-leak cannot happen.
-
-**The world map is precomputed.** Do not add d3-geo or a TopoJSON client to the
-front end — `docs/` stays a no-build static site. Regenerate the file instead.
-
-**Bills are never deleted, only `withdrawn`.** A hole in the reference numbers
-is worse. Editing and withdrawing both stop the moment a division is called.
-
-**Editing a bill clears its seconds.** A signature was for the text signed.
-
-**Intelligence: reading is an audit write.** `/api/intel/reports/:id/read`
-inserts into `intel\_reads` before it answers, and that register is public even
-while the report is sealed. Nothing but a row in `intel\_clearance` grants sight;
-no office does.
-
-**Tribute used to destroy money.** The diplomacy payrun debited the Treasury and
-wrote a ledger row with `to\_id NULL` for as long as the feature existed;
-`foreigntrade.mjs` never ran a payrun so it stayed green. Any new movement
-writes both sides, and any new suite touching money asserts the total across a
-payrun, not just across a request.
-
-**Other sharp edges:** `bigint` params need explicit `::bigint` casts. Escrow is
-a separate account from the Treasury. The electoral roll freezes at `opened\_at`.
-Re-anchoring the cycle clock mints duplicate elections. `campaign\_at` in the past
-closes nominations early. `\[hidden]{display:none!important}` must stay in the
-CSS. A mismatched `ALLOWED\_ORIGINS` returns 200 with no CORS header, so the
-server looks healthy while the site fails. A division never closes itself.
-`term\_days` is dead and read by nothing.
-
-\---
+**Changing the world's shape needs a migration** in `server/app.ts` after load, because
+the live world persists across deploys.
 
 ## Deployment
 
-`docs/` is served by GitHub Pages; `server/` runs on Render; Neon holds the
-data. Schema files run on boot and are additive and idempotent — **snapshot Neon
-before any push that adds one.**
+`docs/` is served by GitHub Pages from the default branch; `server/` runs on Render
+(rootDir `server`, but it imports `../engine`, so the whole repo must be checked out,
+which Render does). Schema is additive and idempotent and runs on boot —
+**snapshot Neon before any push that changes it.**
 
-Never push `docs/config.js` from a local tree. It holds the real `API\_BASE`.
+**Never push `docs/config.js` from a local tree.** It holds the real `API_BASE`.
+`npm run build` never touches it.
 
-\---
+`.github/workflows/keepawake.yml` pings `/api/health` every 10 minutes, 07:00–01:00.
 
 ## Frontend design
 
-
-You tend to converge toward generic, "on distribution" outputs. In frontend design, this creates what users call the "AI slop" aesthetic. Avoid this: make creative, distinctive frontends that surprise and delight. Focus on:
-
-
-
-Typography: Choose fonts that are beautiful, unique, and interesting. Avoid generic fonts like Arial and Inter; opt instead for distinctive choices that elevate the frontend's aesthetics.
-
-
-
-Color \& Theme: Commit to a cohesive aesthetic. Use CSS variables for consistency. Dominant colors with sharp accents outperform timid, evenly-distributed palettes. Draw from IDE themes and cultural aesthetics for inspiration.
-
-
-
-Motion: Use animations for effects and micro-interactions. Prioritize CSS-only solutions for HTML. Use Motion library for React when available. Focus on high-impact moments: one well-orchestrated page load with staggered reveals (animation-delay) creates more delight than scattered micro-interactions.
-
-
-
-Backgrounds: Create atmosphere and depth rather than defaulting to solid colors. Layer CSS gradients, use geometric patterns, or add contextual effects that match the overall aesthetic.
-
-
-
-Avoid generic AI-generated aesthetics:
-
-\- Overused font families (Inter, Roboto, Arial, system fonts)
-
-\- Clichéd color schemes (particularly purple gradients on white backgrounds)
-
-\- Predictable layouts and component patterns
-
-\- Cookie-cutter design that lacks context-specific character
-
-
-
-Interpret creatively and make unexpected choices that feel genuinely designed for the context. Vary between light and dark themes, different fonts, different aesthetics. You still tend to converge on common choices (Space Grotesk, for example) across generations. Avoid this: it is critical that you think outside the box!
-
-"""
-
+Paper-and-ink civic aesthetic: Gloock headings, Atkinson Hyperlegible body, seal and
+stamps, teal/red accents, light and dark. Phone gets a bottom tab bar, desktop a sidebar
+and wide-screen columns. Avoid generic AI-looking UI: no Inter/Roboto, no purple
+gradients, no cookie-cutter cards. Keep motion to a few high-impact moments.

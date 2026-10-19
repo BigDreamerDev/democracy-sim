@@ -9,3 +9,4 @@ node_modules/
 # Agent worktrees and abandoned patch attempts
 .claude/worktrees/
 *.patch
+dist/

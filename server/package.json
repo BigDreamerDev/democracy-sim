@@ -1,25 +1,21 @@
 {
-  "name": "republic-server",
-  "version": "1.0.0",
+  "name": "realm-server",
   "private": true,
-  "type": "commonjs",
-  "main": "server.js",
-  "engines": { "node": ">=18" },
+  "type": "module",
+  "engines": { "node": ">=20" },
   "scripts": {
-    "start": "node server.js",
-    "dev": "node dev.js",
-    "test": "node test/run.js",
-    "test:layout": "node test/layout.js && node test/seats.mjs && node test/billsview.js && node test/desk.js && node test/theme.mjs && node test/money-view.js && node test/worldmap-view.js && node test/tour.js"
-  },
-  "devDependencies": {
-    "@electric-sql/pglite": "^0.2.0",
-    "jsdom": "^24.0.0"
+    "start": "tsx server.ts",
+    "dev": "tsx watch server.ts",
+    "test": "tsx test.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
-    "cors": "^2.8.5",
-    "express": "^4.19.2",
+    "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
-    "pg": "^8.11.5"
+    "pg": "^8.13.1",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.2.17"
   }
 }

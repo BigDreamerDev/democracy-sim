@@ -7,14 +7,14 @@ services:
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
+    buildFilter:
+      paths: ["server/**", "engine/**"]   # the server imports ../engine, so engine changes must redeploy too
     envVars:
+      - key: NODE_VERSION
+        value: "22"
       - key: JWT_SECRET
-        generateValue: true
+        sync: false   # keep the v1 value so old sessions stay valid
       - key: DATABASE_URL
-        sync: false   # paste your Postgres connection string in the Render dashboard
-
-# Optional free-only diplomacy cabinet variables are best added in the Render dashboard:
-# LLM_FREE_ONLY=true
-# GROQ_API_KEY=...
-# GEMINI_API_KEY=...
-# OPENROUTER_API_KEY=...
+        sync: false   # the Neon connection string
+      - key: ALLOWED_ORIGINS
+        value: https://bigdreamerdev.github.io
