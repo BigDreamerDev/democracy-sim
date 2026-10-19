@@ -105,10 +105,20 @@ scripts/     smoke.ts
 | `GET /api/keys` | user | the caller's live API keys (no secrets) |
 | `POST /api/keys` | user | `{name, scope:'read'\|'act'}` → row + `key` (shown once). Max 5. |
 | `POST /api/keys/revoke` | user | `{id}` |
+| `GET/POST /api/apps`, `/api/apps/update`, `/api/apps/delete` | user | register your apps (max 3); delete revokes every key it issued |
+| `GET /api/apps/info?app=` | user | app details for the consent screen |
+| `POST /api/authorize` | user | `{app, scope, state}` → `{redirect}` = registered redirect + `#key=…&scope=…&state=…` |
+| `GET/POST /api/hooks`, `/api/hooks/delete`, `/api/hooks/test` | user | webhooks (max 3, https) |
 
 **Public API `/api/v1/*`** (`server/public.ts`, documented for players in `API.md`):
-`GET /` and `GET /commands` need no key; `GET /me`, `GET /state` (`?since=&wait=` long-poll,
-ETag), `GET /gazette?since=`, `POST /act` need `Authorization: Bearer rlm_…`.
+`GET /`, `GET /commands` and `GET /apps` (directory) need no key; `GET /me`, `GET /state`
+(`?since=&wait=` long-poll, ETag), `GET /gazette?since=`, `POST /act` and `/hooks*` need
+`Authorization: Bearer rlm_…`.
+Apps, Sign in with the Realm and webhooks live in `server/apps.ts` (tables `v2_apps`, `v2_hooks`,
+`v2_api_keys.app_id`). After every save, new Gazette entries are POSTed to webhooks, signed
+`X-Realm-Signature: sha256=HMAC(secret, body)`; hosts resolving to private IPs are refused (SSRF).
+Gazette entries made through `/api/v1/act` get `via: <key name>` (the bot badge).
+The consent page (`#/authorize`) refuses to render inside a frame (clickjacking).
 Keys are stored as sha256 in `v2_api_keys`; session JWTs are refused there and keys are
 refused everywhere else. CORS is `*` (no cookies exist, so nothing ambient to steal).
 120 req/min/key. `act` needs scope `act` and a cmd in `CATALOG`, so `admin.*` is unreachable.

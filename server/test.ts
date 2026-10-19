@@ -12,7 +12,9 @@ for (const [u, n, a] of [['admin', 'Uzair', true], ['amara', 'Amara', false], ['
   await q('INSERT INTO users (username, display_name, password_hash, is_admin) VALUES ($1,$2,$3,$4)', [u, n, h, a]);
 await q("INSERT INTO users (username, display_name, password_hash, approved) VALUES ('late', 'Late', $1, FALSE)", [h]);
 
-const { app, getWorld } = await makeApp({ q, secret: 's', origins: ['http://ok.test'], now: () => t, log: () => {} });
+const deliveries: { url: string; body: any; headers: any }[] = [];
+const send = async (url: string, body: string, headers: any) => (deliveries.push({ url, body: JSON.parse(body), headers }), 200);
+const { app, getWorld } = await makeApp({ q, secret: 's', origins: ['http://ok.test'], now: () => t, log: () => {}, send });
 const srv = app.listen(0);
 const base = `http://localhost:${(srv.address() as any).port}`;
 const call = async (path: string, body?: any, token?: string, origin?: string) => {
@@ -71,6 +73,7 @@ try {
   assert.equal((await call('/api/state', undefined, A)).status, 401);
   assert.equal((await call('/api/state', undefined, pw.body.token)).status, 200);
 
+  const A2 = () => pw.body.token;
   // admin-only routes
   assert.equal((await call('/api/admin/export', undefined, B)).status, 403);
   const R = (await call('/api/login', { username: 'admin', password: 'password' })).body.token;
@@ -102,6 +105,35 @@ try {
   assert.ok(Object.keys((await call('/api/v1/commands')).body).length > 50);
   await call('/api/keys/revoke', { id: rw.id }, T);
   assert.equal((await call('/api/v1/me', undefined, rw.key)).status, 401, 'revoked key refused');
+  // apps, Sign in with the Realm, the directory, webhooks and the bot badge
+  assert.equal((await call('/api/apps', { name: 'Bad', redirect: 'http://evil.test/cb' }, A2())).status, 400, 'http redirects only for localhost');
+  const made = (await call('/api/apps', { name: 'Realm Bot', description: 'Posts news', homepage: 'https://bot.test', redirect: 'https://bot.test/cb' }, A2())).body;
+  assert.ok(made.client_id.startsWith('app_'));
+  assert.equal((await call('/api/apps/info?app=' + made.client_id, undefined, T)).body.name, 'Realm Bot');
+  const auth = await call('/api/authorize', { app: made.client_id, scope: 'act', state: 'xyz' }, T);
+  assert.ok(auth.body.redirect.startsWith('https://bot.test/cb#key=rlm_'), JSON.stringify(auth.body));
+  assert.ok(auth.body.redirect.endsWith('state=xyz'));
+  assert.equal((await call('/api/authorize', { app: made.client_id, redirect: 'https://evil.test/' }, T)).status, 400, 'redirect must match');
+  const appKey = new URLSearchParams(auth.body.redirect.split('#')[1]).get('key')!;
+  assert.equal((await call('/api/v1/me', undefined, appKey)).body.keyName, 'Realm Bot');
+  const dir = (await call('/api/v1/apps')).body;
+  assert.equal(dir[0].name, 'Realm Bot');
+  assert.equal(dir[0].users, 1);
+  assert.equal((await call('/api/v1/hooks', { url: 'http://insecure.test/' }, appKey)).status, 400, 'https hooks only');
+  const hook = (await call('/api/v1/hooks', { url: 'https://hooks.test/realm' }, appKey)).body;
+  assert.ok(hook.secret.startsWith('whsec_'));
+  assert.ok((await call('/api/v1/hooks/test', { id: hook.id }, appKey)).body.ok);
+  assert.equal(deliveries.at(-1)!.body.event, 'ping');
+  const fp = await call('/api/v1/act', { cmd: 'party.found', args: { name: 'Bot Party', colour: '#aa3300', cofounders: ['u2', 'u4'] } }, appKey);
+  assert.equal(fp.status, 200, JSON.stringify(fp.body));
+  assert.equal(getWorld().gazette[0].via, 'Realm Bot', 'bot badge on the Gazette');
+  await new Promise((r) => setTimeout(r, 50));
+  const g = deliveries.filter((x) => x.body.event === 'gazette').at(-1)!;
+  assert.equal(g.body.entries.at(-1).via, 'Realm Bot');
+  const { createHmac } = await import('node:crypto');
+  assert.equal(g.headers['X-Realm-Signature'], 'sha256=' + createHmac('sha256', hook.secret).update(JSON.stringify(g.body)).digest('hex'), 'signed');
+  await call('/api/apps/delete', { id: made.id }, A2());
+  assert.equal((await call('/api/v1/me', undefined, appKey)).status, 401, 'deleting an app revokes its keys');
   console.log('server ok');
 } finally {
   srv.close();

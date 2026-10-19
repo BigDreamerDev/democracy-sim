@@ -252,6 +252,17 @@ export const API_URL = API;
 export const listKeys = () => api('/api/keys');
 export const createKey = (name: string, scope: 'read' | 'act') => api('/api/keys', { name, scope });
 export const revokeKey = (id: number) => api('/api/keys/revoke', { id });
+export const myApps = () => api('/api/apps');
+export const makeApp = (a: any) => api('/api/apps', a);
+export const updateApp = (a: any) => api('/api/apps/update', a);
+export const deleteApp = (id: number) => api('/api/apps/delete', { id });
+export const appInfo = (id: string) => api('/api/apps/info?app=' + encodeURIComponent(id));
+export const authorizeApp = (b: any) => api('/api/authorize', b);
+export const appDirectory = () => api('/api/v1/apps');
+export const listHooks = () => api('/api/hooks');
+export const addHook = (url: string) => api('/api/hooks', { url });
+export const deleteHook = (id: number) => api('/api/hooks/delete', { id });
+export const testHook = (id: number) => api('/api/hooks/test', { id });
 export async function downloadExport() {
   const w = await api('/api/admin/export');
   const blob = new Blob([JSON.stringify(w, null, 1)], { type: 'application/json' });

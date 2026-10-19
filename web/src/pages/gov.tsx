@@ -16,6 +16,7 @@ export function Realm() {
     ['Society', [['#/press', 'The press', `${Object.keys(w.papers).length} papers`], ['#/gazette', 'The Gazette', 'Record and front pages'], ['#/court', 'Supreme Court', has('court') ? 'Cases' : 'Needs an amendment', !has('court')], ['#/crises', 'Crises', 'One a week'], ['#/season', 'Season', `Season ${w.season.n}`], ['#/calendar', 'Calendar', 'The weekly rhythm']]],
     ['The backroom', [['#/backroom', 'Cards and deals', intrigueOpen(w) ? 'Secrets you hold' : 'Opens in week 3', !intrigueOpen(w)], ['#/plots', 'Plots', intrigueOpen(w) ? 'Coups' : 'Opens in week 3', !intrigueOpen(w)], ['#/exile', 'Exile', 'Where traitors go']]]
   ];
+  groups.push(['Made by players', [['#/apps', 'App directory', 'Bots and frontends people have built'], ['#/developers', 'Build your own app', 'API keys, apps and webhooks']]]);
   if (w.citizens[me].admin) groups.push(['Returning Officer', [['#/admin', 'Admin', 'Approvals, calendar, fixes']]]);
   return (
     <Page kicker={w.config.realmName} title="The realm" intro="Everything in the game. Locked areas open once Parliament passes the law that creates them.">

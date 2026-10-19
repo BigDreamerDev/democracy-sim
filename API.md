@@ -77,7 +77,69 @@ Refused: `400 { "ok": false, "error": "Voting opens when the debate ends." }`
 
 Error messages are written for players. Show them as they are.
 
-## 4. Errors and limits
+### `GET /api/v1/apps` — no key
+The app directory: apps players have registered and listed.
+`[{ client_id, name, description, homepage, by, users, created_at }]`
+
+### Webhooks — any key
+Rather than polling, have the realm POST to you whenever something enters the Gazette.
+
+| | |
+|-|-|
+| `GET /api/v1/hooks` | your webhooks |
+| `POST /api/v1/hooks` `{ url }` | add one (https only, up to 3). The reply includes `secret`, shown once. |
+| `POST /api/v1/hooks/test` `{ id }` | send a `ping` now; replies `{ ok, status }` |
+| `POST /api/v1/hooks/delete` `{ id }` | remove one |
+
+You can also manage them under **You → Build your own app**. Each delivery:
+
+```http
+POST https://your-bot.example/realm
+Content-Type: application/json
+X-Realm-Event: gazette
+X-Realm-Signature: sha256=<hex HMAC-SHA256 of the raw body, keyed with your secret>
+
+{ "event": "gazette", "realm": "The Realm", "version": 512, "sentAt": 1792432800000,
+  "entries": [ { "id": "g881", "at": 1792432799000, "kind": "law", "text": "The Defence Act becomes law.", "link": "#/law/L004", "via": null } ] }
+```
+
+Entries come oldest first and are public news only (nothing secret is ever sent). Answer with
+any 2xx within 5 seconds. Deliveries are not retried; after 20 failures in a row the hook
+switches off until a successful test. Check the signature before trusting a delivery:
+
+```js
+import { createHmac, timingSafeEqual } from 'node:crypto';
+const ok = (raw, header, secret) => {
+  const want = 'sha256=' + createHmac('sha256', secret).update(raw).digest('hex');
+  return header?.length === want.length && timingSafeEqual(Buffer.from(header), Buffer.from(want));
+};
+```
+
+## 4. Sign in with the Realm
+
+Let other players use your app without copying keys around.
+
+1. **Register your app** under **You → Build your own app → Apps you've made**. Give it a redirect
+   address: `https://…`, or `http://localhost:…` while developing. You get a `client_id`.
+2. **Send the player to the consent page:**
+   ```
+   https://bigdreamerdev.github.io/democracy-sim/#/authorize?app=<client_id>&scope=act&state=<random>
+   ```
+   `scope` is `read` or `act`. Put a random `state` in, and check it comes back unchanged.
+3. They sign in (if they aren't already) and press **Allow**. They land on your redirect with the key
+   in the fragment, which never reaches any server:
+   ```
+   https://your-app.example/callback#key=rlm_…&scope=act&state=<random>
+   ```
+4. Read it with `new URLSearchParams(location.hash.slice(1))`, store it, and use it as a normal key.
+
+Signing in again replaces the old key. The player can revoke it at any time, and deleting your app
+revokes every key it was given. Apps don't count towards a player's 5 personal keys.
+
+Everything your app does through `/act` that reaches the Gazette is marked **via <your app>**,
+for everyone to see.
+
+## 5. Errors and limits
 
 | Status | Meaning |
 |-|-|
@@ -90,7 +152,7 @@ Error messages are written for players. Show them as they are.
 Arguments must be plain JSON: strings up to 4000 characters, lists up to 50 items.
 Admin actions are never available through the API.
 
-## 5. The world
+## 6. The world
 
 Times are milliseconds since 1970 (UTC). Ids are strings. Citizens are `u<number>`.
 Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, `bank:<id>`.
@@ -115,12 +177,12 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | `papers`, `stories`, `frontpages` | the press |
 | `cases`, `crises`, `meters` | court, crises, and the `prosperity`/`stability` meters (0–100) |
 | `cards`, `deals`, `demands`, `plots` | the backroom: only what you're allowed to see |
-| `gazette[]` | newest first, up to 300 |
+| `gazette[]` | newest first, up to 300. `via` names the app, if one did it. |
 | `viewer` | your id |
 
 The full shape lives in [`engine/world.ts`](engine/world.ts); the rules in [`engine/`](engine/).
 
-## 6. Recipes
+## 7. Recipes
 
 ### Use the official engine for formatting
 `engine/` is plain TypeScript with no dependencies. Copy it in and you get the same helpers the
@@ -165,7 +227,7 @@ for p in w["proposals"].values():
 [`examples/minimal.html`](examples/minimal.html): open it in a browser, paste a key, and you
 have a working (ugly) client in ~80 lines. Start from there.
 
-## 7. Fair play
+## 8. Fair play
 
 - Bots play by the same rules as people and are logged with the key's prefix.
 - Automating your own play is fine. Flooding, or scraping someone else's key, isn't.

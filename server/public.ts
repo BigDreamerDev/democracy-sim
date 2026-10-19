@@ -19,6 +19,7 @@ export type Ctx = {
   save: () => Promise<any>;
   schedule: () => void;
   loadUser: (id: number) => Promise<any>;
+  apps: any;
 };
 
 const hash = (k: string) => createHash('sha256').update(k).digest('hex');
@@ -49,10 +50,13 @@ export function publicApi(c: Ctx) {
       version: 1,
       docs: 'https://github.com/BigDreamerDev/democracy-sim/blob/main/API.md',
       auth: 'Authorization: Bearer rlm_… (make a key on your passport in the app)',
-      endpoints: ['GET /api/v1/me', 'GET /api/v1/state', 'GET /api/v1/gazette', 'GET /api/v1/commands', 'POST /api/v1/act']
+      endpoints: ['GET /api/v1/me', 'GET /api/v1/state', 'GET /api/v1/gazette', 'GET /api/v1/commands', 'GET /api/v1/apps', 'POST /api/v1/act', 'GET|POST /api/v1/hooks', 'POST /api/v1/hooks/delete', 'POST /api/v1/hooks/test'],
+      signIn: 'Send players to <site>/#/authorize?app=<client_id>&scope=read|act&state=<anything>; they come back to your redirect with #key=…&scope=…&state=…'
     })
   );
   r.get('/commands', (_req, res) => res.json(CATALOG));
+  // the app directory: apps players have made and listed
+  r.get('/apps', async (_req, res) => res.json(await c.apps.directory()));
 
   r.use(async (req: any, res, next) => {
     const k = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
@@ -123,7 +127,14 @@ export function publicApi(c: Ctx) {
     try {
       await c.serial(async () => {
         await c.catchUp();
-        c.setWorld(run(c.world(), req.cid, cmd, args || {}));
+        const top = c.world().gazette[0]?.id;
+        const w = run(c.world(), req.cid, cmd, args || {});
+        // the bot badge: anything this action put in the Gazette says which app did it
+        for (const g of w.gazette) {
+          if (g.id === top) break;
+          g.via = req.key.name;
+        }
+        c.setWorld(w);
         await c.save();
       });
       c.schedule();
@@ -136,6 +147,19 @@ export function publicApi(c: Ctx) {
       res.status(500).json({ ok: false, error: 'Something went wrong on the server. It has been logged.' });
     }
   });
+
+  // webhooks, for bots that would rather be told than ask
+  const wrap = (fn: (req: any) => Promise<any>) => async (req: any, res: any) => {
+    try {
+      res.json(await fn(req));
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || 'That did not work.' });
+    }
+  };
+  r.get('/hooks', wrap((req) => c.apps.listHooks(req.key.user_id)));
+  r.post('/hooks', wrap((req) => c.apps.addHook(req.key.user_id, req.body?.url)));
+  r.post('/hooks/delete', wrap(async (req) => (await c.apps.removeHook(req.key.user_id, Number(req.body?.id) || 0), { ok: true })));
+  r.post('/hooks/test', wrap((req) => c.apps.testHook(req.key.user_id, Number(req.body?.id) || 0, c.world().config.realmName)));
 
   r.use((_req, res) => res.status(404).json({ error: 'No such endpoint. GET /api/v1 lists them.' }));
   return r as express.Router & { forgetKey: (h: string) => void };

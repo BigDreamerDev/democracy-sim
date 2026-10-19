@@ -5,15 +5,18 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Q, SCHEMA } from './db';
 import { publicApi, newKey, keyHash, MAX_KEYS } from './public';
+import { apps, APPS_SCHEMA, Sender } from './apps';
 import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate } from '../engine/index';
 
-export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void };
+export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void; send?: Sender };
 
 export async function makeApp(o: Options) {
   const { q, secret } = o;
   const now = o.now || (() => Date.now());
   const log = o.log || ((...a: any[]) => console.log('[realm]', ...a));
   await q(SCHEMA);
+  await q(APPS_SCHEMA);
+  const A = apps(q, (...a: any[]) => log(...a), o.send);
 
   // ---------- the world ----------
   let world: any;
@@ -28,9 +31,18 @@ export async function makeApp(o: Options) {
   // `version` goes up on every save; long-polling API clients wait on it
   let version = Number((await q('SELECT version FROM v2_world WHERE id = 1')).rows[0]?.version || 0);
   let waiters: (() => void)[] = [];
+  let lastGz: string | undefined = world.gazette[0]?.id;
   const save = async () => {
     await q('UPDATE v2_world SET state = $1, version = version + 1, updated_at = now() WHERE id = 1', [JSON.stringify(world)]);
     version++;
+    // push new Gazette entries to webhooks, oldest first, without holding up the request
+    const top = world.gazette[0]?.id;
+    if (top !== lastGz) {
+      const i = lastGz ? world.gazette.findIndex((g: any) => g.id === lastGz) : world.gazette.length;
+      const fresh = i > 0 ? world.gazette.slice(0, i).reverse() : [];
+      lastGz = top;
+      A.broadcast(fresh, world.config.realmName, version).catch((e) => log('webhooks failed', e));
+    }
     const w = waiters;
     waiters = [];
     w.forEach((f) => f());
@@ -107,7 +119,7 @@ export async function makeApp(o: Options) {
   app.set('trust proxy', 1);
   app.use(express.json({ limit: '200kb' }));
   // the public API for players' own apps: any origin, API keys only (see public.ts and API.md)
-  const v1 = publicApi({ q, now, log, world: () => world, setWorld: (w) => (world = w), version: () => version, waitForChange, serial, catchUp, save, schedule, loadUser: async (id) => userCache.get(id) || loadUser(id) });
+  const v1 = publicApi({ q, now, log, world: () => world, setWorld: (w) => (world = w), version: () => version, waitForChange, serial, catchUp, save, schedule, apps: A, loadUser: async (id) => userCache.get(id) || loadUser(id) });
   app.use('/api/v1', v1);
   // CORS that fails loudly: an unknown origin gets a clear 403 instead of a silent 200 with no header
   app.use((req, res, next) => {
@@ -206,13 +218,13 @@ export async function makeApp(o: Options) {
 
   // personal API keys, managed from the official site only
   app.get('/api/keys', auth, async (req: any, res) => {
-    res.json((await q('SELECT id, name, prefix, scope, created_at, last_used FROM v2_api_keys WHERE user_id = $1 AND NOT revoked ORDER BY id', [req.user.id])).rows);
+    res.json((await q('SELECT k.id, k.name, k.prefix, k.scope, k.created_at, k.last_used, k.app_id, a.homepage FROM v2_api_keys k LEFT JOIN v2_apps a ON a.id = k.app_id WHERE k.user_id = $1 AND NOT k.revoked ORDER BY k.id', [req.user.id])).rows);
   });
   app.post('/api/keys', auth, async (req: any, res) => {
     const name = String(req.body?.name || '').trim().slice(0, 40);
     const scope = req.body?.scope === 'act' ? 'act' : 'read';
     if (name.length < 2) return res.status(400).json({ error: 'Name the key after the app that will use it.' });
-    const n = (await q('SELECT count(*)::int AS n FROM v2_api_keys WHERE user_id = $1 AND NOT revoked', [req.user.id])).rows[0].n;
+    const n = (await q('SELECT count(*)::int AS n FROM v2_api_keys WHERE user_id = $1 AND NOT revoked AND app_id IS NULL', [req.user.id])).rows[0].n;
     if (n >= MAX_KEYS) return res.status(400).json({ error: `You can have ${MAX_KEYS} keys. Revoke one first.` });
     const key = newKey();
     const row = (await q('INSERT INTO v2_api_keys (user_id, name, prefix, key_hash, scope) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, prefix, scope, created_at, last_used', [req.user.id, name, key.slice(0, 10), keyHash(key), scope])).rows[0];
@@ -224,6 +236,33 @@ export async function makeApp(o: Options) {
     v1.forgetKey(row.key_hash);
     res.json({ ok: true });
   });
+
+  // your apps, "Sign in with the Realm", and webhooks (first-party site; apps get the same via /api/v1)
+  const handle = (fn: (req: any) => Promise<any>) => async (req: any, res: any) => {
+    try {
+      res.json(await fn(req));
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || 'That did not work.' });
+    }
+  };
+  app.get('/api/apps', auth, handle((req) => A.mine(req.user.id)));
+  app.post('/api/apps', auth, handle((req) => A.create(req.user.id, req.body)));
+  app.post('/api/apps/update', auth, handle((req) => A.update(req.user.id, req.body)));
+  app.post('/api/apps/delete', auth, handle(async (req) => ((await A.remove(req.user.id, Number(req.body?.id) || 0)).forEach((h: string) => v1.forgetKey(h)), { ok: true })));
+  app.get('/api/apps/info', auth, handle(async (req) => {
+    const a: any = await A.info(String(req.query.app || ''));
+    delete a.id;
+    return a;
+  }));
+  app.post('/api/authorize', auth, handle(async (req) => {
+    const r = await A.authorize(req.user.id, req.body, newKey);
+    r.revoked.forEach((h: string) => v1.forgetKey(h));
+    return { redirect: r.redirect };
+  }));
+  app.get('/api/hooks', auth, handle((req) => A.listHooks(req.user.id)));
+  app.post('/api/hooks', auth, handle((req) => A.addHook(req.user.id, req.body?.url)));
+  app.post('/api/hooks/delete', auth, handle(async (req) => (await A.removeHook(req.user.id, Number(req.body?.id) || 0), { ok: true })));
+  app.post('/api/hooks/test', auth, handle((req) => A.testHook(req.user.id, Number(req.body?.id) || 0, world.config.realmName)));
 
   // the Returning Officer's tools that sit outside the game
   const admin = (req: any, res: any, next: any) => (req.user?.is_admin ? next() : res.status(403).json({ error: 'Returning Officer only.' }));
