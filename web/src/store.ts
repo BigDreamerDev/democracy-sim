@@ -9,7 +9,7 @@ const API: string = ((window as any).API_BASE || '').replace(/\/$/, '');
 export const ONLINE = !!API;
 const TOKEN = 'realm-token';
 
-type State = { world: any; me: string; autoBots: boolean; history: any[]; toast: { text: string; err: boolean } | null; tick: number; signedIn?: boolean; loading?: boolean; offline?: boolean };
+type State = { world: any; me: string; autoBots: boolean; history: any[]; toast: { text: string; err: boolean } | null; tick: number; signedIn?: boolean; loading?: boolean; offline?: boolean; oauthNote?: string };
 
 function load(): State {
   if (ONLINE) return { world: null, me: '', autoBots: false, history: [], toast: null, tick: 0, signedIn: !!getToken(), loading: !!getToken() };
@@ -175,7 +175,10 @@ async function api(path: string, body?: any) {
     throw new Error('Cannot reach the server. It may be waking up; try again in a moment.');
   }
   const data = await r.json().catch(() => ({}));
-  if (r.status === 401) {
+  // the server swaps in a fresh session token once yours is a week old
+  const fresh = r.headers.get('X-Realm-Token');
+  if (fresh && getToken()) setToken(fresh);
+  if (r.status === 401 && getToken()) {
     setToken('');
     set({ signedIn: false, world: null, loading: false });
   }
@@ -277,8 +280,59 @@ export async function downloadExport() {
   a.download = 'realm-full-export.json';
   a.click();
 }
+// ---------- sign in with Discord, Google, Microsoft or Apple ----------
+const OAUTH_KEY = 'realm-oauth-browser';
+function browserNonce() {
+  let n = '';
+  try {
+    n = sessionStorage.getItem(OAUTH_KEY) || '';
+    if (!n) {
+      const b = new Uint8Array(24);
+      crypto.getRandomValues(b);
+      n = btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      sessionStorage.setItem(OAUTH_KEY, n);
+    }
+  } catch {}
+  return n;
+}
+export const oauthProviders = (): Promise<{ id: string; name: string }[]> => (ONLINE ? api('/api/oauth/providers').catch(() => []) : Promise.resolve([]));
+export async function beginOAuth(provider: string, mode: 'login' | 'link' = 'login') {
+  const d = await api('/api/oauth/begin', { provider, mode, browser: browserNonce() });
+  location.assign(d.url);
+}
+// back from the provider: #/oauth?flow=…(&error=…)
+async function finishOAuth() {
+  const m = location.hash.match(/^#\/oauth\?(.*)$/);
+  if (!m) return false;
+  const qs = new URLSearchParams(m[1]);
+  history.replaceState(null, '', location.pathname + location.search + '#/');
+  const err = qs.get('error');
+  try {
+    const d = await api('/api/oauth/finish', { flow: qs.get('flow'), browser: browserNonce() });
+    if (d.token) {
+      setToken(d.token);
+      set({ signedIn: true, loading: true });
+      await refresh();
+    } else if (d.linked) {
+      await refresh();
+      location.hash = '#/you';
+      setTimeout(() => toast(`Linked. You can now sign in with ${d.linked[0].toUpperCase() + d.linked.slice(1)}.`), 300);
+    } else if (d.waiting) set({ loading: false, oauthNote: 'Your account is made. The Returning Officer will approve it soon; then sign in the same way.' });
+  } catch (e: any) {
+    set({ loading: false, oauthNote: err || e.message });
+    if (getToken()) refresh();
+  }
+  return true;
+}
+export const securityInfo = () => api('/api/me/security');
+export const unlinkProvider = (provider: string) => api('/api/oauth/unlink', { provider });
+export async function signOutEverywhere() {
+  const d = await api('/api/logout-all', {});
+  setToken(d.token);
+}
+
 if (ONLINE) {
-  refresh();
+  finishOAuth().then((handled) => !handled && refresh());
   // poll while the page is open; the local clock ticks between polls so countdowns move
   setInterval(() => !document.hidden && !pending && refresh(), 15_000);
   setInterval(() => state.world && !document.hidden && set({ world: { ...state.world, now: Math.max(state.world.now, Date.now() + skew) } }), 30_000);

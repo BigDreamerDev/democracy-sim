@@ -34,6 +34,10 @@ The Returning Officer plays too and can hold office, so every admin action, incl
 
 What doesn't hold: the RO can reset a password and sign in as someone; that reset is public. Someone with a friend's WhatsApp has their vote.
 
+## Security
+
+See [SECURITY.md](SECURITY.md) for the threat model, what's been fixed, and how to switch on sign-in with Discord, Google, Microsoft or Apple.
+
 ## Build your own app
 
 There's a public API: make a key under **You → Build your own app**, then see [API.md](API.md). [examples/minimal.html](examples/minimal.html) is a working client in one file.

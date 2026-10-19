@@ -386,3 +386,27 @@ export function MultiBallot(p: { head: ComponentChildren; options: BallotOpt[]; 
     </div>
   );
 }
+
+// a password box with a show/hide toggle and a caps-lock warning; `autoComplete` tells password managers what it is
+export function PasswordField(p: { label: ComponentChildren; value: string; onInput: (v: string) => void; autoComplete: 'current-password' | 'new-password'; hint?: ComponentChildren }) {
+  const [show, setShow] = useState(false);
+  const [caps, setCaps] = useState(false);
+  const check = (e: any) => setCaps(!!e.getModifierState?.('CapsLock'));
+  return (
+    <label class="f">
+      {p.label}
+      <span class="pw">
+        <input class="input" type={show ? 'text' : 'password'} value={p.value} autoComplete={p.autoComplete} autoCapitalize="none" spellcheck={false} maxLength={72}
+          onInput={(e: any) => p.onInput(e.target.value)} onKeyUp={check} onKeyDown={check} />
+        <button type="button" class="pw-eye" aria-label={show ? 'Hide password' : 'Show password'} aria-pressed={show ? 'true' : 'false'} onClick={() => setShow(!show)}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" />{show && <path d="M3 3l18 18" />}
+          </svg>
+          <span>{show ? 'Hide' : 'Show'}</span>
+        </button>
+      </span>
+      {caps && <span class="small" style={{ color: 'var(--red)', fontWeight: 700 }}>Caps Lock is on.</span>}
+      {p.hint && <span class="small muted" style={{ fontWeight: 400 }}>{p.hint}</span>}
+    </label>
+  );
+}

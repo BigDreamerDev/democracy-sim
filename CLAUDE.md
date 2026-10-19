@@ -66,7 +66,9 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
 web/src/     Preact + Vite. main.tsx (router, tabs), store.ts, ui.tsx (shared components),
              Sidebar.tsx, DemoPanel.tsx (demo only), pages/*.tsx, styles.css
 server/      app.ts (first-party routes), public.ts (/api/v1 for players' own apps), db.ts (pg or PGlite + SCHEMA),
+             security.ts (passwords, lockout, headers, rate limits), oauth.ts (Discord/Google/Microsoft/Apple),
              server.ts (boot/env), test.ts
+SECURITY.md  threat model, every finding and fix, what's accepted, and how to set up each sign-in provider
 API.md       public API docs for players. examples/ holds starter kits (one-file client, WhatsApp/Discord
              Gazette bots, vote reminder, webhook receiver); keep them working when the API changes.
 docs/        GitHub Pages output. Hand-kept: config.js, icons/, manifest.webmanifest, sw.js
@@ -104,7 +106,14 @@ scripts/     smoke.ts
 | `POST /api/signup` | — | `{username, display_name, password}` → `{token, me}` or `{waiting:true}`. Only if `flags.openSignup`. |
 | `GET /api/state` | user | → `{world, me, serverNow}` |
 | `POST /api/act` | user | `{cmd, args}` → `{world, me, serverNow}`; 400 `{error}` on GameError |
-| `POST /api/password` | user | `{current, next}` → `{token}`; bumps token_version |
+| `POST /api/password` | user | `{current, next}` → `{token}`; bumps token_version. `current` not needed if the account has no password yet |
+| `POST /api/logout-all` | user | bumps token_version → `{token}` for this device |
+| `GET /api/me/security` | user | `{username, password, lastLogin, identities[], providers[]}` |
+| `GET /api/oauth/providers` | — | configured providers `[{id, name}]` |
+| `POST /api/oauth/begin` | — (user for `mode:'link'`) | `{provider, mode, browser}` → `{url}` to send the browser to |
+| `GET/POST /api/oauth/:p/callback` | — | provider redirects here; sits *before* the CORS check (Apple POSTs from its own origin) |
+| `POST /api/oauth/finish` | — | `{flow, browser}` → `{token, me}` / `{linked}` / `{waiting}`; single-use, same browser only |
+| `POST /api/oauth/unlink` | user | `{provider}`; refused if it's your last sign-in method |
 | `GET /api/admin/export` | RO | full unredacted world |
 | `POST /api/admin/password` | RO | `{citizen}` → `{temp}`; announced in the Gazette |
 | `POST /api/admin/reset` | RO | `{confirm:'RESET THE REALM'}`; snapshots first |
@@ -134,7 +143,9 @@ Keys are stored as sha256 in `v2_api_keys`; session JWTs are refused there and k
 refused everywhere else. CORS is `*` (no cookies exist, so nothing ambient to steal).
 120 req/min/key. `act` needs scope `act` and a cmd in `CATALOG`, so `admin.*` is unreachable.
 
-Auth is `Authorization: Bearer <jwt>`, JWT `{id, tv}` signed with `JWT_SECRET`, 60 days.
+Auth is `Authorization: Bearer <jwt>`, JWT `{id, tv}` signed HS256 with `JWT_SECRET` (≥24 chars or the server won't boot), 30 days,
+refreshed via the `X-Realm-Token` response header after 7. Passwords: `passwordProblem()` for every new one, bcrypt cost 12,
+lockout after 5 failures (`v2_accounts`). **Never link a provider identity by email** (see SECURITY.md O6).
 Citizen id = `'u' + users.id`.
 
 ### The client (`web/src/store.ts`)
@@ -173,6 +184,7 @@ Citizen id = `'u' + users.id`.
 9. **Validate every argument in the engine.** Third-party clients send anything. `run()`
    rejects non-JSON, long strings and deep nesting; each command must still check that enums
    are one of the allowed values before storing them.
+10. **Security changes get a line in SECURITY.md.** Keep the findings table true.
 
 ## Traps
 
@@ -243,7 +255,8 @@ only; never alter or drop v1's `users`. Tell Uzair to **snapshot Neon before dep
 - Commit the rebuilt `docs/assets` and `docs/index.html` with any web/engine change —
   Pages serves `docs/` straight from the branch, there is no CI build.
 - Merging to `main` deploys both: Render redeploys the API, Pages republishes `docs/`.
-- Render env: `DATABASE_URL`, `JWT_SECRET` (the v1 value), `ALLOWED_ORIGINS`, `NODE_VERSION=22`.
+- Render env: `DATABASE_URL`, `JWT_SECRET` (the v1 value), `ALLOWED_ORIGINS`, `NODE_VERSION=22`, `PUBLIC_URL`, and any
+  `DISCORD_/GOOGLE_/MICROSOFT_/APPLE_*` sign-in settings (SECURITY.md).
 - `.github/workflows/keepawake.yml` pings `/api/health` every 10 min, 06:00–00:59 UTC.
 
 ## Frontend design

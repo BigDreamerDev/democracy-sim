@@ -673,3 +673,17 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .conv-group { display: grid; gap: 4px; }
 .conv-group + .conv-group { margin-top: 18px; }
 .ballot > button + .b-confirm { border-top: 1.5px solid var(--ink); }
+
+/* ---------- sign-in: passwords and providers ---------- */
+.pw { position: relative; display: block; }
+.pw .input { padding-right: 84px; }
+.pw-eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 8px; border: 0; background: transparent; color: var(--muted); font-size: 13px; font-weight: 700; border-radius: 3px; }
+.pw-eye:hover { color: var(--ink); background: var(--soft); }
+.sso { display: grid; gap: 8px; }
+.sso-btn { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 14px; border: 1.5px solid var(--ink); background: var(--card); color: var(--ink); font-weight: 700; font-size: 15px; border-radius: 3px; transition: transform .15s var(--spring), background-color .15s ease; }
+.sso-btn:hover:not(:disabled) { background: var(--soft); }
+.sso-btn:active:not(:disabled) { transform: scale(.98); }
+.sso-mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid currentColor; font-family: var(--serif); font-size: 15px; font-weight: 400; }
+.or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; }
+.or::before, .or::after { content: ''; flex: 1; border-top: 1px solid var(--rule); }
+.dark .sso-btn { background: var(--night-2); color: var(--night-ink); border-color: var(--night-line); }

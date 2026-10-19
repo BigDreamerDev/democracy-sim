@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
-import { useStore, act, ONLINE, signOut, changePassword, toast } from '../store';
+import { useStore, act, ONLINE, signOut, changePassword, toast, securityInfo, unlinkProvider, beginOAuth, signOutEverywhere } from '../store';
 import { TUTORIAL } from '../../../engine/tutorial';
-import { Page, Sec, Card, Btn, Who, Left, When, Seal, Empty, LinkRow, Seg, Meter, Field, Pick } from '../ui';
+import { Page, Sec, Card, Btn, Who, Left, When, Seal, Empty, LinkRow, Seg, Meter, Field, Pick, PasswordField } from '../ui';
 import { nm, isMP, isPM, isHOS, bal, ca, intrigueOpen, fmtTime, fmtDay, ordinal, METERS, standing, inDanger, canSeeCard, CAL_EVENTS, DAYS, nextAt, hosTitle, upcoming, officesOf, exiled } from '../../../engine/index';
 import { canVote } from '../../../engine/politics';
 import { canVoteOn, describe, KINDS } from '../../../engine/proposals';
@@ -313,21 +313,49 @@ export function Passport({ id }: { id?: string }) {
 function Account() {
   const [pw, setPw] = useState({ cur: '', next: '' });
   const [open, setOpen] = useState(false);
+  const [sec, setSec] = useState<any>(null);
+  const load = () => securityInfo().then(setSec).catch(() => {});
+  useEffect(() => void load(), []);
+  const err = (e: any) => toast(e.message, true);
+  const linked = (id: string) => sec?.identities.find((x: any) => x.provider === id);
   return (
-    <Sec title="Account">
-      {open ? (
-        <Card><div class="stack">
-          <Field label="Current password" type="password" value={pw.cur} onInput={(v) => setPw({ ...pw, cur: v })} />
-          <Field label="New password (8+ characters)" type="password" value={pw.next} onInput={(v) => setPw({ ...pw, next: v })} />
-          <Btn full onClick={() => changePassword(pw.cur, pw.next).then(() => (toast('Password changed. Other devices are signed out.'), setOpen(false), setPw({ cur: '', next: '' }))).catch((e) => toast(e.message, true))}>Change password</Btn>
-        </div></Card>
-      ) : (
-        <div class="row" style={{ justifyContent: 'flex-start', gap: 10 }}>
-          <Btn kind="ghost" small onClick={() => setOpen(true)}>Change password</Btn>
-          <Btn kind="ghost" small href="#/developers">Build your own app</Btn>
-          <Btn kind="plain" small onClick={signOut}>Sign out</Btn>
-        </div>
-      )}
+    <Sec title="Account and security" sub={sec ? <>Signed in as <b>{sec.username}</b>{sec.lastLogin && <> · last sign-in <When at={new Date(sec.lastLogin).getTime()} /></>}</> : undefined}>
+      <div class="stack">
+        {sec && sec.providers.length > 0 && (
+          <Card><div class="stack">
+            <b>Sign-in methods</b>
+            <ul class="list">
+              <li class="row"><span>Password</span><span class="small muted">{sec.password ? 'Set' : 'Not set'}</span></li>
+              {sec.providers.map((x: any) => (
+                <li class="row">
+                  <span>{x.name}{linked(x.id)?.email && <span class="small muted"> · {linked(x.id).email}</span>}</span>
+                  {linked(x.id)
+                    ? <Btn small kind="plain" onClick={() => unlinkProvider(x.id).then(() => (toast(`${x.name} unlinked.`), load())).catch(err)}>Unlink</Btn>
+                    : <Btn small kind="ghost" onClick={() => beginOAuth(x.id, 'link').catch(err)}>Link</Btn>}
+                </li>
+              ))}
+            </ul>
+            <span class="small muted">Linking lets you sign in with that account instead of your password. We only learn its name and email, and never post anything.</span>
+          </div></Card>
+        )}
+        {open ? (
+          <Card><div class="stack">
+            {sec?.password !== false && <PasswordField label="Current password" value={pw.cur} onInput={(v) => setPw({ ...pw, cur: v })} autoComplete="current-password" />}
+            <PasswordField label="New password" value={pw.next} onInput={(v) => setPw({ ...pw, next: v })} autoComplete="new-password" hint="At least 10 characters. Changing it signs out your other devices." />
+            <div class="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
+              <Btn small kind="plain" onClick={() => setOpen(false)}>Cancel</Btn>
+              <Btn small onClick={() => changePassword(pw.cur, pw.next).then(() => (toast('Password saved. Other devices are signed out.'), setOpen(false), setPw({ cur: '', next: '' }), load())).catch(err)}>{sec?.password === false ? 'Set password' : 'Change password'}</Btn>
+            </div>
+          </div></Card>
+        ) : (
+          <div class="row" style={{ justifyContent: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+            <Btn kind="ghost" small onClick={() => setOpen(true)}>{sec?.password === false ? 'Set a password' : 'Change password'}</Btn>
+            <Btn kind="ghost" small onClick={() => signOutEverywhere().then(() => toast('Every other device is signed out.')).catch(err)}>Sign out everywhere else</Btn>
+            <Btn kind="ghost" small href="#/developers">Build your own app</Btn>
+            <Btn kind="plain" small onClick={signOut}>Sign out</Btn>
+          </div>
+        )}
+      </div>
     </Sec>
   );
 }

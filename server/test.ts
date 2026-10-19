@@ -14,7 +14,7 @@ await q("INSERT INTO users (username, display_name, password_hash, approved) VAL
 
 const deliveries: { url: string; body: any; headers: any }[] = [];
 const send = async (url: string, body: string, headers: any) => (deliveries.push({ url, body: JSON.parse(body), headers }), 200);
-const { app, getWorld } = await makeApp({ q, secret: 's', origins: ['http://ok.test'], now: () => t, log: () => {}, send });
+const { app, getWorld } = await makeApp({ q, secret: 's', origins: ['http://ok.test'], now: () => t, log: () => {}, send, site: 'http://ok.test/', env: { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsecret' }, publicUrl: 'http://api.test' });
 const srv = app.listen(0);
 const base = `http://localhost:${(srv.address() as any).port}`;
 const call = async (path: string, body?: any, token?: string, origin?: string) => {
@@ -165,6 +165,63 @@ try {
   assert.equal((await call('/api/v1/apps')).body.length, 1);
   await call('/api/apps/delete', { id: made.id }, A2());
   assert.equal((await call('/api/v1/me', undefined, appKey)).status, 401, 'deleting an app revokes its keys');
+  // security: headers, weak passwords, lockout, timing-safe unknown users
+  const h = await fetch(base + '/api/health');
+  assert.equal(h.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(h.headers.get('cache-control'), 'no-store');
+  assert.equal((await call('/api/password', { current: 'password', next: 'password123' }, R)).status, 400, 'common passwords refused');
+  for (let i = 0; i < 4; i++) assert.equal((await call('/api/login', { username: 'cara', password: 'wrong' + i })).status, 401);
+  t += 61_000; // past the per-IP minute
+  const locked = await call('/api/login', { username: 'cara', password: 'wrong5' });
+  assert.ok(/locked/.test(locked.body.error), 'fifth failure locks');
+  assert.equal((await call('/api/login', { username: 'cara', password: 'password' })).status, 429, 'locked even with the right password');
+  t += 16 * 60_000;
+  assert.equal((await call('/api/login', { username: 'cara', password: 'password' })).status, 200, 'unlocks after 15 minutes');
+  assert.equal((await call('/api/state', undefined, 'rlm_x')).status, 401, 'API keys are refused on first-party routes');
+
+  // Sign in with Google (a fake Google: the token endpoint is stubbed)
+  const realFetch = globalThis.fetch;
+  let idClaims: any = {};
+  globalThis.fetch = (async (url: any, init?: any) => {
+    if (String(url).startsWith('https://oauth2.googleapis.com/token')) {
+      const tok = ['e30', Buffer.from(JSON.stringify(idClaims)).toString('base64url'), 'sig'].join('.');
+      return new Response(JSON.stringify({ id_token: tok, access_token: 'x' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return realFetch(url, init);
+  }) as any;
+  const browser = 'b'.repeat(32);
+  const oauth = async (mode: string, token?: string, sub = 'g-123') => {
+    const b = await call('/api/oauth/begin', { provider: 'google', mode, browser }, token, 'http://ok.test');
+    assert.equal(b.status, 200, JSON.stringify(b.body));
+    const u = new URL(b.body.url);
+    assert.equal(u.searchParams.get('code_challenge_method'), 'S256');
+    assert.equal(u.searchParams.get('redirect_uri'), 'http://api.test/api/oauth/google/callback');
+    const state = u.searchParams.get('state')!;
+    idClaims = { iss: 'https://accounts.google.com', aud: 'gid', sub, email: 'bilal@example.com', email_verified: true, name: 'Bilal G', exp: Date.now() / 1000 + 300, nonce: u.searchParams.get('nonce') };
+    const cb = await realFetch(base + '/api/oauth/google/callback?code=abc&state=' + state, { redirect: 'manual' });
+    assert.equal(cb.status, 303);
+    assert.ok(cb.headers.get('location')!.startsWith('http://ok.test/#/oauth?flow='), cb.headers.get('location')!);
+    return state;
+  };
+  let fl = await oauth('login');
+  const nope = await call('/api/oauth/finish', { flow: fl, browser }, undefined, 'http://ok.test');
+  assert.ok(/No account is linked/.test(nope.body.error), 'unknown Google accounts never match by email: ' + JSON.stringify(nope.body));
+  fl = await oauth('link', T);
+  assert.equal((await call('/api/oauth/finish', { flow: fl, browser: 'c'.repeat(32) }, undefined, 'http://ok.test')).status, 400, 'another browser cannot finish');
+  fl = await oauth('link', T);
+  assert.equal((await call('/api/oauth/finish', { flow: fl, browser }, undefined, 'http://ok.test')).body.linked, 'google');
+  fl = await oauth('login');
+  const gl = await call('/api/oauth/finish', { flow: fl, browser }, undefined, 'http://ok.test');
+  assert.equal(gl.body.me, 'u3', 'Google now signs Bilal in');
+  assert.equal((await call('/api/oauth/finish', { flow: fl, browser }, undefined, 'http://ok.test')).status, 400, 'each flow works once');
+  idClaims = {};
+  const sec = await call('/api/me/security', undefined, gl.body.token);
+  assert.equal(sec.body.identities[0].provider, 'google');
+  assert.equal((await call('/api/oauth/unlink', { provider: 'google' }, gl.body.token)).status, 200, 'can unlink when a password exists');
+  globalThis.fetch = realFetch;
+  const out = await call('/api/logout-all', {}, gl.body.token);
+  assert.equal((await call('/api/state', undefined, gl.body.token)).status, 401, 'sign out everywhere kills old tokens');
+  assert.equal((await call('/api/state', undefined, out.body.token)).status, 200);
   console.log('server ok');
 } finally {
   srv.close();

@@ -6,9 +6,11 @@ import jwt from 'jsonwebtoken';
 import { Q, SCHEMA } from './db';
 import { publicApi, newKey, keyHash, MAX_KEYS } from './public';
 import { apps, APPS_SCHEMA, Sender } from './apps';
+import { SECURITY_SCHEMA, passwordProblem, hash, dummyCompare, needsRehash, account, lockedFor, failed, succeeded, headers, limiter } from './security';
+import { providers, authorizeUrl, exchange, random } from './oauth';
 import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate, needs, adminDid } from '../engine/index';
 
-export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void; send?: Sender; site?: string; devOrigins?: boolean };
+export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void; send?: Sender; site?: string; devOrigins?: boolean; env?: Record<string, string | undefined>; publicUrl?: string };
 
 export async function makeApp(o: Options) {
   const { q, secret } = o;
@@ -16,6 +18,10 @@ export async function makeApp(o: Options) {
   const log = o.log || ((...a: any[]) => console.log('[realm]', ...a));
   await q(SCHEMA);
   await q(APPS_SCHEMA);
+  await q(SECURITY_SCHEMA);
+  const env = o.env || process.env;
+  const OAUTH = providers(env);
+  const rate = limiter(now);
   const A = apps(q, (...a: any[]) => log(...a), o.send);
   const SITE = o.site || 'https://bigdreamerdev.github.io/democracy-sim/';
   // a player's alerts, from their own redacted view only, so a personal webhook can never carry someone else's secret
@@ -86,7 +92,10 @@ export async function makeApp(o: Options) {
   schedule();
 
   // ---------- auth ----------
-  const sign = (u: any) => jwt.sign({ id: u.id, tv: u.token_version || 0 }, secret, { expiresIn: '60d' });
+  // Session tokens: HS256 JWTs carrying the user id and token_version. Bumping token_version (password change,
+  // "sign out everywhere", an RO password reset) kills every older token. Tokens last 30 days and are refreshed
+  // in the X-Realm-Token header once they are a week old, so active players stay signed in.
+  const sign = (u: any) => jwt.sign({ id: u.id, tv: u.token_version || 0 }, secret, { expiresIn: '30d', algorithm: 'HS256' });
   const userCache = new Map<number, any>();
   const loadUser = async (id: number) => {
     const u = (await q('SELECT id, username, display_name, is_admin, is_active, approved, token_version FROM users WHERE id = $1', [id])).rows[0];
@@ -95,36 +104,99 @@ export async function makeApp(o: Options) {
   };
   const auth = async (req: any, res: any, next: any) => {
     const t = String(req.headers.authorization || '').replace(/^Bearer /, '');
+    if (t.startsWith('rlm_')) return res.status(401).json({ error: 'API keys only work on /api/v1.' });
+    let p: any;
     try {
-      const p: any = jwt.verify(t, secret);
-      const u = userCache.get(p.id) || (await loadUser(p.id));
-      if (!u || !u.is_active || !u.approved || (u.token_version || 0) !== p.tv) return res.status(401).json({ error: 'Please sign in again.' });
-      req.user = u;
-      req.cid = 'u' + u.id;
-      if (!world.citizens[req.cid]) return res.status(403).json({ error: 'You are not a citizen of this realm yet. Ask the Returning Officer.' });
-      next();
+      p = jwt.verify(t, secret, { algorithms: ['HS256'] });
     } catch {
-      res.status(401).json({ error: 'Please sign in.' });
+      return res.status(401).json({ error: 'Please sign in.' });
     }
+    const u = userCache.get(p.id) || (await loadUser(p.id));
+    if (!u || !u.is_active || !u.approved || (u.token_version || 0) !== p.tv) return res.status(401).json({ error: 'Please sign in again.' });
+    if (rate('user:' + u.id, 120, 60_000)) return res.status(429).json({ error: 'Slow down a little: too many requests from your account.' });
+    req.user = u;
+    req.cid = 'u' + u.id;
+    if (p.iat && now() / 1000 - p.iat > 7 * 86400) res.setHeader('X-Realm-Token', sign(u));
+    if (!world.citizens[req.cid]) return res.status(403).json({ error: 'You are not a citizen of this realm yet. Ask the Returning Officer.' });
+    next();
   };
-  const tries = new Map<string, { n: number; at: number }>();
-  const limited = (key: string) => {
-    const t = tries.get(key);
-    if (!t || now() - t.at > 60_000) {
-      tries.set(key, { n: 1, at: now() });
-      return false;
-    }
-    t.n++;
-    return t.n > 10;
+  const limited = (key: string, n = 10) => rate(key, n, 60_000);
+  const welcome = async (u: any, req: any) => {
+    userCache.set(u.id, u);
+    await succeeded(q, u.id, String(req.ip || ''));
+    const cid = 'u' + u.id;
+    if (!world.citizens[cid] && u.approved)
+      await serial(async () => {
+        addCitizen(world, cid, u.display_name, !!u.is_admin);
+        await save();
+      });
+    return { token: sign(u), me: cid };
   };
+  const audit = (actor: string, cmd: string, ok: boolean, error?: string) => q('INSERT INTO v2_log (actor, cmd, args, ok, error) VALUES ($1, $2, $3, $4, $5)', [actor, cmd, '{}', ok, error || null]).catch(() => {});
 
   // ---------- app ----------
   const app = express();
   app.set('trust proxy', 1);
+  app.disable('x-powered-by');
+  app.use(headers);
   app.use(express.json({ limit: '200kb' }));
   // the public API for players' own apps: any origin, API keys only (see public.ts and API.md)
   const v1 = publicApi({ q, now, log, world: () => world, setWorld: (w) => (world = w), version: () => version, waitForChange, serial, catchUp, save, schedule, apps: A, alertsFor, loadUser: async (id) => userCache.get(id) || loadUser(id) });
   app.use('/api/v1', v1);
+  // ---------- sign in with Discord, Google, Microsoft or Apple ----------
+  const apiBase = (req: any) => (o.publicUrl || env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+  const callbackUrl = (req: any, provider: string) => `${apiBase(req)}/api/oauth/${provider}/callback`;
+  const oauthCallback = async (req: any, res: any) => {
+    const prov = OAUTH[req.params.provider];
+    const src = req.method === 'POST' ? req.body || {} : req.query || {};
+    const state = String(src.state || '');
+    const flow = state && (await q('SELECT *, extract(epoch FROM now() - created_at) AS age FROM v2_oauth_flows WHERE state = $1', [state])).rows[0];
+    const back = (msg?: string) => res.redirect(303, `${flow ? flow.return_to : SITE}#/oauth?flow=${encodeURIComponent(state)}${msg ? '&error=' + encodeURIComponent(msg) : ''}`);
+    if (!prov || !flow || flow.provider !== prov.id || flow.result || Number(flow.age) > 600) return back('That sign-in link has expired. Try again.');
+    const done = (result: string, userId: number | null = null) => q('UPDATE v2_oauth_flows SET result = $1, result_user = $2 WHERE state = $3', [result, userId, state]);
+    try {
+      if (src.error) throw new Error(src.error === 'access_denied' ? 'You cancelled the sign-in.' : `${prov.name} said no.`);
+      const tokens = await exchange(prov, String(src.code || ''), callbackUrl(req, prov.id), flow.verifier);
+      const who = await prov.identity(tokens, { nonce: flow.nonce, form: src });
+      const linked = (await q('SELECT user_id FROM v2_identities WHERE provider = $1 AND subject = $2', [prov.id, who.sub])).rows[0];
+      if (flow.mode === 'link') {
+        if (linked && linked.user_id !== flow.user_id) throw new Error(`That ${prov.name} account is already linked to someone else.`);
+        if (!linked) await q('INSERT INTO v2_identities (provider, subject, user_id, email) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, provider) DO UPDATE SET subject = EXCLUDED.subject, email = EXCLUDED.email', [prov.id, who.sub, flow.user_id, who.email || null]);
+        await done('linked', flow.user_id);
+        audit('u' + flow.user_id, 'auth.link.' + prov.id, true);
+        return back();
+      }
+      if (linked) {
+        await done('login', linked.user_id);
+        return back();
+      }
+      // a new person: only if sign-ups are open, and never by matching an email to an existing account
+      if (!world.flags.openSignup) throw new Error(`No account is linked to that ${prov.name} account. Sign in with your password, then link ${prov.name} from your passport.`);
+      const base = String(who.name || who.email?.split('@')[0] || prov.id).toLowerCase().normalize('NFKD').replace(/[^a-z0-9_]/g, '').slice(0, 14) || 'citizen';
+      let username = base.length >= 3 ? base : base + 'citizen';
+      while ((await q('SELECT 1 FROM users WHERE lower(username) = $1', [username])).rows.length) username = base.slice(0, 14) + Math.floor(1000 + Math.random() * 9000);
+      const name = String(who.name || username).replace(/\s+/g, ' ').trim().slice(0, 24) || username;
+      const approved = !world.flags.requireApproval;
+      const u = (await q('INSERT INTO users (username, display_name, password_hash, approved) VALUES ($1, $2, $3, $4) RETURNING *', [username, name, await hash(random(24)), approved])).rows[0];
+      await q('INSERT INTO v2_accounts (user_id, no_password) VALUES ($1, TRUE) ON CONFLICT (user_id) DO UPDATE SET no_password = TRUE', [u.id]);
+      await q('INSERT INTO v2_identities (provider, subject, user_id, email) VALUES ($1, $2, $3, $4)', [prov.id, who.sub, u.id, who.email || null]);
+      await serial(async () => {
+        if (approved) addCitizen(world, 'u' + u.id, name, false);
+        else world.pending.push({ id: 'su' + u.id, uid: 'u' + u.id, name, userId: u.id });
+        await save();
+      });
+      await done(approved ? 'login' : 'waiting', u.id);
+      audit('u' + u.id, 'auth.signup.' + prov.id, true);
+      back();
+    } catch (e: any) {
+      await done('error:' + String(e.message || 'Sign-in failed.').slice(0, 200));
+      log('oauth failed', prov.id, e.message);
+      back(String(e.message || 'Sign-in failed.'));
+    }
+  };
+  app.get('/api/oauth/:provider/callback', oauthCallback);
+  app.post('/api/oauth/:provider/callback', express.urlencoded({ extended: false, limit: '20kb' }), oauthCallback);
+
   // CORS that fails loudly: an unknown origin gets a clear 403 instead of a silent 200 with no header
   app.use((req, res, next) => {
     const origin = req.headers.origin;
@@ -137,6 +209,7 @@ export async function makeApp(o: Options) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Expose-Headers', 'X-Realm-Token');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       if (req.method === 'OPTIONS') return res.sendStatus(204);
     }
@@ -146,49 +219,131 @@ export async function makeApp(o: Options) {
   app.get('/api/health', (_req, res) => res.json({ ok: true, now: now(), phase: world.phase }));
 
   app.post('/api/login', async (req, res) => {
-    if (limited('login:' + req.ip)) return res.status(429).json({ error: 'Too many attempts. Wait a minute.' });
+    if (limited('login:' + req.ip)) return res.status(429).json({ error: 'Too many attempts from here. Wait a minute.' });
     const { username, password } = req.body || {};
-    const u = (await q('SELECT * FROM users WHERE lower(username) = lower($1)', [String(username || '').trim()])).rows[0];
-    if (!u || !u.is_active || !(await bcrypt.compare(String(password || ''), u.password_hash))) return res.status(401).json({ error: 'Wrong username or password.' });
+    const pw = String(password || '').slice(0, 200);
+    const u = (await q('SELECT * FROM users WHERE lower(username) = lower($1)', [String(username || '').trim().slice(0, 40)])).rows[0];
+    if (!u || !u.is_active) {
+      await dummyCompare(pw);
+      return res.status(401).json({ error: 'Wrong username or password.' });
+    }
+    const acc = await account(q, u.id);
+    const wait = lockedFor(acc, now());
+    if (wait) return res.status(429).json({ error: `Too many wrong passwords. This account is locked for ${Math.ceil(wait / 60_000)} more minutes.` });
+    if (acc.no_password || !(await bcrypt.compare(pw, u.password_hash))) {
+      const lock = await failed(q, u.id, now());
+      audit('u' + u.id, 'auth.login', false, lock ? 'locked' : 'wrong password');
+      return res.status(401).json({ error: lock ? `Wrong password. The account is now locked for ${Math.round(lock / 60_000)} minutes.` : acc.no_password ? 'This account signs in with Discord, Google, Microsoft or Apple.' : 'Wrong username or password.' });
+    }
     if (!u.approved) return res.status(403).json({ error: 'Your account is waiting for the Returning Officer to approve it.' });
-    userCache.set(u.id, u);
-    const cid = 'u' + u.id;
-    if (!world.citizens[cid])
-      await serial(async () => {
-        addCitizen(world, cid, u.display_name, !!u.is_admin);
-        await save();
-      });
-    res.json({ token: sign(u), me: cid });
+    if (needsRehash(u.password_hash)) await q('UPDATE users SET password_hash = $1 WHERE id = $2', [await hash(pw), u.id]);
+    audit('u' + u.id, 'auth.login', true);
+    res.json(await welcome(u, req));
   });
 
   app.post('/api/signup', async (req, res) => {
-    if (limited('signup:' + req.ip)) return res.status(429).json({ error: 'Too many attempts. Wait a minute.' });
+    if (limited('signup:' + req.ip, 5)) return res.status(429).json({ error: 'Too many attempts. Wait a minute.' });
     if (!world.flags.openSignup) return res.status(403).json({ error: 'Sign-ups are closed. Ask the Returning Officer.' });
     const username = String(req.body?.username || '').trim().toLowerCase();
-    const name = String(req.body?.display_name || '').trim();
+    const name = String(req.body?.display_name || '').replace(/\s+/g, ' ').trim();
     const password = String(req.body?.password || '');
     if (!/^[a-z0-9_]{3,20}$/.test(username)) return res.status(400).json({ error: 'Usernames are 3 to 20 letters, numbers or underscores.' });
     if (name.length < 2 || name.length > 24) return res.status(400).json({ error: 'Give a display name of 2 to 24 characters.' });
-    if (password.length < 8) return res.status(400).json({ error: 'Passwords need at least 8 characters.' });
+    const bad = passwordProblem(password, username);
+    if (bad) return res.status(400).json({ error: bad });
     if ((await q('SELECT 1 FROM users WHERE lower(username) = $1', [username])).rows.length) return res.status(409).json({ error: 'That username is taken.' });
     const approved = !world.flags.requireApproval;
-    const u = (await q('INSERT INTO users (username, display_name, password_hash, approved) VALUES ($1, $2, $3, $4) RETURNING *', [username, name, await bcrypt.hash(password, 10), approved])).rows[0];
+    const u = (await q('INSERT INTO users (username, display_name, password_hash, approved) VALUES ($1, $2, $3, $4) RETURNING *', [username, name, await hash(password), approved])).rows[0];
     await serial(async () => {
       if (approved) addCitizen(world, 'u' + u.id, name, false);
       else world.pending.push({ id: 'su' + u.id, uid: 'u' + u.id, name, userId: u.id });
       await save();
     });
-    res.json(approved ? { token: sign(u), me: 'u' + u.id } : { waiting: true });
+    audit('u' + u.id, 'auth.signup', true);
+    res.json(approved ? await welcome(u, req) : { waiting: true });
   });
 
+  // change your password, or set one if you joined with Discord/Google/Microsoft/Apple
   app.post('/api/password', auth, async (req: any, res) => {
+    if (limited('pw:' + req.user.id, 5)) return res.status(429).json({ error: 'Too many attempts. Wait a minute.' });
     const { current, next } = req.body || {};
     const u = (await q('SELECT * FROM users WHERE id = $1', [req.user.id])).rows[0];
-    if (!(await bcrypt.compare(String(current || ''), u.password_hash))) return res.status(400).json({ error: 'Your current password is wrong.' });
-    if (String(next || '').length < 8) return res.status(400).json({ error: 'Passwords need at least 8 characters.' });
-    await q('UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2', [await bcrypt.hash(String(next), 10), u.id]);
+    const acc = await account(q, u.id);
+    if (!acc.no_password && !(await bcrypt.compare(String(current || ''), u.password_hash))) return res.status(400).json({ error: 'Your current password is wrong.' });
+    const bad = passwordProblem(String(next || ''), u.username);
+    if (bad) return res.status(400).json({ error: bad });
+    await q('UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2', [await hash(String(next)), u.id]);
+    await q('UPDATE v2_accounts SET no_password = FALSE WHERE user_id = $1', [u.id]);
     userCache.delete(u.id);
+    audit(req.cid, 'auth.password', true);
     res.json({ token: sign({ ...u, token_version: (u.token_version || 0) + 1 }) });
+  });
+
+  // sign out of every device, this one gets a fresh token
+  app.post('/api/logout-all', auth, async (req: any, res) => {
+    const u = (await q('UPDATE users SET token_version = token_version + 1 WHERE id = $1 RETURNING *', [req.user.id])).rows[0];
+    userCache.delete(u.id);
+    audit(req.cid, 'auth.logout-all', true);
+    res.json({ token: sign(u) });
+  });
+
+  // your sign-in methods
+  app.get('/api/me/security', auth, async (req: any, res) => {
+    const acc = await account(q, req.user.id);
+    const ids = (await q('SELECT provider, email, created_at FROM v2_identities WHERE user_id = $1 ORDER BY created_at', [req.user.id])).rows;
+    res.json({ username: req.user.username, password: !acc.no_password, lastLogin: acc.last_login, identities: ids, providers: Object.values(OAUTH).map((p) => ({ id: p.id, name: p.name })) });
+  });
+  app.post('/api/oauth/unlink', auth, async (req: any, res) => {
+    const acc = await account(q, req.user.id);
+    const ids = (await q('SELECT provider FROM v2_identities WHERE user_id = $1', [req.user.id])).rows;
+    if (acc.no_password && ids.length <= 1) return res.status(400).json({ error: 'That is your only way to sign in. Set a password or link another account first.' });
+    await q('DELETE FROM v2_identities WHERE user_id = $1 AND provider = $2', [req.user.id, String(req.body?.provider || '')]);
+    audit(req.cid, 'auth.unlink.' + req.body?.provider, true);
+    res.json({ ok: true });
+  });
+
+  app.get('/api/oauth/providers', (_req, res) => res.json(Object.values(OAUTH).map((p) => ({ id: p.id, name: p.name }))));
+  // step 1: the site asks for a sign-in link. `browser` is a random value the site keeps in sessionStorage; only
+  // the same browser can finish the sign-in, so a stolen or planted link is useless.
+  app.post('/api/oauth/begin', async (req: any, res) => {
+    if (limited('oauth:' + req.ip, 20)) return res.status(429).json({ error: 'Too many attempts. Wait a minute.' });
+    const prov = OAUTH[String(req.body?.provider || '')];
+    if (!prov) return res.status(400).json({ error: 'That sign-in option is not set up.' });
+    const browser = String(req.body?.browser || '');
+    if (!/^[A-Za-z0-9_-]{20,100}$/.test(browser)) return res.status(400).json({ error: 'Your browser blocked the sign-in. Allow site storage and try again.' });
+    let userId: number | null = null;
+    const mode = req.body?.mode === 'link' ? 'link' : 'login';
+    if (mode === 'link') {
+      try {
+        const t: any = jwt.verify(String(req.headers.authorization || '').replace(/^Bearer /, ''), secret, { algorithms: ['HS256'] });
+        const u = await loadUser(t.id);
+        if (!u || !u.is_active || (u.token_version || 0) !== t.tv) throw new Error();
+        userId = u.id;
+      } catch {
+        return res.status(401).json({ error: 'Sign in first.' });
+      }
+    }
+    const origin = String(req.headers.origin || '');
+    const ret = o.origins.includes(origin) || (o.devOrigins && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) ? (origin === new URL(SITE).origin ? SITE : origin + '/') : SITE;
+    const state = random(24), nonce = random(16), verifier = random(48);
+    await q("DELETE FROM v2_oauth_flows WHERE created_at < now() - interval '1 day'");
+    await q('INSERT INTO v2_oauth_flows (state, provider, mode, user_id, browser, nonce, verifier, return_to) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [state, prov.id, mode, userId, browser, nonce, verifier, ret]);
+    res.json({ url: authorizeUrl(prov, callbackUrl(req, prov.id), state, nonce, verifier) });
+  });
+  // step 3: back on the site, the same browser swaps the finished flow for a session. Each flow works once.
+  app.post('/api/oauth/finish', async (req: any, res) => {
+    if (limited('oauth:' + req.ip, 20)) return res.status(429).json({ error: 'Too many attempts. Wait a minute.' });
+    const flow = (await q('DELETE FROM v2_oauth_flows WHERE state = $1 RETURNING *, extract(epoch FROM now() - created_at) AS age', [String(req.body?.flow || '')])).rows[0];
+    if (!flow || flow.browser !== String(req.body?.browser || '')) return res.status(400).json({ error: 'That sign-in was started in another browser, or has already been used.' });
+    if (Number(flow.age) > 900) return res.status(400).json({ error: 'That sign-in expired. Try again.' });
+    if (!flow.result || flow.result.startsWith('error:')) return res.status(400).json({ error: flow.result ? flow.result.slice(6) : 'The sign-in did not finish.' });
+    if (flow.result === 'linked') return res.json({ linked: flow.provider });
+    if (flow.result === 'waiting') return res.json({ waiting: true });
+    const u = (await q('SELECT * FROM users WHERE id = $1', [flow.result_user])).rows[0];
+    if (!u || !u.is_active) return res.status(403).json({ error: 'That account is not active.' });
+    if (!u.approved) return res.json({ waiting: true });
+    audit('u' + u.id, 'auth.login.' + flow.provider, true);
+    res.json(await welcome(u, req));
   });
 
   app.get('/api/state', auth, async (req: any, res) => {
@@ -306,7 +461,9 @@ export async function makeApp(o: Options) {
     const u = (await q('SELECT id, display_name FROM users WHERE id = $1', [Number(cid.replace(/^u/, '')) || 0])).rows[0];
     if (!u) return res.status(404).json({ error: 'No such account.' });
     const temp = Array.from({ length: 3 }, () => Math.random().toString(36).slice(2, 6)).join('-');
-    await q('UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2', [await bcrypt.hash(temp, 10), u.id]);
+    await q('UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2', [await hash(temp), u.id]);
+    await account(q, u.id);
+    await q('UPDATE v2_accounts SET failures = 0, locked_until = NULL, no_password = FALSE WHERE user_id = $1', [u.id]);
     userCache.delete(u.id);
     await serial(async () => {
       adminDid(world, req.cid, `reset ${u.display_name}'s password, which would let them sign in as ${u.display_name}`);

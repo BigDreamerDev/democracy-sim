@@ -18,3 +18,26 @@ services:
         sync: false   # the Neon connection string
       - key: ALLOWED_ORIGINS
         value: https://bigdreamerdev.github.io
+      - key: PUBLIC_URL
+        value: https://democracy-sim-thgx.onrender.com   # used to build the sign-in redirect URIs
+      # Sign in with … (see SECURITY.md). Leave any pair empty to hide that button.
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
+      - key: APPLE_CLIENT_ID
+        sync: false
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: APPLE_KEY_ID
+        sync: false
+      - key: APPLE_PRIVATE_KEY
+        sync: false
