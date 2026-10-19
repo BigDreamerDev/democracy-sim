@@ -6,7 +6,7 @@
 // - `chainOnly` crises never appear at random; `weight` makes a crisis rarer (default 1); `needs` limits where it fits.
 // `effects` is what players see before choosing, so keep it honest and in step with `run`.
 // Money only moves through transfer(), so the ledger balances.
-import { W, Id, DAY, HOUR, clamp, fail, newId, transfer, meter, approve, earn, addCard, allCitizens, holderOf, chance, rand, ca, bal, gazette, isMP, isPM, mps, nm, mustBeFree, weekNo } from './core';
+import { W, Id, DAY, HOUR, clamp, fail, newId, transfer, meter, approve, earn, addCard, allCitizens, holderOf, chance, rand, ca, bal, gazette, isMP, isPM, mps, nm, mustBeFree, weekNo, tick } from './core';
 import { armyLoyalty } from './foreign';
 import { callGeneralElection } from './politics';
 
@@ -43,6 +43,7 @@ const snapElection = (w: W) => {
 const emergency = (w: W) => {
   if (!w.pm || w.martial) return;
   w.martial = { leader: w.pm, plotters: [], until: w.now + 3 * DAY, emergency: true };
+  w.citizens[w.pm].stats.ruledByDecree = true;
   gazette(w, 'government', `A state of emergency. Parliament is suspended and ${nm(w, w.pm)} rules by decree for 3 days, then the realm votes.`, '#/cabinet');
 };
 // the head of state's time is up: a new one is chosen as the constitution says
@@ -520,7 +521,7 @@ export function spawnCrisis(w: W, type?: string, cause?: string) {
   }
   const id = newId(w, 'cr');
   const house = !!t!.house && mps(w).length > 0;
-  w.crises[id] = { id, type: t!.id, status: 'open', at: w.now, decideBy: w.now + (house ? 36 : 24) * HOUR, choice: null, house, votes: {}, cause: cause || null };
+  w.crises[id] = { id, type: t!.id, status: 'open', at: w.now, decideBy: w.now + (house ? 36 : 24) * HOUR, choice: null, house, votes: {}, speeches: [], cause: cause || null, pmAtStart: w.pm };
   gazette(w, 'crisis', `${t!.extreme ? 'Emergency' : 'Crisis'}: ${t!.title}.${cause ? ` ${cause}` : ''} ${house ? 'The House has 36 hours to vote on a response.' : 'The Prime Minister has 24 hours to decide.'}`, '#/crisis/' + id);
   return id;
 }
@@ -543,10 +544,29 @@ export function voteCrisis(w: W, actor: Id, id: Id, choice: number) {
   if (!c.house) fail('The Prime Minister decides this one.');
   if (!isMP(w, actor)) fail('Only MPs vote on a crisis.');
   if (!(Number.isInteger(choice) && crisisById(c.type)!.options[choice])) fail('Pick a response.');
-  if (c.votes[actor] === undefined) earn(w, actor, 1, 'Voted on a crisis');
+  if (c.votes[actor] === undefined) (earn(w, actor, 1, 'Voted on a crisis'), tick(w, actor, 'crisis'));
   c.votes[actor] = choice;
   const n = Object.values(c.votes).filter((v) => v === choice).length;
   if (n > w.config.seats / 2) settle(w, c, choice, 'house');
+}
+
+// the debate: MPs (and the PM) argue for an option while the crisis is open. Two speeches each, in the Gazette.
+export function speakCrisis(w: W, actor: Id, id: Id, choice: number, text: string) {
+  mustBeFree(w, actor);
+  const c = w.crises[id];
+  if (!c || c.status !== 'open') fail('That crisis is over.');
+  if (!isMP(w, actor) && !isPM(w, actor)) fail('Only MPs and the PM speak on a crisis.');
+  const t = crisisById(c.type)!;
+  if (!(Number.isInteger(choice) && t.options[choice])) fail('Pick the response you are speaking for.');
+  const said = String(text || '').trim().replace(/\s+/g, ' ');
+  if (said.length < 8) fail('Say a little more.');
+  if (said.length > 280) fail('Keep it under 280 characters. It goes in the Gazette.');
+  c.speeches = c.speeches || [];
+  if (c.speeches.filter((s: any) => s.by === actor).length >= 2) fail('You have made your two speeches on this one.');
+  if (!c.speeches.some((s: any) => s.by === actor)) (earn(w, actor, 1, 'Spoke on a crisis'), tick(w, actor, 'crisis'));
+  c.speeches.push({ id: newId(w, 'cs'), by: actor, choice, text: said, at: w.now });
+  w.citizens[actor].stats.crisisSpeeches = (w.citizens[actor].stats.crisisSpeeches || 0) + 1;
+  gazette(w, 'speech', `${nm(w, actor)} on ${t.title.charAt(0).toLowerCase() + t.title.slice(1)}, for “${t.options[choice].label}”: “${said}”`, '#/crisis/' + id);
 }
 
 // the deadline: a House crisis goes to the most-voted option (ties and silence fall to the last option);
@@ -575,6 +595,9 @@ function settle(w: W, c: any, choice: number, how: 'pm' | 'house' | 'default', a
     r = o.run(w);
   } catch {}
   if (how === 'pm') earn(w, actor!, 3, 'Handled a crisis');
+  // for ambitions: MPs on the winning side, and a PM who is still standing afterwards
+  if (how === 'house') Object.entries(c.votes).forEach(([m, v]) => v === choice && w.citizens[m] && (w.citizens[m].stats.crisisWins = (w.citizens[m].stats.crisisWins || 0) + 1));
+  if (c.pmAtStart && w.pm === c.pmAtStart && w.citizens[w.pm]) w.citizens[w.pm].stats.crisesSurvived = (w.citizens[w.pm].stats.crisesSurvived || 0) + 1;
   if (how === 'default') meter(w, 'stability', -2, 'Nobody handled the crisis');
   const who = how === 'pm' ? 'the PM chose' : how === 'house' ? 'the House voted for' : 'nobody decided, so by default:';
   gazette(w, 'crisis', `${t.title}: ${who} "${o.label}".`, '#/crisis/' + c.id);

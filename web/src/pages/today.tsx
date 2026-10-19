@@ -203,8 +203,21 @@ export function FrontPage({ id }: { id: string }) {
           <div class="fp-name">The {w.config.realmName.split(' of ')[1] || 'Realm'} Gazette</div>
           <div class="fp-meta"><span>{fmtDay(f.at)}</span><span>Week {f.week + 1}</span><span>Free to every citizen</span></div>
         </header>
-        <h2 class="fp-head">{f.lead ? f.lead.headline : 'A quiet week in the realm'}</h2>
-        {f.lead && <p class="fp-dek">{f.lead.body} <span class="small">By {nm(w, f.lead.by)}, {f.lead.paper}.</span></p>}
+        {f.crisisLeads ? (
+          <>
+            {f.crisis.extreme && <div class="fp-flash">Emergency</div>}
+            <h2 class="fp-head">{f.crisis.title}</h2>
+            <p class="fp-dek">{f.crisis.text} {f.crisis.how === 'house' ? 'The House voted to' : f.crisis.how === 'pm' ? 'The Prime Minister chose to' : 'Nobody decided, so the realm was left to'} <b>{f.crisis.choice.charAt(0).toLowerCase() + f.crisis.choice.slice(1)}</b>. {f.crisis.what}{f.crisis.consequence ? ' It was the price of an earlier decision.' : ''}</p>
+            {f.crisis.quote && <blockquote class="fp-quote">“{f.crisis.quote.text}” <span class="small">{nm(w, f.crisis.quote.by)}</span></blockquote>}
+            {f.lead && <p class="fp-dek" style={{ borderTop: '1px solid #C3B9A0', paddingTop: 8 }}><b>Also: {f.lead.headline}.</b> {f.lead.body} <span class="small">By {nm(w, f.lead.by)}, {f.lead.paper}.</span></p>}
+          </>
+        ) : (
+          <>
+            <h2 class="fp-head">{f.lead ? f.lead.headline : 'A quiet week in the realm'}</h2>
+            {f.lead && <p class="fp-dek">{f.lead.body} <span class="small">By {nm(w, f.lead.by)}, {f.lead.paper}.</span></p>}
+            {f.crisis && <p class="fp-dek" style={{ borderTop: '1px solid #C3B9A0', paddingTop: 8 }}><b>Crisis of the week: {f.crisis.title}.</b> {f.crisis.how === 'house' ? 'The House chose' : f.crisis.how === 'pm' ? 'The PM chose' : 'Nobody chose, so:'} “{f.crisis.choice}”.</p>}
+          </>
+        )}
         <div class="fp-cols">
           <div>
             <h3>The state of the realm</h3>

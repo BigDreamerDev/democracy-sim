@@ -59,8 +59,17 @@ export function makeFrontPage(w: W) {
     earn(w, lead.by, 5, 'Your story made the front page');
     stamp(w, lead.by, 'Front page', fmtDay(w.now), 'ink');
   }
+  // the crisis of the week: the worst one settled since the last front page
+  const sev = (c: any) => { const t = crisisById(c.type); return (t?.extreme ? 10 : 0) + (c.house ? 4 : 0) + (c.how === 'default' ? 3 : 0) + (c.cause ? 2 : 0) + 1; };
+  const worst = (Object.values(w.crises) as any[]).filter((c) => c.at > since && c.status === 'decided').sort((a, b) => sev(b) - sev(a))[0];
+  const ct = worst && crisisById(worst.type);
+  const crisis = worst && ct ? {
+    id: worst.id, title: ct.title, text: ct.text, extreme: !!ct.extreme, how: worst.how, choice: ct.options[worst.choice].label, what: ct.options[worst.choice].what,
+    quote: (worst.speeches || []).slice(-1)[0] || null, consequence: !!worst.cause
+  } : null;
+  const crisisLeads = !!crisis && (crisis.extreme || !lead);
   const fp = {
-    id: newId(w, 'fp'), at: w.now, week: weekNo(w),
+    id: newId(w, 'fp'), at: w.now, week: weekNo(w), crisis, crisisLeads,
     lead: lead ? { headline: lead.headline, body: lead.body, by: lead.by, paper: w.papers[lead.paper]?.name } : null,
     laws: w.laws.filter((l: any) => l.at > since && !l.classified).map((l: any) => ({ ref: l.ref, title: l.title })),
     meters: { prosperity: w.meters.prosperity, stability: w.meters.stability, standing: standing(w) },
@@ -70,7 +79,7 @@ export function makeFrontPage(w: W) {
   };
   w.frontpages.unshift(fp);
   w.frontpages = w.frontpages.slice(0, 12);
-  gazette(w, 'press', `This week's front page: ${lead ? lead.headline : 'a quiet week in the realm'}.`, '#/frontpage/' + fp.id);
+  gazette(w, 'press', `This week's front page: ${crisisLeads ? crisis!.title : lead ? lead.headline : 'a quiet week in the realm'}.`, '#/frontpage/' + fp.id);
 }
 
 // ---------- the Supreme Court ----------
@@ -113,4 +122,5 @@ export function rule(w: W, k: any, forPlaintiff: boolean) {
 }
 
 // ---------- the weekly crisis: the PM picks which meter takes the hit (the list lives in crises.ts) ----------
-export { CRISES, spawnCrisis, decideCrisis, voteCrisis, timeoutCrisis, fireQueued } from './crises';
+import { CRISES, crisisById } from './crises';
+export { CRISES, spawnCrisis, decideCrisis, voteCrisis, speakCrisis, timeoutCrisis, fireQueued } from './crises';

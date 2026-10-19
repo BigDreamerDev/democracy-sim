@@ -92,6 +92,7 @@ export const COMMANDS: Record<string, Cmd> = {
   'court.judge': (w, me, a) => S.judge(w, me, a.case, a.side),
   'crisis.decide': (w, me, a) => S.decideCrisis(w, me, a.id, a.choice),
   'crisis.vote': (w, me, a) => S.voteCrisis(w, me, a.id, a.choice),
+  'crisis.speak': (w, me, a) => S.speakCrisis(w, me, a.id, a.choice, a.text),
   'admin.forceEnact': (w, me, a) => L.forceEnact(w, me, a.prop, a.reason),
   'admin.approve': (w, me, a) => {
     if (!w.citizens[me]?.admin) fail('Only the Returning Officer approves sign-ups.');

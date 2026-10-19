@@ -441,7 +441,11 @@ export const AMBITIONS = [
   { id: 'rich', text: 'Hold 250 crowns at once', test: (c: any) => (c.stats.maxBalance || 0) >= 250 },
   { id: 'party', text: 'Found a party', test: (c: any) => c.stats.foundedParty },
   { id: 'honour', text: 'Receive an honour', test: (c: any) => c.stats.honoured },
-  { id: 'scoop', text: 'Get a story on the front page', test: (c: any) => c.stats.frontPage }
+  { id: 'scoop', text: 'Get a story on the front page', test: (c: any) => c.stats.frontPage },
+  { id: 'survivor', text: 'Be Prime Minister through 3 crises and still be standing', test: (c: any) => (c.stats.crisesSurvived || 0) >= 3 },
+  { id: 'firefighter', text: 'Be on the winning side of 3 House votes on crises', test: (c: any) => (c.stats.crisisWins || 0) >= 3 },
+  { id: 'orator', text: 'Make 3 speeches on crises', test: (c: any) => (c.stats.crisisSpeeches || 0) >= 3 },
+  { id: 'decree', text: 'Rule by decree under a state of emergency', test: (c: any) => c.stats.ruledByDecree }
 ];
 export function assignAmbitions(w: W) {
   allCitizens(w).forEach((c: any) => {

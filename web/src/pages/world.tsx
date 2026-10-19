@@ -176,6 +176,7 @@ export function Crises() {
 }
 export function Crisis({ id }: { id: string }) {
   const { world: w, me } = useStore();
+  const [say, setSay] = useState({ choice: 0, text: '' });
   const c = w.crises[id];
   if (!c) return <Page title="No such crisis" back={['#/crises', 'Crises']} />;
   const t = CRISES.find((x) => x.id === c.type)!;
@@ -185,6 +186,8 @@ export function Crisis({ id }: { id: string }) {
   const mine = votes[me];
   const canVote = open && c.house && isMP(w, me);
   const need = Math.floor(w.config.seats / 2) + 1;
+  const speeches = c.speeches || [];
+  const canSpeak = open && (isMP(w, me) || isPM(w, me)) && speeches.filter((s: any) => s.by === me).length < 2;
   return (
     <Page back={['#/crises', 'Crises']} kicker={open ? <>{t.extreme ? 'Emergency · ' : ''}{c.house ? 'House vote' : 'PM decides'} · closes in <Left at={c.decideBy} /></> : 'Decided'} title={t.title} intro={t.text}>
       {c.cause && <Card kind="warn" style={{ marginTop: 14 }}><b>This is a consequence.</b> <span class="small">{c.cause}</span></Card>}
@@ -204,6 +207,22 @@ export function Crisis({ id }: { id: string }) {
         </div>
         {open && !c.house && !isPM(w, me) && <p class="small muted">Only the PM decides. Lean on them at PMQs.</p>}
         {open && c.house && !isMP(w, me) && <p class="small muted">Only MPs vote. Lobby yours.</p>}
+      </Sec>
+      <Sec title="The debate" sub={open ? 'MPs and the PM make the case for a response. Every speech goes in the Gazette.' : undefined}>
+        {speeches.length ? (
+          <ul class="list">{speeches.map((s: any) => (
+            <li><div class="row"><b><Who id={s.by} /></b><span class="small muted"><When at={s.at} /></span></div>
+              <div class="small" style={{ margin: '2px 0 4px' }}>for <b>{t.options[s.choice].label}</b></div>
+              <q style={{ fontFamily: 'var(--serif)', fontSize: 17 }}>{s.text}</q></li>
+          ))}</ul>
+        ) : <Empty>{open ? 'Nobody has spoken yet.' : 'Nobody spoke.'}</Empty>}
+        {canSpeak && (
+          <Card style={{ marginTop: 12 }}><div class="stack">
+            <Pick label="Speaking for" value={String(say.choice)} onChange={(v) => setSay({ ...say, choice: Number(v) })} options={t.options.map((o, i) => [String(i), o.label])} />
+            <Field label={`Your speech (${280 - say.text.length} left)`} value={say.text} onInput={(v) => setSay({ ...say, text: v.slice(0, 280) })} area placeholder="Make it quotable." />
+            <Btn full disabled={say.text.trim().length < 8} onClick={() => act('crisis.speak', { id, choice: say.choice, text: say.text }, 'Speech made. It is in the Gazette.') && setSay({ ...say, text: '' })}>Make the speech</Btn>
+          </div></Card>
+        )}
       </Sec>
     </Page>
   );
