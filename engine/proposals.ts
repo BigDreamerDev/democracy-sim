@@ -120,6 +120,7 @@ export function speak(w: W, actor: Id, pid: Id, side: string, text: string) {
   const p = w.proposals[pid];
   if (!p || !['debate', 'vote', 'override'].includes(p.stage)) fail('This is not being debated.');
   if ((text || '').trim().length < 3) fail('Write your speech.');
+  if (!['for', 'against', 'undecided', 'order'].includes(side)) fail('Speak for, against or undecided.');
   if (side === 'order' && w.speaker !== actor) fail('Only the Speaker can call order.');
   p.speeches.push({ id: newId(w, 's'), by: actor, side, text: text.trim(), at: w.now });
   const c = cit(w, actor);
@@ -146,12 +147,14 @@ export function vote(w: W, actor: Id, pid: Id, v: string) {
     earn(w, actor, 2, 'Voted on a proposal');
     tick(w, actor, 'votes');
   }
+  if (!['aye', 'no', 'abstain'].includes(v)) fail('Vote aye, no or abstain.');
   book[actor] = v;
 }
 export function casting(w: W, actor: Id, pid: Id, v: 'aye' | 'no') {
   if (w.speaker !== actor) fail('Only the Speaker has the casting vote.');
   const p = w.proposals[pid];
   if (!p || p.stage !== 'vote') fail('There is no open vote.');
+  if (v !== 'aye' && v !== 'no') fail('Cast aye or no.');
   p.casting = v;
 }
 

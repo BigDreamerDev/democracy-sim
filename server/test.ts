@@ -76,6 +76,32 @@ try {
   const R = (await call('/api/login', { username: 'admin', password: 'password' })).body.token;
   assert.equal((await call('/api/admin/export', undefined, R)).status, 200);
   assert.equal((await call('/api/state', undefined, R)).body.world.audit.total, 0);
+  // the public API: keys, any origin, read-only vs act, long-poll, revoke
+  const T = (await call('/api/login', { username: 'bilal', password: 'password' })).body.token;
+  const ro = (await call('/api/keys', { name: 'My bot', scope: 'read' }, T)).body;
+  const rw = (await call('/api/keys', { name: 'My app', scope: 'act' }, T)).body;
+  assert.ok(ro.key.startsWith('rlm_') && rw.key);
+  assert.equal((await call('/api/keys', undefined, T)).body.length, 2);
+  assert.equal((await call('/api/v1/me', undefined, T)).status, 401, 'session tokens are not API keys');
+  const me = await call('/api/v1/me', undefined, ro.key, 'https://someones-app.example');
+  assert.equal(me.status, 200);
+  assert.equal(me.cors, '*', 'any origin may call v1');
+  assert.equal(me.body.id, 'u3');
+  const st = await call('/api/v1/state', undefined, ro.key);
+  assert.ok(!('c:u2' in st.body.world.accounts), 'v1 gets the same redacted view');
+  assert.equal((await call('/api/v1/act', { cmd: 'money.send', args: { to: 'u2', amount: 1 } }, ro.key)).status, 403, 'read keys cannot act');
+  assert.equal((await call('/api/v1/act', { cmd: 'admin.setting', args: { key: 'openSignup', value: true } }, rw.key)).status, 400, 'no admin via keys');
+  assert.equal((await call('/api/v1/act', { cmd: 'money.send', args: { to: 'u2', amount: 'x'.repeat(5000) } }, rw.key)).status, 400, 'oversized args refused');
+  const since = st.body.version;
+  const waiting = call(`/api/v1/state?since=${since}&wait=5`, undefined, ro.key);
+  await new Promise((r) => setTimeout(r, 100));
+  const sent = await call('/api/v1/act', { cmd: 'money.send', args: { to: 'u2', amount: 2, note: 'via api' } }, rw.key);
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  assert.ok((await waiting).body.version > since, 'long-poll wakes on change');
+  assert.equal(Object.values(getWorld().accounts).reduce((a: number, b: any) => a + b, 0), 0, 'ledger balanced after API act');
+  assert.ok(Object.keys((await call('/api/v1/commands')).body).length > 50);
+  await call('/api/keys/revoke', { id: rw.id }, T);
+  assert.equal((await call('/api/v1/me', undefined, rw.key)).status, 401, 'revoked key refused');
   console.log('server ok');
 } finally {
   srv.close();

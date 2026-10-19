@@ -93,6 +93,7 @@ export function judge(w: W, actor: Id, cid: Id, side: 'plaintiff' | 'defence') {
   const k = w.cases[cid];
   if (!k || k.status !== 'open') fail('That case is closed.');
   if (!(w.offices.court?.members || []).includes(actor)) fail('Only the justices decide.');
+  if (side !== 'plaintiff' && side !== 'defence') fail('Find for the plaintiff or the defence.');
   k.votes[actor] = side;
   const p = Object.values(k.votes).filter((v) => v === 'plaintiff').length;
   const d = Object.values(k.votes).filter((v) => v === 'defence').length;

@@ -4,6 +4,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Q, SCHEMA } from './db';
+import { publicApi, newKey, keyHash, MAX_KEYS } from './public';
 import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate } from '../engine/index';
 
 export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void };
@@ -24,7 +25,23 @@ export async function makeApp(o: Options) {
     await q('INSERT INTO v2_world (id, state) VALUES (1, $1)', [JSON.stringify(world)]);
     log(`New realm created for ${Object.keys(world.citizens).length} citizens.`);
   }
-  const save = () => q('UPDATE v2_world SET state = $1, version = version + 1, updated_at = now() WHERE id = 1', [JSON.stringify(world)]);
+  // `version` goes up on every save; long-polling API clients wait on it
+  let version = Number((await q('SELECT version FROM v2_world WHERE id = 1')).rows[0]?.version || 0);
+  let waiters: (() => void)[] = [];
+  const save = async () => {
+    await q('UPDATE v2_world SET state = $1, version = version + 1, updated_at = now() WHERE id = 1', [JSON.stringify(world)]);
+    version++;
+    const w = waiters;
+    waiters = [];
+    w.forEach((f) => f());
+  };
+  const waitForChange = (since: number, ms: number) =>
+    new Promise<void>((res) => {
+      if (version > since) return res();
+      const done = () => (clearTimeout(t), res());
+      const t = setTimeout(() => ((waiters = waiters.filter((f) => f !== done)), res()), ms);
+      waiters.push(done);
+    });
 
   // every change goes through one queue, so two requests can never interleave
   let chain: Promise<any> = Promise.resolve();
@@ -89,6 +106,9 @@ export async function makeApp(o: Options) {
   const app = express();
   app.set('trust proxy', 1);
   app.use(express.json({ limit: '200kb' }));
+  // the public API for players' own apps: any origin, API keys only (see public.ts and API.md)
+  const v1 = publicApi({ q, now, log, world: () => world, setWorld: (w) => (world = w), version: () => version, waitForChange, serial, catchUp, save, schedule, loadUser: async (id) => userCache.get(id) || loadUser(id) });
+  app.use('/api/v1', v1);
   // CORS that fails loudly: an unknown origin gets a clear 403 instead of a silent 200 with no header
   app.use((req, res, next) => {
     const origin = req.headers.origin;
@@ -184,6 +204,27 @@ export async function makeApp(o: Options) {
     }
   });
 
+  // personal API keys, managed from the official site only
+  app.get('/api/keys', auth, async (req: any, res) => {
+    res.json((await q('SELECT id, name, prefix, scope, created_at, last_used FROM v2_api_keys WHERE user_id = $1 AND NOT revoked ORDER BY id', [req.user.id])).rows);
+  });
+  app.post('/api/keys', auth, async (req: any, res) => {
+    const name = String(req.body?.name || '').trim().slice(0, 40);
+    const scope = req.body?.scope === 'act' ? 'act' : 'read';
+    if (name.length < 2) return res.status(400).json({ error: 'Name the key after the app that will use it.' });
+    const n = (await q('SELECT count(*)::int AS n FROM v2_api_keys WHERE user_id = $1 AND NOT revoked', [req.user.id])).rows[0].n;
+    if (n >= MAX_KEYS) return res.status(400).json({ error: `You can have ${MAX_KEYS} keys. Revoke one first.` });
+    const key = newKey();
+    const row = (await q('INSERT INTO v2_api_keys (user_id, name, prefix, key_hash, scope) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, prefix, scope, created_at, last_used', [req.user.id, name, key.slice(0, 10), keyHash(key), scope])).rows[0];
+    res.json({ ...row, key });
+  });
+  app.post('/api/keys/revoke', auth, async (req: any, res) => {
+    const row = (await q('UPDATE v2_api_keys SET revoked = TRUE WHERE id = $1 AND user_id = $2 RETURNING key_hash', [Number(req.body?.id) || 0, req.user.id])).rows[0];
+    if (!row) return res.status(404).json({ error: 'No such key.' });
+    v1.forgetKey(row.key_hash);
+    res.json({ ok: true });
+  });
+
   // the Returning Officer's tools that sit outside the game
   const admin = (req: any, res: any, next: any) => (req.user?.is_admin ? next() : res.status(403).json({ error: 'Returning Officer only.' }));
   app.get('/api/admin/export', auth, admin, (_req, res) => res.json(world));
@@ -213,6 +254,12 @@ export async function makeApp(o: Options) {
     schedule();
     log(`Realm reset by ${req.user.username}.`);
     res.json({ world: viewFor(world, req.cid), me: req.cid, serverNow: now() });
+  });
+
+  // bad JSON and the like: answer in JSON, with CORS on the public API so other apps can read the error
+  app.use((err: any, req: any, res: any, _next: any) => {
+    if (req.path.startsWith('/api/v1')) res.setHeader('Access-Control-Allow-Origin', '*');
+    res.status(err.status || 500).json({ error: err.type === 'entity.parse.failed' ? 'That body is not valid JSON.' : err.type === 'entity.too.large' ? 'That request is too large.' : 'Something went wrong.' });
   });
 
   return { app, getWorld: () => world, tick: () => serial(catchUp) };

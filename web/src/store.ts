@@ -248,6 +248,10 @@ export async function resetPassword(citizen: string): Promise<string> {
   refresh();
   return d.temp;
 }
+export const API_URL = API;
+export const listKeys = () => api('/api/keys');
+export const createKey = (name: string, scope: 'read' | 'act') => api('/api/keys', { name, scope });
+export const revokeKey = (id: number) => api('/api/keys/revoke', { id });
 export async function downloadExport() {
   const w = await api('/api/admin/export');
   const blob = new Blob([JSON.stringify(w, null, 1)], { type: 'application/json' });

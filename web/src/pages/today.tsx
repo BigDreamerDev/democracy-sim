@@ -317,6 +317,7 @@ function Account() {
       ) : (
         <div class="row" style={{ justifyContent: 'flex-start', gap: 10 }}>
           <Btn kind="ghost" small onClick={() => setOpen(true)}>Change password</Btn>
+          <Btn kind="ghost" small href="#/developers">Build your own app</Btn>
           <Btn kind="plain" small onClick={signOut}>Sign out</Btn>
         </div>
       )}

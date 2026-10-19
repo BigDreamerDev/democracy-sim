@@ -32,6 +32,10 @@ The server holds the only full copy of the world and sends each player their own
 
 What doesn't hold: the RO can reset a password and sign in as someone; that reset is public. Someone with a friend's WhatsApp has their vote.
 
+## Build your own app
+
+There's a public API: make a key under **You → Build your own app**, then see [API.md](API.md). [examples/minimal.html](examples/minimal.html) is a working client in one file.
+
 ## Develop
 
 See [CLAUDE.md](CLAUDE.md).

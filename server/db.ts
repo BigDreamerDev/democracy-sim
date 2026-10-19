@@ -48,6 +48,17 @@ CREATE TABLE IF NOT EXISTS v2_log (
   ok     BOOLEAN,
   error  TEXT
 );
+CREATE TABLE IF NOT EXISTS v2_api_keys (
+  id         BIGSERIAL PRIMARY KEY,
+  user_id    INT NOT NULL,
+  name       TEXT NOT NULL,
+  prefix     TEXT NOT NULL,
+  key_hash   TEXT UNIQUE NOT NULL,
+  scope      TEXT NOT NULL DEFAULT 'read',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  last_used  TIMESTAMPTZ,
+  revoked    BOOLEAN DEFAULT FALSE
+);
 CREATE TABLE IF NOT EXISTS v2_snapshots (
   id         BIGSERIAL PRIMARY KEY,
   at         TIMESTAMPTZ DEFAULT now(),

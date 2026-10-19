@@ -71,6 +71,7 @@ export function useCard(w: W, actor: Id, kid: Id, ask: string) {
 export function answerDemand(w: W, actor: Id, id: Id, how: 'comply' | 'expose') {
   const d = w.demands[id];
   if (!d || d.status !== 'sent' || d.target !== actor) fail('That demand is not for you.');
+  if (how !== 'comply' && how !== 'expose') fail('Comply or expose it.');
   const k = w.cards.find((x: any) => x.id === d.card);
   if (how === 'comply') {
     d.status = 'complied';

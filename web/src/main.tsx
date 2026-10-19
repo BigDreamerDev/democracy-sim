@@ -14,6 +14,7 @@ import { Wallet, Economy, Banks, Ventures } from './pages/money';
 import { Foreign, Nation, Security, Army, Press, Court, Case, Crises, Crisis, Season } from './pages/world';
 import { Backroom, Plots, Exile } from './pages/backroom';
 import { Admin } from './pages/admin';
+import { Developers } from './pages/developers';
 
 const ROOTS = ['', 'house', 'realm', 'laws', 'you', 'gazette'];
 function level(hash: string) {
@@ -67,7 +68,7 @@ function route(hash: string) {
     realm: () => <Realm />, offices: () => <Offices />, office: () => <Office id={b} />, cabinet: () => <Cabinet />, hos: () => <HOS />, parties: () => <Parties />, party: () => <Party id={b} />,
     wallet: () => <Wallet />, economy: () => <Economy />, banks: () => <Banks />, ventures: () => <Ventures />,
     foreign: () => <Foreign />, nation: () => <Nation id={b} />, security: () => <Security />, army: () => <Army />, press: () => <Press />, court: () => <Court />, case: () => <Case id={b} />, crises: () => <Crises />, crisis: () => <Crisis id={b} />, season: () => <Season />,
-    backroom: () => <Backroom />, plots: () => <Plots />, exile: () => <Exile />, admin: () => <Admin />
+    backroom: () => <Backroom />, plots: () => <Plots />, exile: () => <Exile />, admin: () => <Admin />, developers: () => <Developers />
   };
   return { tab: a || '', key: hash, view: (pages[a || ''] || pages[''])() };
 }
@@ -77,7 +78,7 @@ const TABS: [string, string, string, string[]][] = [
   ['#/house', 'House', 'house', ['house', 'proposals', 'p', 'new', 'questions', 'cabinet']],
   ['#/realm', 'Realm', 'realm', []],
   ['#/laws', 'Laws', 'laws', ['laws', 'law', 'convention', 'calendar']],
-  ['#/you', 'You', 'you', ['you', 'passport']]
+  ['#/you', 'You', 'you', ['you', 'passport', 'developers']]
 ];
 
 function App() {

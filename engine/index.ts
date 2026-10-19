@@ -13,6 +13,7 @@ export * from './core';
 export { createWorld, createLiveWorld, NAMES } from './world';
 export { viewFor } from './view';
 export { migrate } from './migrate';
+export { CATALOG } from './catalog';
 export { advanceTo, nextDeadline, upcoming } from './clock';
 
 type Cmd = (w: W, me: Id, a: any) => any;
@@ -126,12 +127,28 @@ export const COMMANDS: Record<string, Cmd> = {
 export function run(world: W, actor: Id, cmd: string, args: any = {}): W {
   const f = COMMANDS[cmd];
   if (!f) fail('Unknown action.');
+  checkArgs(args);
   const w = structuredClone(world);
   cit(w, actor);
   f(w, actor, args || {});
   P.checkObjectives(w, actor);
   Object.keys(w.citizens).forEach((id) => P.checkObjectives(w, id));
   return w;
+}
+// anything can arrive from a third-party app: plain JSON only, short strings, shallow
+function checkArgs(a: any, depth = 0) {
+  if (depth > 4) fail('That request is nested too deeply.');
+  if (a === null || typeof a === 'boolean') return;
+  if (typeof a === 'number') return Number.isFinite(a) || fail('Numbers must be finite.');
+  if (typeof a === 'string') return a.length <= 4000 || fail('That text is too long (4000 characters at most).');
+  if (Array.isArray(a)) return a.length <= 50 ? a.forEach((x) => checkArgs(x, depth + 1)) : fail('That list is too long.');
+  if (typeof a === 'object') {
+    const ks = Object.keys(a);
+    if (ks.length > 30) fail('Too many fields.');
+    ks.forEach((k) => (k === '__proto__' || k === 'constructor' || k === 'prototype' ? fail('Bad field name.') : checkArgs(a[k], depth + 1)));
+    return;
+  }
+  fail('Unsupported value.');
 }
 export function skip(world: W, ms: number): W {
   const w = structuredClone(world);

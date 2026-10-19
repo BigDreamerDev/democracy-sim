@@ -293,6 +293,7 @@ export function partyMotionVote(w: W, actor: Id, mid: Id, v: 'for' | 'against') 
   const p = c.party && w.parties[c.party];
   const m = p?.motions.find((x: any) => x.id === mid);
   if (!m || m.status !== 'open') fail('That motion is closed.');
+  if (v !== 'for' && v !== 'against') fail('Vote for or against.');
   m.votes[actor] = v;
   const n = members(w, p.id).length;
   const f = Object.values(m.votes).filter((x) => x === 'for').length;
@@ -394,7 +395,9 @@ export function setShadow(w: W, actor: Id, post: string, target: Id) {
 export function proposeCoalition(w: W, actor: Id, partners: string[], kind: 'full' | 'cs', terms: string[]) {
   const own = sideOf(w, actor);
   if (leaderOfSide(w, own) !== actor) fail('Only a party leader or an independent MP can lead coalition talks.');
-  if (!partners.length) fail('Pick at least one partner.');
+  if (!Array.isArray(partners) || !partners.length) fail('Pick at least one partner.');
+  if (kind !== 'full' && kind !== 'cs') fail('Pick a full coalition or confidence and supply.');
+  if (!Array.isArray(terms)) fail('Terms are a list of lines.');
   const sides = [own, ...partners.filter((p) => p !== own)];
   w.coalition = { id: newId(w, 'co'), lead: own, sides, kind, terms: terms.map((t) => t.trim()).filter(Boolean), signed: { [own]: true }, status: 'draft', promises: {}, at: w.now };
   gazette(w, 'government', `${sideName(w, own)} opens coalition talks with ${partners.map((p) => sideName(w, p)).join(' and ')}.`, '#/cabinet');

@@ -55,11 +55,14 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   world.ts     createWorld('convention'|'running') for the demo; createLiveWorld(people) for real
   view.ts      viewFor(world, me) — the redacted copy one player may see
   migrate.ts   migrate(world) — upgrades a saved world on server boot
+  catalog.ts   CATALOG — public description of every player command and its args (served by /api/v1/commands)
   index.ts     COMMANDS table; run(world, actor, cmd, args) applies one to a structuredClone
   bots.ts      demo and smoke only — never imported by the server
 web/src/     Preact + Vite. main.tsx (router, tabs), store.ts, ui.tsx (shared components),
              Sidebar.tsx, DemoPanel.tsx (demo only), pages/*.tsx, styles.css
-server/      app.ts (all routes), db.ts (pg or PGlite + SCHEMA), server.ts (boot/env), test.ts
+server/      app.ts (first-party routes), public.ts (/api/v1 for players' own apps), db.ts (pg or PGlite + SCHEMA),
+             server.ts (boot/env), test.ts
+API.md       public API docs for players. examples/minimal.html is a one-file client.
 docs/        GitHub Pages output. Hand-kept: config.js, icons/, manifest.webmanifest, sw.js
 scripts/     smoke.ts
 ```
@@ -99,6 +102,16 @@ scripts/     smoke.ts
 | `GET /api/admin/export` | RO | full unredacted world |
 | `POST /api/admin/password` | RO | `{citizen}` → `{temp}`; announced in the Gazette |
 | `POST /api/admin/reset` | RO | `{confirm:'RESET THE REALM'}`; snapshots first |
+| `GET /api/keys` | user | the caller's live API keys (no secrets) |
+| `POST /api/keys` | user | `{name, scope:'read'\|'act'}` → row + `key` (shown once). Max 5. |
+| `POST /api/keys/revoke` | user | `{id}` |
+
+**Public API `/api/v1/*`** (`server/public.ts`, documented for players in `API.md`):
+`GET /` and `GET /commands` need no key; `GET /me`, `GET /state` (`?since=&wait=` long-poll,
+ETag), `GET /gazette?since=`, `POST /act` need `Authorization: Bearer rlm_…`.
+Keys are stored as sha256 in `v2_api_keys`; session JWTs are refused there and keys are
+refused everywhere else. CORS is `*` (no cookies exist, so nothing ambient to steal).
+120 req/min/key. `act` needs scope `act` and a cmd in `CATALOG`, so `admin.*` is unreachable.
 
 Auth is `Authorization: Bearer <jwt>`, JWT `{id, tv}` signed with `JWT_SECRET`, 60 days.
 Citizen id = `'u' + users.id`.
@@ -130,7 +143,13 @@ Citizen id = `'u' + users.id`.
 5. **Check offices before admin. Never short-circuit.** Uzair holds offices too;
    `if (admin) return` at the top of a permission check removes his office powers.
 6. **The world is JSON.** No functions, classes, Dates, Maps or undefined-as-meaning.
-7. **One citizen, one vote.** Votes are keyed by citizen id; ids come only from the token.
+7. **One citizen, one vote.** Votes are keyed by citizen id; ids come only from the token or key.
+8. **`/api/v1` is a public contract.** Players' apps depend on it. Add fields and commands
+   freely; never rename or remove them, or change a command's args incompatibly. A breaking
+   change means a new `/api/v2` alongside. Keep `API.md` and `CATALOG` in step with the code.
+9. **Validate every argument in the engine.** Third-party clients send anything. `run()`
+   rejects non-JSON, long strings and deep nesting; each command must still check that enums
+   are one of the allowed values before storing them.
 
 ## Traps
 
@@ -155,7 +174,8 @@ Citizen id = `'u' + users.id`.
 **Add a player action**
 1. Write the rule in the right `engine/<system>.ts`: validate with `fail('…')`, mutate `w`,
    announce with `gazette(w, kind, text, '#/route')`, move money only with `transfer()`.
-2. Register it in `COMMANDS` in `engine/index.ts` as `'area.verb': (w, me, a) => …`.
+2. Register it in `COMMANDS` in `engine/index.ts` as `'area.verb': (w, me, a) => …`,
+   and describe it in `CATALOG` in `engine/catalog.ts` (unless it's `admin.*`). Add it to `API.md` only if it needs explaining.
 3. Call it from a page: `act('area.verb', {…}, 'Done message.')`.
 4. If it creates anything private, strip it in `engine/view.ts`.
 
