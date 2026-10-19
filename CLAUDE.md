@@ -51,7 +51,8 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   foreign.ts   5 nations, envoys, treaties, intel, the army
   backroom.ts  cards, deals, demands, plots/coups, exile, pardons
   society.ts   press, front pages, court, crisis spawning and deciding
-  crises.ts    CRISES — every crisis and its options; the last option is the default if the PM doesn't decide
+  crises.ts    CRISES and their lifecycle: spawn (weighted, no repeats), PM decide or `house` MP vote,
+               timeout (last option), `then` chains queued in w.crisisQueue and fired by the clock
   clock.ts     collect() = every pending deadline; advanceTo(t) runs them in time order
   world.ts     createWorld('convention'|'running') for the demo; createLiveWorld(people) for real
   view.ts      viewFor(world, me) — the redacted copy one player may see

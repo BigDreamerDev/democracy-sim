@@ -5,7 +5,7 @@ import { openVote, closeVote, enact, closeOverride, dissolve, closePMQs, missFor
 import { payday, settleVenture } from './economy';
 import { maybeOffers, answerAsk, resolveIntel, armyLoyalty } from './foreign';
 import { checkPlot, endMartialLaw } from './backroom';
-import { spawnCrisis, decideCrisis, CRISES, rule, makeFrontPage } from './society';
+import { spawnCrisis, timeoutCrisis, fireQueued, rule, makeFrontPage } from './society';
 
 type D = { at: number; run: () => void };
 function collect(w: W): D[] {
@@ -23,7 +23,8 @@ function collect(w: W): D[] {
   if (w.confidence) add(w.confidence.deadline, () => governmentFalls(w));
   if (w.pmInviteDue && !w.pm) add(w.pmInviteDue, () => autoInvite(w));
   if (w.hos.until) add(w.hos.until, () => ((w.hos.until = null), startHosSelection(w)));
-  Object.values(w.crises).forEach((c: any) => c.status === 'open' && add(c.decideBy, () => decideCrisis(w, null, c.id, CRISES.find((x) => x.id === c.type)!.options.length - 1)));
+  Object.values(w.crises).forEach((c: any) => c.status === 'open' && add(c.decideBy, () => timeoutCrisis(w, c)));
+  (w.crisisQueue || []).forEach((q: any) => add(q.at, () => fireQueued(w, q)));
   w.intel.forEach((r: any) => r.status === 'pending' && add(r.readyAt, () => resolveIntel(w, r)));
   Object.values(w.plots).forEach((p: any) => p.status === 'planning' && add(p.nextCheck, () => checkPlot(w, p)));
   Object.values(w.demands).forEach((d: any) => d.status === 'sent' && add(d.dueAt, () => ((d.status = 'ignored'), approve(w, d.target, 0))));

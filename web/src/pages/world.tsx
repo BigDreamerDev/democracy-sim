@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Field, Pick, Locked, Seg, Opt } from '../ui';
-import { nm, isPM, allCitizens, fmtTime, fmtDay, bal, hasPower, holderOf, standing } from '../../../engine/index';
+import { nm, isPM, allCitizens, fmtTime, fmtDay, bal, hasPower, holderOf, standing, isMP } from '../../../engine/index';
 import { MOODS, TREATIES, INTEL_Q } from '../../../engine/foreign';
 import { ARMY_COST } from '../../../engine/economy';
 import { CRISES } from '../../../engine/society';
@@ -167,8 +167,9 @@ export function Crises() {
   const { world: w } = useStore();
   const list = Object.values(w.crises).sort((a: any, b: any) => b.at - a.at) as any[];
   return (
-    <Page back={['#/realm', 'The realm']} title="Crises" intro="A new one every payday. The PM has 24 hours to choose which meter takes the hit; otherwise the last option happens and Stability drops too.">
-      <ul class="list" style={{ marginTop: 16 }}>{list.map((c) => { const t = CRISES.find((x) => x.id === c.type)!; return <LinkRow href={'#/crisis/' + c.id} title={t.title} sub={c.status === 'open' ? <>Decide within <Left at={c.decideBy} /></> : `Chose: ${t.options[c.choice].label}`} />; })}</ul>
+    <Page back={['#/realm', 'The realm']} title="Crises" intro="A new one every payday. The PM decides most within 24 hours; the big ones go to a vote of MPs. If nobody decides, the last option happens and Stability drops. Some choices come back weeks later.">
+      {(w.crisisQueue || []).length > 0 && <Card kind="dashed" style={{ marginTop: 14 }}><b>{w.crisisQueue.length} consequence{w.crisisQueue.length > 1 ? 's' : ''} pending.</b> <span class="small">Earlier choices will come back. Nobody knows quite when.</span></Card>}
+      <ul class="list" style={{ marginTop: 16 }}>{list.map((c) => { const t = CRISES.find((x) => x.id === c.type)!; return <LinkRow href={'#/crisis/' + c.id} title={<>{t.extreme && <span class="via" style={{ marginLeft: 0, marginRight: 6, color: 'var(--red)', opacity: 1 }}>emergency</span>}{t.title}</>} sub={c.status === 'open' ? <>{c.house ? 'House vote' : 'PM decides'} · closes in <Left at={c.decideBy} /></> : `${c.how === 'house' ? 'House chose' : c.how === 'default' ? 'Nobody chose' : 'PM chose'}: ${t.options[c.choice].label}`} />; })}</ul>
       {!list.length && <Empty>No crises yet. One arrives at payday.</Empty>}
     </Page>
   );
@@ -178,20 +179,31 @@ export function Crisis({ id }: { id: string }) {
   const c = w.crises[id];
   if (!c) return <Page title="No such crisis" back={['#/crises', 'Crises']} />;
   const t = CRISES.find((x) => x.id === c.type)!;
+  const open = c.status === 'open';
+  const votes = c.votes || {};
+  const count = (i: number) => Object.values(votes).filter((v) => v === i).length;
+  const mine = votes[me];
+  const canVote = open && c.house && isMP(w, me);
+  const need = Math.floor(w.config.seats / 2) + 1;
   return (
-    <Page back={['#/crises', 'Crises']} kicker={c.status === 'open' ? <>Decide within <Left at={c.decideBy} /></> : 'Decided'} title={t.title} intro={t.text}>
+    <Page back={['#/crises', 'Crises']} kicker={open ? <>{t.extreme ? 'Emergency · ' : ''}{c.house ? 'House vote' : 'PM decides'} · closes in <Left at={c.decideBy} /></> : 'Decided'} title={t.title} intro={t.text}>
+      {c.cause && <Card kind="warn" style={{ marginTop: 14 }}><b>This is a consequence.</b> <span class="small">{c.cause}</span></Card>}
+      {c.house && <Sec><p class="small muted" style={{ margin: 0 }}>{open ? <>MPs vote. {need} votes for one response settle it at once; otherwise the most votes win when time runs out, and a tie or silence means the last option.</> : `Settled by the House, ${Object.keys(votes).length} MPs voting.`}</p></Sec>}
       <Sec>
         <div class="stack">
           {t.options.map((o, i) => (
-            <Card kind={c.choice === i ? 'tint' : undefined}>
-              <b>{o.label}</b>
+            <Card kind={c.choice === i ? 'tint' : mine === i ? 'green' : undefined}>
+              <div class="row"><b>{o.label}</b>{c.house && <span class="small tnum">{count(i)} {count(i) === 1 ? 'vote' : 'votes'}</span>}</div>
               <p class="small" style={{ margin: '4px 0' }}>{o.what}</p>
-              <div class="chips">{o.effects.map((x) => <span class={'chip ' + (/[−-]\d|cools|grows/.test(x) ? 'red' : 'teal')}>{x}</span>)}</div>
-              {c.status === 'open' && isPM(w, me) && <Btn small style={{ marginTop: 8 }} onClick={() => act('crisis.decide', { id, choice: i }, 'Decided. +3 Influence.')}>Choose this</Btn>}
+              <div class="chips">{o.effects.map((x) => <span class={'chip ' + (/[−-]\d|cools|may|follow|Martial|Otherwise|back|more|goes|card/.test(x) ? 'red' : 'teal')}>{x}</span>)}</div>
+              {c.house && Object.entries(votes).some(([, v]) => v === i) && <div class="small muted" style={{ marginTop: 6 }}>{Object.entries(votes).filter(([, v]) => v === i).map(([m]) => nm(w, m)).join(', ')}</div>}
+              {open && !c.house && isPM(w, me) && <Btn small style={{ marginTop: 8 }} onClick={() => act('crisis.decide', { id, choice: i }, 'Decided. +3 Influence.')}>Choose this</Btn>}
+              {canVote && mine !== i && <Btn small kind={mine === undefined ? undefined : 'ghost'} style={{ marginTop: 8 }} onClick={() => act('crisis.vote', { id, choice: i }, mine === undefined ? 'Voted. +1 Influence.' : 'Vote changed.')}>{mine === undefined ? 'Vote for this' : 'Change to this'}</Btn>}
             </Card>
           ))}
         </div>
-        {c.status === 'open' && !isPM(w, me) && <p class="small muted">Only the PM decides. Lean on them at PMQs.</p>}
+        {open && !c.house && !isPM(w, me) && <p class="small muted">Only the PM decides. Lean on them at PMQs.</p>}
+        {open && c.house && !isMP(w, me) && <p class="small muted">Only MPs vote. Lobby yours.</p>}
       </Sec>
     </Page>
   );

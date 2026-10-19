@@ -30,7 +30,7 @@ export function Admin() {
       <Sec title="Start a crisis" sub="One lands every payday anyway. Starting one now is announced, and the PM still decides it.">
         {w.phase !== 'running' ? <Empty>Crises begin once Parliament is running.</Empty> : Object.values(w.crises).some((c: any) => c.status === 'open') ? <Empty>A crisis is already open.</Empty> : (
           <div class="grid2">
-            <Pick value={crisis} onChange={setCrisis} empty="Surprise me" options={CRISES.filter((c) => !c.needs || c.needs(w)).map((c) => [c.id, c.title])} />
+            <Pick value={crisis} onChange={setCrisis} empty="Surprise me" options={CRISES.filter((c) => !c.chainOnly && (!c.needs || c.needs(w))).map((c) => [c.id, (c.extreme ? '⚠ ' : '') + c.title + (c.house ? ' (House vote)' : '')])} />
             <Btn style={{ alignSelf: 'end' }} onClick={() => act('admin.crisis', { type: crisis }, 'Crisis started.') && setCrisis('')}>Start it</Btn>
           </div>
         )}

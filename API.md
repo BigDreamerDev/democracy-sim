@@ -194,7 +194,8 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | `economy`, `banks`, `ventures` | rate and prices; banks (your deposits/loans only); your ventures |
 | `nations`, `treaties`, `offers`, `army` | foreign affairs |
 | `papers`, `stories`, `frontpages` | the press |
-| `cases`, `crises`, `meters` | court, crises, and the `prosperity`/`stability` meters (0–100) |
+| `crises`, `crisisQueue` | each crisis: `type`, `status`, `house` (MPs vote with `crisis.vote` instead of the PM deciding), `votes`, `cause` (set when it's a consequence of an earlier choice), `decideBy`; `crisisQueue` holds consequences still to come |
+| `cases`, `meters` | court, crises, and the `prosperity`/`stability` meters (0–100) |
 | `cards`, `deals`, `demands`, `plots` | the backroom: only what you're allowed to see |
 | `gazette[]` | newest first, up to 300. `via` names the app, if one did it. |
 | `viewer` | your id |

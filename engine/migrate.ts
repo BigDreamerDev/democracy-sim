@@ -6,5 +6,7 @@ export function migrate(w: W): W {
   // example: w.newThing ??= {};
   w.flags ??= {};
   w.lastEvent ??= {};
+  w.crisisQueue ??= [];
+  Object.values(w.crises || {}).forEach((c: any) => (c.votes ??= {}));
   return w;
 }

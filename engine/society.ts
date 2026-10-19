@@ -113,41 +113,4 @@ export function rule(w: W, k: any, forPlaintiff: boolean) {
 }
 
 // ---------- the weekly crisis: the PM picks which meter takes the hit (the list lives in crises.ts) ----------
-import { CRISES } from './crises';
-export { CRISES };
-// a fresh crisis, never one of the last five; `type` picks a specific one (the Returning Officer's tool)
-export function spawnCrisis(w: W, type?: string) {
-  if (w.phase !== 'running') return type ? fail('Crises start once Parliament is running.') : undefined;
-  if (Object.values(w.crises).some((c: any) => c.status === 'open')) return type ? fail('A crisis is already open. Let the PM decide it first.') : undefined;
-  const fits = CRISES.filter((c) => !c.needs || c.needs(w));
-  let t: any;
-  if (type) {
-    t = fits.find((c) => c.id === type);
-    if (!t) fail(CRISES.some((c) => c.id === type) ? 'That crisis does not fit the realm right now.' : 'No such crisis.');
-  } else {
-    const recent = Object.values(w.crises).sort((a: any, b: any) => b.at - a.at).slice(0, 5).map((c: any) => c.type);
-    const pool = fits.filter((c) => !recent.includes(c.id));
-    t = pick(w, pool.length ? pool : fits);
-  }
-  const id = newId(w, 'cr');
-  w.crises[id] = { id, type: t.id, status: 'open', at: w.now, decideBy: w.now + DAY, choice: null };
-  gazette(w, 'crisis', `Crisis: ${t.title}. The Prime Minister has 24 hours to decide.`, '#/crisis/' + id);
-  return id;
-}
-export function decideCrisis(w: W, actor: Id | null, id: Id, choice: number) {
-  const c = w.crises[id];
-  if (!c || c.status !== 'open') fail('That crisis is over.');
-  if (actor && !isPM(w, actor)) fail('Only the Prime Minister decides.');
-  const t = CRISES.find((x) => x.id === c.type)!;
-  const o = t.options[choice];
-  if (!o) fail('Pick a response.');
-  c.status = 'decided';
-  c.choice = choice;
-  c.by = actor;
-  try {
-    o.run(w);
-  } catch {}
-  if (actor) earn(w, actor, 3, 'Handled a crisis');
-  else meter(w, 'stability', -2, 'Nobody handled the crisis');
-  gazette(w, 'crisis', `${t.title}: ${actor ? 'the PM chose' : 'nobody decided, so by default:'} "${o.label}".`, '#/crisis/' + id);
-}
+export { CRISES, spawnCrisis, decideCrisis, voteCrisis, timeoutCrisis, fireQueued } from './crises';

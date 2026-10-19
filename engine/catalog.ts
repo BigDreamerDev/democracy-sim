@@ -71,5 +71,6 @@ export const CATALOG: Record<string, CmdInfo> = {
   'court.file': { about: 'Bring a case to the court (5 crowns).', args: { question: 'text', against: 'id (citizen, optional)', lawRef: 'text (optional)', argument: 'text' } },
   'court.defend': { about: 'Defend a case brought against you.', args: { case: 'id', text: 'text' } },
   'court.judge': { about: 'Judge: decide a case.', args: { case: 'id', side: "'plaintiff' | 'defence'" } },
-  'crisis.decide': { about: 'Decide a crisis put to you.', args: { id: 'id (crisis)', choice: 'number (option index)' } }
+  'crisis.decide': { about: 'PM: decide an ordinary crisis.', args: { id: 'id (crisis)', choice: 'number (option index)' } },
+  'crisis.vote': { about: 'MP: vote on a crisis the House decides (crisis.house is true).', args: { id: 'id (crisis)', choice: 'number (option index)' } }
 };

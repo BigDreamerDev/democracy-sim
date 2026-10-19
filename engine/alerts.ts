@@ -1,7 +1,7 @@
 // What needs one citizen right now: votes to cast, bills to sign, deals waiting. Shown on Today, counted in the
 // sidebar, and sent to personal webhooks (each alert's `key` is stable, so a hook fires once per new item).
 // Always call it on viewFor(world, me), never the full world, so it can only mention what that person may see.
-import { W, Id, nm, isHOS, isPM, intrigueOpen } from './core';
+import { W, Id, nm, isHOS, isPM, isMP, intrigueOpen } from './core';
 import { canVote } from './politics';
 import { canVoteOn, KINDS } from './proposals';
 
@@ -23,7 +23,11 @@ export function needs(w: W, me: Id): Alert[] {
     if (p.stage === 'hos' && isHOS(w, me)) out.push({ key: `dissolve:${p.id}`, href: '#/p/' + p.id, label: 'Dissolution request', title: 'The PM asks for an election', at: p.hosDueAt, urgent: true });
   });
   if (!w.pm && w.phase === 'running' && isHOS(w, me)) out.push({ key: 'nopm', href: '#/hos', label: 'No government', title: 'Invite a Prime Minister', at: w.pmInviteDue, urgent: true });
-  Object.values(w.crises).forEach((c: any) => c.status === 'open' && isPM(w, me) && out.push({ key: 'crisis:' + c.id, href: '#/crisis/' + c.id, label: 'Crisis', title: 'You must decide', at: c.decideBy, urgent: true }));
+  Object.values(w.crises).forEach((c: any) => {
+    if (c.status !== 'open') return;
+    if (!c.house && isPM(w, me)) out.push({ key: 'crisis:' + c.id, href: '#/crisis/' + c.id, label: 'Crisis', title: 'You must decide', at: c.decideBy, urgent: true });
+    if (c.house && isMP(w, me) && c.votes?.[me] === undefined) out.push({ key: 'crisisvote:' + c.id, href: '#/crisis/' + c.id, label: 'Crisis vote', title: 'The House must choose a response', at: c.decideBy, urgent: true });
+  });
   w.questions.forEach((q: any) => q.status === 'open' && ((q.to === 'pm' && isPM(w, me) && q.backers.length >= 3) || q.to === me) && out.push({ key: 'question:' + q.id, href: '#/questions', label: q.formal ? 'Formal question' : 'PMQ to answer', title: q.text, at: q.dueAt }));
   if (w.confidence && isPM(w, me)) out.push({ key: 'confidence:' + w.confidence.deadline, href: '#/new?kind=confidence', label: 'Confidence lost', title: 'Win a confidence vote or fall', at: w.confidence.deadline, urgent: true });
   Object.values(w.parties).forEach((p: any) => p.status === 'forming' && p.invited.includes(me) && !p.signed.includes(me) && out.push({ key: 'cofound:' + p.id, href: '#/parties', label: 'Co-found', title: `Sign to found the ${p.name}`, at: p.formingUntil }));

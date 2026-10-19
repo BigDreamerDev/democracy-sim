@@ -88,6 +88,8 @@ export function botsAct(world: W, you: Id, intensity = 1): W {
     if (pr.stage === 'assent' && w.hos.holder && w.hos.holder !== you && p(0.6)) go(w.hos.holder, 'prop.assent', { prop: pr.id, yes: chance(w, 0.92) });
     if (pr.stage === 'hos' && w.hos.holder && w.hos.holder !== you && p(0.6)) go(w.hos.holder, 'prop.dissolve', { prop: pr.id, yes: w.minority || chance(w, 0.4) });
   });
+  // MPs vote on House crises
+  Object.values(w.crises).forEach((c: any) => c.status === 'open' && c.house && w.seats.filter((m: string) => m && m !== you && c.votes[m] === undefined).forEach((m: string) => p(0.35) && go(m, 'crisis.vote', { id: c.id, choice: Math.floor(rand(w) * CRISES.find((x) => x.id === c.type)!.options.length) })));
   // an MP occasionally puts a bill forward
   mps(w).forEach((m) => {
     if (m === you || !p(0.03)) return;
@@ -121,7 +123,7 @@ export function botsAct(world: W, you: Id, intensity = 1): W {
       }
     });
     w.questions.filter((q: any) => q.status === 'open' && q.to === 'pm' && q.backers.length >= 2).slice(0, 2).forEach((q: any) => p(0.3) && go(pm, 'q.answer', { id: q.id, text: pick(w, ['The government is getting on with the job.', 'I will write to the member with the details.', 'We have nothing to hide, and the figures will be published.']) }));
-    Object.values(w.crises).forEach((c: any) => c.status === 'open' && p(0.4) && go(pm, 'crisis.decide', { id: c.id, choice: Math.floor(rand(w) * CRISES.find((x) => x.id === c.type)!.options.length) }));
+    Object.values(w.crises).forEach((c: any) => c.status === 'open' && !c.house && p(0.4) && go(pm, 'crisis.decide', { id: c.id, choice: Math.floor(rand(w) * CRISES.find((x) => x.id === c.type)!.options.length) }));
     if (w.confidence && p(0.3)) go(pm, 'prop.new', { kind: 'confidence' });
   }
   // formal questions get answered, sometimes
