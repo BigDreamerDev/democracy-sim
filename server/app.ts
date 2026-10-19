@@ -8,7 +8,7 @@ import { publicApi, newKey, keyHash, MAX_KEYS } from './public';
 import { apps, APPS_SCHEMA, Sender } from './apps';
 import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate, needs } from '../engine/index';
 
-export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void; send?: Sender; site?: string };
+export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void; send?: Sender; site?: string; devOrigins?: boolean };
 
 export async function makeApp(o: Options) {
   const { q, secret } = o;
@@ -129,7 +129,8 @@ export async function makeApp(o: Options) {
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (origin) {
-      if (!o.origins.includes(origin)) {
+      const local = o.devOrigins && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      if (!local && !o.origins.includes(origin)) {
         log(`Refused origin ${origin}. Add it to ALLOWED_ORIGINS.`);
         return res.status(403).json({ error: `Origin ${origin} is not allowed.` });
       }

@@ -15,6 +15,7 @@ if (!process.env.DATABASE_URL) {
     await q('INSERT INTO users (username, display_name, password_hash, is_admin) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING', [u, n, h, a]);
   console.log('[realm] dev database: admin / amara / bilal, password "password"');
 }
-const { app } = await makeApp({ q, secret, origins });
+// locally, any localhost port may call the API (vite moves to 5174 if 5173 is busy)
+const { app } = await makeApp({ q, secret, origins, devOrigins: !process.env.DATABASE_URL });
 const port = Number(process.env.PORT || 4321);
 app.listen(port, () => console.log(`[realm] listening on ${port}`));
