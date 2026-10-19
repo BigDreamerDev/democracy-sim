@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'preact/hooks';
 import { useStore, act, ONLINE } from '../store';
-import { Page, Sec, Card, Btn, Who, Left, Empty, LinkRow, Meter, Stamp, Seg, Field, Pick, BallotPaper } from '../ui';
+import { Page, Sec, Card, Btn, Who, Left, Empty, LinkRow, Meter, Stamp, Seg, Field, Pick, BallotPaper, MultiBallot } from '../ui';
 import { nm, allCitizens, fmtDay } from '../../../engine/index';
-import { canVote, conventionNeed, conventionSpec, SETTABLE_START, DOW } from '../../../engine/politics';
+import { canVote, conventionNeed, conventionSpec, SETTABLE_START, DOW, VOTING } from '../../../engine/politics';
 
 export function Elections() {
   const { world: w } = useStore();
@@ -38,7 +38,7 @@ export function Election({ id }: { id: string }) {
   const standing = !!e.candidates[me];
   const cands = Object.values(e.candidates).sort((a: any, b: any) => w.citizens[b.id].approval - w.citizens[a.id].approval) as any[];
   return (
-    <Page back={['#/elections', 'Elections']} kicker={<>Closes in <Left at={e.closesAt} /></>} title={e.title} intro={e.kind === 'general' ? `Vote for one candidate. The top ${e.winners} win seats; the rest stay in line for any seat that falls empty.` : e.voters === 'mps' ? 'Only MPs vote.' : 'Secret ballot. Final once cast.'}>
+    <Page back={['#/elections', 'Elections']} kicker={<>Closes in <Left at={e.closesAt} /></>} title={e.title} intro={<>{VOTING[e.method || 'single'].how} {e.kind === 'general' ? `The top ${e.winners} win seats; the rest stay in line for any seat that falls empty.` : e.voters === 'mps' ? 'Only MPs vote.' : 'Secret ballot. Final once cast.'}</>}>
       <Sec>
         <Card kind={standing ? 'tint' : undefined}>
           {standing ? <div class="row"><b>You are standing.</b><Btn small kind="plain" onClick={() => act('election.withdraw', { election: e.id }, 'Withdrawn.')}>Withdraw</Btn></div> : <div class="row"><span>Put your name on the ballot.</span><Btn small onClick={() => act('election.stand', { election: e.id }, 'You are standing.')}>Stand</Btn></div>}
@@ -46,18 +46,22 @@ export function Election({ id }: { id: string }) {
       </Sec>
       <Sec title="Your ballot">
         {!canVote(w, e, me) ? <Empty>You cannot vote in this one.</Empty> : (
-          <BallotPaper
-            head={mine ? 'Ballot cast · sealed until polls close' : 'Vote for one · secret and final'}
-            options={cands.map((x) => ({
+          (() => {
+            const method = e.method || 'single';
+            const opts = cands.map((x) => ({
               key: x.id,
               label: <>{x.party && <span class="party-dot" style={{ background: w.parties[x.party]?.colour }} aria-hidden="true" />}{nm(w, x.id)}{x.id === me ? ' (you)' : ''}{x.incumbent && <span class="chip ink" style={{ marginLeft: 8 }}>Sitting</span>}</>,
               sub: <>{x.party ? w.parties[x.party]?.name : 'Independent'} · approval {w.citizens[x.id].approval}%</>
-            }))}
-            value={mine} locked={!!mine} confirm={`Cast your ballot? It can't be changed.`}
-            onPick={(id) => act('election.vote', { election: e.id, candidate: id }, 'Ballot cast. +2 Influence.')}
-            empty="Nobody is standing yet. Be the first."
-            foot={mine ? <>You voted for <b>{nm(w, mine)}</b>. Only you can see that.</> : undefined}
-          />
+            }));
+            const done = mine && Array.isArray(mine) ? <>Your ballot: {mine.map((id: string, i: number) => <>{i ? ', ' : ''}{method === 'approval' ? '' : `${i + 1}. `}<b>{nm(w, id)}</b></>)}. Only you can see it.</> : mine ? <>You voted for <b>{nm(w, mine)}</b>. Only you can see that.</> : undefined;
+            if (method === 'single')
+              return <BallotPaper head={mine ? 'Ballot cast · sealed until polls close' : 'Vote for one · secret and final'} options={opts} value={mine} locked={!!mine} confirm="Cast your ballot? It can't be changed." onPick={(id) => act('election.vote', { election: e.id, candidate: id }, 'Ballot cast. +2 Influence.')} empty="Nobody is standing yet. Be the first." foot={done} />;
+            return (
+              <MultiBallot mode={method === 'approval' ? 'approve' : 'rank'} final head={mine ? 'Ballot cast · sealed until polls close' : `${VOTING[method].short} · secret and final`}
+                options={opts} value={Array.isArray(mine) ? mine : null} locked={!!mine} empty="Nobody is standing yet. Be the first." foot={done}
+                onCast={(list) => act('election.vote', { election: e.id, [method === 'approval' ? 'approve' : 'ranking']: list }, 'Ballot cast. +2 Influence.')} />
+            );
+          })()
         )}
       </Sec>
       <Sec title="Turnout so far"><Meter value={Object.keys(e.ballots).length} max={allCitizens(w).length} /><p class="small muted">{Object.keys(e.ballots).length} of {allCitizens(w).length} have voted.</p></Sec>
@@ -81,6 +85,15 @@ function Count({ e }: { e: any }) {
           {i === e.winners - 1 && r.ranked.length > e.winners && <div class="cutline"><span>{e.kind === 'general' ? `${e.winners} seats` : 'Elected'}</span></div>}
         </>
       ))}
+      <p class="small muted" style={{ margin: 0 }}>Counted by {VOTING[r.method || 'single'].short.toLowerCase()}. Numbers are {VOTING[r.method || 'single'].unit}{r.quota ? `; the quota to win a seat was ${r.quota}` : ''}.</p>
+      {r.rounds && r.rounds.length > 0 && (
+        <div class="rounds-wrap"><table class="rounds">
+          <thead><tr><th>Candidate</th>{r.rounds.map((_: any, i: number) => <th>Round {i + 1}</th>)}</tr></thead>
+          <tbody>{r.ranked.map((id: string) => (
+            <tr><td>{nm(w, id)}</td>{r.rounds.map((rd: any) => <td class={rd.elected?.includes(id) ? 'el' : rd.eliminated === id ? 'out' : ''}>{rd.counts[id] !== undefined ? rd.counts[id] : ''}</td>)}</tr>
+          ))}</tbody>
+        </table></div>
+      )}
       {r.draw && <p class="small err-line">A tie at the line was settled by drawn lot.</p>}
       {e.kind === 'general' && <p class="small muted">Below the line, in order, is the countback list: if a seat falls empty, the next person takes it.</p>}
     </div>
@@ -139,7 +152,17 @@ export function Convention() {
       </div>
       <div style={{ marginTop: 14 }}><Seg value={tab} onChange={setTab} options={[['open', `Open (${openCount})`], ['settled', `Settled (${done})`]]} /></div>
       <div class="stack" style={{ marginTop: 16 }}>
-        {shown.map((c: any) => <ClauseCard c={c} n={cl.indexOf(c) + 1} need={need} />)}
+        {GROUPS.map(([g, title, sub]) => {
+          const items = shown.filter((c: any) => (c.kind !== 'core' ? 'citizens' : c.group || 'founding') === g);
+          if (!items.length) return null;
+          return (
+            <div class="conv-group">
+              <h2 class="h">{title}</h2>
+              {sub && <p class="small muted" style={{ margin: '-4px 0 6px' }}>{sub}</p>}
+              {items.map((c: any) => <ClauseCard c={c} n={cl.indexOf(c) + 1} need={need} />)}
+            </div>
+          );
+        })}
         {!shown.length && <Empty>{tab === 'open' ? 'Every clause is settled.' : 'Nothing is settled yet.'}</Empty>}
       </div>
       <Sec title="Table a new clause" sub="Anything you think the realm should start with. Each citizen can table 2, and make 4 suggestions in all.">
@@ -161,7 +184,15 @@ export function Convention() {
   );
 }
 
+const GROUPS: [string, string, string?][] = [
+  ['founding', 'The realm', 'Its name, its Parliament, its head of state and its week.'],
+  ['voting', 'How the realm votes', 'How elections are counted, who votes on bills, and what it takes to pass one.'],
+  ['start', 'How the game starts', 'The practice run before the real thing.'],
+  ['citizens', 'Clauses tabled by citizens', 'Each needs more Adopt than Reject.']
+];
+
 function ClauseCard({ c, n, need }: { c: any; n: number; need: number }) {
+  const [ranking, setRanking] = useState(false);
   const { world: w, me } = useStore();
   const cl = w.convention.clauses;
   const [add, setAdd] = useState({ text: '', value: '', dow: '1', hour: '9' });
@@ -185,6 +216,12 @@ function ClauseCard({ c, n, need }: { c: any; n: number; need: number }) {
           value={c.votes[me]} need={need} adopted={settled ? c.adopted : undefined} locked={settled}
           onPick={(j) => act('convention.vote', { clause: c.id, option: j }, c.votes[me] === undefined ? 'Vote cast. +2 Influence.' : 'Vote changed.')}
         />
+      )}
+      {!settled && !locked && c.options.length >= 3 && w.convention.method !== 'plurality' && (
+        ranking ? (
+          <MultiBallot mode="rank" head="Rank them all · used if the Convention closes by ranked choice" options={c.options.map((o: string, j: number) => ({ key: j, label: o }))} value={c.ranks?.[me] || null}
+            onCast={(list) => act('convention.rank', { clause: c.id, ranking: list }, 'Ranking saved. Your first choice is your vote.') && setRanking(false)} />
+        ) : <button type="button" class="clause-more" onClick={() => setRanking(true)}>{c.ranks?.[me] ? `Your ranking: ${c.ranks[me].map((j: number) => c.options[j]).join(' › ')} · change` : 'Rank all the options instead'}</button>
       )}
       {!settled && !locked && spec.kind !== 'none' && c.options.length < 8 && (
         adding ? (

@@ -1,7 +1,7 @@
 // The Founding Convention, national elections (top N win, countback fills gaps), the head of state,
 // parties, forming a government, coalitions, the shadow cabinet, seasons, ambitions and weekly objectives.
 import {
-  W, Id, DAY, fail, newId, pick, rand, shuffle, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, stamp, approve,
+  W, Id, DAY, HOUR, fail, newId, pick, rand, shuffle, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, stamp, approve,
   isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal, fmtDay
 } from './core';
 import { createOffice } from './offices';
@@ -45,7 +45,15 @@ export function conventionClauses() {
     clause('term', 'How long between general elections?', ['2 weeks', '3 weeks', '4 weeks'], [2, 3, 4], 1),
     clause('payday', 'When is payday? The dividend and wages are paid, and the week’s crisis lands.', ['Mondays at 09:00', 'Fridays at 18:00', 'Sundays at 12:00'], [{ dow: 1, hour: 9 }, { dow: 5, hour: 18 }, { dow: 0, hour: 12 }], 0),
     clause('pmqs', 'When are Prime Minister’s Questions?', ['Wednesdays at 20:00', 'Tuesdays at 19:00', 'Thursdays at 20:00'], [{ dow: 3, hour: 20 }, { dow: 2, hour: 19 }, { dow: 4, hour: 20 }], 0),
-    clause('dividend', 'How much does every citizen get each payday?', ['3 crowns', '5 crowns', '8 crowns'], [3, 5, 8], 1)
+    clause('dividend', 'How much does every citizen get each payday?', ['3 crowns', '5 crowns', '8 crowns'], [3, 5, 8], 1),
+    // how the realm votes
+    clause('voting', 'How are elections counted?', ['One vote each: the most votes win', 'Ranked choice: number the candidates; votes transfer until the seats are filled', 'Approval: tick everyone you would accept; the most ticks win', 'Points: rank them; each place down scores one point less'], ['single', 'ranked', 'approval', 'borda'], 0, { group: 'voting' }),
+    clause('billVoters', 'Who votes on bills?', ['MPs, in the House', 'Every citizen, on every bill (direct democracy)'], ['mps', 'all'], 0, { group: 'voting' }),
+    clause('passRule', 'What does a proposal need to pass?', ['More ayes than noes', 'A majority of everyone entitled to vote, whether they turn up or not', 'Two-thirds of the votes cast'], ['cast', 'seats', 'twothirds'], 0, { group: 'voting' }),
+    clause('conventionMethod', 'When this Convention closes, how are the clauses still open decided?', ['The option with the most first choices', 'Ranked choice: everyone’s rankings, counted by instant runoff'], ['plurality', 'ranked'], 0, { group: 'voting' }),
+    // how the game starts
+    clause('induction', 'How long is induction week, the practice run before the real game?', ['7 days', '3 days', 'No practice: start for real'], [7, 3, 0], 0, { group: 'start' }),
+    clause('practiceBots', 'Practice opponents during induction?', ['4 practice bots', '8 practice bots', 'No bots, just us'], [4, 8, 0], 0, { group: 'start' })
   ];
 }
 // how many votes for one option settle a clause outright: a majority of all citizens
@@ -64,10 +72,43 @@ export function conventionVote(w: W, actor: Id, clauseId: string, option: number
     earn(w, actor, 2, 'Voted at the Convention');
     tick(w, actor, 'votes');
   }
+  if (c.ranks?.[actor] && c.ranks[actor][0] !== option) delete c.ranks[actor];
   c.votes[actor] = option;
   const counts = c.options.map((_: any, i: number) => Object.values(c.votes).filter((v) => v === i).length);
   const top = counts.findIndex((n: number) => n >= conventionNeed(w));
   if (top >= 0) adoptClause(w, c, top);
+}
+// a full ranking of a clause's options; your first choice also counts as your vote
+export function conventionRank(w: W, actor: Id, clauseId: string, ranking: any) {
+  const c = openClause(w, clauseId);
+  if (!Array.isArray(ranking) || !ranking.length) fail('Rank at least one option.');
+  if (ranking.some((i) => !(Number.isInteger(i) && i >= 0 && i < c.options.length)) || new Set(ranking).size !== ranking.length) fail('Rank each option once.');
+  c.ranks = c.ranks || {};
+  c.ranks[actor] = ranking.slice();
+  conventionVote(w, actor, clauseId, ranking[0]);
+}
+// instant runoff over the rankings (a plain vote counts as a ranking of one)
+function runoff(w: W, c: any): number | null {
+  const papers = Object.keys(c.votes).map((v) => (c.ranks?.[v]?.length ? c.ranks[v] : [c.votes[v]]));
+  if (!papers.length) return null;
+  const out = new Set<number>();
+  for (let guard = 0; guard < 20; guard++) {
+    const t: Record<number, number> = {};
+    c.options.forEach((_: any, i: number) => !out.has(i) && (t[i] = 0));
+    let live = 0;
+    papers.forEach((p: number[]) => {
+      const i = p.find((x) => !out.has(x));
+      if (i !== undefined) (t[i]++, live++);
+    });
+    const ids = Object.keys(t).map(Number);
+    const best = ids.sort((a, b) => t[b] - t[a])[0];
+    if (t[best] * 2 > live || ids.length <= 1) return t[best] > 0 ? best : null;
+    const min = Math.min(...ids.map((i) => t[i]));
+    const lows = ids.filter((i) => t[i] === min);
+    if (lows.length === ids.length) return null;
+    out.add(lows[lows.length - 1]);
+  }
+  return null;
 }
 const mineCount = (w: W, actor: Id) =>
   w.convention.clauses.reduce((n: number, c: any) => n + c.optBy.filter((b: any) => b === actor).length + (c.by === actor ? 1 : 0), 0);
@@ -164,6 +205,12 @@ function adoptClause(w: W, c: any, i: number) {
     if (c.id === 'payday') w.calendar.payday = { ...v };
     if (c.id === 'pmqs') w.calendar.pmqs = { ...v };
     if (c.id === 'dividend') w.config.dividend = v;
+    if (c.id === 'voting') w.config.voting = v;
+    if (c.id === 'billVoters') w.config.billVoters = v;
+    if (c.id === 'passRule') w.config.passRule = v;
+    if (c.id === 'conventionMethod') w.convention.method = v;
+    if (c.id === 'induction') w.config.inductionDays = v;
+    if (c.id === 'practiceBots') w.config.practiceBots = v;
   }
   if (w.convention.clauses.every((x: any) => x.adopted !== null)) finishConvention(w);
 }
@@ -172,13 +219,17 @@ function adoptClause(w: W, c: any, i: number) {
 export function closeConvention(w: W) {
   if (w.phase !== 'convention') return;
   gazette(w, 'convention', 'The Convention closes. Every open clause takes its leading option.', '#/convention');
-  const order = (c: any) => (c.id === 'hos' ? 0 : c.id === 'method' ? 1 : 2);
+  const order = (c: any) => (c.id === 'conventionMethod' ? -1 : c.id === 'hos' ? 0 : c.id === 'method' ? 1 : 2);
   w.convention.closing = true; // adoptClause must not finish the Convention halfway through this loop
   [...w.convention.clauses].sort((a: any, b: any) => order(a) - order(b)).forEach((c: any) => {
     if (c.adopted !== null) return;
     const counts = c.options.map((_: any, i: number) => Object.values(c.votes).filter((v) => v === i).length);
     const top = Math.max(0, ...counts);
     let pick = top > 0 && counts.filter((n: number) => n === top).length === 1 ? counts.indexOf(top) : c.def;
+    if (w.convention.method === 'ranked' && c.id !== 'conventionMethod') {
+      const r = runoff(w, c);
+      if (r !== null) pick = r;
+    }
     if (c.id === 'principle') pick = 0;
     if (!(pick < c.options.length)) pick = 0;
     adoptClause(w, c, pick);
@@ -221,7 +272,15 @@ export function startInduction(w: W) {
   if (!days) return;
   const snap = structuredClone(w);
   delete snap.induction;
-  w.induction = { until: w.now + days * DAY, startedAt: w.now, snapshot: snap, done: false };
+  w.induction = { until: w.now + days * DAY, startedAt: w.now, snapshot: snap, done: false, nextBotAt: null };
+  // practice opponents: clearly named, gone when induction ends (they aren't in the snapshot)
+  const bots = Math.max(0, Math.min(8, w.config.practiceBots ?? 4));
+  PRACTICE_BOTS.slice(0, bots).forEach((name, i) => {
+    const id = 'bot' + (i + 1);
+    w.citizens[id] = { id, name: name + ' (bot)', bot: true, party: null, admin: false, active: true, joinedAt: w.now, influence: 10, seasonEarned: 0, approval: 50, log: [], stamps: [], titles: [], censures: 0, stats: {}, whip: { loyal: 0, rebel: 0 }, week: {}, objectives: [], exiledUntil: null, asylum: null, ambition: null, weekIncome: 0, tutorial: {} };
+    transfer(w, 'reserve', ca(id), 100, 'Practice bot float');
+  });
+  if (bots) w.induction.nextBotAt = w.now + HOUR;
   gazette(w, 'induction', `Induction week begins. For ${days} days everything is practice: stand, vote, legislate, scheme. On ${fmtDay(w.induction.until)} the realm resets and the real first election opens.`, '#/learn');
 }
 export function endInduction(w: W) {
@@ -242,6 +301,7 @@ export function endInduction(w: W) {
   const practised = keep.gazette.filter((g: any) => !before.has(g.id)).length;
   w.gazette = snap.gazette;
   Object.values(keep.citizens).forEach((c: any) => {
+    if (c.bot) return;
     const fresh = w.citizens[c.id];
     if (!fresh) {
       // joined during induction: a clean start like everyone else
@@ -265,13 +325,14 @@ export function endInduction(w: W) {
   callGeneralElection(w, w.now + 2 * DAY);
   if (w.config.hos === 'monarchy') startHosSelection(w);
 }
+export const PRACTICE_BOTS = ['Ada', 'Barnaby', 'Clem', 'Dot', 'Ezra', 'Fen', 'Gus', 'Hattie'];
 export const inInduction = (w: W) => !!w.induction && !w.induction.done && w.now < w.induction.until;
 
 // ================= Elections =================
 // stand: who may stand ('all' or 'party:<id>'); voters: 'all', 'mps' or 'party:<id>'; winners: how many win
 export function newElection(w: W, e: any) {
   const id = newId(w, 'e');
-  w.elections[id] = { id, status: 'open', candidates: {}, ballots: {}, opensAt: w.now, results: null, stand: 'all', voters: 'all', winners: 1, ...e };
+  w.elections[id] = { id, status: 'open', candidates: {}, ballots: {}, opensAt: w.now, results: null, stand: 'all', voters: 'all', winners: 1, method: w.config.voting || 'single', ...e };
   return w.elections[id];
 }
 export function callGeneralElection(w: W, closesAt: number) {
@@ -307,31 +368,104 @@ export function withdraw(w: W, actor: Id, eid: Id) {
   delete e.candidates[actor];
   Object.keys(e.ballots).forEach((v) => e.ballots[v] === actor && delete e.ballots[v]);
 }
-export function castBallot(w: W, actor: Id, eid: Id, cand: Id) {
+// ---------- how ballots are cast and counted: chosen at the Convention (config.voting) ----------
+export const VOTING: Record<string, { label: string; short: string; how: string; unit: string }> = {
+  single: { label: 'One vote each: the most votes win', short: 'Single vote', how: 'Vote for one candidate.', unit: 'votes' },
+  ranked: { label: 'Ranked choice: number the candidates; votes transfer until the seats are filled', short: 'Ranked choice', how: 'Number as many candidates as you like, 1 for your favourite. If your 1 can’t win or has votes to spare, your vote moves to your next choice.', unit: 'first preferences' },
+  approval: { label: 'Approval: tick everyone you would accept; the most ticks win', short: 'Approval', how: 'Tick every candidate you would be happy with.', unit: 'approvals' },
+  borda: { label: 'Points: rank them; each place down scores one point less', short: 'Points (Borda)', how: 'Number the candidates in order. First place scores the most points.', unit: 'points' }
+};
+export function castBallot(w: W, actor: Id, eid: Id, cand: Id, a: any = {}) {
   const e = w.elections[eid];
   if (!e || !canVote(w, e, actor)) fail('You cannot vote in this election.');
-  if (!e.candidates[cand]) fail('That person is not standing.');
   if (e.ballots[actor]) fail('Your ballot is cast. It cannot be changed.');
-  e.ballots[actor] = cand;
+  const method = e.method || 'single';
+  if (method === 'single') {
+    if (!e.candidates[cand]) fail('That person is not standing.');
+    e.ballots[actor] = cand;
+  } else {
+    // ranked and points take an ordered list; approval takes a set. One name on its own is fine for all three.
+    const list: Id[] = Array.isArray(a.ranking) ? a.ranking : Array.isArray(a.approve) ? a.approve : cand ? [cand] : [];
+    if (!list.length) fail(method === 'approval' ? 'Tick at least one candidate.' : 'Number at least one candidate.');
+    if (new Set(list).size !== list.length) fail('Each candidate can appear only once on your ballot.');
+    if (list.some((c) => !e.candidates[c])) fail('Your ballot names someone who is not standing.');
+    e.ballots[actor] = list.slice();
+  }
   earn(w, actor, 2, 'Voted in an election');
   tick(w, actor, 'votes');
 }
-function rank(w: W, e: any) {
-  const counts: Record<Id, number> = {};
-  Object.keys(e.candidates).forEach((c) => (counts[c] = 0));
-  Object.values(e.ballots).forEach((c: any) => counts[c] !== undefined && counts[c]++);
+// every method returns the same shape: a score per candidate for display, the full order (winners first, then
+// the countback list), and for ranked choice the rounds of the count
+function countElection(w: W, e: any) {
+  const cands = Object.keys(e.candidates);
   const lot: Record<Id, number> = {};
-  Object.keys(counts).forEach((c) => (lot[c] = rand(w)));
-  const ranked = Object.keys(counts).sort((a, b) => counts[b] - counts[a] || lot[b] - lot[a]);
+  cands.forEach((c) => (lot[c] = rand(w)));
+  const method = e.method || 'single';
+  const ballots: any[] = Object.values(e.ballots);
+  const counts: Record<Id, number> = {};
+  cands.forEach((c) => (counts[c] = 0));
+  const asList = (b: any): Id[] => (Array.isArray(b) ? b : [b]).filter((c: Id) => counts[c] !== undefined);
+  if (method === 'single') ballots.forEach((b) => asList(b).slice(0, 1).forEach((c) => counts[c]++));
+  if (method === 'approval') ballots.forEach((b) => asList(b).forEach((c) => counts[c]++));
+  if (method === 'borda') ballots.forEach((b) => asList(b).forEach((c, i) => (counts[c] += Math.max(0, cands.length - 1 - i))));
+  if (method === 'ranked') {
+    ballots.forEach((b) => asList(b).slice(0, 1).forEach((c) => counts[c]++));
+    const r = stv(asList, ballots, cands, Math.min(e.winners, cands.length), lot);
+    const tied = r.rounds.some((x: any) => x.byLot);
+    return { counts, ranked: r.order, draw: tied, rounds: r.rounds, quota: r.quota };
+  }
+  const ranked = cands.slice().sort((a, b) => counts[b] - counts[a] || lot[b] - lot[a]);
   const draws = ranked.filter((c, i) => i > 0 && counts[c] === counts[ranked[i - 1]] && i < e.winners + 1 && i >= e.winners - 1);
   return { counts, ranked, draw: draws.length > 0 };
+}
+// single transferable vote with fractional surplus transfers and a Droop quota; one seat makes it instant runoff
+function stv(asList: (b: any) => Id[], raw: any[], cands: Id[], seats: number, lot: Record<Id, number>) {
+  let papers = raw.map((b) => ({ prefs: asList(b), weight: 1 })).filter((p) => p.prefs.length);
+  const quota = Math.floor(papers.length / (seats + 1)) + 1;
+  const elected: Id[] = [];
+  const out: Id[] = [];
+  const rounds: any[] = [];
+  const live = () => cands.filter((c) => !elected.includes(c) && !out.includes(c));
+  const top = (p: any) => p.prefs.find((c: Id) => live().includes(c));
+  for (let guard = 0; guard < 100 && elected.length < seats && live().length; guard++) {
+    const tally: Record<Id, number> = {};
+    live().forEach((c) => (tally[c] = 0));
+    papers.forEach((p) => {
+      const c = top(p);
+      if (c) tally[c] += p.weight;
+    });
+    const round: any = { counts: Object.fromEntries(Object.entries(tally).map(([k, v]) => [k, Math.round(v * 100) / 100])) };
+    rounds.push(round);
+    const order = live().sort((a, b) => tally[b] - tally[a] || lot[b] - lot[a]);
+    if (live().length <= seats - elected.length) {
+      round.elected = order.slice();
+      elected.push(...order);
+      break;
+    }
+    if (tally[order[0]] >= quota) {
+      const winner = order[0];
+      round.elected = [winner];
+      const surplus = tally[winner] - quota;
+      const factor = tally[winner] > 0 ? surplus / tally[winner] : 0;
+      papers.forEach((p) => top(p) === winner && (p.weight *= factor));
+      elected.push(winner);
+      continue;
+    }
+    const low = order[order.length - 1];
+    if (order.length > 1 && tally[order[order.length - 2]] === tally[low]) round.byLot = true;
+    round.eliminated = low;
+    out.push(low);
+  }
+  // countback order: winners as elected, then the rest from the last eliminated back to the first
+  const order = [...elected, ...live(), ...out.slice().reverse()];
+  return { order, rounds, quota };
 }
 export function closeElection(w: W, e: any) {
   e.status = 'closed';
   e.closedAt = w.now;
-  const r = rank(w, e);
+  const r: any = countElection(w, e);
   const winners = r.ranked.slice(0, e.winners);
-  e.results = { counts: r.counts, ranked: r.ranked, winners, draw: r.draw, turnout: Object.keys(e.ballots).length };
+  e.results = { counts: r.counts, ranked: r.ranked, winners, draw: r.draw, turnout: Object.keys(e.ballots).length, method: e.method || 'single', rounds: r.rounds || null, quota: r.quota || null };
   if (e.kind === 'general') {
     w.seats = Array(w.config.seats).fill(null).map((_, i) => winners[i] || null);
     w.lastRanked = r.ranked;

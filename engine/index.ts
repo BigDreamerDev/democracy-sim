@@ -24,11 +24,12 @@ type Cmd = (w: W, me: Id, a: any) => any;
 export const COMMANDS: Record<string, Cmd> = {
   'convention.vote': (w, me, a) => P.conventionVote(w, me, a.clause, a.option),
   'convention.suggest': (w, me, a) => P.conventionSuggest(w, me, a.clause, a),
+  'convention.rank': (w, me, a) => P.conventionRank(w, me, a.clause, a.ranking),
   'convention.propose': (w, me, a) => P.conventionPropose(w, me, a),
   'tutorial.visit': (w, me, a) => T.visitMission(w, me, a.mission),
   'election.stand': (w, me, a) => P.stand(w, me, a.election),
   'election.withdraw': (w, me, a) => P.withdraw(w, me, a.election),
-  'election.vote': (w, me, a) => P.castBallot(w, me, a.election, a.candidate),
+  'election.vote': (w, me, a) => P.castBallot(w, me, a.election, a.candidate, a),
   'party.found': (w, me, a) => P.foundParty(w, me, a.name, a.colour, a.cofounders),
   'party.cosign': (w, me, a) => P.cosign(w, me, a.party),
   'party.join': (w, me, a) => P.joinParty(w, me, a.party),

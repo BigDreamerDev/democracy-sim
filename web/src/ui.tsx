@@ -350,3 +350,39 @@ export function BallotPaper(p: { head: ComponentChildren; options: BallotOpt[]; 
     </div>
   );
 }
+
+// ranked and approval ballots: tap to number (1, 2, 3…) or to tick, then cast. `onCast` gets the list, best first.
+export function MultiBallot(p: { head: ComponentChildren; options: BallotOpt[]; mode: 'rank' | 'approve'; value?: any[] | null; onCast?: (list: any[]) => void; locked?: boolean; foot?: ComponentChildren; empty?: ComponentChildren; castLabel?: string; final?: boolean }) {
+  const [list, setList] = useState<any[]>(p.value || []);
+  const shown = p.locked ? p.value || [] : list;
+  const toggle = (k: any) => {
+    if (p.locked) return;
+    setList(list.includes(k) ? list.filter((x) => x !== k) : [...list, k]);
+  };
+  const changed = JSON.stringify(list) !== JSON.stringify(p.value || []);
+  return (
+    <div class={'ballot multi' + (p.locked ? ' locked' : '')}>
+      <p>{p.head}</p>
+      {p.options.map((o) => {
+        const i = shown.indexOf(o.key);
+        return (
+          <button type="button" class={i >= 0 ? 'on' : ''} onClick={() => toggle(o.key)} disabled={p.locked || !p.onCast} aria-pressed={i >= 0 ? 'true' : 'false'}>
+            <span class="b-main"><span class="b-label">{o.label}{o.tag}</span>{o.sub && <span class="small muted">{o.sub}</span>}</span>
+            <span class="box" aria-hidden="true">{i >= 0 && (p.mode === 'rank' ? <b class="b-rank">{i + 1}</b> : <svg width="34" height="34" viewBox="0 0 24 24"><path d="M4 13l5 5L20 6" stroke-width="3" fill="none" /></svg>)}</span>
+          </button>
+        );
+      })}
+      {!p.options.length && <div class="b-empty">{p.empty || 'Nothing on the ballot yet.'}</div>}
+      {!p.locked && p.onCast && p.options.length > 0 && (
+        <div class="b-confirm">
+          <span>{list.length ? (p.mode === 'rank' ? `${list.length} ranked. Tap again to remove.` : `${list.length} ticked.`) : p.mode === 'rank' ? 'Tap in order: your favourite first.' : 'Tick everyone you would accept.'}</span>
+          <div class="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
+            {list.length > 0 && <button type="button" class="btn plain small" onClick={() => setList([])}>Clear</button>}
+            <button type="button" class="btn small" disabled={!list.length || !changed} onClick={() => p.onCast!(list)}>{p.castLabel || (p.final ? 'Cast my ballot' : 'Save my ranking')}</button>
+          </div>
+        </div>
+      )}
+      {p.foot && <div class="b-foot">{p.foot}</div>}
+    </div>
+  );
+}

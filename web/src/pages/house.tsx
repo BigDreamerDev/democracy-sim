@@ -3,7 +3,7 @@ import { useStore, act, getState } from '../store';
 import { go, Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Seg, Opt, Field, Pick, Stamp } from '../ui';
 import { nm, isMP, isPM, isHOS, inGovernment, mps, fmtTime, superMajority, majority, officeWithPower, hosTitle, nextAt } from '../../../engine/index';
 import { leaderOfOpposition, HOS_METHODS } from '../../../engine/politics';
-import { describe, KINDS, SETTABLE, canVoteOn } from '../../../engine/proposals';
+import { describe, KINDS, SETTABLE, canVoteOn, passCheck, PASS_RULES } from '../../../engine/proposals';
 import { TEMPLATES, POWERS, FILL } from '../../../engine/offices';
 
 const STAGE: Record<string, string> = { debate: 'Debate', vote: 'Voting', assent: 'Awaiting assent', override: 'Veto override', hos: 'With the head of state', enacted: 'Law', passed: 'Passed', failed: 'Defeated', vetoed: 'Vetoed', withheld: 'Assent refused' };
@@ -81,7 +81,7 @@ export function Proposal({ id }: { id: string }) {
   const steps = p.kind === 'bill' ? ['Debate', 'Vote', w.config.hos === 'monarchy' ? 'Royal Assent' : 'Signature', 'Law'] : p.kind === 'dissolution' ? ['Asked', 'Head of state decides', 'Result'] : ['Debate', 'Vote', 'Result'];
   const idx = p.kind === 'dissolution' ? (p.stage === 'hos' ? 1 : 2) : ({ debate: 0, vote: 1, assent: 2, override: 2, enacted: 3, passed: p.kind === 'bill' ? 3 : 2, failed: p.kind === 'bill' ? 1 : 2, vetoed: 2, withheld: 2 } as any)[p.stage];
   const failed = ['failed', 'vetoed', 'withheld'].includes(p.stage);
-  const need = p.constitutional ? superMajority(w) : p.voters === 'all' ? null : majority(w);
+  const need = p.constitutional ? superMajority(w) : p.rule === 'seats' ? majority(w) : null;
   const blocker = officeWithPower(w, me, 'block');
   return (
     <Page back={['#/house', 'The House']} kicker={<>{KINDS[p.kind].name}{p.kind === 'bill' ? ` ${p.n}` : ''}, by <Who id={p.by} />{p.constitutional ? ', constitutional' : ''}{p.fast ? ', fast-tracked' : ''}</>} title={p.title}>
@@ -101,7 +101,7 @@ export function Proposal({ id }: { id: string }) {
         <Sec>
           <Card>
             <div class="row"><h2 class="h" style={{ margin: 0 }}>{p.stage === 'override' ? 'Override vote' : p.voters === 'all' ? 'The referendum' : 'The vote'}</h2>{(p.stage === 'vote' || p.stage === 'override') && <b class="small" style={{ color: 'var(--red)' }}>Closes in <Left at={p.stage === 'override' ? p.overrideEndsAt : p.voteEndsAt} /></b>}</div>
-            <p class="small muted" style={{ margin: '4px 0 12px' }}>{p.stage === 'override' ? `Needs ${superMajority(w)} of ${w.config.seats} MPs.` : p.voters === 'all' ? 'Every citizen votes. Ballots are secret.' : `Needs ${need}${p.constitutional ? ' ayes' : ` of ${w.config.seats}`}. A tie goes to the Speaker.`}</p>
+            <p class="small muted" style={{ margin: '4px 0 12px' }}>{p.stage === 'override' ? `Needs ${superMajority(w)} of ${w.config.seats} MPs.` : <>Needs {passCheck(w, p, 0, 0).need}.{p.voters === 'all' ? ' Every citizen votes. Ballots are secret.' : (p.rule || 'cast') === 'cast' && !p.constitutional ? ' A tie goes to the Speaker.' : ''}</>}</p>
             {p.voters !== 'all' ? (
               <div class="seats-row" role="img" aria-label={`${ayes} aye, ${noes} no`}>{mps(w).map((m: string) => <span title={nm(w, m)} class={'seat ' + (book[m] === 'aye' ? 'aye' : book[m] === 'no' ? 'no' : '')}>{nm(w, m).slice(0, 1)}</span>)}</div>
             ) : (
@@ -112,10 +112,10 @@ export function Proposal({ id }: { id: string }) {
               <div class="division-bar" aria-hidden="true">
                 <i class="aye" style={{ width: `${(ayes / Math.max(1, w.config.seats)) * 100}%` }} />
                 <i class="no" style={{ width: `${(noes / Math.max(1, w.config.seats)) * 100}%` }} />
-                <span class="need" style={{ left: `${(need / Math.max(1, w.config.seats)) * 100}%` }} title={`${need} needed`} />
+                {need && <span class="need" style={{ left: `${(need / Math.max(1, w.config.seats)) * 100}%` }} title={`${need} needed`} />}
               </div>
             )}
-            {(p.stage === 'vote' || p.stage === 'override') && p.voters !== 'all' && <p class="small" style={{ margin: '6px 0 10px', fontWeight: 700 }}>{ayes >= need ? 'On course to pass.' : noes > w.config.seats - need ? 'On course to fall.' : `${need - ayes} more aye${need - ayes === 1 ? '' : 's'} needed to pass.`}</p>}
+            {(p.stage === 'vote' || p.stage === 'override') && p.voters !== 'all' && <p class="small" style={{ margin: '6px 0 10px', fontWeight: 700 }}>{passCheck(w, p, ayes, noes).passed ? 'On course to pass.' : need ? (noes > w.config.seats - need ? 'On course to fall.' : `${need - ayes} more aye${need - ayes === 1 ? '' : 's'} needed to pass.`) : ayes || noes ? 'Not passing yet.' : 'Nobody has voted yet.'}</p>}
             {(p.stage === 'vote' || p.stage === 'override') && canVoteOn(w, p, me) && !(p.voters === 'all' && mine) && (
               <div class="lobbies" role="group" aria-label="Your vote">
                 <button type="button" class={'lobby aye' + (mine === 'aye' ? ' on' : '')} aria-pressed={mine === 'aye' ? 'true' : 'false'} onClick={() => act('prop.vote', { prop: p.id, vote: 'aye' }, mine ? 'Vote changed.' : 'Vote cast. +2 Influence.')}><b>{p.voters === 'all' ? 'Yes' : 'Aye'}</b><small>{p.voters === 'all' ? 'I agree' : 'Content'}</small></button>

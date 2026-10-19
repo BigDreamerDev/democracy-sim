@@ -105,7 +105,7 @@ export function propose(w: W, actor: Id, a: any) {
   const debateH = a.fast ? 12 : kind === 'no_confidence' || kind === 'confidence' || kind === 'censure' ? 12 : w.config.debateHours;
   w.proposals[id] = {
     id, n: w.propCount, kind, title: titles[kind] || title, summary: (a.summary || '').trim(), by: actor, clauses, target: a.target || null,
-    constitutional, voters: kind === 'referendum' ? 'all' : 'mps', stage: kind === 'dissolution' ? 'hos' : 'debate', at: w.now,
+    constitutional, voters: kind === 'referendum' || (kind === 'bill' && w.config.billVoters === 'all') ? 'all' : 'mps', rule: w.config.passRule || 'cast', stage: kind === 'dissolution' ? 'hos' : 'debate', at: w.now,
     debateEndsAt: w.now + debateH * HOUR, voteEndsAt: null, assentDueAt: null, hosDueAt: kind === 'dissolution' ? w.now + DAY : null,
     speeches: [], votes: {}, casting: null, lobby: 0, result: null, lawRef: null, fast: !!a.fast
   };
@@ -166,17 +166,31 @@ function tally(w: W, p: any, book: any) {
   const valid = Object.entries(book).filter(([id]) => (p.voters === 'all' ? !!w.citizens[id] : isMP(w, id)));
   return { ayes: valid.filter(([, v]) => v === 'aye').length, noes: valid.filter(([, v]) => v === 'no').length };
 }
+// what it takes to pass, chosen at the Convention (config.passRule, fixed on each proposal when tabled):
+// 'cast' more ayes than noes; 'seats' a majority of everyone entitled to vote; 'twothirds' two-thirds of votes cast.
+// Constitutional changes always need a supermajority.
+export const PASS_RULES: Record<string, string> = { cast: 'More ayes than noes', seats: 'A majority of everyone entitled to vote', twothirds: 'Two-thirds of the votes cast' };
+const electorate = (w: W, p: any) => (p.voters === 'all' ? allCitizens(w).length : w.config.seats);
+export function passCheck(w: W, p: any, ayes: number, noes: number): { passed: boolean; tie: boolean; need: string } {
+  const n = electorate(w, p);
+  if (p.constitutional) {
+    if (p.voters === 'all') return { passed: ayes > 0 && ayes * 5 >= (ayes + noes) * 4, tie: false, need: 'four in five of the votes cast' };
+    return { passed: ayes >= superMajority(w), tie: false, need: `${superMajority(w)} of ${n} ayes` };
+  }
+  const rule = p.rule || 'cast';
+  if (rule === 'seats') return { passed: ayes >= Math.floor(n / 2) + 1, tie: false, need: `${Math.floor(n / 2) + 1} of ${n} ayes` };
+  if (rule === 'twothirds') return { passed: ayes > 0 && ayes * 3 >= (ayes + noes) * 2, tie: false, need: 'two-thirds of the votes cast' };
+  return { passed: ayes > noes, tie: ayes === noes, need: 'more ayes than noes' };
+}
 export function closeVote(w: W, p: any) {
   const { ayes, noes } = tally(w, p, p.votes);
-  let passed: boolean;
-  let note = '';
-  if (p.constitutional) {
-    passed = ayes >= superMajority(w);
-    note = ` (needed ${superMajority(w)})`;
-  } else if (ayes === noes && p.voters === 'mps') {
+  const chk = passCheck(w, p, ayes, noes);
+  let passed = chk.passed;
+  let note = p.constitutional ? ` (needed ${chk.need})` : '';
+  if (!p.constitutional && chk.tie && p.voters === 'mps' && (ayes || noes)) {
     passed = (p.casting || 'no') === 'aye';
     note = `, the Speaker's casting vote ${passed ? 'for' : 'against'}`;
-  } else passed = ayes > noes;
+  }
   p.result = { ayes, noes, passed, note };
   trackWhip(w, p);
   const sp = w.citizens[p.by];

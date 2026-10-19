@@ -4,13 +4,14 @@
 export type CmdInfo = { about: string; args: Record<string, string> };
 
 export const CATALOG: Record<string, CmdInfo> = {
+  'convention.rank': { about: 'Rank the options of a Convention clause (your first choice is also your vote). Used if the Convention adopts ranked choice for its close.', args: { clause: 'id', ranking: 'list of option indexes, best first' } },
   'convention.suggest': { about: 'Add an option to a Convention clause: a name (text), a number (value), or a day and hour (dow 0-6, hour 0-23).', args: { clause: 'id', text: 'text (name clause)', value: 'number (seats, term, dividend)', dow: 'number (payday, pmqs)', hour: 'number (payday, pmqs)' } },
   'convention.propose': { about: 'Table a new Convention clause: a rule in words, or a different starting value for a setting.', args: { text: 'text (12-300 chars), or', setting: "'taxRate' | 'mpPay' | 'ministerPay' | 'tariff' | 'debateHours' | 'voteHours' | 'intrigueDelayDays'", value: 'number (with setting)' } },
   'tutorial.visit': { about: 'Tick a reading mission of the induction tutorial.', args: { mission: "'welcome' | 'law'" } },
   'convention.vote': { about: 'Vote on a Founding Convention clause.', args: { clause: 'id (convention.clauses[].id)', option: 'number (index into options)' } },
   'election.stand': { about: 'Stand in an open election.', args: { election: 'id' } },
   'election.withdraw': { about: 'Withdraw from an election before voting opens.', args: { election: 'id' } },
-  'election.vote': { about: 'Cast your secret ballot.', args: { election: 'id', candidate: 'id (citizen)' } },
+  'election.vote': { about: 'Cast your secret ballot. election.method says how: single (candidate), ranked or borda (ranking: ids best first), approval (approve: ids).', args: { election: 'id', candidate: 'id (single vote)', ranking: 'list of ids (ranked, borda)', approve: 'list of ids (approval)' } },
   'party.found': { about: 'Found a party (10 crowns). Two co-founders must co-sign within a day.', args: { name: 'text', colour: 'text (#rrggbb)', cofounders: 'list (2 citizen ids)' } },
   'party.cosign': { about: 'Co-sign a forming party you were named in.', args: { party: 'id' } },
   'party.join': { about: 'Join an active party.', args: { party: 'id' } },

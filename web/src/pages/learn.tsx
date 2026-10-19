@@ -3,10 +3,12 @@ import { useEffect, useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Seal, Left } from '../ui';
 import { TUTORIAL, fmtDay, hosTitle } from '../../../engine/index';
+import { VOTING } from '../../../engine/politics';
+import { PASS_RULES } from '../../../engine/proposals';
 
 const SYSTEMS: { id: string; title: string; href: string; body: (w: any) => string }[] = [
   { id: 'Basics', title: 'How you win', href: '#/season', body: () => 'Everything you do earns Influence: voting, speaking, holding office, getting laws passed. Influence is spent on political moves (a third proposal at once, a fast-tracked debate, a plot). Each season, the player who earned the most is champion, and everyone has a secret ambition worth 30 more.' },
-  { id: 'Elections', title: 'Elections', href: '#/elections', body: (w) => `Every ${w.config.termDays / 7} weeks the whole realm votes. You get one vote; the ${w.config.seats} candidates with the most votes nationwide take the seats. If a seat falls empty, the next in line takes it. Ballots are secret.` },
+  { id: 'Elections', title: 'Elections', href: '#/elections', body: (w) => `Every ${w.config.termDays / 7} weeks the whole realm elects ${w.config.seats} MPs. The count: ${VOTING[w.config.voting || 'single'].label.toLowerCase()}. If a seat falls empty, the next in line takes it. Ballots are secret. Bills are voted on by ${w.config.billVoters === 'all' ? 'every citizen' : 'MPs'}, and need ${(PASS_RULES[w.config.passRule || 'cast'] || '').toLowerCase()}.` },
   { id: 'Parties', title: 'Parties', href: '#/parties', body: () => 'A party needs a founder and two co-founders. Parties that split their vote lose seats, so they pick who stands. The biggest group in the House usually forms the government.' },
   { id: 'Parliament', title: 'Parliament', href: '#/house', body: (w) => `The ${hosTitle(w)} invites a Prime Minister, who appoints ministers. MPs table proposals: bills change the law, and motions can censure someone or bring down the government. Each gets a debate, then a vote. Anyone can ask questions at PMQs.` },
   { id: 'Money', title: 'Money', href: '#/wallet', body: (w) => `Crowns are the currency. Every payday everyone gets ${w.config.dividend}, and MPs and ministers are paid more. Send crowns to anyone, lobby MPs in public, open a bank once the Banking Act passes, or invest abroad.` },
@@ -25,7 +27,7 @@ export function Learn() {
   return (
     <Page back={['#/you', 'You']} kicker={induction ? 'Induction week' : 'Learn the realm'} title="How to play"
       intro={induction
-        ? <>This week is practice. Try everything: it all resets on <b>{fmtDay(w.induction.until)}</b> (in <Left at={w.induction.until} />), when the real first election opens. Each mission you finish is worth 1 real Influence afterwards.</>
+        ? <>This week is practice. Try everything{Object.values(w.citizens).some((c: any) => c.bot) ? ', against the practice bots too' : ''}: it all resets on <b>{fmtDay(w.induction.until)}</b> (in <Left at={w.induction.until} />), when the real first election opens. Each mission you finish is worth 1 real Influence afterwards.</>
         : w.phase === 'convention' ? 'First, the Founding Convention writes the rules. Then a week of practice, then the real thing.' : 'Everything in the realm, in two minutes. The missions walk you through each part by doing it once.'}>
       <Card kind="tint" style={{ marginTop: 16 }}>
         <div class="row"><b>Induction missions</b><b class="tnum">{n} of {TUTORIAL.length}</b></div>

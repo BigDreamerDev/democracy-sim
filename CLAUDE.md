@@ -62,7 +62,7 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   alerts.ts    needs(view, me) — what needs a player now; Today, the sidebar badge and personal webhooks
   catalog.ts   CATALOG — public description of every player command and its args (served by /api/v1/commands)
   index.ts     COMMANDS table; run(world, actor, cmd, args) applies one to a structuredClone
-  bots.ts      demo and smoke only — never imported by the server
+  bots.ts      bot turns: botsAct (demo, smoke) and actBots(w, isBot) — the clock runs practice bots during induction
 web/src/     Preact + Vite. main.tsx (router, tabs), store.ts, ui.tsx (shared components),
              Sidebar.tsx, DemoPanel.tsx (demo only), pages/*.tsx, styles.css
 server/      app.ts (first-party routes), public.ts (/api/v1 for players' own apps), db.ts (pg or PGlite + SCHEMA),
@@ -197,6 +197,12 @@ Citizen id = `'u' + users.id`.
   restores the snapshot in place, keeping citizens' `tutorial`, new citizens, `pending`, `adminLog`, rng
   and flags, then opens the real first election. `viewFor` never copies the snapshot. Anything that must
   survive induction has to be added to the keep-list in `endInduction`.
+- **Practice bots** (`config.practiceBots`, default 4) are citizens with `bot: true`, added after the snapshot
+  so they vanish at the end of induction. The clock gives them a turn every 2 hours (`induction.nextBotAt`).
+- **Voting methods**: `config.voting` (single, ranked = STV/IRV, approval, borda) is copied onto each election
+  as `e.method` when it opens. Ballots are an id (single) or a list (others). `config.billVoters` ('mps'|'all')
+  and `config.passRule` ('cast'|'seats'|'twothirds') are copied onto each proposal (`voters`, `rule`);
+  `passCheck()` in proposals.ts is the one place that decides a pass. All are chosen at the Convention.
 
 ## Playbooks
 

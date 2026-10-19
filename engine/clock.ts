@@ -1,8 +1,9 @@
 // Time: everything closes itself. advanceTo() runs every deadline in order, including the calendar's weekly events.
-import { W, DAY, nm, gazette, exiled, allCitizens, nextAt, meter, inDanger, approve } from './core';
+import { W, DAY, HOUR, nm, gazette, exiled, allCitizens, nextAt, meter, inDanger, approve } from './core';
 import { closeElection, callGeneralElection, autoInvite, governmentFalls, startHosSelection, newObjectives, closeConvention, endInduction } from './politics';
 import { openVote, closeVote, enact, closeOverride, dissolve, closePMQs, missFormal } from './proposals';
 import { payday, settleVenture } from './economy';
+import { actBots } from './bots';
 import { maybeOffers, answerAsk, resolveIntel, armyLoyalty } from './foreign';
 import { checkPlot, endMartialLaw } from './backroom';
 import { spawnCrisis, timeoutCrisis, fireQueued, rule, makeFrontPage } from './society';
@@ -14,6 +15,8 @@ function collect(w: W): D[] {
   Object.values(w.elections).forEach((e: any) => e.status === 'open' && add(e.closesAt, () => closeElection(w, e)));
   if (w.phase === 'convention' && w.convention.closesAt) add(w.convention.closesAt, () => closeConvention(w));
   if (w.induction && !w.induction.done) add(w.induction.until, () => endInduction(w));
+  // practice bots take a turn every two hours during induction
+  if (w.induction && !w.induction.done && w.induction.nextBotAt) add(w.induction.nextBotAt, () => ((w.induction.nextBotAt = w.now + 2 * HOUR), actBots(w, (id) => !!id && !!w.citizens[id]?.bot, 0.6)));
   if (w.phase === 'running' && w.nextGeneralAt && !w.martial) add(w.nextGeneralAt - 2 * DAY, () => callGeneralElection(w, w.nextGeneralAt));
   Object.values(w.proposals).forEach((p: any) => {
     if (p.stage === 'debate') add(p.debateEndsAt, () => openVote(w, p));
