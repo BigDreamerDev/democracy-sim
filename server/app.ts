@@ -6,7 +6,7 @@ import jwt from 'jsonwebtoken';
 import { Q, SCHEMA } from './db';
 import { publicApi, newKey, keyHash, MAX_KEYS } from './public';
 import { apps, APPS_SCHEMA, Sender } from './apps';
-import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate, needs } from '../engine/index';
+import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate, needs, adminDid } from '../engine/index';
 
 export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void; send?: Sender; site?: string; devOrigins?: boolean };
 
@@ -273,15 +273,21 @@ export async function makeApp(o: Options) {
 
   // the Returning Officer's tools that sit outside the game
   const admin = (req: any, res: any, next: any) => (req.user?.is_admin ? next() : res.status(403).json({ error: 'Returning Officer only.' }));
-  app.get('/api/admin/export', auth, admin, (_req, res) => res.json(world));
+  // the export holds every secret in the game, so taking one is announced
+  app.get('/api/admin/export', auth, admin, async (req: any, res) => {
+    await serial(async () => {
+      adminDid(world, req.cid, 'downloaded a full export of the realm, secrets included');
+      await save();
+    });
+    res.json(world);
+  });
   // a misbehaving app: out of the directory, no new sign-ins, every key revoked, and the realm is told why
   app.get('/api/admin/apps', auth, admin, handle(() => A.allApps()));
   app.post('/api/admin/apps/remove', auth, admin, handle(async (req) => {
     const r = await A.takeDown(String(req.body?.app || ''), req.body?.reason);
     r.keys.forEach((h: string) => v1.forgetKey(h));
     await serial(async () => {
-      world.adminLog.unshift({ at: now(), by: req.cid, text: `Removed the app ${r.name}: ${String(req.body.reason).trim()}` });
-      gazette(world, 'quiet', `The Returning Officer removed the app ${r.name}: ${String(req.body.reason).trim()}`);
+      adminDid(world, req.cid, `removed the app ${r.name}: ${String(req.body.reason).trim()}`, '#/apps');
       await save();
     });
     return { ok: true, revoked: r.keys.length };
@@ -289,7 +295,7 @@ export async function makeApp(o: Options) {
   app.post('/api/admin/apps/restore', auth, admin, handle(async (req) => {
     const r = await A.restore(String(req.body?.app || ''));
     await serial(async () => {
-      world.adminLog.unshift({ at: now(), by: req.cid, text: `Restored the app ${r.name}` });
+      adminDid(world, req.cid, `restored the app ${r.name}`, '#/apps');
       await save();
     });
     return { ok: true };
@@ -303,8 +309,7 @@ export async function makeApp(o: Options) {
     await q('UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2', [await bcrypt.hash(temp, 10), u.id]);
     userCache.delete(u.id);
     await serial(async () => {
-      world.adminLog.unshift({ at: now(), by: req.cid, text: `Reset ${u.display_name}'s password` });
-      gazette(world, 'quiet', `The Returning Officer reset ${u.display_name}'s password at their request.`);
+      adminDid(world, req.cid, `reset ${u.display_name}'s password, which would let them sign in as ${u.display_name}`);
       await save();
     });
     res.json({ temp });
@@ -314,7 +319,7 @@ export async function makeApp(o: Options) {
     await serial(async () => {
       await q('INSERT INTO v2_snapshots (reason, state) VALUES ($1, $2)', ['before reset', JSON.stringify(world)]);
       world = createLiveWorld(await people(), now(), (now() % 2147483647) | 0);
-      world.adminLog.unshift({ at: now(), by: req.cid, text: 'Reset the realm to a fresh Founding Convention' });
+      adminDid(world, req.cid, 'reset the realm to a fresh Founding Convention');
       await save();
     });
     schedule();

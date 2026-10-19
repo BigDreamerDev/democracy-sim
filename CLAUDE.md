@@ -50,7 +50,8 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   economy.ts   payday, tax, Reserve rate, banks, ventures
   foreign.ts   5 nations, envoys, treaties, intel, the army
   backroom.ts  cards, deals, demands, plots/coups, exile, pardons
-  society.ts   press, front pages, court, crises
+  society.ts   press, front pages, court, crisis spawning and deciding
+  crises.ts    CRISES — every crisis and its options; the last option is the default if the PM doesn't decide
   clock.ts     collect() = every pending deadline; advanceTo(t) runs them in time order
   world.ts     createWorld('convention'|'running') for the demo; createLiveWorld(people) for real
   view.ts      viewFor(world, me) — the redacted copy one player may see
@@ -153,12 +154,13 @@ Citizen id = `'u' + users.id`.
    `viewFor`**, or every player can read it in devtools.
 3. **The client is untrusted.** Every rule lives in the engine and is re-checked on the
    server. Hiding a button is cosmetic.
-4. **Rules change only through Parliament.** The RO's powers are exactly: approve
-   sign-ups, toggle `requireApproval`/`openSignup`, move the calendar, force-enact a
-   stuck bill (logged), reset a password (announced), remove or restore a player app (announced),
-   export, reset the realm.
-   Don't add RO powers over game rules.
-5. **Check offices before admin. Never short-circuit.** Uzair holds offices too;
+4. **Rules change only through Parliament.** The RO's powers are exactly: approve sign-ups,
+   toggle `requireApproval`/`openSignup`, move the calendar, start a crisis, force-enact a stuck
+   bill, reset a password, remove or restore a player app, export, reset the realm. Don't add RO
+   powers over game rules. **Every one of them goes through `adminDid()`** (engine/core.ts), which
+   writes the public admin log and the Gazette. A new admin power must too.
+5. **The RO is a full player** and can stand, vote and hold any office. **Check offices before
+   admin. Never short-circuit.** Uzair holds offices too;
    `if (admin) return` at the top of a permission check removes his office powers.
 6. **The world is JSON.** No functions, classes, Dates, Maps or undefined-as-meaning.
 7. **One citizen, one vote.** Votes are keyed by citizen id; ids come only from the token or key.

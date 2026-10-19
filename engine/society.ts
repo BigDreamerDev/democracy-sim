@@ -112,58 +112,27 @@ export function rule(w: W, k: any, forPlaintiff: boolean) {
   gazette(w, 'court', `The Supreme Court rules for ${forPlaintiff ? nm(w, k.plaintiff) : k.against}: ${k.question}`, '#/case/' + k.id);
 }
 
-// ---------- the weekly crisis: the PM picks which meter takes the hit ----------
-export const CRISES: { id: string; title: string; text: string; needs?: (w: W) => boolean; options: { label: string; what: string; effects: string[]; run: (w: W) => void }[] }[] = [
-  {
-    id: 'flood', title: 'The river has flooded', text: 'Homes on the east bank are under water.',
-    options: [
-      { label: 'Pay for repairs', what: 'The Treasury rebuilds the homes.', effects: ['Treasury −60', 'Stability +3'], run: (w) => (transfer(w, 'treasury', 'nation:varnholm', 60, 'Flood repairs'), meter(w, 'stability', 3, 'Flood homes rebuilt')) },
-      { label: 'Ask Varnholm for help', what: 'They send timber and workers, and will expect a favour.', effects: ['Free', 'Varnholm grows impatient later'], run: (w) => w.nations.varnholm.reasons.unshift({ sign: '−', text: 'We owe them for flood help' }) },
-      { label: 'Do nothing', what: 'Owners rebuild at their own cost.', effects: ['Stability −6'], run: (w) => meter(w, 'stability', -6, 'The flood was ignored') }
-    ]
-  },
-  {
-    id: 'harvest', title: 'The harvest has failed', text: 'Bread will be scarce this week.',
-    options: [
-      { label: 'Import grain', what: 'The Treasury buys grain abroad.', effects: ['Treasury −40', 'Stability +2'], run: (w) => (transfer(w, 'treasury', 'nation:sundmere', 40, 'Emergency grain'), meter(w, 'stability', 2, 'Grain was imported')) },
-      { label: 'Let prices rise', what: 'Bread gets dearer for a while.', effects: ['Prices +5%', 'Prosperity −4'], run: (w) => (w.economy.prices.push(Math.round(w.economy.prices[w.economy.prices.length - 1] * 105) / 100), meter(w, 'prosperity', -4, 'Food prices jumped')) }
-    ]
-  },
-  {
-    id: 'insult', title: 'An envoy insulted', text: 'A Kessmark envoy was booed at a public event.',
-    options: [
-      { label: 'Apologise publicly', what: 'Kessmark is soothed; some citizens are annoyed.', effects: ['Kessmark warms', 'Stability −2'], run: (w) => ((w.nations.kessmark.mood = Math.min(4, w.nations.kessmark.mood + 1)), meter(w, 'stability', -2, 'An unpopular apology')) },
-      { label: 'Stand firm', what: 'Kessmark cools; the Army approves.', effects: ['Kessmark cools', 'Army loyalty +1', 'Stability +1'], run: (w) => ((w.nations.kessmark.mood = Math.max(0, w.nations.kessmark.mood - 1)), armyLoyalty(w, 1, 'The government stood firm'), meter(w, 'stability', 1, 'The government stood firm')) }
-    ]
-  },
-  {
-    id: 'visit', title: 'A famous visitor', text: 'A celebrated musician wants to play in the realm.',
-    options: [
-      { label: 'Host a festival', what: 'A great day out, paid by the Treasury.', effects: ['Treasury −30', 'Stability +4', 'Everyone +1 Influence'], run: (w) => (transfer(w, 'treasury', 'nation:orrin', 30, 'Festival fee'), meter(w, 'stability', 4, 'A festival'), allCitizens(w).forEach((c: any) => earn(w, c.id, 1, 'Went to the festival'))) },
-      { label: 'Let them busk', what: 'Free, and nobody minds much.', effects: ['Nothing happens'], run: () => {} }
-    ]
-  },
-  {
-    id: 'strike', title: 'The dockworkers strike', text: 'Ships sit unloaded in the harbour.',
-    options: [
-      { label: 'Meet their demands', what: 'A one-off payment ends the strike.', effects: ['Treasury −50', 'Stability +2'], run: (w) => (transfer(w, 'treasury', 'escrow', 50, 'Strike settlement'), transfer(w, 'escrow', 'nation:tessaly', 50, 'Dock contracts'), meter(w, 'stability', 2, 'The strike was settled')) },
-      { label: 'Wait it out', what: 'Trade stalls until they give up.', effects: ['Prosperity −5'], run: (w) => meter(w, 'prosperity', -5, 'A long strike') }
-    ]
-  },
-  {
-    id: 'rumour', title: 'A run on the banks', text: 'Rumours spread that the banks are short of cash.', needs: (w) => Object.values(w.banks).some((b: any) => b.status === 'open'),
-    options: [
-      { label: 'Guarantee every deposit', what: 'The Treasury promises to cover savers.', effects: ['Prosperity +2', 'A secret card for the Chancellor'], run: (w) => (meter(w, 'prosperity', 2, 'Deposits were guaranteed'), addCard(w, { title: 'The deposit guarantee has no money behind it. The Treasury could not cover a real run.', about: holderOf(w, 'treasury') || w.pm, from: 'Treasury', level: 'restricted', viewers: ['pm', 'office:treasury'] })) },
-      { label: 'Say nothing', what: 'Savers panic and banks lose cash.', effects: ['Prosperity −4', 'Banks lose 20% of cash'], run: (w) => (meter(w, 'prosperity', -4, 'A bank panic'), Object.values(w.banks).forEach((b: any) => { const c = Math.floor((w.accounts['bank:' + b.id] || 0) * 0.2); if (c > 0) transfer(w, 'bank:' + b.id, 'escrow', c, 'Panic withdrawals'); })) }
-    ]
+// ---------- the weekly crisis: the PM picks which meter takes the hit (the list lives in crises.ts) ----------
+import { CRISES } from './crises';
+export { CRISES };
+// a fresh crisis, never one of the last five; `type` picks a specific one (the Returning Officer's tool)
+export function spawnCrisis(w: W, type?: string) {
+  if (w.phase !== 'running') return type ? fail('Crises start once Parliament is running.') : undefined;
+  if (Object.values(w.crises).some((c: any) => c.status === 'open')) return type ? fail('A crisis is already open. Let the PM decide it first.') : undefined;
+  const fits = CRISES.filter((c) => !c.needs || c.needs(w));
+  let t: any;
+  if (type) {
+    t = fits.find((c) => c.id === type);
+    if (!t) fail(CRISES.some((c) => c.id === type) ? 'That crisis does not fit the realm right now.' : 'No such crisis.');
+  } else {
+    const recent = Object.values(w.crises).sort((a: any, b: any) => b.at - a.at).slice(0, 5).map((c: any) => c.type);
+    const pool = fits.filter((c) => !recent.includes(c.id));
+    t = pick(w, pool.length ? pool : fits);
   }
-];
-export function spawnCrisis(w: W) {
-  if (w.phase !== 'running' || Object.values(w.crises).some((c: any) => c.status === 'open')) return;
-  const t = pick(w, CRISES.filter((c) => !c.needs || c.needs(w)));
   const id = newId(w, 'cr');
   w.crises[id] = { id, type: t.id, status: 'open', at: w.now, decideBy: w.now + DAY, choice: null };
   gazette(w, 'crisis', `Crisis: ${t.title}. The Prime Minister has 24 hours to decide.`, '#/crisis/' + id);
+  return id;
 }
 export function decideCrisis(w: W, actor: Id | null, id: Id, choice: number) {
   const c = w.crises[id];

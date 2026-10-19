@@ -190,8 +190,12 @@ export function officeWithPower(w: W, id: Id, power: string) {
 export function holdsAnything(w: W, id: Id) {
   return isPM(w, id) || isHOS(w, id) || w.speaker === id || officesOf(w, id).length > 0;
 }
-export function noOfficeForRO(w: W, id: Id) {
-  if (w.citizens[id]?.admin) fail('The Returning Officer can play, but cannot hold an office while running the game.');
+// The Returning Officer plays like anyone else and may hold any office. In return, everything done with
+// admin powers goes on the public record: the admin log (public) and the Gazette.
+export function adminDid(w: W, by: Id, text: string, link?: string) {
+  w.adminLog.unshift({ at: w.now, by, text });
+  if (w.adminLog.length > 300) w.adminLog.length = 300;
+  gazette(w, 'admin', `The Returning Officer ${text}.`, link || '#/rolog');
 }
 
 // government sides: a party ('p:<id>') or an independent MP ('i:<id>')

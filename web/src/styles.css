@@ -263,6 +263,7 @@ textarea.input { padding: 10px 12px; min-height: 84px; resize: vertical; line-he
 .gz li::before { content: ''; position: absolute; left: -27px; top: 5px; width: 11px; height: 11px; border-radius: 50%; background: var(--paper); border: 1.5px solid var(--ink); }
 .gz li.hot::before { background: var(--teal); border-color: var(--teal); }
 .gz li.bad::before { background: var(--red); border-color: var(--red); }
+.gz li.ro::before { background: var(--gold); border-color: var(--gold); border-radius: 0; transform: rotate(45deg); }
 .gz li:first-child::before { animation: pulse 2s ease-out 3 .6s; }
 
 /* ---------- bottom nav ---------- */

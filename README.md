@@ -30,6 +30,8 @@ Everything else, including the rules, changes only through Parliament.
 
 The server holds the only full copy of the world and sends each player their own redacted view: no one else's ballot, wallet, cards, deals, plots or objectives. Every action is re-checked on the server, one at a time. Tokens are signed and versioned, and changing a password signs out every other device.
 
+The Returning Officer plays too and can hold office, so every admin action, including starting a crisis, resetting a password or taking an export, is announced in the Gazette and kept in a public log.
+
 What doesn't hold: the RO can reset a password and sign in as someone; that reset is public. Someone with a friend's WhatsApp has their vote.
 
 ## Build your own app

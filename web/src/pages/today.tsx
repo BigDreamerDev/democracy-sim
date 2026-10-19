@@ -165,7 +165,7 @@ export function GazetteList({ items }: { items: any[] }) {
   return (
     <ol class="gz">
       {items.map((g) => (
-        <li class={hot.includes(g.kind) ? 'hot' : bad.includes(g.kind) ? 'bad' : ''}>
+        <li class={hot.includes(g.kind) ? 'hot' : bad.includes(g.kind) ? 'bad' : g.kind === 'admin' ? 'ro' : ''}>
           <div class="small muted">{fmtTime(w, g.at)}</div>
           <div style={{ fontSize: 15 }}>{g.link ? <a href={g.link} style={{ color: 'inherit' }}>{g.text}</a> : g.text}{g.via && <span class="via" title="Done through a player-made app">via {g.via}</span>}</div>
         </li>

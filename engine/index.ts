@@ -1,5 +1,5 @@
 // The public face of the engine: every player action is a named command. run() applies one to a copy of the world.
-import { W, Id, fail, cit, nm, gazette, isPM, holderOf, hasPower } from './core';
+import { W, Id, fail, cit, nm, gazette, isPM, holderOf, hasPower, adminDid } from './core';
 import * as P from './politics';
 import * as L from './proposals';
 import * as E from './economy';
@@ -104,13 +104,18 @@ export const COMMANDS: Record<string, Cmd> = {
       w.accounts['c:' + id] = 100;
       gazette(w, 'quiet', `${p.name} becomes a citizen.`);
     }
-    w.adminLog.unshift({ at: w.now, by: me, text: `${a.approve ? 'Approved' : 'Turned down'} ${p.name}'s sign-up` });
+    adminDid(w, me, `${a.approve ? 'approved' : 'turned down'} ${p.name}'s application for citizenship`);
   },
   'admin.setting': (w, me, a) => {
     if (!w.citizens[me]?.admin) fail('Only the Returning Officer changes settings.');
     if (!['requireApproval', 'openSignup'].includes(a.key)) fail('Unknown setting.');
     w.flags[a.key] = !!a.value;
-    w.adminLog.unshift({ at: w.now, by: me, text: `Set ${a.key} to ${a.value ? 'on' : 'off'}` });
+    adminDid(w, me, a.key === 'openSignup' ? `${a.value ? 'opened' : 'closed'} the sign-up page` : `${a.value ? 'now requires' : 'no longer requires'} approval for new accounts`);
+  },
+  'admin.crisis': (w, me, a) => {
+    if (!w.citizens[me]?.admin) fail('Only the Returning Officer starts a crisis.');
+    const id = S.spawnCrisis(w, a.type || undefined);
+    adminDid(w, me, `started a crisis: ${S.CRISES.find((c) => c.id === w.crises[id].type)!.title}`, '#/crisis/' + id);
   },
   'admin.calendar': (w, me, a) => {
     if (!w.citizens[me]?.admin) fail('Only the Returning Officer changes the calendar.');
@@ -121,8 +126,7 @@ export const COMMANDS: Record<string, Cmd> = {
     // the week already in progress is kept: the change applies from the next occurrence
     w.lastEvent[a.key] = w.now;
     w.calendar[a.key] = { dow, hour };
-    w.adminLog.unshift({ at: w.now, by: me, text: `Moved ${a.key} to ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dow]} ${String(hour).padStart(2, '0')}:00` });
-    gazette(w, 'quiet', `The calendar changes: ${a.key === 'payday' ? 'payday' : a.key === 'pmqs' ? "PM's Questions" : 'the front page'} is now ${['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'][dow]} at ${String(hour).padStart(2, '0')}:00.`, '#/calendar');
+    adminDid(w, me, `moved ${a.key === 'payday' ? 'payday' : a.key === 'pmqs' ? "PM's Questions" : 'the front page'} to ${['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'][dow]} at ${String(hour).padStart(2, '0')}:00`, '#/calendar');
   }
 };
 

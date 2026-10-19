@@ -13,7 +13,7 @@ import { Realm, Offices, Office, Cabinet, HOS, Parties, Party } from './pages/go
 import { Wallet, Economy, Banks, Ventures } from './pages/money';
 import { Foreign, Nation, Security, Army, Press, Court, Case, Crises, Crisis, Season } from './pages/world';
 import { Backroom, Plots, Exile } from './pages/backroom';
-import { Admin } from './pages/admin';
+import { Admin, RoLog } from './pages/admin';
 import { Developers, Apps, AppPage, Authorize } from './pages/developers';
 
 const ROOTS = ['', 'house', 'realm', 'laws', 'you', 'gazette'];
@@ -68,7 +68,7 @@ function route(hash: string) {
     realm: () => <Realm />, offices: () => <Offices />, office: () => <Office id={b} />, cabinet: () => <Cabinet />, hos: () => <HOS />, parties: () => <Parties />, party: () => <Party id={b} />,
     wallet: () => <Wallet />, economy: () => <Economy />, banks: () => <Banks />, ventures: () => <Ventures />,
     foreign: () => <Foreign />, nation: () => <Nation id={b} />, security: () => <Security />, army: () => <Army />, press: () => <Press />, court: () => <Court />, case: () => <Case id={b} />, crises: () => <Crises />, crisis: () => <Crisis id={b} />, season: () => <Season />,
-    backroom: () => <Backroom />, plots: () => <Plots />, exile: () => <Exile />, admin: () => <Admin />, developers: () => <Developers />, apps: () => <Apps />, app: () => <AppPage id={b} />, authorize: () => <Authorize query={q} />
+    backroom: () => <Backroom />, plots: () => <Plots />, exile: () => <Exile />, admin: () => <Admin />, rolog: () => <RoLog />, developers: () => <Developers />, apps: () => <Apps />, app: () => <AppPage id={b} />, authorize: () => <Authorize query={q} />
   };
   return { tab: a || '', key: hash, view: (pages[a || ''] || pages[''])() };
 }

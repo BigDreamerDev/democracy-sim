@@ -1,6 +1,6 @@
 // Offices: every role in government is one of these. A law creates an office from a template or from
 // a list of powers; whoever holds it gets those powers as buttons.
-import { W, Id, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, noOfficeForRO, exiled, holdsAnything } from './core';
+import { W, Id, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, exiled, holdsAnything } from './core';
 
 export const POWERS: Record<string, { label: string; strong?: boolean }> = {
   grant: { label: 'Pay citizens from its weekly budget' },
@@ -49,7 +49,7 @@ export function createOffice(w: W, spec: any, law: string) {
   w.offices[id] = o;
   if (o.fill === 'lot') {
     const n = spec.template === 'court' ? 3 : 1;
-    const pool = shuffle(w, allCitizens(w).filter((c: any) => !c.admin && !holdsAnything(w, c.id) && !exiled(w, c.id)).map((c: any) => c.id));
+    const pool = shuffle(w, allCitizens(w).filter((c: any) => !holdsAnything(w, c.id) && !exiled(w, c.id)).map((c: any) => c.id));
     o.members = pool.slice(0, n);
     o.holder = o.members[0] || null;
     o.members.forEach((m: Id) => stamp(w, m, o.title, o.name + ', by lot', 'ink'));
@@ -69,7 +69,6 @@ export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
   if (o.fill !== 'pm') fail(`The ${o.name} is not appointed by the PM.`);
   if (target) {
     const t = cit(w, target);
-    noOfficeForRO(w, target);
     if (exiled(w, target)) fail('They are in exile.');
     const promised = Object.entries(w.coalition?.promises || {}).find(([k]) => k === officeId)?.[1];
     o.holder = target;
@@ -117,7 +116,7 @@ export function officePay(w: W) {
 
 export function lotOfficeRefresh(w: W, o: any) {
   if (o.fill !== 'lot') return;
-  const pool = allCitizens(w).filter((c: any) => !c.admin && !exiled(w, c.id) && !o.members.includes(c.id)).map((c: any) => c.id);
+  const pool = allCitizens(w).filter((c: any) => !exiled(w, c.id) && !o.members.includes(c.id)).map((c: any) => c.id);
   o.members = o.members.filter((m: Id) => !exiled(w, m));
   const extra = shuffle(w, pool);
   while (o.members.length < (o.template === 'court' ? 3 : 1) && extra.length) o.members.push(extra.shift());

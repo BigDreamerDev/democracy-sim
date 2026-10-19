@@ -63,7 +63,7 @@ export function viewFor(full: W, me: Id): W {
   });
   // the Returning Officer sees the sign-up queue; nobody else needs it
   if (!full.citizens[me]?.admin) w.pending = [];
-  w.adminLog = full.citizens[me]?.admin ? w.adminLog : [];
+  // the admin log is public on purpose: the Returning Officer plays too, so everyone can see what they did
   if (full.citizens[me]?.admin) w.audit = { total: Object.values(full.accounts).reduce((s: number, v: any) => s + v, 0) };
   w.viewer = me;
   return w;

@@ -2,7 +2,7 @@
 // parties, forming a government, coalitions, the shadow cabinet, seasons, ambitions and weekly objectives.
 import {
   W, Id, DAY, fail, newId, pick, rand, shuffle, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, stamp, approve,
-  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, noOfficeForRO, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal
+  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal
 } from './core';
 import { createOffice } from './offices';
 
@@ -114,7 +114,6 @@ export function stand(w: W, actor: Id, eid: Id) {
   if (!e || e.status !== 'open') fail('That election is not open.');
   const c = cit(w, actor);
   if (e.stand.startsWith('party:') && c.party !== e.stand.slice(6)) fail('Only party members can stand.');
-  if (e.kind !== 'general') noOfficeForRO(w, actor);
   if (e.candidates[actor]) fail('You are already standing.');
   e.candidates[actor] = { id: actor, party: c.party, at: w.now };
   gazette(w, 'election', `${c.name} stands in the ${e.title.toLowerCase()}.`, '#/election/' + e.id);
@@ -219,7 +218,7 @@ export function setHos(w: W, id: Id | null, until: number | null) {
 }
 export function startHosSelection(w: W) {
   const m = w.config.hosMethod;
-  const pool = allCitizens(w).filter((c: any) => !c.admin && !exiled(w, c.id)).map((c: any) => c.id);
+  const pool = allCitizens(w).filter((c: any) => !exiled(w, c.id)).map((c: any) => c.id);
   if (m === 'life' || m === 'citizens') {
     if (!Object.values(w.elections).some((e: any) => e.kind === 'hos' && e.status === 'open'))
       newElection(w, { kind: 'hos', title: w.config.hos === 'monarchy' ? 'Election of the Monarch, for life' : 'Election for President', closesAt: w.now + 2 * DAY });
@@ -341,7 +340,6 @@ export function invitePM(w: W, actor: Id | null, target: Id) {
   if (actor && !isHOS(w, actor)) fail(`Only the ${hosTitle(w)} invites the Prime Minister.`);
   if (w.pm) fail('There is already a Prime Minister.');
   const t = cit(w, target);
-  noOfficeForRO(w, target);
   if (exiled(w, target)) fail('They are in exile.');
   w.pm = target;
   w.pmInviteDue = null;
@@ -355,7 +353,7 @@ export function autoInvite(w: W) {
   const leaders = new Set<Id>();
   Object.values(w.parties).forEach((p: any) => p.status === 'active' && p.leader && leaders.add(p.leader));
   mps(w).forEach((m) => leaders.add(m));
-  const best = [...leaders].filter((l) => !w.citizens[l]?.admin && !exiled(w, l) && w.hos.holder !== l).sort((a, b) => supportFor(w, b) - supportFor(w, a))[0];
+  const best = [...leaders].filter((l) => !exiled(w, l) && w.hos.holder !== l).sort((a, b) => supportFor(w, b) - supportFor(w, a))[0];
   if (best) invitePM(w, null, best);
   else w.pmInviteDue = w.now + DAY;
 }

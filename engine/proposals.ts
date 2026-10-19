@@ -2,8 +2,7 @@
 // The kind only changes who votes and what happens. Also: laws, PM's Questions, formal questions and lobbying.
 import {
   W, Id, DAY, HOUR, fail, newId, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, tick, meter,
-  isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, hasPower, officeWithPower, weekNo
-} from './core';
+  isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, hasPower, officeWithPower, weekNo, adminDid } from './core';
 import { TEMPLATES, POWERS, createOffice } from './offices';
 import { startHosSelection, callGeneralElection, governmentFalls, vacateSeat, HOS_METHODS, countback } from './politics';
 
@@ -397,7 +396,7 @@ export function forceEnact(w: W, actor: Id, pid: Id, reason: string) {
   if (p.by === actor || p.votes[actor]) fail('You took part in this bill, so you cannot use admin tools on it.');
   if ((reason || '').trim().length < 6) fail('Give a reason. It is shown on the law.');
   enact(w, p, `force-enacted by the Returning Officer: ${reason.trim()}`);
-  w.adminLog.unshift({ at: w.now, by: actor, text: `Force-enacted ${p.title}: ${reason.trim()}` });
+  adminDid(w, actor, `force-enacted ${p.title}: ${reason.trim()}`, '#/p/' + p.id);
 }
 export function lobby(w: W, actor: Id, pid: Id, mp: Id, amount: number) {
   mustBeFree(w, actor);
