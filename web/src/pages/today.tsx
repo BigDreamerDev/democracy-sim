@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { useStore, act, ONLINE, signOut, changePassword, toast, securityInfo, unlinkProvider, beginOAuth, signOutEverywhere, passkeysWork, addPasskey, removePasskey } from '../store';
+import { useStore, act, ONLINE, signOut, changePassword, toast, securityInfo, unlinkProvider, beginOAuth, signOutEverywhere, passkeysWork, addPasskey, removePasskey, renamePasskey } from '../store';
 import { TUTORIAL } from '../../../engine/tutorial';
 import { Page, Sec, Card, Btn, Who, Left, When, Seal, Empty, LinkRow, Seg, Meter, Field, Pick, PasswordField } from '../ui';
 import { nm, isMP, isPM, isHOS, bal, ca, intrigueOpen, fmtTime, fmtDay, ordinal, METERS, standing, inDanger, canSeeCard, CAL_EVENTS, DAYS, nextAt, hosTitle, upcoming, officesOf, exiled } from '../../../engine/index';
@@ -314,6 +314,8 @@ function Account() {
   const [pw, setPw] = useState({ cur: '', next: '' });
   const [open, setOpen] = useState(false);
   const [sec, setSec] = useState<any>(null);
+  const [naming, setNaming] = useState<{ id: string; name: string } | null>(null);
+  const rename = () => naming && renamePasskey(naming.id, naming.name).then(() => (setNaming(null), toast('Passkey renamed.'), load())).catch(err);
   const load = () => securityInfo().then(setSec).catch(() => {});
   useEffect(() => void load(), []);
   const err = (e: any) => toast(e.message, true);
@@ -328,7 +330,15 @@ function Account() {
               <li class="row"><span>Password</span><span class="small muted">{sec.password ? 'Set' : 'Not set'}</span></li>
               {(sec.passkeys || []).map((k: any) => (
                 <li class="row">
-                  <span>Passkey · {k.name}<span class="small muted"> · {k.last_used ? <>used <When at={new Date(k.last_used).getTime()} /></> : <>added <When at={new Date(k.created_at).getTime()} /></>}</span></span>
+                  {naming?.id === k.id ? (
+                    <form style={{ display: 'flex', gap: 6, flex: 1 }} onSubmit={(e) => (e.preventDefault(), rename())}>
+                      <input class="input" aria-label="Passkey name" maxLength={40} value={naming.name} onInput={(e: any) => setNaming({ id: k.id, name: e.currentTarget.value })} autoFocus />
+                      <Btn small kind="ghost" onClick={rename}>Save</Btn>
+                    </form>
+                  ) : (
+                    <span>Passkey · {k.name}<span class="small muted"> · {k.last_used ? <>used <When at={new Date(k.last_used).getTime()} /></> : <>added <When at={new Date(k.created_at).getTime()} /></>}</span></span>
+                  )}
+                  {naming?.id !== k.id && <Btn small kind="plain" onClick={() => setNaming({ id: k.id, name: k.name })}>Rename</Btn>}
                   <Btn small kind="plain" onClick={() => confirm(`Remove the passkey "${k.name}"? Delete it from that device too.`) && removePasskey(k.id).then(() => (toast('Passkey removed.'), load())).catch(err)}>Remove</Btn>
                 </li>
               ))}

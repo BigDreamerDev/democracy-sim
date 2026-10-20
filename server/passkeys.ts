@@ -90,6 +90,7 @@ export function passkeys(app: Express, d: Deps) {
 
   // add a passkey: step 2, check what the authenticator made and keep its public key
   app.post('/api/passkeys/register/finish', auth, async (req: any, res) => {
+    if (limited('passkey:' + req.user.id, 10)) return res.status(429).json({ error: 'Too many attempts. Wait a minute.' });
     const f = take(req.body?.flow);
     const s = site(req);
     if (!f || f.userId !== req.user.id || !s || s.origin !== f.origin) return res.status(400).json({ error: 'That passkey request expired. Try again.' });
@@ -153,6 +154,7 @@ export function passkeys(app: Express, d: Deps) {
   });
 
   app.post('/api/passkeys/rename', auth, async (req: any, res) => {
+    if (limited('passkey:' + req.user.id, 10)) return res.status(429).json({ error: 'Too many attempts. Wait a minute.' });
     const r = await q('UPDATE v2_passkeys SET name = $1 WHERE id = $2 AND user_id = $3 RETURNING id', [cleanName(req.body?.name), String(req.body?.id || ''), req.user.id]);
     if (!r.rows.length) return res.status(404).json({ error: 'No such passkey.' });
     res.json({ ok: true });
