@@ -297,6 +297,27 @@ try {
   assert.equal((await call('/api/state', undefined, joined.body.token)).status, 401, 'the duplicate is signed out');
   assert.equal((await call('/api/login', { username: 'devp', password: 'a long enough passphrase' })).status >= 400, true, 'and cannot sign in');
 
+  // batches, trusted players' invitations, notes, the same-device hint
+  const batch = await call('/api/admin/invites', { names: ['Eve', 'Fin'] }, RI);
+  assert.equal(batch.body.invites.length, 2, 'a batch gives one link each');
+  assert.equal((await call('/api/invites', { name: 'Gus' }, C)).status, 403, 'no allowance, no invitations');
+  assert.equal((await call('/api/admin/invites/allow', { citizen: 'u4', n: 1 }, RI)).status, 200);
+  const gi = await call('/api/invites', { name: 'Gus' }, C);
+  assert.equal(gi.status, 200, JSON.stringify(gi.body));
+  assert.equal((await call('/api/invites', { name: 'Hal' }, C)).status, 403, 'the allowance runs out');
+  const dev = 'abcdef0123456789abcd';
+  const su = (body: any) => fetch(base + '/api/signup', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realm-Device': dev }, body: JSON.stringify(body) }).then((r) => r.json());
+  const gus = await su({ username: 'gus', display_name: 'Gus', password: 'a long enough passphrase', invite: gi.body.code });
+  assert.equal(getWorld().citizens[gus.me].invitedBy, 'u4', 'the tree records who invited whom');
+  assert.ok(getWorld().gazette.some((g: any) => /Gus joins, invited by Cara/.test(g.text)));
+  getWorld().flags.openSignup = true;
+  await su({ username: 'gus2', display_name: 'Gus Two', password: 'a long enough passphrase', who: 'Gus again' });
+  assert.deepEqual(getWorld().pending.find((p: any) => p.name === 'Gus Two').sameDevice, ['Gus'], 'a second account in the same browser is flagged');
+  assert.equal((await call('/api/admin/notes', { citizen: 'u4', text: 'Confirmed in person' }, RI)).status, 200);
+  assert.equal((await call('/api/admin/notes', undefined, RI)).body.u4, 'Confirmed in person');
+  assert.equal((await call('/api/admin/notes', undefined, C)).status, 403, 'notes are the RO\'s alone');
+  assert.equal((await call('/api/admin/devices', undefined, RI)).body.length, 1);
+
   const out = await call('/api/logout-all', {}, gl.body.token);
   assert.equal((await call('/api/state', undefined, gl.body.token)).status, 401, 'sign out everywhere kills old tokens');
   assert.equal((await call('/api/state', undefined, out.body.token)).status, 200);

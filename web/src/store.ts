@@ -166,10 +166,20 @@ function setToken(t: string) {
   } catch {}
 }
 let skew = 0; // server clock minus this device's clock
+// a random id for this browser, so the RO can spot two accounts made on one device. It identifies nothing else.
+function deviceId() {
+  try {
+    let d = localStorage.getItem('realm-device');
+    if (!d) localStorage.setItem('realm-device', (d = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('')));
+    return d;
+  } catch {
+    return '';
+  }
+}
 async function api(path: string, body?: any) {
   let r: Response;
   try {
-    r = await fetch(API + path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', ...(getToken() ? { Authorization: 'Bearer ' + getToken() } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    r = await fetch(API + path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-Realm-Device': deviceId(), ...(getToken() ? { Authorization: 'Bearer ' + getToken() } : {}) }, body: body ? JSON.stringify(body) : undefined });
   } catch {
     set({ offline: true });
     throw new Error('Cannot reach the server. It may be waking up; try again in a moment.');
@@ -446,3 +456,11 @@ export async function removeDuplicate(dup: string, keep: string) {
   toast('Removed. It is in the Gazette.');
   return true;
 }
+export const makeInvites = (names: string[]) => api('/api/admin/invites', { names });
+export const myInvites = () => api('/api/invites');
+export const sendInvite = (name: string) => api('/api/invites', { name });
+export const adminAllowances = () => api('/api/admin/allowances');
+export const setAllowance = (citizen: string, n: number) => api('/api/admin/invites/allow', { citizen, n });
+export const adminNotes = () => api('/api/admin/notes');
+export const saveNote = (citizen: string, text: string) => api('/api/admin/notes', { citizen, text });
+export const adminDevices = () => api('/api/admin/devices');

@@ -11,6 +11,7 @@ import { providers, authorizeUrl, exchange, random } from './oauth';
 import { passkeys, PASSKEY_SCHEMA } from './passkeys';
 import { IMAGES_SCHEMA, imageGet, imageRoutes, photoProblem } from './images';
 import { INVITES_SCHEMA, inviteRoutes, claimInvite, releaseInvite, useInvite } from './invites';
+import { VETTING_SCHEMA, vettingRoutes, recordDevice, sameDevice, allowanceOf } from './vetting';
 import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate, needs, adminDid, nm } from '../engine/index';
 
 export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void; send?: Sender; site?: string; devOrigins?: boolean; env?: Record<string, string | undefined>; publicUrl?: string; saveEvery?: number };
@@ -25,6 +26,7 @@ export async function makeApp(o: Options) {
   await q(PASSKEY_SCHEMA);
   await q(IMAGES_SCHEMA);
   await q(INVITES_SCHEMA);
+  await q(VETTING_SCHEMA);
   const env = o.env || process.env;
   const OAUTH = providers(env);
   const rate = limiter(now);
@@ -155,6 +157,7 @@ export async function makeApp(o: Options) {
   const welcome = async (u: any, req: any) => {
     userCache.set(u.id, u);
     await succeeded(q, u.id, String(req.ip || ''));
+    await recordDevice(q, u.id, req);
     const cid = 'u' + u.id;
     if (!world.citizens[cid] && u.approved)
       await serial(async () => {
@@ -240,7 +243,7 @@ export async function makeApp(o: Options) {
       }
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Realm-Device');
       res.setHeader('Access-Control-Expose-Headers', 'X-Realm-Token');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       if (req.method === 'OPTIONS') return res.sendStatus(204);
@@ -299,10 +302,14 @@ export async function makeApp(o: Options) {
       throw e;
     }
     if (inv) await useInvite(q, inv.id, u.id);
+    // another account already used in this browser? A hint for the RO, never shown to anyone else
+    const twins = (await sameDevice(q, u.id, req)).map((x) => x.name);
+    await recordDevice(q, u.id, req);
     await serial(async () => {
       if (approved) addCitizen(world, 'u' + u.id, name, false);
-      else world.pending.push({ id: 'su' + u.id, uid: 'u' + u.id, name, userId: u.id, who: whoNote, at: world.now });
-      if (inv) gazette(world, 'quiet', `${name} joins by invitation (sent for ${inv.name}).`);
+      else world.pending.push({ id: 'su' + u.id, uid: 'u' + u.id, name, userId: u.id, who: whoNote, at: world.now, ...(twins.length ? { sameDevice: twins } : {}) });
+      if (inv && world.citizens['u' + u.id]) world.citizens['u' + u.id].invitedBy = 'u' + inv.created_by;
+      if (inv) gazette(world, 'quiet', `${name} joins, invited by ${nm(world, 'u' + inv.created_by)}.`);
       await save();
     });
     audit('u' + u.id, inv ? 'auth.signup.invite' : 'auth.signup', true);
@@ -487,13 +494,19 @@ export async function makeApp(o: Options) {
 
   // the Returning Officer's tools that sit outside the game
   const admin = (req: any, res: any, next: any) => (req.user?.is_admin ? next() : res.status(403).json({ error: 'Returning Officer only.' }));
+  const announce = (cid: string, text: string) => serial(async () => {
+    adminDid(world, cid, text);
+    await save();
+  });
   inviteRoutes(app, {
-    q, auth, admin, limited,
-    announce: (cid, text) => serial(async () => {
-      adminDid(world, cid, text);
+    q, auth, admin, limited, announce,
+    allowance: (id) => allowanceOf(q, id),
+    gazette: (text) => serial(async () => {
+      gazette(world, 'quiet', text);
       await save();
     })
   });
+  vettingRoutes(app, { q, auth, admin, announce, name: (cid) => nm(world, cid) });
   // a second account for someone who already has one: struck out in the game, and its login switched off
   app.post('/api/admin/duplicate', auth, admin, async (req: any, res) => {
     const dup = String(req.body?.dup || '');

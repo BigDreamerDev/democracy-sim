@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { useStore, act, ONLINE, signOut, changePassword, toast, securityInfo, unlinkProvider, beginOAuth, signOutEverywhere, passkeysWork, addPasskey, removePasskey, renamePasskey } from '../store';
+import { useStore, act, ONLINE, myInvites, sendInvite, inviteLink, signOut, changePassword, toast, securityInfo, unlinkProvider, beginOAuth, signOutEverywhere, passkeysWork, addPasskey, removePasskey, renamePasskey } from '../store';
 import { TUTORIAL } from '../../../engine/tutorial';
 import { Page, Sec, Card, Btn, Who, Left, When, Seal, Empty, LinkRow, Seg, Meter, Field, Pick, PasswordField, Photo } from '../ui';
 import { nm, isMP, isPM, isHOS, bal, ca, intrigueOpen, fmtTime, fmtDay, ordinal, METERS, standing, inDanger, canSeeCard, CAL_EVENTS, DAYS, nextAt, hosTitle, upcoming, officesOf, exiled } from '../../../engine/index';
@@ -298,6 +298,7 @@ export function Passport({ id }: { id?: string }) {
           <div style={{ gridColumn: '1 / -1' }}><div class="small muted">Name</div><div class="serif" style={{ fontSize: 30 }}>{c.name}</div></div>
           <div><div class="small muted">Party</div><b>{c.party ? w.parties[c.party]?.name : 'Independent'}</b></div>
           <div><div class="small muted">Approval</div><b class="tnum">{c.approval}%</b></div>
+          {c.invitedBy && <div><div class="small muted">Invited by</div><b><a href={'#/passport/' + c.invitedBy} style={{ color: 'inherit' }}>{nm(w, c.invitedBy)}</a></b></div>}
           <div><div class="small muted">Influence</div><b class="tnum">{c.influence}</b></div>
           {(pid === me || !ONLINE) && <div><div class="small muted">Crowns</div><b class="tnum">{bal(w, ca(pid))}</b></div>}
         </div>
@@ -310,6 +311,7 @@ export function Passport({ id }: { id?: string }) {
         {c.titles.length > 0 && <Sec title="Honours"><p style={{ margin: 0 }}>{c.titles.join(' · ')}</p></Sec>}
         {pid === me && <Sec title="Recent Influence"><ul class="list small">{c.log.slice(0, 10).map((l: any) => <li class="row"><span>{l.why}</span><b class="tnum">{l.n > 0 ? '+' : ''}{l.n}</b></li>)}</ul></Sec>}
         {pid === me && <Sec title="Learning"><a class="btn ghost small" href="#/learn">How to play · {Object.keys(c.tutorial || {}).length}/{TUTORIAL.length} missions</a></Sec>}
+        {pid === me && ONLINE && <InviteFriends />}
         {pid === me && ONLINE && <Account />}
         <p class="mrz" aria-hidden="true">P&lt;{w.config.realmName.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)}&lt;{c.name.toUpperCase()}&lt;&lt;{'<'.repeat(Math.max(0, 22 - c.name.length))}</p>
       </div>
@@ -470,5 +472,25 @@ export function Calendar() {
         <Btn href="#/new" kind="ghost" style={{ marginTop: 10 }}>Propose a change</Btn>
       </Sec>
     </Page>
+  );
+}
+
+// trusted players can invite friends: shown only once the Returning Officer has given you some invitations
+function InviteFriends() {
+  const [d, setD] = useState<any>(null);
+  const [name, setName] = useState('');
+  const [made, setMade] = useState<{ name: string; link: string } | null>(null);
+  const load = () => myInvites().then(setD).catch(() => {});
+  useEffect(() => void load(), []);
+  if (!d || (!d.left && !d.invites.length)) return null;
+  const send = () => sendInvite(name).then((r: any) => (setMade({ name: r.name, link: inviteLink(r.code) }), setName(''), load())).catch((e: any) => toast(e.message, true));
+  return (
+    <Sec title="Invite a friend" sub={`You have ${d.left} invitation${d.left === 1 ? '' : 's'} left. Each link works once, for 7 days, and lets one person straight in. The Gazette says you invited them, so only invite people from the group.`}>
+      <div class="stack">
+        {d.left > 0 && <div class="grid2"><Field label="Their name" value={name} onInput={setName} /><Btn style={{ alignSelf: 'end' }} onClick={send}>Make a link</Btn></div>}
+        {made && <Card kind="tint"><div class="stack" style={{ gap: 6 }}><b>Link for {made.name}</b><code class="small" style={{ wordBreak: 'break-all' }}>{made.link}</code><span class="small muted">You'll only see this once. Send it to them privately.</span><Btn small onClick={() => navigator.clipboard?.writeText(made.link).then(() => toast('Copied.')).catch(() => toast('Copy it by hand.', true))}>Copy the link</Btn></div></Card>}
+        <ul class="list">{d.invites.map((i: any) => <li class="row"><span>{i.name}</span><span class="small muted">{i.status === 'used' ? `Joined as ${i.usedName}` : i.status}</span></li>)}</ul>
+      </div>
+    </Sec>
   );
 }

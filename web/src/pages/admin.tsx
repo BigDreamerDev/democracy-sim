@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { useEffect } from 'preact/hooks';
-import { useStore, act, ONLINE, resetRealm, downloadExport, resetPassword, adminApps, removeApp, restoreApp, toast, adminInvites, makeInvite, revokeInvite, inviteLink, removeDuplicate } from '../store';
+import { useStore, act, ONLINE, resetRealm, downloadExport, resetPassword, adminApps, removeApp, restoreApp, toast, adminInvites, makeInvite, makeInvites, revokeInvite, inviteLink, removeDuplicate, adminNotes, saveNote, adminAllowances, setAllowance, adminDevices } from '../store';
 import { Page, Sec, Card, Btn, Empty, LinkRow, Field, Pick, When } from '../ui';
 import { CRISES } from '../../../engine/crises';
 import { nm, ledgerTotal, fmtTime, acctLabel } from '../../../engine/index';
@@ -22,7 +22,7 @@ export function Admin() {
   return (
     <Page back={['#/realm', 'The realm']} kicker="Returning Officer" title="Admin" intro={<>You run the game and play like anyone else, offices included. Everything you do on this page is announced in the Gazette and kept in the <a href="#/rolog">public log</a>.</>}>
       <Invites />
-      <Sec title="Sign-ups waiting" sub="Check each one against the group chat before approving. Turn down anyone who already has an account."><ul class="list">{w.pending.map((p: any) => <li class="row"><span><b>{p.name}</b>{p.who && <div class="small muted">“{p.who}”</div>}</span><span class="row"><Btn small onClick={() => act('admin.approve', { id: p.id, approve: true }, 'Approved.')}>Approve</Btn><Btn small kind="plain" onClick={() => act('admin.approve', { id: p.id, approve: false })}>Turn down</Btn></span></li>)}</ul>{!w.pending.length && <Empty>Nobody waiting.</Empty>}</Sec>
+      <Sec title="Sign-ups waiting" sub="Check each one against the group chat before approving. Turn down anyone who already has an account."><ul class="list">{w.pending.map((p: any) => <li class="row"><span><b>{p.name}</b>{p.who && <div class="small muted">“{p.who}”</div>}{p.sameDevice && <div class="small bad">Same browser as {p.sameDevice.join(', ')}. Check it’s not a second account.</div>}</span><span class="row"><Btn small onClick={() => act('admin.approve', { id: p.id, approve: true }, 'Approved.')}>Approve</Btn><Btn small kind="plain" onClick={() => act('admin.approve', { id: p.id, approve: false })}>Turn down</Btn></span></li>)}</ul>{!w.pending.length && <Empty>Nobody waiting.</Empty>}</Sec>
       <Sec title="Settings">
         <ul class="list">{[['requireApproval', 'New accounts need approval'], ['openSignup', 'The sign-up page is open']].map(([k, l]) => <li class="row"><span>{l}</span><Btn small kind={w.flags[k] ? undefined : 'ghost'} onClick={() => act('admin.setting', { key: k, value: !w.flags[k] })}>{w.flags[k] ? 'On' : 'Off'}</Btn></li>)}</ul>
         <Btn href="#/calendar" kind="ghost" small style={{ marginTop: 10 }}>Change the calendar</Btn>
@@ -34,6 +34,7 @@ export function Admin() {
         </Sec>
       )}
       <Zones />
+      <Vetting />
       <Duplicates />
       <Sec title="Start a crisis" sub="One lands every payday anyway. Starting one now is announced, and the PM still decides it.">
         {w.phase !== 'running' ? <Empty>Crises begin once Parliament is running.</Empty> : Object.values(w.crises).some((c: any) => c.status === 'open') ? <Empty>A crisis is already open.</Empty> : (
@@ -110,35 +111,38 @@ function Zones() {
   );
 }
 
-// single-use invitation links: they work with sign-ups closed and need no approval
+// single-use invitation links: they work with sign-ups closed and need no approval. One name per line for a batch.
 function Invites() {
   const [list, setList] = useState<any[]>([]);
-  const [name, setName] = useState('');
-  const [made, setMade] = useState<{ name: string; link: string } | null>(null);
+  const [names, setNames] = useState('');
+  const [made, setMade] = useState<{ name: string; link: string }[]>([]);
   const load = () => ONLINE && adminInvites().then(setList).catch(() => {});
   useEffect(() => void load(), []);
   const make = async () => {
+    const ns = names.split(/\n|,/).map((x) => x.trim()).filter(Boolean);
+    if (!ns.length) return toast('Type at least one name.', true);
     try {
-      const r = await makeInvite(name);
-      setMade({ name: r.name, link: inviteLink(r.code) });
-      setName('');
+      const r = ns.length === 1 ? [await makeInvite(ns[0])] : (await makeInvites(ns)).invites;
+      setMade(r.map((x: any) => ({ name: x.name, link: inviteLink(x.code) })));
+      setNames('');
       load();
     } catch (e: any) {
       toast(e.message, true);
     }
   };
-  const copy = (t: string) => navigator.clipboard?.writeText(t).then(() => toast('Copied. Send it to them privately.')).catch(() => toast('Copy it by hand.', true));
+  const copy = (t: string) => navigator.clipboard?.writeText(t).then(() => toast('Copied. Send each link privately.')).catch(() => toast('Copy it by hand.', true));
   return (
-    <Sec title="Invitations" sub="One link for one person, good for 7 days. It works while sign-ups are closed and needs no approval, so you can keep the sign-up page shut. Making one is announced.">
+    <Sec title="Invitations" sub="One link for one person, good for 7 days. It works while sign-ups are closed and needs no approval, so you can keep the sign-up page shut. Making them is announced.">
       {!ONLINE ? <Empty>Invitations need the real server.</Empty> : (
         <div class="stack">
-          <div class="grid2"><Field label="Who it's for" value={name} onInput={setName} placeholder="Sam" /><Btn style={{ alignSelf: 'end' }} onClick={make}>Make a link</Btn></div>
-          {made && (
-            <Card kind="tint"><div class="stack" style={{ gap: 6 }}>
-              <b>Link for {made.name}</b>
-              <code class="small" style={{ wordBreak: 'break-all' }}>{made.link}</code>
-              <span class="small muted">This is the only time you'll see it. DM it to {made.name}, not the group: whoever opens it first gets the account.</span>
-              <Btn small onClick={() => copy(made.link)}>Copy the link</Btn>
+          <Field label="Who they're for (one name per line for several)" area value={names} onInput={setNames} placeholder={'Sam\nPriya\nDev'} />
+          <Btn onClick={make}>Make {names.split(/\n|,/).filter((x) => x.trim()).length > 1 ? 'the links' : 'a link'}</Btn>
+          {made.length > 0 && (
+            <Card kind="tint"><div class="stack" style={{ gap: 8 }}>
+              <b>{made.length === 1 ? `Link for ${made[0].name}` : `${made.length} links`}</b>
+              <span class="small muted">This is the only time you'll see them. DM each one to its person, not the group: whoever opens a link first gets that account.</span>
+              {made.map((m) => <div class="row" style={{ gap: 8, alignItems: 'flex-start' }}><span style={{ minWidth: 0 }}><b class="small">{m.name}</b><code class="small" style={{ display: 'block', wordBreak: 'break-all' }}>{m.link}</code></span><Btn small kind="plain" onClick={() => copy(m.link)}>Copy</Btn></div>)}
+              {made.length > 1 && <Btn small onClick={() => copy(made.map((m) => `${m.name}: ${m.link}`).join('\n'))}>Copy them all</Btn>}
             </div></Card>
           )}
           <ul class="list">{list.map((i) => <li class="row"><span>{i.name}<div class="small muted">{i.status === 'used' ? `Used by ${i.usedName}` : i.status === 'open' ? <>Open until <When at={new Date(i.expiresAt).getTime()} /></> : i.status}</div></span>{i.status === 'open' && <Btn small kind="plain" onClick={() => revokeInvite(i.id).then(() => (toast('Revoked.'), load())).catch((e) => toast(e.message, true))}>Revoke</Btn>}</li>)}</ul>
@@ -146,6 +150,53 @@ function Invites() {
         </div>
       )}
     </Sec>
+  );
+}
+
+// every citizen with your private notes, who invited them, their invitation allowance, and shared-device warnings
+function Vetting() {
+  const { world: w } = useStore();
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [allow, setAllow] = useState<Record<string, number>>({});
+  const [devices, setDevices] = useState<any[]>([]);
+  const [open, setOpen] = useState('');
+  const load = () => {
+    if (!ONLINE) return;
+    adminNotes().then(setNotes).catch(() => {});
+    adminAllowances().then(setAllow).catch(() => {});
+    adminDevices().then(setDevices).catch(() => {});
+  };
+  useEffect(() => void load(), []);
+  if (!ONLINE) return <Sec title="Citizens"><Empty>Notes, invitation allowances and device warnings need the real server.</Empty></Sec>;
+  const people = [...w.pending.map((p: any) => ({ id: p.uid, name: p.name, pending: true })), ...(Object.values(w.citizens) as any[]).filter((c) => c.active && !c.bot).map((c) => ({ id: c.id, name: c.name, pending: false }))];
+  const note = (id: string) => saveNote(id, draft[id] ?? notes[id] ?? '').then(() => (toast('Note saved. Only you can see it.'), load(), setOpen(''))).catch((e) => toast(e.message, true));
+  const give = (id: string, n: number) => setAllowance(id, n).then(() => (toast(n ? `They can send ${n} invitation${n > 1 ? 's' : ''}.` : 'Invitations taken away.'), load())).catch((e) => toast(e.message, true));
+  return (
+    <>
+      {devices.length > 0 && (
+        <Sec title="Shared devices" sub="These accounts were used in the same browser. Often that's siblings or a borrowed phone; sometimes it's a second account. Check before acting.">
+          <div class="stack">{devices.map((g) => <Card kind="warn"><b>Device {g.device}</b><div class="small">{g.users.map((u: any) => `${u.name}${u.active ? '' : ' (removed)'}`).join(', ')}</div></Card>)}</div>
+        </Sec>
+      )}
+      <Sec title="Citizens" sub="Your notes are private to you. Giving someone invitations lets them invite friends without asking you; it's announced, and the Gazette says who invited whom.">
+        <ul class="list">{people.map((p) => (
+          <li>
+            <div class="row"><span><b>{p.name}</b>{p.pending && <span class="small muted"> · applying</span>}<div class="small muted">{w.citizens[p.id]?.invitedBy ? `Invited by ${nm(w, w.citizens[p.id].invitedBy)}` : ''}{allow[p.id] ? `${w.citizens[p.id]?.invitedBy ? ' · ' : ''}${allow[p.id]} invitation${allow[p.id] > 1 ? 's' : ''} left` : ''}</div>{notes[p.id] && open !== p.id && <div class="small">“{notes[p.id]}”</div>}</span>
+              <Btn small kind="plain" onClick={() => setOpen(open === p.id ? '' : p.id)}>{open === p.id ? 'Close' : 'Note'}</Btn></div>
+            {open === p.id && (
+              <div class="stack" style={{ gap: 6, margin: '6px 0' }}>
+                <Field label="Private note" value={draft[p.id] ?? notes[p.id] ?? ''} onInput={(v) => setDraft({ ...draft, [p.id]: v })} placeholder="Confirmed in person" />
+                <div class="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                  <Btn small onClick={() => note(p.id)}>Save note</Btn>
+                  {!p.pending && [0, 1, 2, 3].map((n) => <Btn small kind={(allow[p.id] || 0) === n ? undefined : 'ghost'} onClick={() => give(p.id, n)}>{n ? `${n} invite${n > 1 ? 's' : ''}` : 'No invites'}</Btn>)}
+                </div>
+              </div>
+            )}
+          </li>
+        ))}</ul>
+      </Sec>
+    </>
   );
 }
 
