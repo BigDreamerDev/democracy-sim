@@ -133,6 +133,7 @@ export const COMMANDS: Record<string, Cmd> = {
   'hunt.enter': (w, me) => R.enterHunt(w, me),
   'hunt.withdraw': (w, me) => R.withdrawHunt(w, me),
   'admin.zone': (w, me, a) => R.adminZone(w, me, a),
+  'admin.duplicate': (w, me, a) => P.removeDuplicate(w, me, a.dup, a.keep),
   'admin.bounty': (w, me, a) => R.removeBounty(w, me, a.id, a.reason),
   'admin.forceEnact': (w, me, a) => L.forceEnact(w, me, a.prop, a.reason),
   'admin.approve': (w, me, a) => {

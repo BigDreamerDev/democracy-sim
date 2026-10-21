@@ -227,8 +227,8 @@ export async function signIn(username: string, password: string) {
   set({ signedIn: true, loading: true });
   await refresh();
 }
-export async function signUp(username: string, display_name: string, password: string) {
-  const d = await api('/api/signup', { username, display_name, password });
+export async function signUp(username: string, display_name: string, password: string, extra: { who?: string; invite?: string } = {}) {
+  const d = await api('/api/signup', { username, display_name, password, ...extra });
   if (d.waiting) return 'waiting';
   setToken(d.token);
   set({ signedIn: true, loading: true });
@@ -432,3 +432,17 @@ export const photoUrl = (id: string) => (ONLINE ? `${API}/api/images/${id}` : de
 export const removePhoto = (id: string, reason: string) => api('/api/admin/images/remove', { id, reason });
 export const deletePhoto = (id: string) => api('/api/images/delete', { id });
 export const myPhotos = () => api('/api/images');
+
+// ---------- invitations and duplicate accounts ----------
+export const checkInvite = (code: string) => api('/api/invites/check?code=' + encodeURIComponent(code));
+export const adminInvites = () => api('/api/admin/invites');
+export const makeInvite = (name: string) => api('/api/admin/invites', { name });
+export const revokeInvite = (id: number) => api('/api/admin/invites/revoke', { id });
+export const inviteLink = (code: string) => location.origin + location.pathname + '#/join/' + code;
+// online it also switches the duplicate's login off, so it goes through its own route
+export async function removeDuplicate(dup: string, keep: string) {
+  if (!ONLINE) return act('admin.duplicate', { dup, keep }, 'Removed. It is in the Gazette.');
+  receive(await api('/api/admin/duplicate', { dup, keep }));
+  toast('Removed. It is in the Gazette.');
+  return true;
+}

@@ -110,7 +110,10 @@ scripts/     smoke.ts
 |-|-|-|
 | `GET /api/health` | — | `{ok, now, phase}` |
 | `POST /api/login` | — | `{username, password}` → `{token, me}`. Rate-limited 10/min/IP. Adds a missing citizen. |
-| `POST /api/signup` | — | `{username, display_name, password}` → `{token, me}` or `{waiting:true}`. Only if `flags.openSignup`. |
+| `POST /api/signup` | — | `{username, display_name, password, who?, invite?}` → `{token, me}` or `{waiting:true}`. Needs `flags.openSignup` unless `invite` is a live invitation (then no approval). `who` ("who are you in the chat") is required when approval is on; it's stored on the `pending` entry for the RO |
+| `GET /api/invites/check?code=` | — | `{name}` for a live invitation |
+| `GET/POST /api/admin/invites`, `/api/admin/invites/revoke` | RO | single-use 7-day links (`v2_invites`, codes stored as sha256); making and revoking are announced |
+| `POST /api/admin/duplicate` | RO | `{dup, keep}`: runs `admin.duplicate` (crowns moved, open votes struck, posts lost, citizen inactive) and switches the login off. `/api/act` refuses that command |
 | `GET /api/state` | user | → `{world, me, serverNow}` |
 | `POST /api/act` | user | `{cmd, args}` → `{world, me, serverNow}`; 400 `{error}` on GameError |
 | `POST /api/password` | user | `{current, next}` → `{token}`; bumps token_version. `current` not needed if the account has no password yet |
@@ -183,7 +186,7 @@ Citizen id = `'u' + users.id`.
    server. Hiding a button is cosmetic.
 4. **Rules change only through Parliament.** The RO's powers are exactly: approve sign-ups,
    toggle `requireApproval`/`openSignup`, move the calendar, start a crisis, force-enact a stuck
-   bill, reset a password, remove or restore a player app, add or remove a Streets safe zone, take down a
+   bill, reset a password, make or revoke an invitation, remove a duplicate account, remove or restore a player app, add or remove a Streets safe zone, take down a
    bounty or a photo, export, reset the realm. The safe-zone, bounty and photo powers exist for real-world safety only. Don't add RO
    powers over game rules. **Every one of them goes through `adminDid()`** (engine/core.ts), which
    writes the public admin log and the Gazette. A new admin power must too.

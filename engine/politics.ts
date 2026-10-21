@@ -2,10 +2,11 @@
 // parties, forming a government, coalitions, the shadow cabinet, seasons, ambitions and weekly objectives.
 import {
   W, Id, DAY, HOUR, fail, newId, pick, rand, shuffle, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, stamp, approve,
-  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal, fmtDay, bump
+  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal, fmtDay, bump, adminDid
 } from './core';
 import { openMarket, settleMarket } from './markets';
 import { seasonAwards } from './glory';
+import { leave } from './streets';
 import { createOffice } from './offices';
 import { TUTORIAL } from './tutorial';
 
@@ -851,4 +852,80 @@ export function checkObjectives(w: W, id: Id) {
       if (c.objectives.every((x: any) => x.done)) stamp(w, id, 'Full week', 'All 3 objectives', 'good');
     }
   });
+}
+
+// ================= Duplicate accounts =================
+// The Returning Officer strikes out a second account belonging to someone who already has one. Its crowns
+// go to the real account, its open votes and ballots are struck out (so nobody voted twice), it loses any
+// seat or office, and it stops being a citizen. All of it is published. The server also deactivates the login.
+export function removeDuplicate(w: W, actor: Id, dup: Id, keep: Id) {
+  if (!w.citizens[actor]?.admin) fail('Only the Returning Officer removes duplicate accounts.');
+  const d = cit(w, dup);
+  const k = cit(w, keep);
+  if (dup === keep) fail('Pick two different accounts.');
+  if (!d.active) fail(`${d.name} has already been removed.`);
+  if (d.admin) fail('You can’t remove an admin account this way.');
+  let struck = 0;
+  // money: everything in the duplicate's wallet, banks and bets goes to the real account
+  const cash = bal(w, ca(dup));
+  if (cash > 0) transfer(w, ca(dup), ca(keep), cash, `Merged from a duplicate account (${d.name})`);
+  Object.values(w.banks || {}).forEach((b: any) => {
+    const dep = b.deposits?.[dup] || 0;
+    if (dep > 0) {
+      b.deposits[keep] = (b.deposits[keep] || 0) + dep;
+      delete b.deposits[dup];
+    }
+    (b.loans || []).forEach((l: any) => l.who === dup && (l.who = keep));
+  });
+  Object.values(w.markets || {}).forEach((m: any) => {
+    const bets = m.bets?.[dup];
+    if (!bets || m.status !== 'open') return;
+    Object.entries(bets).forEach(([opt, n]: any) => {
+      m.pools[opt] -= n;
+      if (n > 0) transfer(w, 'market', ca(keep), n, `Refunded bet from a duplicate account (${d.name})`);
+    });
+    delete m.bets[dup];
+  });
+  // votes still open are struck out
+  Object.values(w.elections).forEach((e: any) => {
+    if (e.status !== 'open') return;
+    if (e.ballots[dup] !== undefined) (delete e.ballots[dup], struck++);
+    delete e.candidates[dup];
+  });
+  Object.values(w.proposals).forEach((p: any) => {
+    if (p.votes?.[dup] !== undefined && ['vote', 'debate'].includes(p.stage)) (delete p.votes[dup], struck++);
+    if (p.overrideVotes?.[dup] !== undefined) (delete p.overrideVotes[dup], struck++);
+  });
+  if (w.phase === 'convention') w.convention.clauses.forEach((c: any) => c.votes[dup] !== undefined && (delete c.votes[dup], struck++));
+  Object.values(w.crises).forEach((c: any) => c.status === 'open' && c.votes?.[dup] !== undefined && (delete c.votes[dup], struck++));
+  if (w.daily?.votes?.[dup] !== undefined) delete w.daily.votes[dup];
+  // out of every post
+  if (isMP(w, dup)) vacateSeat(w, dup, 'a duplicate account');
+  Object.values(w.offices).forEach((o: any) => {
+    if (o.holder === dup) o.holder = null;
+    o.members = (o.members || []).filter((m: Id) => m !== dup);
+  });
+  if (w.pm === dup) {
+    w.pm = null;
+    clearMinisters(w);
+    w.pmInviteDue = w.now + DAY;
+  }
+  if (w.speaker === dup) w.speaker = null;
+  if (w.hos.holder === dup) {
+    w.hos = { holder: null, since: w.now, until: null };
+    startHosSelection(w);
+  }
+  if (d.party) {
+    const pt = w.parties[d.party];
+    if (pt?.leader === dup) {
+      const rest = members(w, pt.id).filter((m: Id) => m !== dup);
+      pt.leader = rest[0] || null;
+      if (!rest.length) pt.status = 'dissolved';
+    }
+    d.party = null;
+  }
+  if (d.streets?.in) leave(w, dup);
+  d.active = false;
+  d.removed = { at: w.now, as: 'duplicate', of: keep };
+  adminDid(w, actor, `removed ${d.name} as a duplicate account of ${k.name}: ${cash} crowns moved to ${k.name}${struck ? `, ${struck} open vote${struck > 1 ? 's' : ''} struck out` : ''}`, '#/rolog');
 }

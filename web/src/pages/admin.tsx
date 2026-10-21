@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { useEffect } from 'preact/hooks';
-import { useStore, act, ONLINE, resetRealm, downloadExport, resetPassword, adminApps, removeApp, restoreApp, toast } from '../store';
+import { useStore, act, ONLINE, resetRealm, downloadExport, resetPassword, adminApps, removeApp, restoreApp, toast, adminInvites, makeInvite, revokeInvite, inviteLink, removeDuplicate } from '../store';
 import { Page, Sec, Card, Btn, Empty, LinkRow, Field, Pick, When } from '../ui';
 import { CRISES } from '../../../engine/crises';
 import { nm, ledgerTotal, fmtTime, acctLabel } from '../../../engine/index';
@@ -21,7 +21,8 @@ export function Admin() {
   const total = w.audit ? w.audit.total : ledgerTotal(w);
   return (
     <Page back={['#/realm', 'The realm']} kicker="Returning Officer" title="Admin" intro={<>You run the game and play like anyone else, offices included. Everything you do on this page is announced in the Gazette and kept in the <a href="#/rolog">public log</a>.</>}>
-      <Sec title="Sign-ups waiting"><ul class="list">{w.pending.map((p: any) => <li class="row"><b>{p.name}</b><span class="row"><Btn small onClick={() => act('admin.approve', { id: p.id, approve: true }, 'Approved.')}>Approve</Btn><Btn small kind="plain" onClick={() => act('admin.approve', { id: p.id, approve: false })}>Turn down</Btn></span></li>)}</ul>{!w.pending.length && <Empty>Nobody waiting.</Empty>}</Sec>
+      <Invites />
+      <Sec title="Sign-ups waiting" sub="Check each one against the group chat before approving. Turn down anyone who already has an account."><ul class="list">{w.pending.map((p: any) => <li class="row"><span><b>{p.name}</b>{p.who && <div class="small muted">“{p.who}”</div>}</span><span class="row"><Btn small onClick={() => act('admin.approve', { id: p.id, approve: true }, 'Approved.')}>Approve</Btn><Btn small kind="plain" onClick={() => act('admin.approve', { id: p.id, approve: false })}>Turn down</Btn></span></li>)}</ul>{!w.pending.length && <Empty>Nobody waiting.</Empty>}</Sec>
       <Sec title="Settings">
         <ul class="list">{[['requireApproval', 'New accounts need approval'], ['openSignup', 'The sign-up page is open']].map(([k, l]) => <li class="row"><span>{l}</span><Btn small kind={w.flags[k] ? undefined : 'ghost'} onClick={() => act('admin.setting', { key: k, value: !w.flags[k] })}>{w.flags[k] ? 'On' : 'Off'}</Btn></li>)}</ul>
         <Btn href="#/calendar" kind="ghost" small style={{ marginTop: 10 }}>Change the calendar</Btn>
@@ -33,6 +34,7 @@ export function Admin() {
         </Sec>
       )}
       <Zones />
+      <Duplicates />
       <Sec title="Start a crisis" sub="One lands every payday anyway. Starting one now is announced, and the PM still decides it.">
         {w.phase !== 'running' ? <Empty>Crises begin once Parliament is running.</Empty> : Object.values(w.crises).some((c: any) => c.status === 'open') ? <Empty>A crisis is already open.</Empty> : (
           <div class="grid2">
@@ -104,6 +106,67 @@ function Zones() {
       <ul class="list">{(w.streets?.zones || []).map((z: any) => <li class="row"><span>{z.text}<div class="small muted">{z.by === 'law' ? 'by law' : z.by === 'ro' ? 'added by you' : 'standard'}</div></span><Btn small kind="plain" onClick={() => confirm(`Remove "${z.text}"? It's announced in the Gazette.`) && act('admin.zone', { remove: z.id }, 'Removed.')}>Remove</Btn></li>)}</ul>
       <div class="grid2" style={{ marginTop: 8 }}><Field label="New safe zone" value={t} onInput={setT} placeholder="e.g. The library" /><Btn style={{ alignSelf: 'end' }} onClick={() => act('admin.zone', { add: t }, 'Added. It is in the Gazette.') && setT('')}>Add</Btn></div>
       <Btn small kind="ghost" href="#/market" style={{ marginTop: 8 }}>Bounties</Btn>
+    </Sec>
+  );
+}
+
+// single-use invitation links: they work with sign-ups closed and need no approval
+function Invites() {
+  const [list, setList] = useState<any[]>([]);
+  const [name, setName] = useState('');
+  const [made, setMade] = useState<{ name: string; link: string } | null>(null);
+  const load = () => ONLINE && adminInvites().then(setList).catch(() => {});
+  useEffect(() => void load(), []);
+  const make = async () => {
+    try {
+      const r = await makeInvite(name);
+      setMade({ name: r.name, link: inviteLink(r.code) });
+      setName('');
+      load();
+    } catch (e: any) {
+      toast(e.message, true);
+    }
+  };
+  const copy = (t: string) => navigator.clipboard?.writeText(t).then(() => toast('Copied. Send it to them privately.')).catch(() => toast('Copy it by hand.', true));
+  return (
+    <Sec title="Invitations" sub="One link for one person, good for 7 days. It works while sign-ups are closed and needs no approval, so you can keep the sign-up page shut. Making one is announced.">
+      {!ONLINE ? <Empty>Invitations need the real server.</Empty> : (
+        <div class="stack">
+          <div class="grid2"><Field label="Who it's for" value={name} onInput={setName} placeholder="Sam" /><Btn style={{ alignSelf: 'end' }} onClick={make}>Make a link</Btn></div>
+          {made && (
+            <Card kind="tint"><div class="stack" style={{ gap: 6 }}>
+              <b>Link for {made.name}</b>
+              <code class="small" style={{ wordBreak: 'break-all' }}>{made.link}</code>
+              <span class="small muted">This is the only time you'll see it. DM it to {made.name}, not the group: whoever opens it first gets the account.</span>
+              <Btn small onClick={() => copy(made.link)}>Copy the link</Btn>
+            </div></Card>
+          )}
+          <ul class="list">{list.map((i) => <li class="row"><span>{i.name}<div class="small muted">{i.status === 'used' ? `Used by ${i.usedName}` : i.status === 'open' ? <>Open until <When at={new Date(i.expiresAt).getTime()} /></> : i.status}</div></span>{i.status === 'open' && <Btn small kind="plain" onClick={() => revokeInvite(i.id).then(() => (toast('Revoked.'), load())).catch((e) => toast(e.message, true))}>Revoke</Btn>}</li>)}</ul>
+          {!list.length && <Empty>No invitations yet.</Empty>}
+        </div>
+      )}
+    </Sec>
+  );
+}
+
+// a second account for someone who already has one
+function Duplicates() {
+  const { world: w } = useStore();
+  const [dup, setDup] = useState('');
+  const [keep, setKeep] = useState('');
+  const people = Object.values(w.citizens).filter((c: any) => c.active && !c.bot).map((c: any) => [c.id, c.name]) as [string, string][];
+  const go = () => {
+    if (!dup || !keep) return toast('Pick both accounts.', true);
+    if (!confirm(`Remove ${nm(w, dup)} as a second account of ${nm(w, keep)}? Their crowns move to ${nm(w, keep)}, their open votes are struck out, they lose any seat or office, and they can't sign in again. It's announced.`)) return;
+    removeDuplicate(dup, keep).then(() => (setDup(''), setKeep(''))).catch((e: any) => toast(e.message, true));
+  };
+  return (
+    <Sec title="Duplicate accounts" sub="When one person has two accounts. The extra one stops being a citizen; their crowns go to the real one and any open votes they cast are struck out, so nobody votes twice.">
+      <div class="stack">
+        <Pick label="The extra account" value={dup} onChange={setDup} empty="Pick one" options={people} />
+        <Pick label="Belongs to" value={keep} onChange={setKeep} empty="Pick their real account" options={people.filter(([id]) => id !== dup)} />
+        <Btn kind="danger ghost" onClick={go}>Remove the extra account</Btn>
+      </div>
     </Sec>
   );
 }

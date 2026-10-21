@@ -276,6 +276,27 @@ try {
   assert.equal((await call('/api/images/delete', { id: up.body.id }, gl.body.token)).status, 200);
   assert.equal((await fetch(base + '/api/images/' + up.body.id)).status, 404, 'a deleted photo is gone');
 
+  // invitations: single-use, work with sign-ups closed, skip approval
+  const RI = (await call('/api/login', { username: 'admin', password: 'password' })).body.token;
+  assert.equal((await call('/api/admin/invites', { name: 'Dev' }, C)).status, 403, 'RO only');
+  const inv = await call('/api/admin/invites', { name: 'Dev' }, RI);
+  assert.equal(inv.status, 200, JSON.stringify(inv.body));
+  assert.equal((await call('/api/invites/check?code=' + inv.body.code)).body.name, 'Dev');
+  const joined = await call('/api/signup', { username: 'devp', display_name: 'Dev', password: 'a long enough passphrase', invite: inv.body.code });
+  assert.equal(joined.status, 200, JSON.stringify(joined.body));
+  assert.ok(joined.body.token, 'an invitation needs no approval');
+  assert.equal((await call('/api/signup', { username: 'devp2', display_name: 'Dev 2', password: 'a long enough passphrase', invite: inv.body.code })).status, 403, 'an invitation works once');
+  // duplicates: struck out, crowns moved, login off
+  const dupId = joined.body.me;
+  const keepBal = getWorld().accounts['c:u3'] || 0;
+  assert.equal((await call('/api/act', { cmd: 'admin.duplicate', args: { dup: dupId, keep: 'u3' } }, RI)).status, 400, 'only through its own route');
+  const dd = await call('/api/admin/duplicate', { dup: dupId, keep: 'u3' }, RI);
+  assert.equal(dd.status, 200, JSON.stringify(dd.body));
+  assert.equal(getWorld().citizens[dupId].active, false);
+  assert.ok(getWorld().accounts['c:u3'] > keepBal, 'crowns moved');
+  assert.equal((await call('/api/state', undefined, joined.body.token)).status, 401, 'the duplicate is signed out');
+  assert.equal((await call('/api/login', { username: 'devp', password: 'a long enough passphrase' })).status >= 400, true, 'and cannot sign in');
+
   const out = await call('/api/logout-all', {}, gl.body.token);
   assert.equal((await call('/api/state', undefined, gl.body.token)).status, 401, 'sign out everywhere kills old tokens');
   assert.equal((await call('/api/state', undefined, out.body.token)).status, 200);

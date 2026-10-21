@@ -10,6 +10,7 @@ import { SECURITY_SCHEMA, passwordProblem, hash, dummyCompare, needsRehash, acco
 import { providers, authorizeUrl, exchange, random } from './oauth';
 import { passkeys, PASSKEY_SCHEMA } from './passkeys';
 import { IMAGES_SCHEMA, imageGet, imageRoutes, photoProblem } from './images';
+import { INVITES_SCHEMA, inviteRoutes, claimInvite, releaseInvite, useInvite } from './invites';
 import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate, needs, adminDid, nm } from '../engine/index';
 
 export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void; send?: Sender; site?: string; devOrigins?: boolean; env?: Record<string, string | undefined>; publicUrl?: string; saveEvery?: number };
@@ -23,6 +24,7 @@ export async function makeApp(o: Options) {
   await q(SECURITY_SCHEMA);
   await q(PASSKEY_SCHEMA);
   await q(IMAGES_SCHEMA);
+  await q(INVITES_SCHEMA);
   const env = o.env || process.env;
   const OAUTH = providers(env);
   const rate = limiter(now);
@@ -211,7 +213,7 @@ export async function makeApp(o: Options) {
       await q('INSERT INTO v2_identities (provider, subject, user_id, email) VALUES ($1, $2, $3, $4)', [prov.id, who.sub, u.id, who.email || null]);
       await serial(async () => {
         if (approved) addCitizen(world, 'u' + u.id, name, false);
-        else world.pending.push({ id: 'su' + u.id, uid: 'u' + u.id, name, userId: u.id });
+        else world.pending.push({ id: 'su' + u.id, uid: 'u' + u.id, name, userId: u.id, who: `Signed up with ${prov.name}${who.email ? ' as ' + who.email : ''}`, at: world.now });
         await save();
       });
       await done(approved ? 'login' : 'waiting', u.id);
@@ -273,23 +275,37 @@ export async function makeApp(o: Options) {
 
   app.post('/api/signup', async (req, res) => {
     if (limited('signup:' + req.ip, 5)) return res.status(429).json({ error: 'Too many attempts. Wait a minute.' });
-    if (!world.flags.openSignup) return res.status(403).json({ error: 'Sign-ups are closed. Ask the Returning Officer.' });
+    // an invitation from the Returning Officer works even with sign-ups closed, and needs no approval
+    const invite = req.body?.invite ? String(req.body.invite) : '';
+    if (!invite && !world.flags.openSignup) return res.status(403).json({ error: 'Sign-ups are closed. Ask the Returning Officer for an invitation.' });
     const username = String(req.body?.username || '').trim().toLowerCase();
     const name = String(req.body?.display_name || '').replace(/\s+/g, ' ').trim();
     const password = String(req.body?.password || '');
+    const whoNote = String(req.body?.who || '').replace(/\s+/g, ' ').trim();
     if (!/^[a-z0-9_]{3,20}$/.test(username)) return res.status(400).json({ error: 'Usernames are 3 to 20 letters, numbers or underscores.' });
     if (name.length < 2 || name.length > 24) return res.status(400).json({ error: 'Give a display name of 2 to 24 characters.' });
     const bad = passwordProblem(password, username);
     if (bad) return res.status(400).json({ error: bad });
+    if (!invite && world.flags.requireApproval && (whoNote.length < 2 || whoNote.length > 80)) return res.status(400).json({ error: 'Say who you are in the group chat, so the Returning Officer knows it’s you (2 to 80 characters).' });
     if ((await q('SELECT 1 FROM users WHERE lower(username) = $1', [username])).rows.length) return res.status(409).json({ error: 'That username is taken.' });
-    const approved = !world.flags.requireApproval;
-    const u = (await q('INSERT INTO users (username, display_name, password_hash, approved) VALUES ($1, $2, $3, $4) RETURNING *', [username, name, await hash(password), approved])).rows[0];
+    const inv = invite ? await claimInvite(q, invite) : null;
+    if (invite && !inv) return res.status(403).json({ error: 'That invitation has been used, has expired, or was revoked. Ask the Returning Officer for a new one.' });
+    const approved = !!inv || !world.flags.requireApproval;
+    let u: any;
+    try {
+      u = (await q('INSERT INTO users (username, display_name, password_hash, approved) VALUES ($1, $2, $3, $4) RETURNING *', [username, name, await hash(password), approved])).rows[0];
+    } catch (e) {
+      if (inv) await releaseInvite(q, inv.id);
+      throw e;
+    }
+    if (inv) await useInvite(q, inv.id, u.id);
     await serial(async () => {
       if (approved) addCitizen(world, 'u' + u.id, name, false);
-      else world.pending.push({ id: 'su' + u.id, uid: 'u' + u.id, name, userId: u.id });
+      else world.pending.push({ id: 'su' + u.id, uid: 'u' + u.id, name, userId: u.id, who: whoNote, at: world.now });
+      if (inv) gazette(world, 'quiet', `${name} joins by invitation (sent for ${inv.name}).`);
       await save();
     });
-    audit('u' + u.id, 'auth.signup', true);
+    audit('u' + u.id, inv ? 'auth.signup.invite' : 'auth.signup', true);
     res.json(approved ? await welcome(u, req) : { waiting: true });
   });
 
@@ -394,7 +410,8 @@ export async function makeApp(o: Options) {
 
   app.post('/api/act', auth, async (req: any, res) => {
     const { cmd, args } = req.body || {};
-    if (typeof cmd !== 'string' || cmd.startsWith('admin.reset')) return res.status(400).json({ error: 'Unknown action.' });
+    // admin.duplicate also deactivates a login, so it only runs through its own route
+    if (typeof cmd !== 'string' || cmd.startsWith('admin.reset') || cmd === 'admin.duplicate') return res.status(400).json({ error: 'Unknown action.' });
     const bad = await photoProblem(q, req.user.id, args);
     if (bad) return res.status(400).json({ error: bad });
     try {
@@ -470,6 +487,38 @@ export async function makeApp(o: Options) {
 
   // the Returning Officer's tools that sit outside the game
   const admin = (req: any, res: any, next: any) => (req.user?.is_admin ? next() : res.status(403).json({ error: 'Returning Officer only.' }));
+  inviteRoutes(app, {
+    q, auth, admin, limited,
+    announce: (cid, text) => serial(async () => {
+      adminDid(world, cid, text);
+      await save();
+    })
+  });
+  // a second account for someone who already has one: struck out in the game, and its login switched off
+  app.post('/api/admin/duplicate', auth, admin, async (req: any, res) => {
+    const dup = String(req.body?.dup || '');
+    const keep = String(req.body?.keep || '');
+    try {
+      await serial(async () => {
+        await catchUp();
+        world = run(world, req.cid, 'admin.duplicate', { dup, keep });
+        const id = /^u\d+$/.test(dup) ? Number(dup.slice(1)) : null;
+        if (id) {
+          await q('UPDATE users SET is_active = FALSE, token_version = token_version + 1 WHERE id = $1', [id]);
+          userCache.delete(id);
+          await q('UPDATE v2_api_keys SET revoked = TRUE WHERE user_id = $1', [id]).catch(() => {});
+        }
+        await save();
+      });
+      schedule();
+      audit(req.cid, 'admin.duplicate', true);
+      res.json({ world: viewFor(world, req.cid), me: req.cid, serverNow: now() });
+    } catch (e: any) {
+      if (e instanceof GameError) return res.status(400).json({ error: e.message });
+      log('duplicate failed', e);
+      res.status(500).json({ error: 'Something went wrong on the server. It has been logged.' });
+    }
+  });
   imageRoutes(app, {
     q, auth, admin, limited, audit,
     announce: (cid, owner, reason) => serial(async () => {
