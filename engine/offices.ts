@@ -12,7 +12,8 @@ export const POWERS: Record<string, { label: string; strong?: boolean }> = {
   files: { label: 'Receive the government’s restricted cards' },
   judge: { label: 'Rule on cases before the Court' },
   fine: { label: 'Fine a citizen up to 10 crowns', strong: true },
-  block: { label: 'Send one passed bill back for 48 hours each term', strong: true }
+  block: { label: 'Send one passed bill back for 48 hours each term', strong: true },
+  protect: { label: 'Guard one citizen from assassins each day' }
 };
 
 export const TEMPLATES: Record<string, { name: string; title: string; act: string; powers: string[]; fill: string; budget: number; secrecy: string; blurb: string; constitutional?: boolean }> = {
@@ -22,6 +23,7 @@ export const TEMPLATES: Record<string, { name: string; title: string; act: strin
   security: { name: 'Security Service', title: 'Director', act: 'Security Service Act', powers: ['intel', 'files'], fill: 'pm', budget: 40, secrecy: 'restricted', blurb: 'Gathers intelligence. Each request risks a spy being caught.' },
   army: { name: 'The Army', title: 'General', act: 'Defence Act', powers: ['army'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'Defends the realm. Costs upkeep. Its loyalty decides whether a coup succeeds.' },
   court: { name: 'Supreme Court', title: 'Justice', act: 'Supreme Court Amendment', powers: ['judge'], fill: 'lot', budget: 0, secrecy: 'public', blurb: 'Three justices drawn by lot decide whether laws and actions break the constitution.', constitutional: true },
+  guard: { name: 'Protection Service', title: 'Bodyguard', act: 'Protection Act', powers: ['protect'], fill: 'pm', budget: 0, secrecy: 'restricted', blurb: 'Guards one citizen a day in the Streets. A hit on them fails half the time, and the would-be assassin is exiled.' },
   whip: { name: 'Chief Whip', title: 'Chief Whip', act: 'Founding Act', powers: ['files'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'Keeps government MPs voting together. Sees who rebels.' }
 };
 

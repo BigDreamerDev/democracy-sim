@@ -1,6 +1,8 @@
 // Upgrades a saved world to the current shape. The live world persists across deploys, so any change to the
 // world's shape (a new field, a renamed key) needs a step here. Steps must be idempotent: they run on every boot.
 import { W } from './core';
+import { SAFE_ZONES } from './streets';
+import { freshDaily } from './glory';
 
 export function migrate(w: W): W {
   // example: w.newThing ??= {};
@@ -14,5 +16,19 @@ export function migrate(w: W): W {
   }
   Object.values(w.citizens || {}).forEach((c: any) => (c.tutorial ??= {}));
   Object.values(w.crises || {}).forEach((c: any) => (c.votes ??= {}));
+  // the Streets, the market, betting, the Red Box, polls and the Hall of Fame
+  w.streets ??= { zones: SAFE_ZONES.map((text, i) => ({ id: 'z' + i, text, by: 'default' })), contracts: {}, protect: null, meets: [] };
+  w.bounties ??= {};
+  w.stalls ??= {};
+  w.orders ??= {};
+  w.jobs ??= {};
+  w.jobClaims ??= [];
+  w.markets ??= {};
+  w.ultimatums ??= [];
+  w.daily ??= freshDaily(w.now);
+  w.dailyPast ??= [];
+  w.polls ??= [];
+  w.fame ??= { pms: [], seasons: [], records: {} };
+  Object.values(w.citizens || {}).forEach((c: any) => ((c.streets ??= { in: false }), (c.life ??= {}), (c.badges ??= {})));
   return w;
 }

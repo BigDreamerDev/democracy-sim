@@ -32,6 +32,7 @@ export function Admin() {
           <Card kind="tint"><div class="row"><span>Ends <When at={w.induction.until} /></span><Btn small kind="danger ghost" onClick={() => act('admin.endInduction', {}, 'Induction is over. The real game begins.')}>End it now</Btn></div></Card>
         </Sec>
       )}
+      <Zones />
       <Sec title="Start a crisis" sub="One lands every payday anyway. Starting one now is announced, and the PM still decides it.">
         {w.phase !== 'running' ? <Empty>Crises begin once Parliament is running.</Empty> : Object.values(w.crises).some((c: any) => c.status === 'open') ? <Empty>A crisis is already open.</Empty> : (
           <div class="grid2">
@@ -91,5 +92,18 @@ export function RoLog() {
     <Page back={['#/realm', 'The realm']} kicker="On the record" title="The Returning Officer’s log" intro={<>{ro ? <b>{ro.name}</b> : 'The Returning Officer'} runs the game and also plays it. Every use of admin powers is listed here and announced in the Gazette, so anyone can check them.</>}>
       {w.adminLog.length ? <ol class="gz">{w.adminLog.map((l: any) => <li class="ro"><div class="small muted">{fmtTime(w, l.at)}</div><div style={{ fontSize: 15 }}><b>{nm(w, l.by)}</b> {l.text.charAt(0).toLowerCase() + l.text.slice(1)}</div></li>)}</ol> : <Empty>Nothing yet.</Empty>}
     </Page>
+  );
+}
+
+// safety is the one game area the RO can change directly: safe zones in the Streets (bounties are taken down from the market)
+function Zones() {
+  const { world: w } = useStore();
+  const [t, setT] = useState('');
+  return (
+    <Sec title="Streets safe zones" sub="Tags in a safe zone don't count. Adding or removing one is announced. Take down unsafe bounties from the market.">
+      <ul class="list">{(w.streets?.zones || []).map((z: any) => <li class="row"><span>{z.text}<div class="small muted">{z.by === 'law' ? 'by law' : z.by === 'ro' ? 'added by you' : 'standard'}</div></span><Btn small kind="plain" onClick={() => confirm(`Remove "${z.text}"? It's announced in the Gazette.`) && act('admin.zone', { remove: z.id }, 'Removed.')}>Remove</Btn></li>)}</ul>
+      <div class="grid2" style={{ marginTop: 8 }}><Field label="New safe zone" value={t} onInput={setT} placeholder="e.g. The library" /><Btn style={{ alignSelf: 'end' }} onClick={() => act('admin.zone', { add: t }, 'Added. It is in the Gazette.') && setT('')}>Add</Btn></div>
+      <Btn small kind="ghost" href="#/market" style={{ marginTop: 8 }}>Bounties</Btn>
+    </Sec>
   );
 }

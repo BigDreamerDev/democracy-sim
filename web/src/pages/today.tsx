@@ -8,6 +8,8 @@ import { canVoteOn, describe, KINDS } from '../../../engine/proposals';
 import { POWERS } from '../../../engine/offices';
 
 import { needs } from '../../../engine/alerts';
+import { RedBox } from './glory';
+import { ghost } from '../../../engine/index';
 export { needs };
 
 export function Meters({ compact }: { compact?: boolean }) {
@@ -121,7 +123,8 @@ function InductionBanner() {
 export function Today() {
   const { world: w, me } = useStore();
   const c = w.citizens[me];
-  const list = needs(w, me);
+  // the Red Box has its own card here, so it isn't one of the slips
+  const list = needs(w, me).filter((n) => !n.key.startsWith('daily:'));
   const up = upcoming(w, 3);
   const mine = officesOf(w, me);
   const quick: [string, string][] = [['#/house', 'Parliament'], ['#/realm', 'Everything'], ['#/wallet', `${bal(w, ca(me))} crowns`], ['#/season', `${c.influence} Influence`]];
@@ -140,8 +143,10 @@ export function Today() {
       </div>
       <InductionBanner />
       {exiled(w, me) && <Card kind="warn" style={{ marginTop: 16, gridColumn: '1 / -1' }}><b>You are in exile</b> until <When at={c.exiledUntil} />. <a href="#/exile">What you can still do</a></Card>}
+      {ghost(w, me) && <Card kind="warn" style={{ marginTop: 16, gridColumn: '1 / -1' }}><b>You were assassinated.</b> You’re a ghost until <When at={c.ghostUntil} />: you can vote, and nothing else. <a href="#/streets">The Streets</a></Card>}
       <div class="today-a">
         <div class="stack o1" style={{ marginTop: 18 }}>
+          <RedBox />
           {list.map((n) => (
             <a class="slip rise" href={n.href}>
               <div class="main"><span class="small muted">{n.label}</span><span class="t">{n.title}</span></div>

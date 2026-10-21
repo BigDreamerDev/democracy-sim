@@ -194,7 +194,8 @@ export function Proposal({ id }: { id: string }) {
 const CLAUSES: [string, string][] = [
   ['text', 'A rule in words'], ['office', 'Create an office'], ['set', 'Change a number'], ['budget', 'Set an office budget'], ['abolish', 'Abolish an office'],
   ['permit', 'Allow banks'], ['treaty', 'Ratify a treaty'], ['breakTreaty', 'Break a treaty'], ['repeal', 'Repeal a law'],
-  ['constitution', 'Change the constitution'], ['removeHos', 'Remove the head of state'], ['war', 'Declare war'], ['peace', 'Make peace']
+  ['constitution', 'Change the constitution'], ['removeHos', 'Remove the head of state'], ['war', 'Declare war'], ['peace', 'Make peace'],
+  ['job', 'Create a civic job (paid wage)'], ['zone', 'Add a Streets safe zone']
 ];
 export function NewProposal({ query }: { query: URLSearchParams }) {
   const { world: w, me } = useStore();
@@ -275,7 +276,9 @@ function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; onChang
     constitution: { t: 'constitution', key: 'seats', value: 7, label: '7' },
     removeHos: { t: 'removeHos' },
     war: { t: 'war', nation: 'kessmark' },
-    peace: { t: 'peace', nation: w.army.war || 'kessmark' }
+    peace: { t: 'peace', nation: w.army.war || 'kessmark' },
+    job: { t: 'job', title: '', pay: 5 },
+    zone: { t: 'zone', text: '' }
   };
   const ob = e.office || {};
   const setOb = (k: string, v: any) => onChange({ ...e, template: null, office: { ...ob, [k]: v } });
@@ -317,6 +320,8 @@ function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; onChang
             {e.key === 'hosMethod' && <Pick value={e.value} onChange={(v) => onChange({ ...e, value: v, label: HOS_METHODS[w.config.hos].find((m) => m.id === v)?.label.toLowerCase() })} options={HOS_METHODS[w.config.hos].map((m) => [m.id, m.label])} />}
           </>
         )}
+        {e.t === 'job' && <><Field label="The job" value={e.title} onInput={(v) => onChange({ ...e, title: v })} placeholder="e.g. Pick up litter in a park for 20 minutes" /><Field label="Wage each time (1–30 crowns)" type="number" value={e.pay} onInput={(v) => onChange({ ...e, pay: Math.round(Number(v)) })} /><p class="small muted" style={{ margin: 0 }}>Anyone can claim it once a week. The Chancellor (or PM) signs off each claim; the Treasury pays.</p></>}
+        {e.t === 'zone' && <Field label="Where nothing counts" value={e.text} onInput={(v) => onChange({ ...e, text: v })} placeholder="e.g. The library" />}
         {(e.t === 'war' || e.t === 'peace') && <Pick value={e.nation} onChange={(v) => onChange({ ...e, nation: v })} options={Object.values(w.nations).map((x: any) => [x.id, x.name])} />}
       </div>
     </Card>

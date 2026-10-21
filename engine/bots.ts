@@ -1,5 +1,7 @@
 // Bots: the other citizens take plausible turns so one person can play the whole game.
-import { W, Id, chance, pick, rand, allCitizens, exiled, isMP, mps, inGovernment, sideOf, intrigueOpen, canSeeCard, weekNo } from './core';
+import { W, Id, chance, pick, rand, allCitizens, exiled, isMP, mps, inGovernment, sideOf, intrigueOpen, canSeeCard, weekNo, ghost, holderOf } from './core';
+import { isGhostOk } from './streets';
+import { RED_BOX } from './glory';
 import { COMMANDS } from './index';
 import { canVote, checkObjectives, leaderOfSide, supportFor } from './politics';
 import { canVoteOn, KINDS } from './proposals';
@@ -26,6 +28,7 @@ export function botsAct(world: W, you: Id, intensity = 1): W {
 // the same turns, in place, for whichever citizens `isBot` picks (the demo: everyone but you; induction: the practice bots)
 export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, intensity = 1) {
   const go = (actor: Id, cmd: string, a: any = {}) => {
+    if (ghost(w, actor) && !isGhostOk(cmd)) return false;
     try {
       COMMANDS[cmd](w, actor, a);
       checkObjectives(w, actor);
@@ -102,6 +105,11 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
   // an MP occasionally puts a bill forward
   mps(w).forEach((m) => {
     if (!isBot(m) || !p(0.03)) return;
+    if (chance(w, 0.25)) {
+      const [title, job, pay] = pick(w, [['Clean Parks Bill', 'Pick up litter in a park for 20 minutes', 5], ['Town Crier Bill', 'Read the week’s Gazette out to the group', 4], ['Welcome Committee Bill', 'Show a new citizen how the game works', 6]] as [string, string, number][]);
+      if (!Object.values(w.proposals).some((x: any) => x.title === title)) go(m, 'prop.new', { kind: 'bill', title, summary: `Pays citizens to ${job.toLowerCase()}.`, clauses: [{ t: 'job', title: job, pay }] });
+      return;
+    }
     const [title, text] = pick(w, LINES.bills);
     if (Object.values(w.proposals).some((x: any) => x.title === title)) return;
     go(m, 'prop.new', { kind: 'bill', title, summary: text, clauses: [{ t: 'text', text }] });
@@ -177,6 +185,47 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
       if (mine.length && p(0.01)) go(b.id, 'card.leak', { card: (pick(w, mine) as any).id, paper: pick(w, [null, ...Object.keys(w.papers)]) });
     });
   }
+
+  // the Red Box and the betting pools
+  bots.forEach((b: any) => {
+    if (w.daily && w.daily.votes[b.id] === undefined && p(0.4)) go(b.id, 'daily.answer', { option: Math.floor(rand(w) * RED_BOX[w.daily.qi].a.length) });
+    Object.values(w.markets || {}).forEach((m: any) => {
+      if (m.status !== 'open' || m.bets[b.id] || !p(0.04)) return;
+      const opts = m.kind === 'election' ? Object.keys(w.elections[m.ref]?.candidates || {}) : m.options.map((o: any) => o.key);
+      if (opts.length) go(b.id, 'market.bet', { market: m.id, option: pick(w, opts), amount: 3 + Math.floor(rand(w) * 15) });
+    });
+  });
+  // the Streets: bots only ever target other bots, and own up when they're got
+  const inS = (id: Id) => !!w.citizens[id]?.streets?.in;
+  bots.forEach((b: any) => {
+    if (!inS(b.id) && !b.bot && p(0.01)) go(b.id, 'streets.join', { agree: true });
+    if (!inS(b.id)) return;
+    const prey = bots.filter((x: any) => x.id !== b.id && inS(x.id));
+    if (intrigueOpen(w) && prey.length && p(0.008)) go(b.id, 'streets.contract', { target: (pick(w, prey) as any).id, crowns: 10 + Math.floor(rand(w) * 20) });
+    const open = Object.values(w.bounties).filter((x: any) => x.status === 'open' && x.by !== b.id);
+    if (open.length && p(0.04)) go(b.id, 'bounty.take', { id: (pick(w, open) as any).id });
+    if (p(0.006)) go(b.id, 'bounty.post', { text: pick(w, ['Bring the Chancellor a meal deal', 'Draw the PM a portrait', 'Get a selfie with the Speaker', 'Write a song about the Treasury']), reward: 10 + Math.floor(rand(w) * 30) });
+    if (p(0.004)) go(b.id, 'stall.open', { title: pick(w, ['Homework help, one subject', 'A hand-drawn campaign poster', 'Spare trading cards', 'A week of Gazette summaries']), price: 5 + Math.floor(rand(w) * 25) });
+    const stalls = Object.values(w.stalls).filter((x: any) => x.status === 'open' && x.by !== b.id);
+    if (stalls.length && p(0.015)) go(b.id, 'stall.buy', { id: (pick(w, stalls) as any).id });
+  });
+  Object.values(w.streets?.contracts || {}).forEach((k: any) => {
+    if (k.status === 'live' && isBot(k.by) && isBot(k.target) && p(0.08)) go(k.target, 'streets.gotMe', { by: k.by });
+    if (k.status === 'claimed' && isBot(k.target) && p(0.4)) go(k.target, 'streets.answer', { contract: k.id, yes: chance(w, 0.7) });
+  });
+  Object.values(w.bounties || {}).forEach((x: any) => {
+    if (x.status === 'taken' && isBot(x.taker) && p(0.2)) go(x.taker, 'bounty.done', { id: x.id, note: 'Done.' });
+    if (x.status === 'done' && isBot(x.by) && p(0.3)) go(x.by, 'bounty.confirm', { id: x.id, yes: chance(w, 0.85) });
+  });
+  Object.values(w.orders || {}).forEach((o: any) => {
+    if (o.status === 'paid' && isBot(o.seller) && p(0.3)) go(o.seller, 'stall.deliver', { order: o.id });
+    if (o.status === 'delivered' && isBot(o.buyer) && p(0.3)) go(o.buyer, 'stall.receive', { order: o.id, stars: 3 + Math.floor(rand(w) * 3) });
+  });
+  const jobs = Object.values(w.jobs || {}).filter((j: any) => j.active);
+  bots.forEach((b: any) => jobs.length && p(0.02) && go(b.id, 'job.claim', { job: (pick(w, jobs) as any).id, note: 'Did my bit.' }));
+  const signer = holderOf(w, 'treasury') || w.pm;
+  (w.jobClaims || []).forEach((c: any) => c.status === 'pending' && signer && isBot(signer) && signer !== c.by && p(0.3) && go(signer, 'job.approve', { claim: c.id, yes: chance(w, 0.8) }));
+  (w.ultimatums || []).forEach((u: any) => u.status === 'sent' && w.pm && isBot(w.pm) && p(0.3) && go(w.pm, 'foreign.answer', { id: u.id, pay: chance(w, 0.5) }));
   return;
 }
 export { KINDS, MOODS, sideOf };

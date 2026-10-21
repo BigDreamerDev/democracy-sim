@@ -2,8 +2,10 @@
 // parties, forming a government, coalitions, the shadow cabinet, seasons, ambitions and weekly objectives.
 import {
   W, Id, DAY, HOUR, fail, newId, pick, rand, shuffle, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, stamp, approve,
-  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal, fmtDay
+  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal, fmtDay, bump
 } from './core';
+import { openMarket, settleMarket } from './markets';
+import { seasonAwards } from './glory';
 import { createOffice } from './offices';
 import { TUTORIAL } from './tutorial';
 
@@ -287,7 +289,7 @@ export function endInduction(w: W) {
   const ind = w.induction;
   if (!ind || ind.done) return;
   const snap = ind.snapshot;
-  const keep = { citizens: w.citizens, pending: w.pending, adminLog: w.adminLog, rng: w.rng, nextId: w.nextId, flags: w.flags, now: w.now, gazette: w.gazette };
+  const keep = { citizens: w.citizens, pending: w.pending, adminLog: w.adminLog, rng: w.rng, nextId: w.nextId, flags: w.flags, now: w.now, gazette: w.gazette, daily: w.daily, dailyPast: w.dailyPast, zones: w.streets?.zones };
   Object.keys(w).forEach((k) => delete w[k]);
   Object.assign(w, structuredClone(snap));
   w.now = keep.now;
@@ -296,6 +298,10 @@ export function endInduction(w: W) {
   w.pending = keep.pending;
   w.adminLog = keep.adminLog;
   w.flags = keep.flags;
+  // the daily Red Box and the Streets' safe zones are not practice: they carry on
+  if (keep.daily) w.daily = keep.daily;
+  if (keep.dailyPast) w.dailyPast = keep.dailyPast;
+  if (keep.zones && w.streets) w.streets.zones = keep.zones;
   // the Gazette keeps everything from before induction, then a line for the week of practice
   const before = new Set(snap.gazette.map((g: any) => g.id));
   const practised = keep.gazette.filter((g: any) => !before.has(g.id)).length;
@@ -311,6 +317,11 @@ export function endInduction(w: W) {
     } else fresh.admin = c.admin;
     const now = w.citizens[c.id];
     now.tutorial = c.tutorial || {};
+    // opting in to the Streets is consent, not practice; it carries over (contracts made in practice do not)
+    now.streets = c.streets?.in ? { in: true, since: w.now } : c.streets || { in: false };
+    now.tagCode = c.tagCode || null;
+    now.meetCode = c.meetCode || null;
+    now.streak = c.streak;
     // real Influence for every induction mission done
     const n = Object.keys(now.tutorial).length;
     if (n) earn(w, c.id, n, 'Completed induction missions');
@@ -333,7 +344,9 @@ export const inInduction = (w: W) => !!w.induction && !w.induction.done && w.now
 export function newElection(w: W, e: any) {
   const id = newId(w, 'e');
   w.elections[id] = { id, status: 'open', candidates: {}, ballots: {}, opensAt: w.now, results: null, stand: 'all', voters: 'all', winners: 1, method: w.config.voting || 'single', ...e };
-  return w.elections[id];
+  const el = w.elections[id];
+  if (el.closesAt && w.phase === 'running') openMarket(w, 'election', id, el.kind === 'general' ? `Who tops the poll in the ${el.title.replace(/^General election for the /, '').replace(/^./, (x: string) => x.toLowerCase())} election?` : `Who wins the ${el.title.replace(/^./, (x: string) => x.toLowerCase())}?`, null, el.closesAt);
+  return el;
 }
 export function callGeneralElection(w: W, closesAt: number) {
   const g = newElection(w, { kind: 'general', title: `General election for the ${ordinal(w.season.n + 1)} Parliament`, winners: w.config.seats, closesAt });
@@ -466,12 +479,14 @@ export function closeElection(w: W, e: any) {
   const r: any = countElection(w, e);
   const winners = r.ranked.slice(0, e.winners);
   e.results = { counts: r.counts, ranked: r.ranked, winners, draw: r.draw, turnout: Object.keys(e.ballots).length, method: e.method || 'single', rounds: r.rounds || null, quota: r.quota || null };
+  settleMarket(w, 'election', e.id, r.ranked[0] || null);
   if (e.kind === 'general') {
     w.seats = Array(w.config.seats).fill(null).map((_, i) => winners[i] || null);
     w.lastRanked = r.ranked;
     winners.forEach((id) => {
       stamp(w, id, 'Elected MP', `${ordinal(w.season.n + 1)} Parliament`, 'bad');
       earn(w, id, 10, 'Won a seat');
+      bump(w, id, 'terms');
       approve(w, id, 4);
     });
     gazette(w, 'election', `General election: ${winners.map((x) => nm(w, x)).join(', ')} win seats. Turnout ${e.results.turnout} of ${allCitizens(w).length}.${r.draw ? ' A tie was settled by drawn lot.' : ''}`, '#/election/' + e.id);
@@ -596,6 +611,7 @@ export function joinParty(w: W, actor: Id, pid: Id | null) {
     old.leader = rest[0] || null;
     if (!rest.length) old.status = 'dissolved';
   }
+  if (pid) bump(w, actor, 'parties');
   gazette(w, 'party', pid ? `${c.name} joins the ${w.parties[pid].name}.` : `${c.name} leaves the ${old ? old.name : 'party'}.`);
 }
 export function partyMotion(w: W, actor: Id, text: string) {
@@ -663,6 +679,7 @@ export function invitePM(w: W, actor: Id | null, target: Id) {
   const s = supportFor(w, target);
   w.minority = s < majority(w);
   t.stats.wasPM = true;
+  bump(w, target, 'pmTerms');
   stamp(w, target, 'Prime Minister', actor ? `Invited by ${nm(w, actor)}` : 'Invited by convention', 'ink');
   gazette(w, 'government', `${t.name} becomes Prime Minister with ${s} of ${w.config.seats} seats${w.minority ? ', a minority government' : ''}.`, '#/cabinet');
 }
@@ -778,6 +795,7 @@ export function endSeason(w: W) {
     return;
   }
   const cs = allCitizens(w);
+  const awards = seasonAwards(w);
   const reveals = cs.map((c: any) => {
     const a = AMBITIONS.find((x) => x.id === c.ambition?.id);
     const done = !!(a && a.test(c));
@@ -795,6 +813,7 @@ export function endSeason(w: W) {
     meters: { prosperity: w.meters.prosperity, stability: w.meters.stability },
     laws: w.laws.filter((l: any) => l.at >= w.season.startedAt).map((l: any) => ({ ref: l.ref, title: l.title })),
     top: ranked.slice(0, 5).map((c: any) => ({ id: c.id, n: c.seasonEarned || 0 })),
+    awards,
     reveals
   });
   gazette(w, 'season', `Season ${w.season.n} is over. ${champ ? champ.name + ' is champion.' : ''} Every secret ambition is now public.`, '#/season');

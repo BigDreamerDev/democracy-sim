@@ -1,5 +1,5 @@
 // The five nations, envoys, treaty offers, the Security Service and the Army.
-import { W, Id, DAY, HOUR, fail, newId, rand, chance, pick, nm, gazette, earn, transfer, bal, hasPower, isPM, addCard, holderOf, clamp, inDanger } from './core';
+import { W, Id, DAY, HOUR, fail, newId, rand, chance, pick, nm, gazette, earn, transfer, bal, hasPower, isPM, addCard, holderOf, clamp, inDanger, meter } from './core';
 
 export const MOODS = ['Hostile', 'Cold', 'Neutral', 'Friendly', 'Allied'];
 export function seedNations(w: W) {
@@ -130,4 +130,70 @@ export function setReadiness(w: W, actor: Id, level: string) {
   if (level === 'down' && prev !== 'down') armyLoyalty(w, -1, 'Stood down and paid less');
   if (level !== 'down' && prev === 'down') armyLoyalty(w, 1, 'Back on full pay');
   gazette(w, 'army', `The Army is now ${({ down: 'stood down', ready: 'ready', mobilised: 'mobilised' } as any)[level]}.`, '#/army');
+}
+
+// ---------- the nations act: once a week, at payday ----------
+// hostile nations threaten, sanction or (with an Army to fight) declare war; friends send aid
+export function nationsTurn(w: W) {
+  w.ultimatums ??= [];
+  let sanctioned = 0;
+  Object.values(w.nations).forEach((n: any) => {
+    if (n.sanctionsUntil && n.sanctionsUntil <= w.now) {
+      n.sanctionsUntil = null;
+      gazette(w, 'foreign', `${n.name} lifts its sanctions.`, '#/nation/' + n.id);
+    }
+    if (n.sanctionsUntil) sanctioned++;
+    const pending = w.ultimatums.some((u: any) => u.nation === n.id && u.status === 'sent');
+    if (n.mood === 0 && !pending && chance(w, 0.45)) {
+      if (w.offices.army && !w.army.war && chance(w, 0.35)) {
+        w.army.war = n.id;
+        gazette(w, 'army', `${n.name} declares war on the realm. Army upkeep doubles until Parliament makes peace.`, '#/army');
+        meter(w, 'stability', -6, `${n.name} declared war`);
+      } else ultimatum(w, n, 30 + Math.round(rand(w) * 30));
+    } else if (n.mood === 1 && !pending && chance(w, 0.3)) {
+      if (!n.sanctionsUntil && chance(w, 0.5)) sanction(w, n, 'They don’t like the look of us');
+      else ultimatum(w, n, 15 + Math.round(rand(w) * 20));
+    } else if (n.mood >= 3 && chance(w, 0.25)) {
+      const amt = 15 + Math.round(rand(w) * 25);
+      if (bal(w, 'nation:' + n.id) >= amt) {
+        transfer(w, 'nation:' + n.id, 'treasury', amt, `Aid from ${n.name}`);
+        meter(w, 'prosperity', 1, `Aid from ${n.name}`);
+        gazette(w, 'foreign', `${n.name} sends ${amt} crowns of aid, as friends do.`, '#/nation/' + n.id);
+      }
+    }
+  });
+  if (sanctioned) meter(w, 'prosperity', -2 * sanctioned, 'Foreign sanctions');
+}
+function ultimatum(w: W, n: any, crowns: number) {
+  const id = newId(w, 'ul');
+  w.ultimatums.unshift({ id, nation: n.id, crowns, at: w.now, dueAt: w.now + 2 * DAY, status: 'sent' });
+  w.ultimatums = w.ultimatums.slice(0, 30);
+  gazette(w, 'foreign', `${n.name} demands ${crowns} crowns in tribute within 2 days, or else. The ${w.offices.foreign?.holder ? 'Foreign Minister' : 'Prime Minister'} must answer.`, '#/foreign');
+}
+function sanction(w: W, n: any, why: string) {
+  n.sanctionsUntil = w.now + 7 * DAY;
+  moodShift(n, 0, why);
+  gazette(w, 'foreign', `${n.name} imposes sanctions for a week: no trade ventures there, and Prosperity suffers.`, '#/nation/' + n.id);
+}
+export function answerUltimatum(w: W, actor: Id, id: Id, pay: boolean) {
+  const u = (w.ultimatums || []).find((x: any) => x.id === id);
+  if (!u || u.status !== 'sent') fail('That demand has been dealt with.');
+  if (!foreignPower(w, actor) && !isPM(w, actor)) fail('Only the Foreign Minister or the PM answers foreign demands.');
+  settleUltimatum(w, u, !!pay, actor);
+}
+export function settleUltimatum(w: W, u: any, pay: boolean, actor?: Id) {
+  const n = w.nations[u.nation];
+  u.status = pay ? 'paid' : actor ? 'refused' : 'ignored';
+  u.by = actor || null;
+  if (pay) {
+    transfer(w, 'treasury', 'nation:' + n.id, u.crowns, `Tribute to ${n.name}`);
+    moodShift(n, 1, 'We paid their tribute');
+    meter(w, 'stability', -1, 'We paid tribute abroad');
+    gazette(w, 'foreign', `The realm pays ${n.name} ${u.crowns} crowns in tribute.`, '#/nation/' + n.id);
+    return;
+  }
+  moodShift(n, -1, actor ? 'We refused their demand' : 'We ignored their demand');
+  meter(w, 'stability', -2, `Standoff with ${n.name}`);
+  gazette(w, 'foreign', `The realm ${actor ? 'refuses' : 'ignores'} ${n.name}’s demand.`, '#/nation/' + n.id);
+  if (!n.sanctionsUntil && chance(w, 0.5)) sanction(w, n, 'We defied them');
 }

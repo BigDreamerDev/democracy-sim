@@ -5,16 +5,18 @@ import { nm, isPM, allCitizens, fmtTime, fmtDay, bal, hasPower, holderOf, standi
 import { MOODS, TREATIES, INTEL_Q } from '../../../engine/foreign';
 import { ARMY_COST } from '../../../engine/economy';
 import { CRISES } from '../../../engine/society';
+import { SeasonExtras } from './glory';
 
 const moodColour = ['var(--red)', 'var(--amber)', 'var(--muted)', 'var(--teal)', 'var(--teal)'];
 
 export function Foreign() {
   const { world: w, me } = useStore();
-  if (!w.offices.foreign) return <Page back={['#/realm', 'The realm']} title="Foreign Office"><Sec><Locked act="Foreign Affairs Act" href="#/new?office=foreign">Send envoys, receive treaty offers, raise our Standing.</Locked></Sec></Page>;
+  if (!w.offices.foreign) return <Page back={['#/realm', 'The realm']} title="Foreign Office"><Sec><Locked act="Foreign Affairs Act" href="#/new?office=foreign">Send envoys, receive treaty offers, raise our Standing.</Locked></Sec><Ultimatums /></Page>;
   const can = hasPower(w, me, 'envoy') || (isPM(w, me) && !holderOf(w, 'foreign'));
   return (
     <Page back={['#/realm', 'The realm']} kicker={<>Foreign Minister <Who id={holderOf(w, 'foreign')} /></>} title="Foreign Office" intro={`Our Standing is ${standing(w)}: the average mood of the five nations. Below 15, nobody trades with us.`}>
-      <Sec title="Nations"><ul class="list">{Object.values(w.nations).map((n: any) => <LinkRow href={'#/nation/' + n.id} title={n.name} sub={<span style={{ color: moodColour[n.mood], fontWeight: 700 }}>{MOODS[n.mood]}{w.army.war === n.id ? ', at war' : ''}</span>} right={<span class="pips5" aria-hidden="true">{[0, 1, 2, 3, 4].map((i) => <i class={i <= n.mood ? 'on' : ''} style={{ background: i <= n.mood ? moodColour[n.mood] : undefined }} />)}</span>} />)}</ul></Sec>
+      <Ultimatums />
+      <Sec title="Nations"><ul class="list">{Object.values(w.nations).map((n: any) => <LinkRow href={'#/nation/' + n.id} title={n.name} sub={<span style={{ color: moodColour[n.mood], fontWeight: 700 }}>{MOODS[n.mood]}{w.army.war === n.id ? ', at war' : ''}{n.sanctionsUntil > w.now ? ', sanctions' : ''}</span>} right={<span class="pips5" aria-hidden="true">{[0, 1, 2, 3, 4].map((i) => <i class={i <= n.mood ? 'on' : ''} style={{ background: i <= n.mood ? moodColour[n.mood] : undefined }} />)}</span>} />)}</ul></Sec>
       <Sec title="Treaty offers" sub="Only the House can ratify them, with a bill.">
         <div class="stack">
           {Object.values(w.offers).map((o: any) => <Card kind="tint"><b>{o.title}</b><div class="small">We give: {o.give}. We get: {o.get}.</div><div class="small muted">Expires in <Left at={o.expiresAt} /></div><Btn small style={{ marginTop: 8 }} href={'#/new?treaty=' + o.id}>Put it to the House</Btn></Card>)}
@@ -24,6 +26,26 @@ export function Foreign() {
       <Sec title="Treaties"><ul class="list">{Object.values(w.treaties).map((t: any) => <li class="row"><span><b>{t.title}</b><div class="small muted">{t.law}</div></span><span class="small">{t.status}</span></li>)}</ul>{!Object.keys(w.treaties).length && <Empty>None in force.</Empty>}</Sec>
       {!can && <p class="small muted">Only the Foreign Minister sends envoys and proposes treaties.</p>}
     </Page>
+  );
+}
+
+// demands for tribute and sanctions: these come whether or not there is a Foreign Office
+function Ultimatums() {
+  const { world: w, me } = useStore();
+  const answer = hasPower(w, me, 'envoy') || isPM(w, me);
+  const ults = (w.ultimatums || []).filter((u: any) => u.status === 'sent');
+  const sanctions = Object.values(w.nations).filter((n: any) => n.sanctionsUntil && n.sanctionsUntil > w.now) as any[];
+  return (
+    <>
+      {ults.map((u: any) => (
+        <Card kind="warn" style={{ marginTop: 14 }}>
+          <b>{w.nations[u.nation].name} demands {u.crowns} crowns in tribute.</b>
+          <p class="small" style={{ margin: '4px 0 10px' }}>Answer within <Left at={u.dueAt} />. Pay and they warm to us; refuse (or ignore it) and they cool, Stability drops, and they may impose sanctions.</p>
+          {answer ? <div class="grid2"><Btn onClick={() => act('foreign.answer', { id: u.id, pay: true }, 'Paid from the Treasury.')}>Pay {u.crowns}</Btn><Btn kind="danger" onClick={() => act('foreign.answer', { id: u.id, pay: false }, 'Refused.')}>Refuse</Btn></div> : <p class="small muted" style={{ margin: 0 }}>The Foreign Minister or the PM answers.</p>}
+        </Card>
+      ))}
+      {sanctions.length > 0 && <Card kind="tint" style={{ marginTop: 14 }}>Sanctions: {sanctions.map((n) => `${n.name} until ${fmtDay(n.sanctionsUntil)}`).join(', ')}. No trade ventures there, and Prosperity falls each payday.</Card>}
+    </>
   );
 }
 
@@ -236,6 +258,8 @@ export function Season() {
     <Page back={['#/realm', 'The realm']} kicker={`Season ${w.season.n}`} title="Leaderboard" intro="A season lasts one Parliament. It ranks Influence earned, so spending it never costs you a place. At the end every secret ambition is revealed; fulfilled ones score 30.">
       {c.ambition && <Card kind="tint" style={{ marginTop: 14 }}><div class="kicker" style={{ margin: 0 }}>Your secret ambition</div><b>{c.ambition.text}</b> <span class="small">(+{c.ambition.reward})</span></Card>}
       <Sec><ol class="list">{ranked.map((x: any, i: number) => <li class="row"><span><b class="tnum" style={{ width: 26, display: 'inline-block' }}>{i + 1}</b><Who id={x.id} /></span><span class="small tnum"><b>{x.seasonEarned || 0}</b> earned · {x.influence} to spend</span></li>)}</ol></Sec>
+      <SeasonExtras />
+      <Btn kind="plain" href="#/fame">The Hall of Fame</Btn>
       <Sec title="Past seasons">
         <div class="stack">{w.archive.map((a: any) => <Card><div class="serif" style={{ fontSize: 22 }}>Season {a.n}</div><div class="small">Champion {nm(w, a.champion)}. PM {nm(w, a.pm)}. Laws: {a.laws.map((l: any) => l.ref).join(', ') || 'none'}.</div><details style={{ marginTop: 6 }}><summary class="small">Ambitions revealed</summary><ul class="small">{a.reveals.map((r: any) => <li>{nm(w, r.id)}: {r.text} {r.done ? '✓' : '✗'}</li>)}</ul></details></Card>)}{!w.archive.length && <Empty>No season has ended yet. In the demo, skip to the next election.</Empty>}</div>
       </Sec>

@@ -3,6 +3,9 @@ import { W, DAY, HOUR, ca, gazette, stamp, transfer, addCard, weekNo } from './c
 import { conventionClauses, assignAmbitions, newObjectives, HOS_METHODS } from './politics';
 import { createOffice } from './offices';
 import { seedNations } from './foreign';
+import { SAFE_ZONES, join, postBounty, openStall, addJob } from './streets';
+import { openMarket, bet } from './markets';
+import { freshDaily, takePoll } from './glory';
 
 export const NAMES = ['Uzair', 'Maya', 'Sam', 'Josh', 'Priya', 'Kai', 'Lee', 'Rhea', 'Ana', 'Tom', 'Omar', 'Zara', 'Ben', 'Chloe', 'Dev', 'Ella', 'Finn', 'Asha', 'Hugo'];
 
@@ -29,7 +32,10 @@ function blank(seed: number, now: number): W {
     deals: {}, cards: [], demands: {}, plots: {}, martial: null,
     papers: {}, stories: [], frontpages: [], cases: {}, crises: {}, crisisQueue: [],
     meters: { prosperity: 60, stability: 60, log: [] },
-    season: { n: 0, startedAt: now }, archive: [], gazette: [], adminLog: []
+    season: { n: 0, startedAt: now }, archive: [], gazette: [], adminLog: [],
+    streets: { zones: SAFE_ZONES.map((text, i) => ({ id: 'z' + i, text, by: 'default' })), contracts: {}, protect: null, meets: [] },
+    bounties: {}, stalls: {}, orders: {}, jobs: {}, jobClaims: [], markets: {}, ultimatums: [],
+    daily: freshDaily(now), dailyPast: [], polls: [], fame: { pms: [], seasons: [], records: {} }
   };
 }
 function addCitizen(w: W, name: string, admin = false) {
@@ -193,6 +199,24 @@ function running(w: W): W {
   g(12, 'election', 'General election: Maya, Sam, Lee, Uzair and Rhea win seats. Turnout 19 of 19. A tie was settled by drawn lot.', '#/election/e1');
   w.gazette.sort((a: any, b: any) => b.at - a.at);
   w.nextId = 200;
+  // the Streets and the market, a few days in (Uzair, the demo player, hasn't joined: that's his choice)
+  const tn = w.now;
+  w.now = day(3);
+  ['maya', 'sam', 'lee', 'priya', 'kai', 'zara', 'tom', 'ella', 'dev', 'rhea'].forEach((id) => join(w, id, true));
+  postBounty(w, 'sam', 'Bring the Chancellor a Greggs sausage roll before Friday', 30);
+  postBounty(w, 'priya', 'Get a selfie with a teacher’s dog', 25);
+  openStall(w, 'zara', 'I’ll make your flashcards for one subject', 15);
+  openStall(w, 'kai', 'A hand-drawn campaign poster', 20);
+  addJob(w, { title: 'Read the week’s Gazette out loud to the group', pay: 4 }, 'L005');
+  w.now = day(7);
+  takePoll(w);
+  w.now = day(0) - HOUR;
+  takePoll(w);
+  w.now = tn;
+  openMarket(w, 'prop', 'p7', 'Will “Public Holidays Bill” pass the vote?', [{ key: 'yes', label: 'Passes' }, { key: 'no', label: 'Fails' }], w.proposals.p7.voteEndsAt);
+  openMarket(w, 'prop', 'p10', 'Will “That this House has no confidence in the government” pass the vote?', [{ key: 'yes', label: 'Passes' }, { key: 'no', label: 'Fails' }], w.proposals.p10.voteEndsAt);
+  Object.values(w.markets).forEach((m: any, i: number) => ['maya', 'sam', 'kai', 'tom', 'lee'].forEach((id, j) => bet(w, id, m.id, (i + j) % 3 ? 'yes' : 'no', 5 + j * 3)));
+  w.gazette.sort((a: any, b: any) => b.at - a.at);
   return w;
 }
 

@@ -1,5 +1,5 @@
 // The backroom: private deals, secret cards (leak, use or burn), coups, exile and pardons. Opens in week 3.
-import { W, Id, DAY, fail, newId, chance, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, meter, needIntrigue, canSeeCard, addCard, isHOS, isMP, isPM, inDanger, holderOf, transfer, ca, hosTitle } from './core';
+import { W, Id, DAY, fail, newId, chance, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, meter, needIntrigue, canSeeCard, addCard, isHOS, isMP, isPM, inDanger, holderOf, transfer, ca, hosTitle, bump } from './core';
 import { vacateSeat, clearMinisters, callGeneralElection } from './politics';
 
 // ---------- private deals: written down, never enforced ----------
@@ -172,6 +172,7 @@ export function failPlot(w: W, p: any, why: string) {
     c.exileNoted = false;
     c.asylum = null;
     approve(w, m, -15);
+    bump(w, m, 'exiled');
     stamp(w, m, 'Traitor', p.name, 'bad');
     if (isMP(w, m)) vacateSeat(w, m, 'exiled');
     if (w.pm === m) w.pm = null;

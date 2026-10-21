@@ -2,9 +2,11 @@
 // The kind only changes who votes and what happens. Also: laws, PM's Questions, formal questions and lobbying.
 import {
   W, Id, DAY, HOUR, fail, newId, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, tick, meter,
-  isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, hasPower, officeWithPower, weekNo, adminDid } from './core';
+  isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, hasPower, officeWithPower, weekNo, adminDid, bump } from './core';
 import { TEMPLATES, POWERS, createOffice } from './offices';
 import { startHosSelection, callGeneralElection, governmentFalls, vacateSeat, HOS_METHODS, countback } from './politics';
+import { addJob, addZone } from './streets';
+import { openMarket, settleMarket } from './markets';
 
 export const KINDS: Record<string, { name: string; who: string; blurb: string }> = {
   bill: { name: 'Bill', who: 'MPs', blurb: 'Changes the law. Each clause is a rule in words or something the game carries out.' },
@@ -55,6 +57,10 @@ export function describe(w: W, e: any): string {
       return `Changes the constitution: ${({ seats: 'seats in Parliament', termDays: 'time between general elections', hos: 'the head of state', hosMethod: 'how the head of state is chosen' } as any)[e.key]} becomes ${e.label ?? e.value}.`;
     case 'removeHos':
       return w.config.hos === 'monarchy' ? `Removes the ${w.config.hosTitle}. A new Monarch is chosen as the constitution says.` : 'Impeaches the President. A new one is chosen as the constitution says.';
+    case 'job':
+      return `Creates a civic job: ${e.title}. The Treasury pays ${e.pay} crowns each time someone does it, once a week each, signed off by the Chancellor.`;
+    case 'zone':
+      return `Adds a safe zone to the Streets: ${e.text}.`;
     case 'war':
       return `Declares war on ${w.nations[e.nation]?.name}.`;
     case 'peace':
@@ -79,7 +85,9 @@ export function propose(w: W, actor: Id, a: any) {
   if ((kind === 'bill' || kind === 'referendum') && title.length < 4) fail('Give it a title.');
   if (kind === 'bill' && !clauses.length) fail('Add at least one clause.');
   if (kind === 'referendum' && title.length < 8) fail('Write the question.');
+  if (!Array.isArray(clauses)) fail('Clauses must be a list.');
   for (const e of clauses) {
+    if (!['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone'].includes(e?.t)) fail('Unknown kind of clause.');
     if (e.t === 'text' && (e.text || '').trim().length < 6) fail('Write each clause in full.');
     if (e.t === 'set' && (!SETTABLE[e.key] || !(e.value >= SETTABLE[e.key].min && e.value <= SETTABLE[e.key].max))) fail('That value is out of range.');
     if (e.t === 'office' && e.template && w.offices[e.template]) fail(`The ${TEMPLATES[e.template].name} already exists.`);
@@ -87,6 +95,9 @@ export function propose(w: W, actor: Id, a: any) {
     if (e.t === 'treaty' && !w.offers[e.offer]) fail('That treaty offer has expired.');
     if ((e.t === 'war' || e.t === 'peace') && !w.offices.army) fail('War and peace need an Army: pass the Defence Act first.');
     if (e.t === 'permit' && w.permits.banks) fail('Banks are already allowed.');
+    if (e.t === 'job' && (String(e.title || '').trim().length < 6 || String(e.title).length > 120)) fail('Describe the civic job in 6 to 120 characters.');
+    if (e.t === 'job' && !(Number.isInteger(e.pay) && e.pay >= 1 && e.pay <= 30)) fail('A civic job pays between 1 and 30 crowns.');
+    if (e.t === 'zone' && (String(e.text || '').trim().length < 4 || String(e.text).length > 120)) fail('Describe the safe zone in 4 to 120 characters.');
   }
   if (Object.values(w.proposals).some((p: any) => p.kind === kind && ['no_confidence', 'confidence', 'dissolution'].includes(kind) && ['debate', 'vote', 'hos'].includes(p.stage))) fail('One of those is already open.');
   if (kind === 'referendum') spend(w, actor, 20, 'Called a referendum');
@@ -161,6 +172,7 @@ export function openVote(w: W, p: any) {
   p.stage = 'vote';
   p.voteEndsAt = w.now + (p.fast || ['no_confidence', 'confidence', 'censure'].includes(p.kind) ? 12 : w.config.voteHours) * HOUR;
   gazette(w, 'proposal', `Voting opens: ${p.title}. ${p.voters === 'all' ? 'Every citizen votes.' : 'MPs vote.'}`, '#/p/' + p.id);
+  openMarket(w, 'prop', p.id, `Will “${p.title}” pass the vote?`, [{ key: 'yes', label: 'Passes' }, { key: 'no', label: 'Fails' }], p.voteEndsAt);
 }
 function tally(w: W, p: any, book: any) {
   const valid = Object.entries(book).filter(([id]) => (p.voters === 'all' ? !!w.citizens[id] : isMP(w, id)));
@@ -193,6 +205,9 @@ export function closeVote(w: W, p: any) {
   }
   p.result = { ayes, noes, passed, note };
   trackWhip(w, p);
+  settleMarket(w, 'prop', p.id, passed ? 'yes' : 'no');
+  if (passed && ayes - noes === 1) bump(w, p.by, 'squeakers');
+  if (!passed && p.kind === 'no_confidence' && w.pm) bump(w, w.pm, 'survived');
   const sp = w.citizens[p.by];
   if (!passed) {
     p.stage = 'failed';
@@ -300,6 +315,7 @@ export function enact(w: W, p: any, how: string) {
   if (sp) {
     sp.stats.passed = (sp.stats.passed || 0) + 1;
     earn(w, p.by, 10, `Your bill became law ${ref}`);
+    bump(w, p.by, 'laws');
     stamp(w, p.by, `Bill ${p.n}`, `Became ${ref}`, 'ink');
   }
   meter(w, 'stability', p.constitutional ? 2 : 1, 'Parliament passed a law');
@@ -321,6 +337,12 @@ export function applyClause(w: W, e: any, ref: string) {
       break;
     case 'set':
       w.config[e.key] = e.value;
+      break;
+    case 'job':
+      addJob(w, { title: String(e.title), pay: e.pay }, ref);
+      break;
+    case 'zone':
+      addZone(w, e.text, 'law');
       break;
     case 'permit':
       w.permits.banks = true;
@@ -355,6 +377,7 @@ export function applyClause(w: W, e: any, ref: string) {
       src?.clauses.forEach((x: any) => {
         if (x.t === 'office') Object.values(w.offices).forEach((o: any) => o.law === e.ref && delete w.offices[o.id]);
         if (x.t === 'permit') w.permits.banks = false;
+        if (x.t === 'job') Object.values(w.jobs).forEach((j: any) => j.law === e.ref && (j.active = false));
       });
       break;
     }

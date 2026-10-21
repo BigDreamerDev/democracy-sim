@@ -197,6 +197,11 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | `crises`, `crisisQueue` | each crisis: `type`, `status`, `house` (MPs vote with `crisis.vote` instead of the PM deciding), `votes`, `cause` (set when it's a consequence of an earlier choice), `decideBy`; `crisisQueue` holds consequences still to come |
 | `cases`, `meters` | court, crises, and the `prosperity`/`stability` meters (0–100) |
 | `cards`, `deals`, `demands`, `plots` | the backroom: only what you're allowed to see |
+| `streets` | real life: `zones[]` (safe zones), `contracts` (only yours, claims against you, and finished ones), `protect` (if it concerns you), `meets` (yours). Citizens have `streets.in`, `ghostUntil`; your own `tagCode`/`meetCode` only |
+| `bounties`, `stalls`, `orders`, `jobs`, `jobClaims` | the market: public bounties and stalls; orders you're in; civic jobs created by law and wage claims |
+| `markets` | betting: `question`, `kind` (`prop`/`election`/`crisis`), `ref`, `options`, `pools` (public), `bets` (yours only), `backers`, `status`, `closesAt`, `outcome` |
+| `daily`, `dailyPast` | the Red Box: today's `qi` (question index; the questions are in `engine/glory.ts`), `answered`, your answer in `votes`; past results |
+| `polls`, `fame`, `ultimatums` | weekly polls; the Hall of Fame (`pms`, `seasons`, `records`); foreign demands for tribute |
 | `gazette[]` | newest first, up to 300. `via` names the app, if one did it. |
 | `viewer` | your id |
 
@@ -257,6 +262,8 @@ have a working (ugly) client in ~80 lines. Start from there.
 - The Returning Officer can remove an app that misbehaves: it leaves the directory, can't sign
   anyone in, and every key it holds stops working. The reason is published in the Gazette.
 - Automating your own play is fine. Flooding, or scraping someone else's key, isn't.
+- The Streets happen in real life. No app may help anyone find, follow or track a player, and nothing
+  that does will stay in the directory.
 - Found a way to see something you shouldn't? Tell the Returning Officer rather than using it.
 - The API is versioned: `/api/v1` won't change in ways that break your app. New fields and
   new actions can appear at any time, so ignore what you don't recognise.

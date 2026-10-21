@@ -1,6 +1,7 @@
 // Shared building blocks, styled like the mockup canvas.
 import { ComponentChildren } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import qrcode from 'qrcode-generator';
 import { useStore } from './store';
 import { fmtLeft, fmtTime, nm } from '../../engine/index';
 
@@ -409,5 +410,66 @@ export function PasswordField(p: { label: ComponentChildren; value: string; onIn
       {caps && <span class="small" style={{ color: 'var(--red)', fontWeight: 700 }}>Caps Lock is on.</span>}
       {p.hint && <span class="small muted" style={{ fontWeight: 400 }}>{p.hint}</span>}
     </label>
+  );
+}
+
+// a QR code drawn as SVG in the current ink colour, so it works in dark mode too
+export function QR({ text, size = 200, label }: { text: string; size?: number; label: string }) {
+  const q = qrcode(0, 'M');
+  q.addData(text);
+  q.make();
+  const n = q.getModuleCount();
+  let d = '';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c + 2} ${r + 2}h1v1h-1z`;
+  return (
+    <svg class="qr" role="img" aria-label={label} viewBox={`0 0 ${n + 4} ${n + 4}`} width={size} height={size} shape-rendering="crispEdges">
+      <rect width={n + 4} height={n + 4} fill="#fff" />
+      <path d={d} fill="#111" />
+    </svg>
+  );
+}
+// a link into this site that a phone camera can open: #/tag/CODE or #/meet/CODE
+export const siteLink = (path: string) => location.origin + location.pathname + '#/' + path;
+// scan a QR code with the camera where the browser can (Chrome on Android); elsewhere the phone's own camera
+// app opens the link, so this is a convenience, not the only way
+export const canScan = () => typeof window !== 'undefined' && 'BarcodeDetector' in window && !!navigator.mediaDevices?.getUserMedia;
+export function Scanner({ onCode, onClose }: { onCode: (code: string) => void; onClose: () => void }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let stop = false;
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        const v = ref.current!;
+        v.srcObject = stream;
+        await v.play();
+        const det = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+        while (!stop) {
+          const found = await det.detect(v).catch(() => []);
+          const raw = found[0]?.rawValue as string | undefined;
+          const m = raw && raw.match(/#\/(?:tag|meet)\/([A-Za-z0-9]{4,12})/);
+          if (m || (raw && /^[A-Za-z0-9]{6}$/.test(raw))) {
+            onCode(m ? m[1] : raw!);
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 250));
+        }
+      } catch (e: any) {
+        setErr(e?.name === 'NotAllowedError' ? 'Camera blocked. Allow it, or type the code.' : 'The camera is not available here. Type the code instead.');
+      }
+    })();
+    return () => {
+      stop = true;
+      stream?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+  return (
+    <div class="scanner">
+      <video ref={ref} playsInline muted />
+      {err && <p class="small bad">{err}</p>}
+      <Btn small kind="plain" onClick={onClose}>Close the camera</Btn>
+    </div>
   );
 }

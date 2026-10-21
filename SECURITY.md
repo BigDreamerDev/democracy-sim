@@ -73,6 +73,9 @@ Rated by impact for *this* game. ✓ = fixed in this review.
 | S8 | API keys. | — | 192 bits of randomness, stored as SHA-256, shown once, revocable, scoped read/act, never valid for admin actions. |
 | S9 | Secrets in the world. | — | `viewFor` strips every secret before anything is sent; the server never sends the full world (except the announced RO export). |
 | S10 | Every rule lives in the engine on the server; one queue means two requests can't race. | — | Double voting is impossible: ballots are keyed by the id in your session. |
+| S11 ✓ | The Streets put the game into real life. | High | Opt-in with explicit agreement; anyone can leave at once (contracts refunded). Safe zones, a tag is a tap or hand-over only, the RO can add safe zones and take down bounties (announced). No locations are ever collected or stored. Crowns can't be bought or cashed out. |
+| S12 ✓ | Tag and meet codes prove a real-life encounter. | Medium | Random 6-character codes from the seeded server rng, stripped from everyone else's view in `viewFor`, rotated after every use. A code only completes a contract its holder already has. |
+| S13 ✓ | Contracts, bets and orders are private by the rules. | Medium | `viewFor` sends a contract only to whoever took it out (and to its target once it's claimed), bets only to the bettor (pools are public), orders only to buyer and seller, the bodyguard's charge only to the two of them. |
 
 ### The Returning Officer
 

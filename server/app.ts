@@ -487,7 +487,11 @@ export async function makeApp(o: Options) {
     if (req.body?.confirm !== 'RESET THE REALM') return res.status(400).json({ error: 'Type RESET THE REALM to confirm.' });
     await serial(async () => {
       await q('INSERT INTO v2_snapshots (reason, state) VALUES ($1, $2)', ['before reset', JSON.stringify(world)]);
+      const keep = { fame: world.fame, zones: (world.streets?.zones || []).filter((z: any) => z.by === 'ro') };
       world = createLiveWorld(await people(), now(), (now() % 2147483647) | 0);
+      // the Hall of Fame outlives every realm, and so do the safety zones the RO added
+      if (keep.fame) world.fame = keep.fame;
+      world.streets.zones.push(...keep.zones);
       adminDid(world, req.cid, 'reset the realm to a fresh Founding Convention');
       await save();
     });

@@ -7,6 +7,10 @@ import { actBots } from './bots';
 import { maybeOffers, answerAsk, resolveIntel, armyLoyalty } from './foreign';
 import { checkPlot, endMartialLaw } from './backroom';
 import { spawnCrisis, timeoutCrisis, fireQueued, rule, makeFrontPage } from './society';
+import { nationsTurn, settleUltimatum } from './foreign';
+import { expireContract, settleClaim, ghostBack, bountyDeadline, bountyDue, orderDeadline } from './streets';
+import { marketDue, staleMarket } from './markets';
+import { rollDaily, takePoll, records, afterChange } from './glory';
 
 type D = { at: number; run: () => void };
 function collect(w: W): D[] {
@@ -41,6 +45,18 @@ function collect(w: W): D[] {
   if (w.martial) add(w.martial.until, () => endMartialLaw(w));
   allCitizens(w).forEach((c: any) => c.exiledUntil && !c.exileNoted && add(c.exiledUntil, () => ((c.exileNoted = true), gazette(w, 'quiet', `${c.name}'s exile is over.`))));
   w.ventures.forEach((v: any) => v.status === 'out' && add(v.dueAt, () => settleVenture(w, v)));
+  // the Streets, the market and the betting pools
+  Object.values(w.streets?.contracts || {}).forEach((k: any) => {
+    if (k.status === 'live') add(k.dueAt, () => expireContract(w, k));
+    if (k.status === 'claimed') add(Math.min(k.claimDue, k.dueAt + 24 * HOUR), () => settleClaim(w, k));
+  });
+  allCitizens(w).forEach((c: any) => c.ghostUntil && !c.ghostNoted && add(c.ghostUntil, () => ghostBack(w, c)));
+  Object.values(w.bounties || {}).forEach((b: any) => add(bountyDue(b), () => bountyDeadline(w, b)));
+  Object.values(w.orders || {}).forEach((o: any) => ['paid', 'delivered'].includes(o.status) && add(o.dueAt, () => orderDeadline(w, o)));
+  (w.jobClaims || []).forEach((c: any) => c.status === 'pending' && add(c.dueAt, () => (c.status = 'lapsed')));
+  Object.values(w.markets || {}).forEach((m: any) => add(marketDue(m), () => staleMarket(w, m)));
+  (w.ultimatums || []).forEach((u: any) => u.status === 'sent' && add(u.dueAt, () => settleUltimatum(w, u, false)));
+  if (w.daily) add(w.daily.endsAt, () => rollDaily(w));
   if (w.phase === 'running') {
     add(nextAt(w, 'payday', w.lastEvent.payday || w.now - 1), () => weeklyPayday(w));
     add(nextAt(w, 'pmqs', w.lastEvent.pmqs || w.now - 1), () => ((w.lastEvent.pmqs = w.now), closePMQs(w)));
@@ -55,6 +71,9 @@ function weeklyPayday(w: W) {
   spawnCrisis(w);
   newObjectives(w);
   maybeOffers(w);
+  nationsTurn(w);
+  takePoll(w);
+  records(w);
   if (w.offices.army) {
     if (inDanger(w, 'stability')) armyLoyalty(w, -1, 'Unrest at home');
     else if (w.army.loyalty < 3 && w.army.readiness !== 'down') armyLoyalty(w, 1, 'A quiet week on full pay');
@@ -84,6 +103,7 @@ export function advanceTo(w: W, t: number) {
     if (!due) break;
     w.now = Math.max(w.now, due.at);
     due.run();
+    afterChange(w);
   }
   w.now = Math.max(w.now, t);
 }

@@ -182,6 +182,7 @@ export function startVenture(w: W, actor: Id, nid: Id, amount: number) {
   if (!n) fail('Pick a country.');
   if (inDanger(w, 'standing')) fail('Embargo: no country will trade with us until our Standing recovers.');
   if (w.army.war === nid) fail('We are at war with them.');
+  if (n.sanctionsUntil && n.sanctionsUntil > w.now) fail(`${n.name} has sanctions on us. No trade until they lift.`);
   if (n.mood < 1) fail(`${n.name} refuses to trade with us.`);
   amount = Math.round(amount);
   if (amount < 5 || amount > 100) fail('Put in between 5 and 100 crowns.');

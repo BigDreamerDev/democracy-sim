@@ -1,5 +1,5 @@
 // The public face of the engine: every player action is a named command. run() applies one to a copy of the world.
-import { W, Id, fail, cit, nm, gazette, isPM, holderOf, hasPower, adminDid } from './core';
+import { W, Id, fail, cit, nm, gazette, isPM, holderOf, hasPower, adminDid, ghost, fmtTime } from './core';
 import * as P from './politics';
 import * as L from './proposals';
 import * as E from './economy';
@@ -9,6 +9,9 @@ import * as S from './society';
 import * as O from './offices';
 import { advanceTo } from './clock';
 import * as T from './tutorial';
+import * as R from './streets';
+import * as M from './markets';
+import * as G from './glory';
 
 export * from './core';
 export { createWorld, createLiveWorld, NAMES } from './world';
@@ -99,6 +102,35 @@ export const COMMANDS: Record<string, Cmd> = {
   'crisis.decide': (w, me, a) => S.decideCrisis(w, me, a.id, a.choice),
   'crisis.vote': (w, me, a) => S.voteCrisis(w, me, a.id, a.choice),
   'crisis.speak': (w, me, a) => S.speakCrisis(w, me, a.id, a.choice, a.text),
+  'foreign.answer': (w, me, a) => F.answerUltimatum(w, me, a.id, a.pay),
+  'streets.join': (w, me, a) => R.join(w, me, a.agree),
+  'streets.leave': (w, me) => R.leave(w, me),
+  'streets.newCode': (w, me, a) => R.rotate(w, me, a.kind),
+  'streets.meet': (w, me, a) => R.meet(w, me, a.code),
+  'streets.contract': (w, me, a) => R.takeContract(w, me, a.target, a.crowns),
+  'streets.tag': (w, me, a) => R.tagByCode(w, me, a.code),
+  'streets.claim': (w, me, a) => R.claim(w, me, a.contract),
+  'streets.answer': (w, me, a) => R.answerClaim(w, me, a.contract, a.yes),
+  'streets.gotMe': (w, me, a) => R.gotMe(w, me, a.by),
+  'streets.sweep': (w, me, a) => R.sweep(w, me, a.target || null),
+  'streets.protect': (w, me, a) => R.protect(w, me, a.target),
+  'bounty.post': (w, me, a) => R.postBounty(w, me, a.text, a.reward),
+  'bounty.take': (w, me, a) => R.takeBounty(w, me, a.id),
+  'bounty.done': (w, me, a) => R.doneBounty(w, me, a.id, a.note),
+  'bounty.confirm': (w, me, a) => R.confirmBounty(w, me, a.id, a.yes),
+  'bounty.cancel': (w, me, a) => R.cancelBounty(w, me, a.id),
+  'stall.open': (w, me, a) => R.openStall(w, me, a.title, a.price),
+  'stall.close': (w, me, a) => R.closeStall(w, me, a.id),
+  'stall.buy': (w, me, a) => R.buy(w, me, a.id),
+  'stall.deliver': (w, me, a) => R.deliver(w, me, a.order),
+  'stall.receive': (w, me, a) => R.receive(w, me, a.order, a.stars),
+  'stall.refund': (w, me, a) => R.refund(w, me, a.order),
+  'job.claim': (w, me, a) => R.claimJob(w, me, a.job, a.note),
+  'job.approve': (w, me, a) => R.approveJob(w, me, a.claim, a.yes),
+  'market.bet': (w, me, a) => M.bet(w, me, a.market, a.option, a.amount),
+  'daily.answer': (w, me, a) => G.answerDaily(w, me, a.option),
+  'admin.zone': (w, me, a) => R.adminZone(w, me, a),
+  'admin.bounty': (w, me, a) => R.removeBounty(w, me, a.id, a.reason),
   'admin.forceEnact': (w, me, a) => L.forceEnact(w, me, a.prop, a.reason),
   'admin.approve': (w, me, a) => {
     if (!w.citizens[me]?.admin) fail('Only the Returning Officer approves sign-ups.');
@@ -150,10 +182,12 @@ export function run(world: W, actor: Id, cmd: string, args: any = {}): W {
   checkArgs(args);
   const w = structuredClone(world);
   cit(w, actor);
+  if (ghost(w, actor) && !R.isGhostOk(cmd)) fail(`You were assassinated. Until ${fmtTime(w, w.citizens[actor].ghostUntil)} you are a ghost: you can vote, and nothing else.`);
   f(w, actor, args || {});
   T.afterCommand(w, actor, cmd);
   P.checkObjectives(w, actor);
   Object.keys(w.citizens).forEach((id) => P.checkObjectives(w, id));
+  G.afterChange(w);
   return w;
 }
 // anything can arrive from a third-party app: plain JSON only, short strings, shallow

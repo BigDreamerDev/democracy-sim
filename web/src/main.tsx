@@ -16,6 +16,9 @@ import { Backroom, Plots, Exile } from './pages/backroom';
 import { Admin, RoLog } from './pages/admin';
 import { Learn, Tour } from './pages/learn';
 import { Developers, Apps, AppPage, Authorize } from './pages/developers';
+import { Streets, TagLanding, Meet } from './pages/streets';
+import { Market, Bets } from './pages/market';
+import { Polls, Fame } from './pages/glory';
 
 const ROOTS = ['', 'house', 'realm', 'laws', 'you', 'gazette'];
 function level(hash: string) {
@@ -69,7 +72,8 @@ function route(hash: string) {
     realm: () => <Realm />, offices: () => <Offices />, office: () => <Office id={b} />, cabinet: () => <Cabinet />, hos: () => <HOS />, parties: () => <Parties />, party: () => <Party id={b} />,
     wallet: () => <Wallet />, economy: () => <Economy />, banks: () => <Banks />, ventures: () => <Ventures />,
     foreign: () => <Foreign />, nation: () => <Nation id={b} />, security: () => <Security />, army: () => <Army />, press: () => <Press />, court: () => <Court />, case: () => <Case id={b} />, crises: () => <Crises />, crisis: () => <Crisis id={b} />, season: () => <Season />,
-    backroom: () => <Backroom />, plots: () => <Plots />, exile: () => <Exile />, admin: () => <Admin />, learn: () => <Learn />, rolog: () => <RoLog />, developers: () => <Developers />, apps: () => <Apps />, app: () => <AppPage id={b} />, authorize: () => <Authorize query={q} />
+    backroom: () => <Backroom />, plots: () => <Plots />, exile: () => <Exile />, admin: () => <Admin />, learn: () => <Learn />, rolog: () => <RoLog />, developers: () => <Developers />, apps: () => <Apps />, app: () => <AppPage id={b} />, authorize: () => <Authorize query={q} />,
+    streets: () => <Streets />, tag: () => <TagLanding code={b || ''} />, meet: () => <Meet code={b} />, market: () => <Market />, bets: () => <Bets />, polls: () => <Polls />, fame: () => <Fame />
   };
   return { tab: a || '', key: hash, view: (pages[a || ''] || pages[''])() };
 }

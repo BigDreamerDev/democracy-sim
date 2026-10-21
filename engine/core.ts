@@ -58,7 +58,7 @@ export function acctLabel(w: W, a: string): string {
   if (a.startsWith('bank:')) return w.banks[a.slice(5)]?.name ?? 'a bank';
   if (a.startsWith('nation:')) return w.nations[a.slice(7)]?.name ?? 'abroad';
   if (a.startsWith('office:')) return w.offices[a.slice(7)]?.name ?? 'an office';
-  return ({ treasury: 'the Treasury', reserve: 'the Federal Reserve', escrow: 'held in escrow', ventures: 'trade ventures' } as any)[a] ?? a;
+  return ({ treasury: 'the Treasury', reserve: 'the Federal Reserve', escrow: 'held in escrow', ventures: 'trade ventures', market: 'the betting pool' } as any)[a] ?? a;
 }
 export function transfer(w: W, from: string, to: string, amount: number, memo: string) {
   const amt = Math.round(amount);
@@ -75,6 +75,8 @@ export function transfer(w: W, from: string, to: string, amount: number, memo: s
     if (c) {
       c.weekIncome = (c.weekIncome || 0) + amt;
       c.stats.maxBalance = Math.max(c.stats.maxBalance || 0, bal(w, to));
+      c.life = c.life || {};
+      c.life.maxBalance = Math.max(c.life.maxBalance || 0, bal(w, to));
     }
   }
   w.ledger.unshift({ at: w.now, from, to, amt, memo });
@@ -132,7 +134,20 @@ export function approve(w: W, id: Id | null, d: number) {
 export function tick(w: W, id: Id, key: string, n = 1) {
   const c = w.citizens[id];
   if (c) c.week[key] = (c.week[key] || 0) + n;
+  bump(w, id, key, n);
 }
+// lifetime counters (c.life, for achievements and the Hall of Fame) and this season's (c.stats, reset each season)
+export function bump(w: W, id: Id | null | undefined, key: string, n = 1) {
+  const c = id && w.citizens[id];
+  if (!c) return;
+  c.life = c.life || {};
+  c.life[key] = (c.life[key] || 0) + n;
+  c.stats = c.stats || {};
+  c.stats[key] = (c.stats[key] || 0) + n;
+}
+// someone who was assassinated in the Streets: they can still vote, nothing else, until this passes
+export const ghost = (w: W, id: Id) => !!w.citizens[id]?.ghostUntil && w.citizens[id].ghostUntil > w.now;
+export const DAYNO = (t: number) => Math.floor(t / DAY);
 
 // ---------- the three national meters ----------
 export const METERS: Record<string, { name: string; low: string; blurb: string }> = {

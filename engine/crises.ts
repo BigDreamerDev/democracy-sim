@@ -8,6 +8,7 @@
 // Money only moves through transfer(), so the ledger balances.
 import { W, Id, DAY, HOUR, clamp, fail, newId, transfer, meter, approve, earn, addCard, allCitizens, holderOf, chance, rand, ca, bal, gazette, isMP, isPM, mps, nm, mustBeFree, weekNo, tick } from './core';
 import { armyLoyalty } from './foreign';
+import { openMarket, settleMarket } from './markets';
 import { callGeneralElection } from './politics';
 
 type Option = { label: string; what: string; effects: string[]; run: (w: W) => any; then?: { type: string; days: number } };
@@ -522,6 +523,7 @@ export function spawnCrisis(w: W, type?: string, cause?: string) {
   const id = newId(w, 'cr');
   const house = !!t!.house && mps(w).length > 0;
   w.crises[id] = { id, type: t!.id, status: 'open', at: w.now, decideBy: w.now + (house ? 36 : 24) * HOUR, choice: null, house, votes: {}, speeches: [], cause: cause || null, pmAtStart: w.pm };
+  openMarket(w, 'crisis', id, `How will “${t!.title}” end?`, t!.options.map((o, i) => ({ key: String(i), label: o.label })), w.crises[id].decideBy);
   gazette(w, 'crisis', `${t!.extreme ? 'Emergency' : 'Crisis'}: ${t!.title}.${cause ? ` ${cause}` : ''} ${house ? 'The House has 36 hours to vote on a response.' : 'The Prime Minister has 24 hours to decide.'}`, '#/crisis/' + id);
   return id;
 }
@@ -588,6 +590,7 @@ function settle(w: W, c: any, choice: number, how: 'pm' | 'house' | 'default', a
   const o = t.options[choice];
   c.status = 'decided';
   c.choice = choice;
+  settleMarket(w, 'crisis', c.id, String(choice));
   c.by = actor || null;
   c.how = how;
   let r: any;

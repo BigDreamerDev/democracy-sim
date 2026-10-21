@@ -27,10 +27,14 @@ export function viewFor(full: W, me: Id): W {
     c.week = {};
     c.log = [];
     c.pardonAsked = c.pardonAsked && false;
+    // real-life codes: whoever has yours can tag you or check in with you
+    c.tagCode = null;
+    c.meetCode = null;
+    c.sweptAt = null;
   });
   // money: other citizens' balances and statements are private; public accounts stay visible
   Object.keys(w.accounts).forEach((k) => k.startsWith('c:') && k !== 'c:' + me && delete w.accounts[k]);
-  w.ledger = w.ledger.filter((l: any) => (!l.from.startsWith('c:') && !l.to.startsWith('c:')) || l.from === 'c:' + me || l.to === 'c:' + me || l.memo.startsWith('Lobbying') || l.memo.startsWith('Grant') || l.memo.startsWith('Fined'));
+  w.ledger = w.ledger.filter((l: any) => (!l.from.startsWith('c:') && !l.to.startsWith('c:')) || l.from === 'c:' + me || l.to === 'c:' + me || l.memo.startsWith('Lobbying') || l.memo.startsWith('Grant') || l.memo.startsWith('Fined') || l.memo.startsWith('Wage'));
   Object.values(w.banks).forEach((b: any) => {
     b.owedTotal = Object.values(b.deposits).reduce((s: number, v: any) => s + v, 0);
     if (b.owner !== me) b.deposits = { [me]: b.deposits[me] || 0 };
@@ -54,6 +58,32 @@ export function viewFor(full: W, me: Id): W {
     else if (!p.members.includes(me)) p.invited = { [me]: p.invited[me] };
   });
   if (!canSeeIntel(full, me)) w.intel = [];
+  // the Streets: a contract is known only to whoever took it out, until it's claimed (then the target sees it)
+  // or it's over and in the Gazette. Who the bodyguard covers is known to the two of them. Check-ins: your own.
+  if (w.streets) {
+    Object.keys(w.streets.contracts).forEach((id) => {
+      const k = w.streets.contracts[id];
+      if (k.by === me || ['done', 'foiled'].includes(k.status)) return;
+      if (k.target === me && k.status === 'claimed') return;
+      delete w.streets.contracts[id];
+    });
+    if (w.streets.protect && w.streets.protect.by !== me && w.streets.protect.who !== me) w.streets.protect = null;
+    w.streets.meets = w.streets.meets.filter((m: any) => m.a === me || m.b === me);
+  }
+  // market orders are between buyer and seller; bets are private (the pools, and so the odds, are public)
+  Object.keys(w.orders || {}).forEach((id) => {
+    const o = w.orders[id];
+    if (o.buyer !== me && o.seller !== me) delete w.orders[id];
+  });
+  Object.values(w.markets || {}).forEach((m: any) => {
+    m.backers = Object.keys(m.bets).length;
+    m.bets = m.bets[me] ? { [me]: m.bets[me] } : {};
+  });
+  // the Red Box: your own answer and how many have answered today
+  if (w.daily) {
+    w.daily.answered = Object.keys(w.daily.votes).length;
+    w.daily.votes = w.daily.votes[me] !== undefined ? { [me]: w.daily.votes[me] } : {};
+  }
   // offices marked secret show only to their members
   Object.values(w.offices).forEach((o: any) => {
     if (o.secrecy === 'secret' && o.holder !== me && !o.members.includes(me)) {

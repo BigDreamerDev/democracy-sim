@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "preact": "^10.24.0"
+    "preact": "^10.24.0",
+    "qrcode-generator": "^1.4.4"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.9.0",

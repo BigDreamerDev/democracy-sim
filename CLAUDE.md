@@ -63,6 +63,11 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   catalog.ts   CATALOG — public description of every player command and its args (served by /api/v1/commands)
   index.ts     COMMANDS table; run(world, actor, cmd, args) applies one to a structuredClone
   bots.ts      bot turns: botsAct (demo, smoke) and actBots(w, isBot) — the clock runs practice bots during induction
+  streets.ts   real life, opt-in: safe zones, contracts (tag codes, claims, ghosts), bodyguard, sweeps, check-ins,
+               bounties, stalls and orders (escrow), civic jobs (a bill clause `job`; `zone` adds a safe zone)
+  markets.ts   betting pools on bills, elections and crises; opened and settled by those systems
+  glory.ts     achievements (BADGES, from c.life counters via bump()), the daily Red Box and streaks, weekly polls,
+               season awards, the Hall of Fame (w.fame, kept through induction and RO resets); afterChange()
 web/src/     Preact + Vite. main.tsx (router, tabs), store.ts, ui.tsx (shared components),
              Sidebar.tsx, DemoPanel.tsx (demo only), pages/*.tsx, styles.css
 server/      app.ts (first-party routes), public.ts (/api/v1 for players' own apps), db.ts (pg or PGlite + SCHEMA),
@@ -174,7 +179,8 @@ Citizen id = `'u' + users.id`.
    server. Hiding a button is cosmetic.
 4. **Rules change only through Parliament.** The RO's powers are exactly: approve sign-ups,
    toggle `requireApproval`/`openSignup`, move the calendar, start a crisis, force-enact a stuck
-   bill, reset a password, remove or restore a player app, export, reset the realm. Don't add RO
+   bill, reset a password, remove or restore a player app, add or remove a Streets safe zone, take down a
+   bounty, export, reset the realm. The last two Streets powers exist for real-world safety only. Don't add RO
    powers over game rules. **Every one of them goes through `adminDid()`** (engine/core.ts), which
    writes the public admin log and the Gazette. A new admin power must too.
 5. **The RO is a full player** and can stand, vote and hold any office. **Check offices before
@@ -210,11 +216,16 @@ Citizen id = `'u' + users.id`.
   (ties → `def`). Player-tabled clauses (`kind` 'custom' or 'setting') need more Adopt than Reject.
 - **Induction week**: `finishConvention` snapshots the world into `w.induction.snapshot`, then 7 days of
   practice (everything works, the backroom too; Gazette entries carry `practice: true`). `endInduction`
-  restores the snapshot in place, keeping citizens' `tutorial`, new citizens, `pending`, `adminLog`, rng
+  restores the snapshot in place, keeping citizens' `tutorial` and Streets opt-in/codes/streak, new citizens, `pending`, `adminLog`, the Red Box, safe zones, rng
   and flags, then opens the real first election. `viewFor` never copies the snapshot. Anything that must
   survive induction has to be added to the keep-list in `endInduction`.
 - **Practice bots** (`config.practiceBots`, default 4) are citizens with `bot: true`, added after the snapshot
   so they vanish at the end of induction. The clock gives them a turn every 2 hours (`induction.nextBotAt`).
+- **The Streets are real life.** Keep them opt-in (`c.streets.in`), never collect locations, never let crowns
+  be bought or cashed out. Tag/meet codes are secrets: strip them in `viewFor`, rotate after use. Ghosts
+  (`ghostUntil`) are gated in `run()` by `isGhostOk(cmd)`; a new command ghosts may use goes in `GHOST_OK`.
+- **Counters**: `tick()` also bumps `c.life` (all-time) and `c.stats` (this season, reset by `assignAmbitions`).
+  Use `bump(w, id, key)` for anything an achievement, award or record should count.
 - **Voting methods**: `config.voting` (single, ranked = STV/IRV, approval, borda) is copied onto each election
   as `e.method` when it opens. Ballots are an id (single) or a list (others). `config.billVoters` ('mps'|'all')
   and `config.passRule` ('cast'|'seats'|'twothirds') are copied onto each proposal (`voters`, `rule`);

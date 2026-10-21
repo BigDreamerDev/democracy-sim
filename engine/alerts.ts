@@ -1,7 +1,8 @@
 // What needs one citizen right now: votes to cast, bills to sign, deals waiting. Shown on Today, counted in the
 // sidebar, and sent to personal webhooks (each alert's `key` is stable, so a hook fires once per new item).
 // Always call it on viewFor(world, me), never the full world, so it can only mention what that person may see.
-import { W, Id, nm, isHOS, isPM, isMP, intrigueOpen } from './core';
+import { W, Id, nm, isHOS, isPM, isMP, intrigueOpen, hasPower, holderOf } from './core';
+import { RED_BOX } from './glory';
 import { canVote } from './politics';
 import { canVoteOn, KINDS } from './proposals';
 
@@ -32,6 +33,24 @@ export function needs(w: W, me: Id): Alert[] {
   if (w.confidence && isPM(w, me)) out.push({ key: 'confidence:' + w.confidence.deadline, href: '#/new?kind=confidence', label: 'Confidence lost', title: 'Win a confidence vote or fall', at: w.confidence.deadline, urgent: true });
   Object.values(w.parties).forEach((p: any) => p.status === 'forming' && p.invited.includes(me) && !p.signed.includes(me) && out.push({ key: 'cofound:' + p.id, href: '#/parties', label: 'Co-found', title: `Sign to found the ${p.name}`, at: p.formingUntil }));
   if (w.coalition?.status === 'draft' && w.coalition.sides.some((s: string) => (s.startsWith('p:') ? w.parties[s.slice(2)]?.leader : s.slice(2)) === me && !w.coalition.signed[s])) out.push({ key: 'coalition:' + w.coalition.id, href: '#/cabinet', label: 'Coalition', title: 'A deal waits for your signature' });
+  // the Streets: a claim to answer, your live contract
+  Object.values(w.streets?.contracts || {}).forEach((k: any) => {
+    if (k.status === 'claimed' && k.target === me) out.push({ key: 'claim:' + k.id + ':' + k.claimAt, href: '#/streets', label: 'The Streets', title: `${nm(w, k.by)} says they got you`, at: k.claimDue, urgent: true });
+    if (k.by === me && k.status === 'live') out.push({ key: 'contract:' + k.id, href: '#/streets', label: 'Your contract', title: `${nm(w, k.target)}: ${k.weapon}`, at: k.dueAt });
+  });
+  // the market: bounties and orders waiting on you, wages to sign off
+  Object.values(w.bounties || {}).forEach((b: any) => {
+    if (b.status === 'done' && b.by === me) out.push({ key: 'bounty:' + b.id + ':' + b.doneAt, href: '#/market', label: 'Bounty done?', title: `${nm(w, b.taker)} says they did it: ${b.text}`, at: b.doneDue });
+    if (b.status === 'taken' && b.taker === me) out.push({ key: 'bountytaken:' + b.id + ':' + b.takenAt, href: '#/market', label: 'Your bounty', title: b.text, at: b.takenDue });
+  });
+  Object.values(w.orders || {}).forEach((o: any) => {
+    if (o.status === 'paid' && o.seller === me) out.push({ key: 'order:' + o.id, href: '#/market', label: 'Someone bought from you', title: `${nm(w, o.buyer)}: ${o.title}`, at: o.dueAt });
+    if (o.status === 'delivered' && o.buyer === me) out.push({ key: 'delivered:' + o.id, href: '#/market', label: 'Did it arrive?', title: o.title, at: o.dueAt });
+  });
+  const signer = holderOf(w, 'treasury') || w.pm;
+  (w.jobClaims || []).forEach((c: any) => c.status === 'pending' && c.by !== me && (signer === me || (isPM(w, me) && holderOf(w, 'treasury') === c.by)) && out.push({ key: 'job:' + c.id, href: '#/market', label: 'Wage to sign off', title: `${nm(w, c.by)}: ${c.title}`, at: c.dueAt }));
+  (w.ultimatums || []).forEach((u: any) => u.status === 'sent' && (isPM(w, me) || hasPower(w, me, 'envoy')) && out.push({ key: 'ultimatum:' + u.id, href: '#/foreign', label: 'Foreign demand', title: `${w.nations[u.nation]?.name} wants ${u.crowns} crowns`, at: u.dueAt, urgent: true }));
+  if (w.daily && w.daily.votes?.[me] === undefined && w.citizens[me] && !w.citizens[me].bot) out.push({ key: 'daily:' + w.daily.day, href: '#/', label: 'The Red Box', title: RED_BOX[w.daily.qi].q, at: w.daily.endsAt });
   if (intrigueOpen(w)) {
     Object.values(w.deals).forEach((d: any) => d.status === 'offered' && d.to === me && out.push({ key: 'deal:' + d.id, href: '#/backroom', label: 'Private', title: `${nm(w, d.from)} offers you a deal` }));
     Object.values(w.demands).forEach((d: any) => d.status === 'sent' && d.target === me && out.push({ key: 'demand:' + d.id, href: '#/backroom', label: 'Private', title: 'Someone has a card on you', at: d.dueAt, urgent: true }));
