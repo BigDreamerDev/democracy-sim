@@ -345,7 +345,7 @@ export function Questions() {
     </div>
   );
   return (
-    <Page back={['#/house', 'The House']} title="Questions" intro="One question to the PM per citizen per week. The 3 most-backed must be answered before PMQs close, or the PM is marked as dodging them.">
+    <Page back={['#/house', 'The House']} title="Questions" intro="Every week, each citizen holds to right to submit questions to the Prime Minister and to agree with other questions">
       <Sec title="PM's Questions" sub={<>Questions close <When at={nextAt(w, 'pmqs')} />.</>}>
         <div class="stack">
           {open.map((x: any, i: number) => (

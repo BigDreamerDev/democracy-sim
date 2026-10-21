@@ -122,7 +122,7 @@ export function Press() {
   const waiting = w.stories.filter((s: any) => s.status === 'submitted' && w.papers[s.paper]?.editor === me);
   const stories = w.stories.filter((s: any) => s.status === 'published').slice(0, 20);
   return (
-    <Page back={['#/realm', 'The realm']} title="The press" intro="Anyone can start a paper. The most-cheered story of the week leads Friday's front page. Leaked cards make the best stories.">
+    <Page back={['#/realm', 'The realm']} title="The press" intro="You and your friends can make a newspaper and publish stories, the most popular of the week makes the Gazette's front page">
       <Sec title="Papers"><ul class="list">{Object.values(w.papers).map((p: any) => <li class="row"><span><b>{p.name}</b><div class="small muted">Editor {nm(w, p.editor)} · {p.followers.length} readers</div></span><Btn small kind={p.followers.includes(me) ? 'plain' : 'ghost'} onClick={() => act('press.follow', { paper: p.id })}>{p.followers.includes(me) ? 'Following' : 'Follow'}</Btn></li>)}</ul></Sec>
       {waiting.length > 0 && <Sec title="Waiting for your decision">{waiting.map((s: any) => <Card><b>{s.headline}</b><Photo id={s.photo} alt={s.headline} /><p class="small">{s.body}</p><div class="small muted">By {nm(w, s.by)}</div><div class="grid2" style={{ marginTop: 8 }}><Btn small onClick={() => act('press.edit', { story: s.id, yes: true }, 'Published.')}>Publish</Btn><Btn small kind="plain" onClick={() => act('press.edit', { story: s.id, yes: false })}>Spike</Btn></div></Card>)}</Sec>}
       <Sec title="Latest">
@@ -191,7 +191,7 @@ export function Crises() {
   const { world: w } = useStore();
   const list = Object.values(w.crises).sort((a: any, b: any) => b.at - a.at) as any[];
   return (
-    <Page back={['#/realm', 'The realm']} title="Crises" intro="A new one every payday. The PM decides most within 24 hours; the big ones go to a vote of MPs. If nobody decides, the last option happens and Stability drops. Some choices come back weeks later.">
+    <Page back={['#/realm', 'The realm']} title="Crises" intro="Once a week, a crisis hits the nation, giving the PM a day to respond, or for major events, the House must respond. Beware your choice, it could return...">
       {(w.crisisQueue || []).length > 0 && <Card kind="dashed" style={{ marginTop: 14 }}><b>{w.crisisQueue.length} consequence{w.crisisQueue.length > 1 ? 's' : ''} pending.</b> <span class="small">Earlier choices will come back. Nobody knows quite when.</span></Card>}
       <ul class="list" style={{ marginTop: 16 }}>{list.map((c) => { const t = CRISES.find((x) => x.id === c.type)!; return <LinkRow href={'#/crisis/' + c.id} title={<>{t.extreme && <span class="via" style={{ marginLeft: 0, marginRight: 6, color: 'var(--red)', opacity: 1 }}>emergency</span>}{t.title}</>} sub={c.status === 'open' ? <>{c.house ? 'House vote' : 'PM decides'} · closes in <Left at={c.decideBy} /></> : `${c.how === 'house' ? 'House chose' : c.how === 'default' ? 'Nobody chose' : 'PM chose'}: ${t.options[c.choice].label}`} />; })}</ul>
       {!list.length && <Empty>No crises yet. One arrives at payday.</Empty>}
@@ -257,7 +257,7 @@ export function Season() {
   const ranked = allCitizens(w).slice().sort((a: any, b: any) => (b.seasonEarned || 0) - (a.seasonEarned || 0));
   const c = w.citizens[me];
   return (
-    <Page back={['#/realm', 'The realm']} kicker={`Season ${w.season.n}`} title="Leaderboard" intro="A season lasts one Parliament. It ranks Influence earned, so spending it never costs you a place. At the end every secret ambition is revealed; fulfilled ones score 30.">
+    <Page back={['#/realm', 'The realm']} kicker={`Season ${w.season.n}`} title="Leaderboard" intro="Each season spans one election cycle, ranking players by influence earned that season from different actions in the nation. Complete your ambition, and gain even more influence">
       {c.ambition && <Card kind="tint" style={{ marginTop: 14 }}><div class="kicker" style={{ margin: 0 }}>Your secret ambition</div><b>{c.ambition.text}</b> <span class="small">(+{c.ambition.reward})</span></Card>}
       <Sec><ol class="list">{ranked.map((x: any, i: number) => <li class="row"><span><b class="tnum" style={{ width: 26, display: 'inline-block' }}>{i + 1}</b><Who id={x.id} /></span><span class="small tnum"><b>{x.seasonEarned || 0}</b> earned · {x.influence} to spend</span></li>)}</ol></Sec>
       <SeasonExtras />

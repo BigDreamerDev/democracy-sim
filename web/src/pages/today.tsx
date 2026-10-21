@@ -113,7 +113,7 @@ function InductionBanner() {
       <span class="induct-stamp" aria-hidden="true">{ind ? 'Practice' : 'New?'}</span>
       <span style={{ minWidth: 0 }}>
         <b>{ind ? 'Induction week' : 'How to play'}</b>
-        <span class="small">{ind ? <>Everything is practice until {fmtDay(w.induction.until)}. Try it all; it resets, then the real first election opens.</> : 'A two-minute guide and missions that walk you through each part.'}</span>
+        <span class="small">{ind ? <>Everything is practice until {fmtDay(w.induction.until)}. Try it all; it resets, then the real first election opens.</> : 'Democracy and politics isn\'t simple, I\'ve tried my best to gamify it but make sure to play through this before we start'}</span>
       </span>
       <span class="induct-n tnum">{done}/{TUTORIAL.length}</span>
     </a>
@@ -139,7 +139,7 @@ export function Today() {
           </div>
         </div>
         <h1 class="title today-title" style={{ marginTop: 30 }}>{list.length ? `${list.length} thing${list.length > 1 ? 's' : ''} need${list.length > 1 ? '' : 's'} you` : 'All caught up'}</h1>
-        <p class="intro">{w.phase === 'convention' ? <>Write the constitution together. The Convention closes in <Left at={w.convention.closesAt} />.</> : 'Everything closes on its own. Miss a vote and it goes ahead without you.'}</p>
+        <p class="intro">{w.phase === 'convention' ? <>Write the constitution together. The Convention closes in <Left at={w.convention.closesAt} />.</> : 'Democracy won\'t halt for anything, make sure to cast your vote and propose your bills before they close'}</p>
       </div>
       <InductionBanner />
       {exiled(w, me) && <Card kind="warn" style={{ marginTop: 16, gridColumn: '1 / -1' }}><b>You are in exile</b> until <When at={c.exiledUntil} />. <a href="#/exile">What you can still do</a></Card>}
@@ -204,7 +204,7 @@ export function Gazette() {
   const [kind, setKind] = useState('all');
   const kinds: [string, string][] = [['all', 'Everything'], ['law', 'Laws'], ['proposal', 'Proposals'], ['election', 'Elections'], ['government', 'Government'], ['scandal', 'Scandals'], ['money', 'Money']];
   return (
-    <Page title={`The ${w.config.realmName.split(' of ')[1] || 'Realm'} Gazette`} kicker="The official record" intro="Facts only. Newspapers print opinions; this prints what happened.">
+    <Page title={`The ${w.config.realmName.split(' of ')[1] || 'Realm'} Gazette`} kicker="The official record" intro="The Gazette acts as the official record of what has happened in the nation, printing exactly what has happened">
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 16 }}>{kinds.map(([k, l]) => <Btn small kind={k === kind ? undefined : 'plain'} onClick={() => setKind(k)}>{l}</Btn>)}</div>
       <Sec title="Front pages" sub="Every Friday, the week on one page.">
         <ul class="list">{w.frontpages.map((f: any) => <LinkRow href={'#/frontpage/' + f.id} title={f.lead ? f.lead.headline : 'A quiet week'} sub={fmtDay(f.at)} />)}</ul>
@@ -397,7 +397,7 @@ export function Laws() {
   const [tab, setTab] = useState('laws');
   const laws = w.laws.filter((l: any) => !q || (l.title + l.summary + l.text.join(' ')).toLowerCase().includes(q.toLowerCase()));
   return (
-    <Page kicker="The statute book" title="Laws" intro="Every law in force, and the constitution they all rest on.">
+    <Page kicker="The statute book" title="Laws" intro="See below the full laws and codebook of the nation, alongside reading our consitutiton">
       <div style={{ marginTop: 16 }}><Seg value={tab} onChange={setTab} options={[['laws', 'Statute book'], ['constitution', 'Constitution']]} /></div>
       {tab === 'laws' ? (
         <>

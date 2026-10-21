@@ -21,11 +21,11 @@ export function Realm() {
   if (import.meta.env.DEV) groups.push(['Development', [['#/copy', 'Copy desk', 'Reword every line in the game']]]);
   if (w.citizens[me].admin) groups.push(['Returning Officer', [['#/admin', 'Admin', 'Approvals, calendar, fixes']]]);
   return (
-    <Page kicker={w.config.realmName} title="The realm" intro="Everything in the game. Locked areas open once Parliament passes the law that creates them.">
+    <Page kicker={w.config.realmName} title="The realm" intro="The Nation has a vast myriad of different actions, offices and systems, all accessible here">
       {groups.map(([g, items]) => (
         <Sec title={g}><ul class="list">{items.map(([href, t, s, locked]) => <LinkRow href={href} title={<span style={{ opacity: locked ? 0.55 : 1 }}>{t}</span>} sub={s} right={locked ? <Icon name="lock" /> : undefined} />)}</ul></Sec>
       ))}
-      <Sec title="Appearance" sub="Auto follows your device."><ThemeSwitch /></Sec>
+      <Sec title="Appearance" sub="Auto matches device settings"><ThemeSwitch /></Sec>
     </Page>
   );
 }
@@ -34,7 +34,7 @@ export function Offices() {
   const { world: w } = useStore();
   const missing = Object.entries(TEMPLATES).filter(([k]) => !w.offices[k] && k !== 'whip');
   return (
-    <Page back={['#/realm', 'The realm']} title="Offices" intro="Every role in government is an office created by law. Holding one gives you its powers as buttons.">
+    <Page back={['#/realm', 'The realm']} title="Offices" intro="The Nation has many officies, each declared by law. If the Government grants you one, you hold it's powers">
       <Sec>
         <div class="stack">
           {Object.values(w.offices).map((o: any) => (
@@ -108,7 +108,7 @@ export function Cabinet() {
   return (
     <Page back={['#/house', 'The House']} kicker={w.pm ? (w.minority ? 'Minority government' : 'Majority government') : 'No government'} title="Cabinet" intro={w.pm ? <>Prime Minister <Who id={w.pm} />, with {supportFor(w, w.pm)} of {w.config.seats} seats. {majority(w)} makes a majority.</> : `The ${hosTitle(w)} invites a Prime Minister after each election.`}>
       {w.confidence && <Card kind="warn" style={{ marginTop: 14 }}><b>Confidence lost.</b> The government must win a confidence vote within <Left at={w.confidence.deadline} /> or it falls.</Card>}
-      <Sec title="Ministers" sub="Offices the PM fills.">
+      <Sec title="Ministers" sub="The Prime Minister nominates different ministers over offices">
         <ul class="list">
           {posts.map((o) => (
             <li class="row">
@@ -192,7 +192,7 @@ export function Parties() {
   const ps = Object.values(w.parties).filter((p: any) => ['active', 'forming'].includes(p.status)) as any[];
   const opts = allCitizens(w).filter((c: any) => c.id !== me).map((c: any) => [c.id, c.name]) as any;
   return (
-    <Page back={['#/realm', 'The realm']} title="Parties" intro="10 crowns and two co-founders who sign within a day. With a national vote, parties that split their vote lose seats, so pick who stands.">
+    <Page back={['#/realm', 'The realm']} title="Parties" intro="Parties are groups of similar minded individuals standing united in election. It costs 10 crows and 2 co-founders to make one">
       <Sec><ul class="list">{ps.map((p) => <LinkRow href={'#/party/' + p.id} title={<><i class="dot" style={{ background: p.colour, marginRight: 8 }} />{p.name}</>} sub={p.status === 'forming' ? `Forming: ${p.signed.length} of 2 signed` : `Led by ${nm(w, p.leader)}, ${members(w, p.id).length} members, ${sideSeats(w, 'p:' + p.id)} seats`} />)}</ul></Sec>
       {ps.filter((p) => p.status === 'forming' && p.invited.includes(me) && !p.signed.includes(me)).map((p) => <Card kind="tint"><b>{nm(w, p.leader)} asked you to co-found the {p.name}.</b><Btn small style={{ marginTop: 8 }} onClick={() => act('party.cosign', { party: p.id }, 'Signed.')}>Co-sign</Btn></Card>)}
       <Sec title="Found a party">

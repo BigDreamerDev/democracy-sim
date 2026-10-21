@@ -17,13 +17,13 @@ export const POWERS: Record<string, { label: string; strong?: boolean }> = {
 };
 
 export const TEMPLATES: Record<string, { name: string; title: string; act: string; powers: string[]; fill: string; budget: number; secrecy: string; blurb: string; constitutional?: boolean }> = {
-  treasury: { name: 'Treasury', title: 'Chancellor', act: 'Treasury Act', powers: ['grant', 'files'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'Runs the budget. Sees the books, including any quiet borrowing.' },
-  reserve: { name: 'Federal Reserve', title: 'Chair of the Reserve', act: 'Currency Act', powers: ['rate', 'files'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'Sets the interest rate. Lending pushes prices up; a higher rate pulls them down.' },
-  foreign: { name: 'Foreign Office', title: 'Foreign Minister', act: 'Foreign Affairs Act', powers: ['envoy'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'Talks to the five nations, sends envoys and brings treaty offers to the House.' },
-  security: { name: 'Security Service', title: 'Director', act: 'Security Service Act', powers: ['intel', 'files'], fill: 'pm', budget: 40, secrecy: 'restricted', blurb: 'Gathers intelligence. Each request risks a spy being caught.' },
-  army: { name: 'The Army', title: 'General', act: 'Defence Act', powers: ['army'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'Defends the realm. Costs upkeep. Its loyalty decides whether a coup succeeds.' },
-  court: { name: 'Supreme Court', title: 'Justice', act: 'Supreme Court Amendment', powers: ['judge'], fill: 'lot', budget: 0, secrecy: 'public', blurb: 'Three justices drawn by lot decide whether laws and actions break the constitution.', constitutional: true },
-  guard: { name: 'Protection Service', title: 'Bodyguard', act: 'Protection Act', powers: ['protect'], fill: 'pm', budget: 0, secrecy: 'restricted', blurb: 'Guards one citizen a day in the Streets. A hit on them fails half the time, and the would-be assassin is exiled.' },
+  treasury: { name: 'Treasury', title: 'Chancellor', act: 'Treasury Act', powers: ['grant', 'files'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'The Treasury maintains financial aspects of the government' },
+  reserve: { name: 'Federal Reserve', title: 'Chair of the Reserve', act: 'Currency Act', powers: ['rate', 'files'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'The Fed determines banking standards and loaning of the nation\n' },
+  foreign: { name: 'Foreign Office', title: 'Foreign Minister', act: 'Foreign Affairs Act', powers: ['envoy'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'The Foreign Office maintains diplomatic relationships with the other 5 nations' },
+  security: { name: 'Security Service', title: 'Director', act: 'Security Service Act', powers: ['intel', 'files'], fill: 'pm', budget: 40, secrecy: 'restricted', blurb: 'The Security Service handles discrete intelligence collection of foreign and domestic threats' },
+  army: { name: 'The Army', title: 'General', act: 'Defence Act', powers: ['army'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'The Army acts to defend the Nation, but comes at a financial and loyalty cost.' },
+  court: { name: 'Supreme Court', title: 'Justice', act: 'Supreme Court Amendment', powers: ['judge'], fill: 'lot', budget: 0, secrecy: 'public', blurb: 'The Court handles protecting the rights of citizens and protecting against constitutional violations', constitutional: true },
+  guard: { name: 'Protection Service', title: 'Bodyguard', act: 'Protection Act', powers: ['protect'], fill: 'pm', budget: 0, secrecy: 'restricted', blurb: 'The Protection Service ensures that those who face a bounty are protected, but only one at a time' },
   whip: { name: 'Chief Whip', title: 'Chief Whip', act: 'Founding Act', powers: ['files'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'Keeps government MPs voting together. Sees who rebels.' }
 };
 

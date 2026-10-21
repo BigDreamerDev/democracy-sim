@@ -22,8 +22,8 @@ export function Wallet() {
   const [s, setS] = useState({ to: '', amount: '5', note: '' });
   const ledger = w.ledger.filter((l: any) => l.from === ca(me) || l.to === ca(me)).slice(0, 30);
   return (
-    <Page back={['#/realm', 'The realm']} kicker="Your wallet" title={<span class="tnum">{bal(w, ca(me))} crowns</span>} intro={`Payday brings ${w.config.dividend} crowns to everyone${inDanger(w, 'prosperity') ? ' (not during a recession)' : ''}, plus pay for MPs and ministers. Income tax ${w.config.taxRate}%.`}>
-      <Sec title="In your pocket"><NoteFan amount={bal(w, ca(me))} serial={'RA ' + String(1000 + Object.keys(w.citizens).indexOf(me) * 37).padStart(6, '0')} /></Sec>
+    <Page back={['#/realm', 'The realm']} kicker="Your wallet" title={<span class="tnum">{bal(w, ca(me))} crowns</span>} intro={`Every Payday you recieve ${w.config.dividend} ${inDanger(w, 'prosperity') ? ' (not during a recession)' : ''}, plus pay for MPs and ministers. Income tax ${w.config.taxRate}%.`}>
+      <Sec title="What you have"><NoteFan amount={bal(w, ca(me))} serial={'RA ' + String(1000 + Object.keys(w.citizens).indexOf(me) * 37).padStart(6, '0')} /></Sec>
       <Sec title="Send crowns">
         <Card><div class="stack">
           <Pick value={s.to} onChange={(v) => setS({ ...s, to: v })} empty="To whom" options={allCitizens(w).filter((c: any) => c.id !== me).map((c: any) => [c.id, c.name])} />
@@ -49,7 +49,7 @@ export function Economy() {
   const max = Math.max(...ps), min = Math.min(...ps);
   const canRate = hasPower(w, me, 'rate') || (isPM(w, me) && w.offices.reserve && !w.offices.reserve.holder);
   return (
-    <Page back={['#/realm', 'The realm']} kicker="Treasury and Reserve" title="The economy" intro={<>The Treasury holds <b class="tnum">{bal(w, 'treasury')}</b> crowns and owes the Reserve <b class="tnum">{w.economy.lent}</b>. If it runs dry it borrows automatically, and a secret card records it.</>}>
+    <Page back={['#/realm', 'The realm']} kicker="Treasury and Reserve" title="The economy" intro={<>The Treasury holds <b class="tnum">{bal(w, 'treasury')}</b> crowns and owes the Reserve <b class="tnum">{w.economy.lent}</b>. Should the Treasury enter a deficit, it automatically borrows</>}>
       <Sec><Meters compact /></Sec>
       <Sec title="This week's budget" sub={<>Chancellor: <Who id={holderOf(w, 'treasury')} /></>}>
         <Card>
@@ -59,7 +59,7 @@ export function Economy() {
           <ul class="list">{b.out.map((r) => <li class="row"><span>{r.label}</span><b class="tnum">{r.v}</b></li>)}</ul>
           <div class="row" style={{ marginTop: 10, fontWeight: 700 }}><span>{b.inTotal - b.outTotal >= 0 ? 'Surplus' : 'Deficit'}</span><span class="tnum" style={{ color: b.inTotal - b.outTotal >= 0 ? 'var(--teal)' : 'var(--red)' }}>{b.inTotal - b.outTotal}</span></div>
         </Card>
-        <p class="small muted">A deficit costs Prosperity at payday; a surplus raises it. Tax, the dividend and pay change only by law. <a href="#/new">Draft a bill</a>.</p>
+        <p class="small muted">When the Treasury runs a deficit, the Prosperity is automatically decreased once a week. <a href="#/new">Draft a bill</a>.</p>
       </Sec>
       {!w.offices.reserve ? <Sec><Locked act="Currency Act" href="#/new?office=reserve">The Federal Reserve sets the interest rate.</Locked></Sec> : (
         <Sec title="The Federal Reserve" sub={<>Chair: <Who id={holderOf(w, 'reserve')} />. Rate {w.economy.rate}%. Last week prices moved {w.economy.lastInflation.toFixed(1)}%.</>}>
@@ -122,7 +122,7 @@ export function Ventures() {
   const mine = w.ventures.filter((v: any) => v.by === me);
   const o = w.nations[n] ? ventureOdds(w, n) : { low: 0, high: 0 };
   return (
-    <Page back={['#/realm', 'The realm']} kicker="Trade" title="Ventures" intro={`Put crowns into a trading run abroad. It comes back in 2 days with a profit or a loss. Friendlier nations and higher Prosperity mean better odds. Tariff ${w.config.tariff}% unless a trade agreement removes it.`}>
+    <Page back={['#/realm', 'The realm']} kicker="Trade" title="Ventures" intro={`Invest crowns into foreign nations and wait 2 days for either a profit or a loss, these are dependent on Prosperity. Tariff ${w.config.tariff}% unless a trade agreement removes it.`}>
       {inDanger(w, 'standing') && <Card kind="warn" style={{ marginTop: 14 }}><b>Embargo.</b> Nobody will trade with us until our Standing recovers.</Card>}
       <Sec title="Send a venture">
         <Card><div class="stack">

@@ -70,7 +70,7 @@ export function Streets() {
   if (!isIn)
     return (
       <Page back={['#/realm', 'The realm']} kicker="Real life · opt-in" title="The Streets"
-        intro="The part of the realm played in person. Take out contracts and tag your target with a secret weapon, post bounties for real tasks, sell favours at a stall. Nobody who hasn’t joined can be touched.">
+        intro="To add a twist, you can play out bounties, favours, hits and contracts in real life, opt-in only">
         <Rules />
         <Sec title="Join">
           <Card><div class="stack">
@@ -84,7 +84,7 @@ export function Streets() {
     );
 
   return (
-    <Page back={['#/realm', 'The realm']} kicker="Real life" title="The Streets" intro="Contracts last 72 hours. Tag your target with your weapon, then get their code or ask them to confirm. A hit makes them a ghost for 48 hours: they can vote, and nothing else.">
+    <Page back={['#/realm', 'The realm']} kicker="IRL Activities" title="The Streets" intro="Contracts last 72 hours. Tag your target with your weapon, then get their code or ask them to confirm. A hit makes them a ghost for 48 hours: they can vote, and nothing else.">
       {ghost(w, me) && <Card kind="warn" style={{ marginTop: 14 }}><b>You’re a ghost</b> until <When at={c.ghostUntil} />. You can vote, answer the Red Box and bet. Nothing else.</Card>}
       {claims.map((k) => (
         <Card kind="warn" style={{ marginTop: 14 }}>
