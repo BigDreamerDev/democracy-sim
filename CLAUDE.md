@@ -275,11 +275,10 @@ only; never alter or drop v1's `users`. Tell Uzair to **snapshot Neon before dep
 
 ## Git and deploy
 
-- Never commit to `main`. Work on a branch (`v2` is the production branch until it is
-  merged), push, and open a PR. `gh pr create` is blocked here; use
-  `gh api repos/BigDreamerDev/democracy-sim/pulls -f title=… -f head=… -f base=main -F body=@file`.
+- Commit and push straight to `main` (Uzair's call). Pushing to `main` deploys, so run the definition-of-done
+  checks first. `v2` is kept in step with `main`.
 - **Never overwrite `docs/config.js`.** It holds the real `API_BASE`
-  (`https://democracy-sim-thgx.onrender.com`). `npm run build` leaves it alone; check
+  (`https://democracy-sim-1.onrender.com`). `npm run build` leaves it alone; check
   `git diff --cached --name-only` doesn't list it before committing.
 - Commit the rebuilt `docs/assets` and `docs/index.html` with any web/engine change —
   Pages serves `docs/` straight from the branch, there is no CI build.
