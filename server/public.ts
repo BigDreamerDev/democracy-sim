@@ -2,6 +2,7 @@
 // Authenticated with personal API keys (never passwords), open to any origin, and given the same
 // redacted view of the world the official site gets. Every rule is still enforced by the engine.
 import { photoProblem } from './images';
+import { safeAsync } from './security';
 import express from 'express';
 import { createHash, randomBytes } from 'node:crypto';
 import { viewFor, run, GameError, CATALOG } from '../engine/index';
@@ -22,6 +23,7 @@ export type Ctx = {
   loadUser: (id: number) => Promise<any>;
   apps: any;
   alertsFor: (userId: number) => any[] | null;
+  limited?: (key: string, n?: number) => boolean;
 };
 
 const hash = (k: string) => createHash('sha256').update(k).digest('hex');
@@ -30,7 +32,7 @@ export const keyHash = hash;
 export const MAX_KEYS = 5;
 
 export function publicApi(c: Ctx) {
-  const r = express.Router();
+  const r = safeAsync(express.Router());
   const keys = new Map<string, any>(); // hash -> key row, cached
   const hits = new Map<string, { n: number; at: number }>();
   (r as any).forgetKey = (h: string) => keys.delete(h);
@@ -168,14 +170,21 @@ export function publicApi(c: Ctx) {
     }
   };
   r.get('/hooks', wrap((req) => c.apps.listHooks(req.key.user_id)));
-  r.post('/hooks', wrap((req) => c.apps.addHook(req.key.user_id, req.body?.url, req.body?.kind || 'gazette', (c.alertsFor(req.key.user_id) || []).map((a: any) => a.key))));
+  // changing webhooks is a write: read-only keys can only list them
+  const actKey = (req: any) => {
+    if (req.key.scope !== 'act') throw new Error('This key is read-only. Make a key with the "act" scope to change webhooks.');
+  };
+  r.post('/hooks', wrap(async (req) => actKey(req) ?? c.apps.addHook(req.key.user_id, req.body?.url, req.body?.kind || 'gazette', (c.alertsFor(req.key.user_id) || []).map((a: any) => a.key))));
   // your alerts right now, the same list a personal webhook works from
   r.get('/alerts', async (req: any, res) => {
     await c.serial(c.catchUp);
     res.json(c.alertsFor(req.key.user_id) || []);
   });
-  r.post('/hooks/delete', wrap(async (req) => (await c.apps.removeHook(req.key.user_id, Number(req.body?.id) || 0), { ok: true })));
-  r.post('/hooks/test', wrap((req) => c.apps.testHook(req.key.user_id, Number(req.body?.id) || 0, c.world().config.realmName)));
+  r.post('/hooks/delete', wrap(async (req) => (actKey(req), await c.apps.removeHook(req.key.user_id, Number(req.body?.id) || 0), { ok: true })));
+  r.post('/hooks/test', wrap(async (req) => {
+    if (c.limited?.('hooktest:' + req.key.user_id, 5)) throw new Error('Too many tests. Wait a minute.');
+    return c.apps.testHook(req.key.user_id, Number(req.body?.id) || 0, c.world().config.realmName);
+  }));
 
   r.use((_req, res) => res.status(404).json({ error: 'No such endpoint. GET /api/v1 lists them.' }));
   return r as express.Router & { forgetKey: (h: string) => void };

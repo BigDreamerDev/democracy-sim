@@ -81,6 +81,15 @@ Rated by impact for *this* game. ✓ = fixed in this review.
 | S16 ✓ | Bootstrapping a new database needs an admin. | Medium | `ADMIN_USERNAME`/`ADMIN_PASSWORD` create one only when no admin exists, through the same password rules and bcrypt cost; the boot log says to remove the password from the environment. |
 | S15 ✓ | Insider trading and the Hunt ring are secrets. | Medium | Insider-trading cards go only to the Security Service and one other player; the Hunt ring is stripped to your own target in `viewFor`. |
 | S13 ✓ | Contracts, bets and orders are private by the rules. | Medium | `viewFor` sends a contract only to whoever took it out (and to its target once it's claimed), bets only to the bettor (pools are public), orders only to buyer and seller, the bodyguard's charge only to the two of them. |
+| S19 ✓ | A failed database call or a thrown error in an async route ended the whole process (Express 4 + Node 22), and two sign-ups racing for one username did it on demand. | Critical | Every handler on the app and the `/api/v1` router is wrapped (`safeAsync` in `server/security.ts`) so errors become a JSON 500; a username race is a 409; `unhandledRejection` is logged, never fatal. |
+| S20 ✓ | A deadline that threw (a bad bill clause, a broken loan) made every read throw, and every restart replayed it: a crash loop. | Critical | The engine quarantines a deadline that throws (`w.clockErrors`, shown to the RO) and carries on; the server logs clock errors, still answers, and always re-arms its timer. |
+| S21 ✓ | Ids like `toString` or `__proto__` matched built-in object properties, so `prop.new` with `kind: "toString"` put a function in the world and broke every request. | Critical | Engine lookups by player-supplied id use own properties only (`own()` in `engine/core.ts`), and command, kind and catalog lookups too. |
+| S22 ✓ | Webhook addresses were checked by one DNS lookup and fetched by another (DNS rebinding); multicast and reserved ranges weren't refused. | Medium | The address is checked inside the connection's own lookup, so what's checked is what's called; multicast, reserved, benchmarking and NAT64 ranges refused. |
+| S23 ✓ | Read-only API keys could add and delete webhooks; webhook tests had no limit. | Low | Changing webhooks needs an `act` key; tests are 5 a minute per player. |
+| S24 ✓ | The RO's temporary passwords and OAuth username suffixes used `Math.random`. | Low | `crypto.randomInt`. |
+| S25 ✓ | Secrets left in `viewFor`: the Hunt ring's order (`hunt.alive`), who leaked an anonymous card (`leakedBy`), other players' counters (`stats`, `life`, `weekIncome`: sends, insider trades, highest balance), a venture's result before it returns, stall ratings (who bought), unpublished stories. | High | All stripped or reduced to what the rules make public. |
+| S26 ✓ | Player text had no length cap and several lists no count cap, so one account could bloat the saved world (rewritten to Neon on every save). | Medium | Length caps on all player text, caps on speeches per person per proposal and similar. |
+| S27 ✓ | The dev server listened on the network, and its copy-desk endpoints (which write source files) accepted requests from any site open in your browser. | Medium | Dev server on `localhost` only; `/__copy` refuses foreign origins and bad bodies. The production CSP no longer allows `http://localhost`. |
 
 ### The Returning Officer
 
@@ -97,6 +106,11 @@ kept in the public log**. A password reset also clears any lockout.
   are in the database and survive.
 - **No two-factor login on passwords.** Add a passkey (it needs your device *and* your face, fingerprint or
   PIN) and sign in with that instead, or link a provider that has 2FA. A password, while set, still works alone.
+- **The site's origin is `bigdreamerdev.github.io`**, shared with every other GitHub Pages site of that account. The
+  session token (localStorage), the CSP's `'self'` and the passkey RP ID all trust that origin, so never publish another
+  Pages site from that account, or move the Realm to its own domain.
+- **`trust proxy` is 1**: it must match Render's proxy hops, or the per-IP limits see the proxy's address (or a forged one).
+- **The Neon connection doesn't pin its certificate** (`rejectUnauthorized: false`): TLS still encrypts it; accepted for Neon's pooler.
 - **Apple needs a paid Apple Developer account** (about $99 a year). The other three are free. Apple's
   button only appears once it's configured.
 

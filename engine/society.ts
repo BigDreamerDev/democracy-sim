@@ -1,12 +1,20 @@
 // The press and the Friday front page, the Supreme Court, and the weekly crisis.
-import { W, Id, DAY, WEEK, fail, newId, pick, cit, nm, allCitizens, mustBeFree, gazette, earn, stamp, transfer, ca, meter, approve, tick, isPM, weekNo, standing, fmtDay, addCard, holderOf } from './core';
+import { W, Id, DAY, WEEK, fail, newId, pick, cit, nm, own, text, allCitizens, mustBeFree, gazette, earn, stamp, transfer, ca, meter, approve, tick, isPM, weekNo, standing, fmtDay, addCard, holderOf } from './core';
 import { armyLoyalty } from './foreign';
 import { photoId } from './streets';
+
+// longer player writing (story bodies, arguments): keeps its line breaks, capped
+function prose(v: unknown, max: number, what: string) {
+  if (v !== undefined && v !== null && typeof v !== 'string') fail(`The ${what} must be text.`);
+  const t = String(v ?? '').trim();
+  if (t.length > max) fail(`Keep the ${what} under ${max} characters.`);
+  return t;
+}
 
 // ---------- press ----------
 export function foundPaper(w: W, actor: Id, name: string) {
   mustBeFree(w, actor);
-  if ((name || '').trim().length < 3) fail('Name the paper.');
+  name = text(name, 3, 40, 'paper’s name');
   if (Object.values(w.papers).some((p: any) => p.editor === actor)) fail('You already edit a paper.');
   transfer(w, ca(actor), 'treasury', 10, 'Newspaper registration');
   const id = newId(w, 'np');
@@ -14,25 +22,27 @@ export function foundPaper(w: W, actor: Id, name: string) {
   gazette(w, 'press', `${nm(w, actor)} launches a newspaper, ${name.trim()}.`, '#/press');
 }
 export function follow(w: W, actor: Id, pid: Id) {
-  const p = w.papers[pid];
+  const p = own(w.papers, pid);
   if (!p) fail('No such paper.');
   const i = p.followers.indexOf(actor);
   i >= 0 ? p.followers.splice(i, 1) : p.followers.push(actor);
 }
 export function submitStory(w: W, actor: Id, pid: Id, headline: string, body: string, photo?: string | null) {
   mustBeFree(w, actor);
-  const p = w.papers[pid];
+  const p = own(w.papers, pid);
   if (!p) fail('Pick a paper.');
-  if ((headline || '').trim().length < 5) fail('Write a headline.');
-  const own = p.editor === actor;
-  w.stories.unshift({ id: newId(w, 'st'), paper: pid, by: actor, headline: headline.trim(), body: (body || '').trim(), photo: photoId(photo), status: own ? 'published' : 'submitted', at: w.now, cheers: [] });
+  const h = text(headline, 5, 120, 'headline');
+  const b = prose(body, 2000, 'story');
+  if (w.stories.filter((x: any) => x.by === actor && x.at > w.now - DAY).length >= 5) fail('You have filed 5 stories today. Come back tomorrow.');
+  const mine = p.editor === actor;
+  w.stories.unshift({ id: newId(w, 'st'), paper: pid, by: actor, headline: h, body: b, photo: photoId(photo), status: mine ? 'published' : 'submitted', at: w.now, cheers: [] });
   tick(w, actor, 'stories');
-  if (own) earn(w, actor, 1, 'Published a story');
+  if (mine) earn(w, actor, 1, 'Published a story');
 }
 export function editStory(w: W, actor: Id, sid: Id, yes: boolean) {
   const s = w.stories.find((x: any) => x.id === sid);
   if (!s || s.status !== 'submitted') fail('That story is not waiting.');
-  if (w.papers[s.paper].editor !== actor) fail('Only the editor decides.');
+  if (own(w.papers, s.paper)?.editor !== actor) fail('Only the editor decides.');
   s.status = yes ? 'published' : 'spiked';
   s.at = w.now;
   if (yes) earn(w, s.by, 1, 'Story published');
@@ -94,20 +104,23 @@ function snapshotOfWeek(w: W, since: number) {
 export function fileCase(w: W, actor: Id, question: string, against: string, lawRef: string | null, argument: string) {
   if (!w.offices.court) fail('There is no Supreme Court yet.');
   mustBeFree(w, actor);
-  if ((question || '').trim().length < 10) fail('State the question for the Court.');
+  const q = text(question, 10, 200, 'question for the Court');
+  const vs = text(against, 0, 60, 'name of who it is against') || 'the government';
+  const ref = text(lawRef, 0, 10, 'law reference') || null;
+  const arg = prose(argument, 2000, 'argument');
   transfer(w, ca(actor), 'treasury', 5, 'Court fee');
   const id = newId(w, 'case');
-  w.cases[id] = { id, plaintiff: actor, question: question.trim(), against: against || 'the government', lawRef: lawRef || null, args: { plaintiff: (argument || '').trim(), defence: '' }, votes: {}, status: 'open', at: w.now, dueAt: w.now + 3 * DAY };
-  gazette(w, 'court', `${nm(w, actor)} brings a case: ${question.trim()}`, '#/case/' + id);
+  w.cases[id] = { id, plaintiff: actor, question: q, against: vs, lawRef: ref, args: { plaintiff: arg, defence: '' }, votes: {}, status: 'open', at: w.now, dueAt: w.now + 3 * DAY };
+  gazette(w, 'court', `${nm(w, actor)} brings a case: ${q}`, '#/case/' + id);
 }
 export function defendCase(w: W, actor: Id, cid: Id, text: string) {
-  const k = w.cases[cid];
+  const k = own(w.cases, cid);
   if (!k || k.status !== 'open') fail('That case is closed.');
   if (!isPM(w, actor) && !Object.values(w.offices).some((o: any) => o.holder === actor && o.fill === 'pm')) fail('The government (PM or a minister) answers cases.');
-  k.args.defence = (text || '').trim();
+  k.args.defence = prose(text, 2000, 'defence');
 }
 export function judge(w: W, actor: Id, cid: Id, side: 'plaintiff' | 'defence') {
-  const k = w.cases[cid];
+  const k = own(w.cases, cid);
   if (!k || k.status !== 'open') fail('That case is closed.');
   if (!(w.offices.court?.members || []).includes(actor)) fail('Only the justices decide.');
   if (side !== 'plaintiff' && side !== 'defence') fail('Find for the plaintiff or the defence.');

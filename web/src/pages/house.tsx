@@ -8,6 +8,8 @@ import { TEMPLATES, POWERS, FILL } from '../../../engine/offices';
 
 const STAGE: Record<string, string> = { debate: 'Debate', vote: 'Voting', assent: 'Awaiting assent', override: 'Veto override', hos: 'With the head of state', enacted: 'Law', passed: 'Passed', failed: 'Defeated', vetoed: 'Vetoed', withheld: 'Assent refused' };
 const LIVE = ['debate', 'vote', 'assent', 'override', 'hos'];
+// a whole number from 0 to max, for the bill form's crowns fields
+const whole = (v: string, max: number) => Math.min(max, Math.max(0, Math.round(Number(v)) || 0));
 
 export function House() {
   const { world: w } = useStore();
@@ -85,7 +87,7 @@ export function Proposal({ id }: { id: string }) {
   const blocker = officeWithPower(w, me, 'block');
   return (
     <Page back={['#/house', 'The House']} kicker={<>{KINDS[p.kind].name}{p.kind === 'bill' ? ` ${p.n}` : ''}, by <Who id={p.by} />{p.constitutional ? ', constitutional' : ''}{p.fast ? ', fast-tracked' : ''}</>} title={p.title}>
-      {['enacted', 'passed', 'failed', 'vetoed'].includes(p.stage) && <Stamp label={['enacted', 'passed'].includes(p.stage) ? 'Passed' : p.stage === 'vetoed' ? 'Vetoed' : 'Defeated'} sub={p.lawRef || (p.result ? `${p.result.ayes} to ${p.result.noes}` : '')} red={failed} style={{ top: 70, right: 16 }} />}
+      {['enacted', 'passed', 'failed', 'vetoed'].includes(p.stage) && <Stamp label={['enacted', 'passed'].includes(p.stage) ? 'Passed' : p.stage === 'vetoed' ? 'Vetoed' : 'Defeated'} sub={p.lawRef || (p.result ? `${p.result.ayes} to ${p.result.noes}` : '')} red={failed} style={{ top: 70, right: 16, transformOrigin: '100% 0' }} />}
       {p.summary && <p class="intro">{p.summary}</p>}
       <ol class="steps" aria-label="Stages" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
         {steps.map((s, i) => <li aria-current={i === idx ? 'step' : undefined} class={i < idx || (i === idx && !failed && !LIVE.includes(p.stage)) ? 'done' : i === idx ? (failed ? 'bad' : 'now') : ''}><span />{s}</li>)}
@@ -299,14 +301,14 @@ function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; onChang
                 <Seg value={ob.fill || 'pm'} onChange={(v) => setOb('fill', v)} options={Object.entries(FILL).map(([k]) => [k, ({ pm: 'PM', house: 'MPs', citizens: 'Everyone', lot: 'Lot' } as any)[k]])} />
                 <div class="small" style={{ fontWeight: 700 }}>Powers</div>
                 <div class="stack" style={{ gap: 6 }}>{['grant', 'question', 'files', 'fine', 'block'].map((k) => <Opt on={(ob.powers || []).includes(k)} onClick={() => setOb('powers', (ob.powers || []).includes(k) ? ob.powers.filter((x: string) => x !== k) : [...(ob.powers || []), k])} title={POWERS[k].label} right={POWERS[k].strong ? <span class="chip red">Strong</span> : undefined} />)}</div>
-                <div class="grid2"><Field label="Weekly budget" type="number" value={ob.budget ?? 0} onInput={(v) => setOb('budget', Number(v))} /><div><div class="small" style={{ fontWeight: 700, marginBottom: 6 }}>Visibility</div><Seg value={ob.secrecy || 'public'} onChange={(v) => setOb('secrecy', v)} options={[['public', 'Public'], ['secret', 'Secret']]} /></div></div>
+                <div class="grid2"><Field label="Weekly budget (0–200)" type="number" value={ob.budget ?? 0} onInput={(v) => setOb('budget', whole(v, 200))} /><div><div class="small" style={{ fontWeight: 700, marginBottom: 6 }}>Visibility</div><Seg value={ob.secrecy || 'public'} onChange={(v) => setOb('secrecy', v)} options={[['public', 'Public'], ['secret', 'Secret']]} /></div></div>
               </>
             )}
           </>
         )}
         {e.t === 'set' && <div class="grid2"><Pick label="Number" value={e.key} onChange={(v) => onChange({ ...e, key: v, value: w.config[v] })} options={Object.entries(SETTABLE).map(([k, s]) => [k, s.label])} /><Field label={`New value (now ${w.config[e.key]})`} type="number" value={e.value} onInput={(v) => onChange({ ...e, value: Number(v) })} /></div>}
         {(e.t === 'budget' || e.t === 'abolish') && <Pick label="Office" value={e.office} onChange={(v) => onChange({ ...e, office: v })} options={Object.values(w.offices).map((o: any) => [o.id, o.name])} />}
-        {e.t === 'budget' && <Field label="Crowns a week" type="number" value={e.value} onInput={(v) => onChange({ ...e, value: Number(v) })} />}
+        {e.t === 'budget' && <Field label="Crowns a week (0–200)" type="number" value={e.value} onInput={(v) => onChange({ ...e, value: whole(v, 200) })} />}
         {e.t === 'permit' && <p class="small muted" style={{ margin: 0 }}>Lets any citizen open a licensed bank (25 crowns plus 25 starting capital).</p>}
         {e.t === 'treaty' && (Object.keys(w.offers).length ? <Pick value={e.offer} onChange={(v) => onChange({ ...e, offer: v })} options={Object.values(w.offers).map((o: any) => [o.id, o.title])} /> : <p class="small muted">No offers right now. The Foreign Office can ask for one.</p>)}
         {e.t === 'breakTreaty' && (Object.values(w.treaties).some((t: any) => t.status === 'active') ? <Pick value={e.treaty} onChange={(v) => onChange({ ...e, treaty: v })} options={Object.values(w.treaties).filter((t: any) => t.status === 'active').map((t: any) => [t.id, t.title])} /> : <p class="small muted">No treaties in force.</p>)}
@@ -320,7 +322,7 @@ function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; onChang
             {e.key === 'hosMethod' && <Pick value={e.value} onChange={(v) => onChange({ ...e, value: v, label: HOS_METHODS[w.config.hos].find((m) => m.id === v)?.label.toLowerCase() })} options={HOS_METHODS[w.config.hos].map((m) => [m.id, m.label])} />}
           </>
         )}
-        {e.t === 'job' && <><Field label="The job" value={e.title} onInput={(v) => onChange({ ...e, title: v })} placeholder="e.g. Pick up litter in a park for 20 minutes" /><Field label="Wage each time (1–30 crowns)" type="number" value={e.pay} onInput={(v) => onChange({ ...e, pay: Math.round(Number(v)) })} /><p class="small muted" style={{ margin: 0 }}>Anyone can claim it once a week. The Chancellor (or PM) signs off each claim; the Treasury pays.</p></>}
+        {e.t === 'job' && <><Field label="The job" value={e.title} onInput={(v) => onChange({ ...e, title: v })} placeholder="e.g. Pick up litter in a park for 20 minutes" /><Field label="Wage each time (1–30 crowns)" type="number" value={e.pay} onInput={(v) => onChange({ ...e, pay: Math.max(1, whole(v, 30)) })} /><p class="small muted" style={{ margin: 0 }}>Anyone can claim it once a week. The Chancellor (or PM) signs off each claim; the Treasury pays.</p></>}
         {e.t === 'zone' && <Field label="Where nothing counts" value={e.text} onInput={(v) => onChange({ ...e, text: v })} placeholder="e.g. The library" />}
         {(e.t === 'war' || e.t === 'peace') && <Pick value={e.nation} onChange={(v) => onChange({ ...e, nation: v })} options={Object.values(w.nations).map((x: any) => [x.id, x.name])} />}
       </div>

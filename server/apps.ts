@@ -1,7 +1,8 @@
 // Players' apps: registering an app, "Sign in with the Realm" (consent → a key handed back to the app),
 // the public app directory, and webhooks that push every new Gazette entry to a URL.
 import { createHash, createHmac, randomBytes } from 'node:crypto';
-import { lookup } from 'node:dns/promises';
+import { lookup } from 'node:dns';
+import https from 'node:https';
 import { isIP } from 'node:net';
 import type { Q } from './db';
 
@@ -71,22 +72,34 @@ export function checkRedirect(raw: string) {
   if (u.hash) throw new Error('Leave the #part off the redirect address.');
   return href;
 }
-const privateIp = (ip: string) =>
-  /^(10\.|127\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(ip) || ip === '::1' || /^f[cd]/i.test(ip) || /^fe80/i.test(ip) || ip.startsWith('::ffff:');
-// webhooks are fetched by the server, so never let one point inside Render's network
-async function safeToCall(url: string) {
-  const host = new URL(url).hostname.replace(/^\[|\]$/g, '');
-  if (host === 'localhost' || host.endsWith('.internal') || host.endsWith('.local')) return false;
-  const ips = isIP(host) ? [host] : (await lookup(host, { all: true })).map((a) => a.address);
-  return ips.length > 0 && !ips.some(privateIp);
-}
+// private, loopback, link-local, carrier-grade NAT, benchmarking, multicast and reserved ranges, v4 and v6
+export const privateIp = (ip: string) =>
+  /^(10\.|127\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|198\.1[89]\.|22[4-9]\.|2[3-5]\d\.)/.test(ip) ||
+  ip === '::1' || ip === '::' || /^f[cdf]/i.test(ip) || /^fe[89ab]/i.test(ip) || ip.startsWith('::ffff:') || /^64:ff9b:/i.test(ip);
+// The address is checked as the connection is made (in `lookup`), so a name can't resolve to a public address
+// for the check and a private one for the request (DNS rebinding).
+const checkedLookup = (host: string, opts: any, cb: any) =>
+  lookup(host, { all: true }, (err, addrs) => {
+    if (err) return cb(err);
+    if (!addrs.length || addrs.some((a) => privateIp(a.address))) return cb(new Error('address not allowed'));
+    opts?.all ? cb(null, addrs) : cb(null, addrs[0].address, addrs[0].family);
+  });
 
 export type Sender = (url: string, body: string, headers: Record<string, string>) => Promise<number>;
-export const defaultSender: Sender = async (url, body, headers) => {
-  if (!(await safeToCall(url))) throw new Error('address not allowed');
-  const r = await fetch(url, { method: 'POST', body, headers, redirect: 'manual', signal: AbortSignal.timeout(5000) });
-  return r.status;
-};
+// webhooks are fetched by the server, so never let one point inside Render's network. No redirects, 5 seconds.
+export const defaultSender: Sender = (url, body, headers) =>
+  new Promise((ok, no) => {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^\[|\]$/g, '');
+    if (u.protocol !== 'https:' || host === 'localhost' || host.endsWith('.internal') || host.endsWith('.local') || (isIP(host) && privateIp(host))) return no(new Error('address not allowed'));
+    const req = https.request(u, { method: 'POST', headers: { ...headers, 'Content-Length': String(Buffer.byteLength(body)) }, lookup: checkedLookup as any, timeout: 5000 }, (res) => {
+      res.resume();
+      ok(res.statusCode || 0);
+    });
+    req.on('timeout', () => req.destroy(new Error('timed out')));
+    req.on('error', no);
+    req.end(body);
+  });
 
 export function apps(q: Q, log: (...a: any[]) => void, send: Sender = defaultSender) {
   // ---------- the app registry ----------
@@ -237,9 +250,11 @@ export function apps(q: Q, log: (...a: any[]) => void, send: Sender = defaultSen
   let personalChain: Promise<any> = Promise.resolve();
   function notify(alertsFor: (userId: number) => any[] | null, realm: string, site: string) {
     personalChain = personalChain.then(async () => {
-      const hooks = (await q("SELECT * FROM v2_hooks WHERE NOT deleted AND NOT disabled AND kind = 'personal'")).rows;
+      const hooks = (await q("SELECT h.* FROM v2_hooks h JOIN users u ON u.id = h.user_id WHERE NOT h.deleted AND NOT h.disabled AND h.kind = 'personal' AND u.is_active")).rows;
+      const byUser = new Map<number, any[] | null>();
       for (const h of hooks) {
-        const cur = alertsFor(h.user_id);
+        if (!byUser.has(h.user_id)) byUser.set(h.user_id, alertsFor(h.user_id));
+        const cur = byUser.get(h.user_id);
         if (!cur) continue;
         const seen: string[] = h.seen || [];
         const fresh = cur.filter((a) => !seen.includes(a.key));

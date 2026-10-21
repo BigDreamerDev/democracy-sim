@@ -36,9 +36,27 @@ export function shuffle<T>(w: W, a: T[]): T[] {
 }
 export const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
+// ---------- untrusted input ----------
+// own(obj, key): obj[key] only if it is the object's own entry, so ids like "toString" or "__proto__" find nothing
+export const own = (o: any, k: unknown): any => (o && typeof k === 'string' && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined);
+// text(v, min, max, what): a trimmed string of min..max characters, or a friendly refusal
+export function text(v: unknown, min: number, max: number, what: string): string {
+  if (v !== undefined && v !== null && typeof v !== 'string') fail(`The ${what} must be text.`);
+  const t = String(v ?? '').trim().replace(/\s+/g, ' ');
+  if (t.length < min) fail(min > 1 ? `Write the ${what} (at least ${min} characters).` : `Write the ${what}.`);
+  if (t.length > max) fail(`Keep the ${what} under ${max} characters.`);
+  return t;
+}
+// int(v, min, max, what): a whole number in range
+export function int(v: unknown, min: number, max: number, what: string): number {
+  const n = Number(v);
+  if (typeof v === 'boolean' || v === null || v === '' || !Number.isInteger(n) || n < min || n > max) fail(`The ${what} must be a whole number from ${min} to ${max}.`);
+  return n;
+}
+
 // ---------- citizens ----------
 export function cit(w: W, id: Id) {
-  const c = w.citizens[id];
+  const c = own(w.citizens, id);
   if (!c) fail('No such citizen.');
   return c;
 }

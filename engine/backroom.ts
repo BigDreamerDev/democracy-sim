@@ -1,5 +1,5 @@
 // The backroom: private deals, secret cards (leak, use or burn), coups, exile and pardons. Opens in week 3.
-import { W, Id, DAY, fail, newId, chance, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, meter, needIntrigue, canSeeCard, addCard, isHOS, isMP, isPM, inDanger, holderOf, transfer, ca, hosTitle, bump } from './core';
+import { W, Id, DAY, fail, newId, chance, cit, nm, own, text as txt, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, meter, needIntrigue, canSeeCard, addCard, isHOS, isMP, isPM, inDanger, holderOf, transfer, ca, hosTitle, bump } from './core';
 import { vacateSeat, clearMinisters, callGeneralElection } from './politics';
 
 // ---------- private deals: written down, never enforced ----------
@@ -8,12 +8,13 @@ export function offerDeal(w: W, actor: Id, to: Id, text: string) {
   mustBeFree(w, actor);
   cit(w, to);
   if (to === actor) fail('Pick someone else.');
-  if ((text || '').trim().length < 8) fail('Write the deal.');
+  const t = txt(text, 8, 500, 'deal');
+  if (Object.values(w.deals).filter((d: any) => d.from === actor && d.status === 'offered').length >= 5) fail('You have 5 deals waiting for an answer. Wait for one first.');
   const id = newId(w, 'd');
-  w.deals[id] = { id, from: actor, to, text: text.trim(), status: 'offered', at: w.now };
+  w.deals[id] = { id, from: actor, to, text: t, status: 'offered', at: w.now };
 }
 export function answerDeal(w: W, actor: Id, id: Id, yes: boolean) {
-  const d = w.deals[id];
+  const d = own(w.deals, id);
   if (!d || d.status !== 'offered' || d.to !== actor) fail('That deal is not for you.');
   d.status = yes ? 'accepted' : 'refused';
   if (yes) {
@@ -23,7 +24,7 @@ export function answerDeal(w: W, actor: Id, id: Id, yes: boolean) {
   }
 }
 export function exposeDeal(w: W, actor: Id, id: Id) {
-  const d = w.deals[id];
+  const d = own(w.deals, id);
   if (!d || d.status !== 'accepted') fail('Only an accepted deal can be exposed.');
   if (d.from !== actor && d.to !== actor) fail('Only the two people in it can expose it.');
   const other = d.from === actor ? d.to : d.from;
@@ -41,7 +42,7 @@ export function leakCard(w: W, actor: Id, kid: Id, paperId: Id | null) {
   if (!k || !canSeeCard(w, k, actor)) fail('You do not hold that card.');
   k.state = 'leaked';
   k.leakedBy = actor;
-  const paper = paperId && w.papers[paperId];
+  const paper = paperId ? own(w.papers, paperId) : null;
   const named = chance(w, k.level === 'secret' ? 0.5 : 0.25);
   approve(w, k.about, -10);
   meter(w, 'stability', -4, 'A leak became a scandal');
@@ -63,13 +64,13 @@ export function useCard(w: W, actor: Id, kid: Id, ask: string) {
   if (!k || !canSeeCard(w, k, actor)) fail('You do not hold that card.');
   if (!k.about) fail('That card is not about anyone in particular.');
   if (k.about === actor) fail('That card is about you.');
-  if (!ASKS[ask]) fail('Pick what you want.');
+  if (!own(ASKS, ask)) fail('Pick what you want.');
   if (Object.values(w.demands).some((d: any) => d.card === kid && d.status === 'sent')) fail('You are already using that card.');
   const id = newId(w, 'dm');
   w.demands[id] = { id, from: actor, target: k.about, card: kid, ask, status: 'sent', at: w.now, dueAt: w.now + DAY };
 }
 export function answerDemand(w: W, actor: Id, id: Id, how: 'comply' | 'expose') {
-  const d = w.demands[id];
+  const d = own(w.demands, id);
   if (!d || d.status !== 'sent' || d.target !== actor) fail('That demand is not for you.');
   if (how !== 'comply' && how !== 'expose') fail('Comply or expose it.');
   const k = w.cards.find((x: any) => x.id === d.card);
@@ -118,17 +119,17 @@ export function startPlot(w: W, actor: Id, name: string) {
   if (Object.values(w.plots).some((p: any) => p.status === 'planning' && p.members.includes(actor))) fail('You are already in a plot.');
   spend(w, actor, 20, 'Started a plot');
   const id = newId(w, 'pl');
-  w.plots[id] = { id, name: (name || '').trim() || 'Operation Nightjar', leader: actor, members: [actor], invited: {}, status: 'planning', at: w.now, nextCheck: w.now + DAY };
+  w.plots[id] = { id, name: txt(name, 0, 60, 'plot name') || 'Operation Nightjar', leader: actor, members: [actor], invited: {}, status: 'planning', at: w.now, nextCheck: w.now + DAY };
 }
 export function invitePlot(w: W, actor: Id, pid: Id, target: Id) {
-  const p = w.plots[pid];
+  const p = own(w.plots, pid);
   if (!p || p.status !== 'planning' || !p.members.includes(actor)) fail('Only plotters can recruit.');
   cit(w, target);
   if (p.members.includes(target) || p.invited[target]) fail('Already approached.');
   p.invited[target] = 'pending';
 }
 export function answerPlot(w: W, actor: Id, pid: Id, join: boolean) {
-  const p = w.plots[pid];
+  const p = own(w.plots, pid);
   if (!p || p.status !== 'planning' || p.invited[actor] !== 'pending') fail('There is no invitation for you.');
   if (join) {
     p.invited[actor] = 'joined';
@@ -141,7 +142,7 @@ export function answerPlot(w: W, actor: Id, pid: Id, join: boolean) {
   }
 }
 export function launchCoup(w: W, actor: Id, pid: Id) {
-  const p = w.plots[pid];
+  const p = own(w.plots, pid);
   if (!p || p.status !== 'planning' || p.leader !== actor) fail('Only the leader can launch it.');
   const r = plotNeeds(w, p);
   if (!r.enough) fail(`You need ${r.need} plotters.`);
@@ -158,7 +159,7 @@ export function launchCoup(w: W, actor: Id, pid: Id) {
   gazette(w, 'crisis', `Coup. ${nm(w, actor)} and ${p.members.length - 1} others seize power. Martial law for 3 days, then a Restoration election.`, '#/plots');
 }
 export function abandonPlot(w: W, actor: Id, pid: Id) {
-  const p = w.plots[pid];
+  const p = own(w.plots, pid);
   if (!p || p.status !== 'planning' || p.leader !== actor) fail('Only the leader can call it off.');
   p.status = 'abandoned';
 }
@@ -194,7 +195,7 @@ export function endMartialLaw(w: W) {
 export function seekAsylum(w: W, actor: Id, nid: Id) {
   const c = cit(w, actor);
   if (!exiled(w, actor)) fail('You are not in exile.');
-  if (!w.nations[nid]) fail('Unknown country.');
+  if (!own(w.nations, nid)) fail('Unknown country.');
   c.asylum = nid;
   gazette(w, 'foreign', `${c.name} takes refuge in ${w.nations[nid].name}.`);
 }

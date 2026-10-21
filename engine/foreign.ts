@@ -1,5 +1,5 @@
 // The five nations, envoys, treaty offers, the Security Service and the Army.
-import { W, Id, DAY, HOUR, fail, newId, rand, chance, pick, nm, gazette, earn, transfer, bal, hasPower, isPM, addCard, holderOf, clamp, inDanger, meter } from './core';
+import { W, Id, DAY, HOUR, fail, newId, rand, chance, pick, nm, gazette, earn, transfer, bal, hasPower, isPM, addCard, holderOf, clamp, inDanger, meter, own } from './core';
 
 export const MOODS = ['Hostile', 'Cold', 'Neutral', 'Friendly', 'Allied'];
 export function seedNations(w: W) {
@@ -26,7 +26,7 @@ function moodShift(n: any, d: number, text: string) {
 export function sendEnvoy(w: W, actor: Id, nid: Id) {
   if (!w.offices.foreign) fail('Envoys need a Foreign Office: pass the Foreign Affairs Act.');
   if (!foreignPower(w, actor)) fail('Only the Foreign Minister sends envoys.');
-  const n = w.nations[nid];
+  const n = own(w.nations, nid);
   if (!n) fail('Unknown country.');
   if (n.envoyAt && w.now - n.envoyAt < 7 * DAY) fail('One envoy per country each week.');
   n.envoyAt = w.now;
@@ -58,7 +58,7 @@ export function maybeOffers(w: W) {
 export function proposeTreaty(w: W, actor: Id, nid: Id, kind: string) {
   if (!w.offices.foreign) fail('This needs a Foreign Office.');
   if (!foreignPower(w, actor)) fail('Only the Foreign Minister proposes treaties.');
-  const n = w.nations[nid];
+  const n = own(w.nations, nid);
   const t = TREATIES.find((x) => x.kind === kind);
   if (!n || !t) fail('Pick a country and a treaty.');
   if (w.asks.some((a: any) => a.nation === nid && a.status === 'sent')) fail('We are already waiting on them.');
@@ -86,7 +86,7 @@ export const INTEL_Q: Record<string, string> = {
 export function requestIntel(w: W, actor: Id, nid: Id, q: string) {
   if (!w.offices.security) fail('This needs a Security Service.');
   if (!hasPower(w, actor, 'intel') && !(isPM(w, actor) && !holderOf(w, 'security'))) fail('Only the Director sends requests.');
-  if (!w.nations[nid] || !INTEL_Q[q]) fail('Pick a country and a question.');
+  if (!own(w.nations, nid) || !own(INTEL_Q, q)) fail('Pick a country and a question.');
   if (bal(w, 'office:security') < 20) fail('The Service has spent this week’s budget. Each request costs 20.');
   transfer(w, 'office:security', 'escrow', 20, 'Intelligence request');
   w.intel.unshift({ id: newId(w, 'i'), nation: nid, q, by: actor, at: w.now, readyAt: w.now + 12 * HOUR, status: 'pending', text: null });

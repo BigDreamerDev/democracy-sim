@@ -6,7 +6,7 @@
 // - `chainOnly` crises never appear at random; `weight` makes a crisis rarer (default 1); `needs` limits where it fits.
 // `effects` is what players see before choosing, so keep it honest and in step with `run`.
 // Money only moves through transfer(), so the ledger balances.
-import { W, Id, DAY, HOUR, clamp, fail, newId, transfer, meter, approve, earn, addCard, allCitizens, holderOf, chance, rand, ca, bal, gazette, isMP, isPM, mps, nm, mustBeFree, weekNo, tick } from './core';
+import { W, Id, DAY, HOUR, clamp, fail, newId, transfer, meter, approve, earn, addCard, allCitizens, holderOf, chance, rand, ca, bal, gazette, isMP, isPM, mps, nm, mustBeFree, weekNo, tick, own } from './core';
 import { armyLoyalty } from './foreign';
 import { openMarket, settleMarket } from './markets';
 import { callGeneralElection } from './politics';
@@ -530,18 +530,18 @@ export function spawnCrisis(w: W, type?: string, cause?: string) {
 
 // the PM decides an ordinary crisis
 export function decideCrisis(w: W, actor: Id, id: Id, choice: number) {
-  const c = w.crises[id];
+  const c = own(w.crises, id);
   if (!c || c.status !== 'open') fail('That crisis is over.');
   if (c.house) fail('The House decides this one. MPs vote on it.');
   if (!isPM(w, actor)) fail('Only the Prime Minister decides.');
-  if (!crisisById(c.type)!.options[choice]) fail('Pick a response.');
+  if (!(Number.isInteger(choice) && crisisById(c.type)!.options[choice])) fail('Pick a response.');
   settle(w, c, choice, 'pm', actor);
 }
 
 // MPs vote on a House crisis; a majority of all seats settles it at once
 export function voteCrisis(w: W, actor: Id, id: Id, choice: number) {
   mustBeFree(w, actor);
-  const c = w.crises[id];
+  const c = own(w.crises, id);
   if (!c || c.status !== 'open') fail('That crisis is over.');
   if (!c.house) fail('The Prime Minister decides this one.');
   if (!isMP(w, actor)) fail('Only MPs vote on a crisis.');
@@ -555,7 +555,7 @@ export function voteCrisis(w: W, actor: Id, id: Id, choice: number) {
 // the debate: MPs (and the PM) argue for an option while the crisis is open. Two speeches each, in the Gazette.
 export function speakCrisis(w: W, actor: Id, id: Id, choice: number, text: string) {
   mustBeFree(w, actor);
-  const c = w.crises[id];
+  const c = own(w.crises, id);
   if (!c || c.status !== 'open') fail('That crisis is over.');
   if (!isMP(w, actor) && !isPM(w, actor)) fail('Only MPs and the PM speak on a crisis.');
   const t = crisisById(c.type)!;

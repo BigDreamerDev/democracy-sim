@@ -2,7 +2,7 @@
 // parties, forming a government, coalitions, the shadow cabinet, seasons, ambitions and weekly objectives.
 import {
   W, Id, DAY, HOUR, fail, newId, pick, rand, shuffle, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, stamp, approve,
-  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal, fmtDay, bump, adminDid
+  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal, fmtDay, bump, adminDid, own, text
 } from './core';
 import { openMarket, settleMarket } from './markets';
 import { seasonAwards } from './glory';
@@ -153,7 +153,7 @@ export function conventionPropose(w: W, actor: Id, a: any) {
   if (w.convention.clauses.filter((c: any) => c.by === actor).length >= 2) fail('You can table 2 clauses of your own.');
   let c: any;
   if (a?.setting) {
-    const s = SETTABLE_START[a.setting];
+    const s = own(SETTABLE_START, a.setting);
     if (!s) fail('Pick a setting to change.');
     const v = Math.round(Number(a.value));
     if (!(v >= s.min && v <= s.max)) fail(`${s.label}: pick from ${s.min} to ${s.max}.`);
@@ -162,9 +162,7 @@ export function conventionPropose(w: W, actor: Id, a: any) {
     c = { kind: 'setting', setting: a.setting, q: `Start with ${s.label.toLowerCase()} at ${v}${s.unit} (normally ${w.config[a.setting]}${s.unit}).` };
     c.vals = [v, null];
   } else {
-    const text = String(a?.text || '').trim().replace(/\s+/g, ' ');
-    if (text.length < 12 || text.length > 300) fail('Write the rule in 12 to 300 characters.');
-    c = { kind: 'custom', q: text, vals: [true, false] };
+    c = { kind: 'custom', q: text(a?.text, 12, 300, 'rule'), vals: [true, false] };
   }
   const id = newId(w, 'cl');
   w.convention.clauses.push({ ...c, id, options: ['Adopt', 'Reject'], optBy: [null, null], def: 1, by: actor, votes: {}, adopted: null, at: w.now });
@@ -312,11 +310,25 @@ export function endInduction(w: W) {
     const fresh = w.citizens[c.id];
     if (!fresh) {
       // joined during induction: a clean start like everyone else
-      w.citizens[c.id] = { ...c, party: null, influence: 10, seasonEarned: 0, approval: 50, log: [], stamps: [], titles: [], censures: 0, stats: {}, whip: { loyal: 0, rebel: 0 }, week: {}, objectives: [], exiledUntil: null, asylum: null, ambition: null, weekIncome: 0 };
-      w.accounts.reserve = (w.accounts.reserve || 0) - 100;
-      w.accounts['c:' + c.id] = 100;
+      w.citizens[c.id] = { ...c, party: null, influence: 10, seasonEarned: 0, approval: 50, log: [], stamps: [], titles: [], censures: 0, stats: {}, whip: { loyal: 0, rebel: 0 }, week: {}, objectives: [], exiledUntil: null, asylum: null, ambition: null, weekIncome: 0, life: {}, ghostUntil: null, deaths: [] };
+      if (c.active !== false) {
+        w.accounts.reserve = (w.accounts.reserve || 0) - 100;
+        w.accounts['c:' + c.id] = 100;
+      }
     } else fresh.admin = c.admin;
     const now = w.citizens[c.id];
+    // a duplicate account removed during induction stays removed (the snapshot is pre-election, so it holds no seat)
+    if (c.active === false) {
+      now.active = false;
+      now.removed = c.removed;
+      now.party = null;
+      Object.values(w.offices).forEach((o: any) => {
+        if (o.holder === c.id) o.holder = null;
+        o.members = (o.members || []).filter((m: Id) => m !== c.id);
+      });
+      if (w.hos.holder === c.id) w.hos = { holder: null, since: w.now, until: null };
+      return;
+    }
     now.tutorial = c.tutorial || {};
     // opting in to the Streets is consent, not practice; it carries over (contracts made in practice do not)
     now.streets = c.streets?.in ? { in: true, since: w.now } : c.streets || { in: false };
@@ -368,19 +380,22 @@ export function canVote(w: W, e: any, id: Id) {
 }
 export function stand(w: W, actor: Id, eid: Id) {
   mustBeFree(w, actor);
-  const e = w.elections[eid];
+  const e = own(w.elections, eid);
   if (!e || e.status !== 'open') fail('That election is not open.');
   const c = cit(w, actor);
   if (e.stand.startsWith('party:') && c.party !== e.stand.slice(6)) fail('Only party members can stand.');
   if (e.candidates[actor]) fail('You are already standing.');
+  if ((e.withdrawn || []).includes(actor)) fail('You withdrew from this election. You can’t stand again in it.');
   e.candidates[actor] = { id: actor, party: c.party, at: w.now };
   gazette(w, 'election', `${c.name} stands in the ${e.title.toLowerCase()}.`, '#/election/' + e.id);
 }
 export function withdraw(w: W, actor: Id, eid: Id) {
-  const e = w.elections[eid];
-  if (!e || e.status !== 'open' || !e.candidates[actor]) fail('You are not standing.');
+  const e = own(w.elections, eid);
+  if (!e || e.status !== 'open' || !own(e.candidates, actor)) fail('You are not standing.');
+  // once anyone has voted for you, withdrawing would spoil their ballot (and could be repeated to farm Influence)
+  if (Object.values(e.ballots).some((b: any) => b === actor || (Array.isArray(b) && b.includes(actor)))) fail('People have voted for you. You can’t withdraw now.');
   delete e.candidates[actor];
-  Object.keys(e.ballots).forEach((v) => e.ballots[v] === actor && delete e.ballots[v]);
+  e.withdrawn = [...(e.withdrawn || []), actor];
 }
 // ---------- how ballots are cast and counted: chosen at the Convention (config.voting) ----------
 export const VOTING: Record<string, { label: string; short: string; how: string; unit: string }> = {
@@ -390,19 +405,19 @@ export const VOTING: Record<string, { label: string; short: string; how: string;
   borda: { label: 'Points: rank them; each place down scores one point less', short: 'Points (Borda)', how: 'Number the candidates in order. First place scores the most points.', unit: 'points' }
 };
 export function castBallot(w: W, actor: Id, eid: Id, cand: Id, a: any = {}) {
-  const e = w.elections[eid];
+  const e = own(w.elections, eid);
   if (!e || !canVote(w, e, actor)) fail('You cannot vote in this election.');
   if (e.ballots[actor]) fail('Your ballot is cast. It cannot be changed.');
   const method = e.method || 'single';
   if (method === 'single') {
-    if (!e.candidates[cand]) fail('That person is not standing.');
+    if (!own(e.candidates, cand)) fail('That person is not standing.');
     e.ballots[actor] = cand;
   } else {
     // ranked and points take an ordered list; approval takes a set. One name on its own is fine for all three.
     const list: Id[] = Array.isArray(a.ranking) ? a.ranking : Array.isArray(a.approve) ? a.approve : cand ? [cand] : [];
     if (!list.length) fail(method === 'approval' ? 'Tick at least one candidate.' : 'Number at least one candidate.');
     if (new Set(list).size !== list.length) fail('Each candidate can appear only once on your ballot.');
-    if (list.some((c) => !e.candidates[c])) fail('Your ballot names someone who is not standing.');
+    if (list.some((c) => !own(e.candidates, c))) fail('Your ballot names someone who is not standing.');
     e.ballots[actor] = list.slice();
   }
   earn(w, actor, 2, 'Voted in an election');
@@ -565,7 +580,7 @@ export function startHosSelection(w: W) {
 export function honour(w: W, actor: Id, target: Id, title: string) {
   if (!isHOS(w, actor)) fail(`Only the ${hosTitle(w)} awards honours.`);
   if (w.hos.lastHonour && w.now - w.hos.lastHonour < 7 * DAY) fail('One honour a week.');
-  if ((title || '').trim().length < 3) fail('Name the honour.');
+  title = text(title, 2, 40, 'honour');
   const t = cit(w, target);
   w.hos.lastHonour = w.now;
   t.titles.push(title.trim());
@@ -580,8 +595,9 @@ export function honour(w: W, actor: Id, target: Id, title: string) {
 export const members = (w: W, pid: Id): Id[] => allCitizens(w).filter((c: any) => c.party === pid).map((c: any) => c.id);
 export function foundParty(w: W, actor: Id, name: string, colour: string, cofounders: Id[]) {
   mustBeFree(w, actor);
-  name = (name || '').trim();
-  if (name.length < 3) fail('Name the party.');
+  name = text(name, 3, 40, 'party name');
+  if (typeof colour !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(colour)) fail('Pick a colour.');
+  if (!Array.isArray(cofounders) || cofounders.some((x) => typeof x !== 'string' || !w.citizens[x]?.active)) fail('Name 2 co-founders.');
   if (Object.values(w.parties).some((p: any) => p.name.toLowerCase() === name.toLowerCase())) fail('That name is taken.');
   const co = [...new Set(cofounders)].filter((c) => c && c !== actor);
   if (co.length < 2) fail('Name 2 co-founders.');
@@ -591,7 +607,7 @@ export function foundParty(w: W, actor: Id, name: string, colour: string, cofoun
   gazette(w, 'party', `${nm(w, actor)} is forming the ${name}. Two co-founders have a day to sign.`, '#/parties');
 }
 export function cosign(w: W, actor: Id, pid: Id) {
-  const p = w.parties[pid];
+  const p = own(w.parties, pid);
   if (!p || p.status !== 'forming' || !p.invited.includes(actor)) fail('You were not invited to co-found it.');
   if (!p.signed.includes(actor)) p.signed.push(actor);
   if (p.signed.length >= 2) {
@@ -604,7 +620,7 @@ export function cosign(w: W, actor: Id, pid: Id) {
 }
 export function joinParty(w: W, actor: Id, pid: Id | null) {
   const c = cit(w, actor);
-  if (pid && w.parties[pid]?.status !== 'active') fail('That party is not open.');
+  if (pid && own(w.parties, pid)?.status !== 'active') fail('That party is not open.');
   const old = c.party && w.parties[c.party];
   c.party = pid;
   if (old && old.leader === actor) {
@@ -615,11 +631,12 @@ export function joinParty(w: W, actor: Id, pid: Id | null) {
   if (pid) bump(w, actor, 'parties');
   gazette(w, 'party', pid ? `${c.name} joins the ${w.parties[pid].name}.` : `${c.name} leaves the ${old ? old.name : 'party'}.`);
 }
-export function partyMotion(w: W, actor: Id, text: string) {
+export function partyMotion(w: W, actor: Id, motion: string) {
   const c = cit(w, actor);
   if (!c.party) fail('Join a party first.');
-  if ((text || '').trim().length < 6) fail('Write the motion.');
-  w.parties[c.party].motions.unshift({ id: newId(w, 'pm'), by: actor, text: text.trim(), votes: {}, status: 'open', at: w.now });
+  const t = text(motion, 6, 300, 'motion');
+  if (w.parties[c.party].motions.filter((m: any) => m.by === actor && m.status === 'open').length >= 3) fail('You have 3 motions open already.');
+  w.parties[c.party].motions.unshift({ id: newId(w, 'pm'), by: actor, text: t, votes: {}, status: 'open', at: w.now });
 }
 export function partyMotionVote(w: W, actor: Id, mid: Id, v: 'for' | 'against') {
   const c = cit(w, actor);
@@ -642,7 +659,7 @@ export function challengeLeader(w: W, actor: Id, backers: Id[]) {
   const p = c.party && w.parties[c.party];
   if (!p) fail('Join a party first.');
   if (p.leader === actor) fail('You already lead it.');
-  if (backers.filter((b) => w.citizens[b]?.party === p.id && b !== actor).length < 2) fail('You need 2 members backing you.');
+  if (!Array.isArray(backers) || backers.filter((b) => own(w.citizens, b)?.party === p.id && b !== actor).length < 2) fail('You need 2 members backing you.');
   const e = newElection(w, { kind: 'leadership', party: p.id, title: `${p.name} leadership contest`, stand: 'party:' + p.id, voters: 'party:' + p.id, closesAt: w.now + 2 * DAY });
   e.candidates[p.leader] = { id: p.leader, party: p.id };
   e.candidates[actor] = { id: actor, party: p.id };
@@ -674,6 +691,7 @@ export function invitePM(w: W, actor: Id | null, target: Id) {
   if (actor && !isHOS(w, actor)) fail(`Only the ${hosTitle(w)} invites the Prime Minister.`);
   if (w.pm) fail('There is already a Prime Minister.');
   const t = cit(w, target);
+  if (!t.active) fail('They are no longer a citizen.');
   if (exiled(w, target)) fail('They are in exile.');
   w.pm = target;
   w.pmInviteDue = null;
@@ -721,19 +739,22 @@ export function leaderOfOpposition(w: W): Id | null {
 }
 export function setShadow(w: W, actor: Id, post: string, target: Id) {
   if (leaderOfOpposition(w) !== actor) fail('Only the Leader of the Opposition names the shadow cabinet.');
+  if (!own(w.offices, post)) fail('Pick an office.');
+  if (target) cit(w, target);
   w.shadow[post] = target || null;
 }
 
 // ================= Coalitions =================
 export function proposeCoalition(w: W, actor: Id, partners: string[], kind: 'full' | 'cs', terms: string[]) {
-  const own = sideOf(w, actor);
-  if (leaderOfSide(w, own) !== actor) fail('Only a party leader or an independent MP can lead coalition talks.');
+  const mine = sideOf(w, actor);
+  if (leaderOfSide(w, mine) !== actor) fail('Only a party leader or an independent MP can lead coalition talks.');
   if (!Array.isArray(partners) || !partners.length) fail('Pick at least one partner.');
+  if (partners.some((p) => typeof p !== 'string' || !(p.startsWith('p:') ? own(w.parties, p.slice(2))?.status === 'active' : p.startsWith('i:') && own(w.citizens, p.slice(2))?.active))) fail('Pick parties or independent MPs.');
   if (kind !== 'full' && kind !== 'cs') fail('Pick a full coalition or confidence and supply.');
   if (!Array.isArray(terms)) fail('Terms are a list of lines.');
-  const sides = [own, ...partners.filter((p) => p !== own)];
-  w.coalition = { id: newId(w, 'co'), lead: own, sides, kind, terms: terms.map((t) => t.trim()).filter(Boolean), signed: { [own]: true }, status: 'draft', promises: {}, at: w.now };
-  gazette(w, 'government', `${sideName(w, own)} opens coalition talks with ${partners.map((p) => sideName(w, p)).join(' and ')}.`, '#/cabinet');
+  const sides = [mine, ...new Set(partners.filter((p) => p !== mine))];
+  w.coalition = { id: newId(w, 'co'), lead: mine, sides, kind, terms: terms.map((t) => text(t, 0, 300, 'term')).filter(Boolean), signed: { [mine]: true }, status: 'draft', promises: {}, at: w.now };
+  gazette(w, 'government', `${sideName(w, mine)} opens coalition talks with ${partners.map((p) => sideName(w, p)).join(' and ')}.`, '#/cabinet');
 }
 export function signCoalition(w: W, actor: Id) {
   const co = w.coalition;
@@ -762,7 +783,8 @@ export function leaveCoalition(w: W, actor: Id) {
 export function promisePost(w: W, actor: Id, officeId: string, target: Id) {
   const co = w.coalition;
   if (!co || leaderOfSide(w, co.lead) !== actor) fail('Only the leader running the talks can promise posts.');
-  if (!w.offices[officeId] || w.offices[officeId].fill !== 'pm') fail('Pick a post the PM appoints.');
+  if (own(w.offices, officeId)?.fill !== 'pm') fail('Pick a post the PM appoints.');
+  cit(w, target);
   co.promises[officeId] = target;
 }
 

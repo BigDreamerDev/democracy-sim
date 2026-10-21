@@ -1,6 +1,6 @@
 // Offices: every role in government is one of these. A law creates an office from a template or from
 // a list of powers; whoever holds it gets those powers as buttons.
-import { W, Id, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, exiled, holdsAnything } from './core';
+import { W, Id, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, exiled, holdsAnything, own, text, int } from './core';
 
 export const POWERS: Record<string, { label: string; strong?: boolean }> = {
   grant: { label: 'Pay citizens from its weekly budget' },
@@ -30,16 +30,16 @@ export const TEMPLATES: Record<string, { name: string; title: string; act: strin
 export const FILL: Record<string, string> = { pm: 'The Prime Minister appoints', house: 'MPs elect', citizens: 'Every citizen elects', lot: 'Drawn by lot' };
 
 export function createOffice(w: W, spec: any, law: string) {
-  const t = spec.template ? TEMPLATES[spec.template] : null;
+  const t = spec.template ? own(TEMPLATES, spec.template) : null;
   const id = spec.template && !w.offices[spec.template] ? spec.template : newId(w, 'o');
   const o: any = {
     id,
     template: spec.template || null,
     name: t ? t.name : spec.name,
     title: t ? t.title : spec.name,
-    powers: t ? t.powers.slice() : (spec.powers || []).filter((p: string) => POWERS[p]),
-    fill: t ? t.fill : spec.fill || 'pm',
-    budget: spec.budget ?? (t ? t.budget : 0),
+    powers: t ? t.powers.slice() : (Array.isArray(spec.powers) ? spec.powers : []).filter((p: string) => own(POWERS, p)),
+    fill: t ? t.fill : own(FILL, spec.fill) ? spec.fill : 'pm',
+    budget: Math.max(0, Math.round(Number(spec.budget ?? (t ? t.budget : 0))) || 0),
     secrecy: t ? t.secrecy : spec.secrecy || 'public',
     holder: null,
     members: [],
@@ -60,17 +60,18 @@ export function createOffice(w: W, spec: any, law: string) {
     const eid = newId(w, 'e');
     w.elections[eid] = { id: eid, kind: 'office', office: id, title: `Election: ${o.name}`, status: 'open', voters: o.fill === 'house' ? 'mps' : 'all', stand: 'all', winners: 1, candidates: {}, ballots: {}, opensAt: w.now, closesAt: w.now + 86400000, results: null };
   }
-  gazette(w, 'law', `The ${o.name} is created. ${FILL[o.fill]} its ${o.title.toLowerCase()}.`, '#/offices');
+  gazette(w, 'law', `The ${o.name} is created. ${FILL[o.fill]} its ${String(o.title).toLowerCase()}.`, '#/offices');
   return o;
 }
 
 export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
   if (!isPM(w, actor)) fail('Only the Prime Minister makes appointments.');
-  const o = w.offices[officeId];
+  const o = own(w.offices, officeId);
   if (!o) fail('No such office.');
   if (o.fill !== 'pm') fail(`The ${o.name} is not appointed by the PM.`);
   if (target) {
     const t = cit(w, target);
+    if (!t.active) fail('They are no longer a citizen.');
     if (exiled(w, target)) fail('They are in exile.');
     const promised = Object.entries(w.coalition?.promises || {}).find(([k]) => k === officeId)?.[1];
     o.holder = target;
@@ -85,30 +86,38 @@ export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
 }
 
 export function useGrant(w: W, actor: Id, officeId: string, target: Id, amount: number, reason: string) {
-  const o = w.offices[officeId];
+  const o = own(w.offices, officeId);
   if (!o || o.holder !== actor || !o.powers.includes('grant')) fail('You cannot pay out from that office.');
-  if ((reason || '').trim().length < 4) fail('Say what it is for. Grants are public.');
+  const why = text(reason, 4, 200, 'reason');
+  amount = int(amount, 1, 100, 'grant');
+  if (!cit(w, target).active) fail('They are no longer a citizen.');
+  if (target === actor) fail('Grants go to someone else.');
   const from = o.id === 'treasury' ? 'treasury' : 'office:' + o.id;
-  transfer(w, from, 'c:' + target, amount, `Grant from the ${o.name}: ${reason.trim()}`);
-  gazette(w, 'money', `The ${o.name} pays ${nm(w, target)} ${Math.round(amount)} crowns: ${reason.trim()}.`, '#/offices');
+  // a grant spends what is there; it never makes the Treasury borrow
+  if (bal(w, from) < amount) fail(`The ${o.name} has only ${bal(w, from)} crowns.`);
+  transfer(w, from, 'c:' + target, amount, `Grant from the ${o.name}: ${why}`);
+  gazette(w, 'money', `The ${o.name} pays ${nm(w, target)} ${amount} crowns: ${why}.`, '#/offices');
 }
 
 export function useFine(w: W, actor: Id, officeId: string, target: Id, amount: number, reason: string) {
-  const o = w.offices[officeId];
+  const o = own(w.offices, officeId);
   if (!o || (o.holder !== actor && !o.members.includes(actor)) || !o.powers.includes('fine')) fail('That office cannot fine anyone.');
-  if (amount > 10) fail('Fines are capped at 10 crowns.');
-  if ((reason || '').trim().length < 4) fail('Give a reason.');
-  transfer(w, 'c:' + target, 'treasury', amount, `Fined by the ${o.name}: ${reason}`);
-  gazette(w, 'money', `The ${o.name} fines ${nm(w, target)} ${amount} crowns: ${reason}.`);
+  amount = int(amount, 1, 10, 'fine');
+  const why = text(reason, 4, 200, 'reason');
+  if (!cit(w, target).active) fail('They are no longer a citizen.');
+  transfer(w, 'c:' + target, 'treasury', amount, `Fined by the ${o.name}: ${why}`);
+  gazette(w, 'money', `The ${o.name} fines ${nm(w, target)} ${amount} crowns: ${why}.`);
 }
 
 // weekly office budgets are swept back and refilled at payday
 export function fundOffices(w: W) {
   Object.values(w.offices).forEach((o: any) => {
-    if (!o.budget || o.id === 'treasury') return;
+    // older worlds may hold a budget that isn't a whole positive number; skip it rather than stop payday
+    const budget = Math.round(Number(o.budget));
+    if (!(budget > 0) || o.id === 'treasury') return;
     const acct = 'office:' + o.id;
     if (bal(w, acct) > 0) transfer(w, acct, 'treasury', bal(w, acct), `Unspent ${o.name} budget returned`);
-    transfer(w, 'treasury', acct, o.budget, `${o.name} weekly budget`);
+    transfer(w, 'treasury', acct, budget, `${o.name} weekly budget`);
   });
 }
 

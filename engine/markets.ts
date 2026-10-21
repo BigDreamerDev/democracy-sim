@@ -1,7 +1,7 @@
 // The prediction market: bet crowns on bills, elections and crises. Pari-mutuel: everything staked on an
 // outcome is pooled, and whoever backed the right answer splits the pool in proportion to their stake.
 // Bets are private; the pools (and so the odds) are public. Insiders betting on what they know is allowed.
-import { W, Id, DAY, fail, newId, nm, gazette, transfer, ca, bump, mustBeFree, addCard, allCitizens, pick } from './core';
+import { W, Id, DAY, fail, newId, nm, own, gazette, transfer, ca, bump, mustBeFree, addCard, allCitizens, pick } from './core';
 
 export const MAX_STAKE = 100;
 type Opt = { key: string; label: string };
@@ -18,12 +18,12 @@ const label = (w: W, m: any, key: string) => m.options.find((o: Opt) => o.key ==
 
 export function bet(w: W, actor: Id, mid: Id, option: string, amount: number) {
   mustBeFree(w, actor);
-  const m = w.markets?.[mid];
+  const m = own(w.markets, mid);
   if (!m || m.status !== 'open' || w.now >= m.closesAt) fail('Betting on that has closed.');
-  const key = String(option || '');
+  const key = typeof option === 'number' ? String(option) : typeof option === 'string' ? option : '';
   if (m.kind === 'election') {
     const e = w.elections[m.ref];
-    if (!e?.candidates[key]) fail('Pick someone who is standing.');
+    if (!own(e?.candidates, key)) fail('Pick someone who is standing.');
   } else if (!m.options.some((o: Opt) => o.key === key)) fail('Pick one of the outcomes.');
   const amt = Math.round(Number(amount));
   if (!(amt >= 1)) fail('Bet at least 1 crown.');

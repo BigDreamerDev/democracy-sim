@@ -1,7 +1,7 @@
 // The Streets: the parts of the game played in real life. Everything here is opt-in, and nobody who hasn't
 // joined can be targeted or can target anyone. Contracts (Assassins), check-ins, bounties, market stalls and
 // civic jobs. Crowns never turn into real money and real money never turns into crowns.
-import { W, Id, DAY, HOUR, fail, newId, rand, chance, shuffle, cit, nm, gazette, earn, spend, stamp, approve, transfer, ca, addCard, needIntrigue, mustBeFree, ghost, hasPower, holderOf, isPM, bump, weekNo, adminDid } from './core';
+import { W, Id, DAY, HOUR, fail, newId, rand, own, text, chance, shuffle, cit, nm, gazette, earn, spend, stamp, approve, transfer, ca, addCard, needIntrigue, mustBeFree, ghost, hasPower, holderOf, isPM, bump, weekNo, adminDid } from './core';
 
 export const SAFE_ZONES = [
   'Lessons, exams, and anywhere a teacher is teaching',
@@ -141,7 +141,7 @@ export function tagByCode(w: W, actor: Id, code: string) {
 }
 // the assassin says they did it without a code; the target confirms or denies (silence for 24 hours counts as yes)
 export function claim(w: W, actor: Id, id: Id) {
-  const k = streetsOf(w).contracts[id];
+  const k = own(streetsOf(w).contracts, id);
   if (!k || k.by !== actor || k.status !== 'live') fail('That contract is not yours to claim.');
   if (k.disputes >= 2) fail('They have denied it twice. Get their code, or let it run out.');
   k.status = 'claimed';
@@ -149,7 +149,7 @@ export function claim(w: W, actor: Id, id: Id) {
   k.claimDue = w.now + 24 * HOUR;
 }
 export function answerClaim(w: W, actor: Id, id: Id, yes: boolean) {
-  const k = streetsOf(w).contracts[id];
+  const k = own(streetsOf(w).contracts, id);
   if (!k || k.target !== actor || k.status !== 'claimed') fail('There is nothing to answer.');
   if (yes) return complete(w, k, 'confirmed');
   k.status = 'live';
@@ -159,6 +159,7 @@ export function answerClaim(w: W, actor: Id, id: Id, yes: boolean) {
 }
 // the target owns up: "they got me"
 export function gotMe(w: W, actor: Id, by: Id) {
+  cit(w, by);
   const ct = mine(w, by, actor);
   if (ct) return complete(w, ct, 'confessed');
   if (huntTarget(w, by) === actor) return huntKill(w, by, actor);
@@ -170,6 +171,11 @@ export function settleClaim(w: W, k: any) {
 function complete(w: W, k: any, how: string) {
   const s = streetsOf(w);
   const t = w.citizens[k.target];
+  // someone else got them first: this contract can't land on a ghost (a lapsed claim just goes back to live)
+  if (ghost(w, k.target)) {
+    if (how === 'unanswered') return void ((k.status = 'live'), (k.claimAt = k.claimDue = null));
+    fail(`${t.name} is already a ghost. Wait until they are back.`);
+  }
   const by = w.citizens[k.by];
   t.tagCode = newCode(w);
   if (s.protect?.who === k.target && s.protect.until > w.now && chance(w, 0.5)) {
@@ -243,8 +249,7 @@ export function protect(w: W, actor: Id, target: Id) {
 
 // ---------- safe zones: Parliament adds them by law, the RO can add or remove them for safety ----------
 export function addZone(w: W, text: string, by: string) {
-  const t = String(text || '').trim().replace(/\s+/g, ' ');
-  if (t.length < 4 || t.length > 120) fail('Describe the safe zone in 4 to 120 characters.');
+  const t = clean(text, 4, 120, 'safe zone');
   const s = streetsOf(w);
   s.zones.push({ id: newId(w, 'z'), text: t, by });
 }
@@ -269,12 +274,7 @@ function reopen(b: any) {
   b.takenAt = b.takenDue = b.doneAt = b.doneDue = null;
   b.note = '';
 }
-const clean = (s: unknown, min: number, max: number, what: string) => {
-  const t = String(s || '').trim().replace(/\s+/g, ' ');
-  if (t.length < min) fail(`Write the ${what}.`);
-  if (t.length > max) fail(`Keep the ${what} under ${max} characters.`);
-  return t;
-};
+const clean = text;
 export function postBounty(w: W, actor: Id, text: string, reward: number) {
   mustBeFree(w, actor);
   mustBeIn(w, actor);
@@ -287,7 +287,7 @@ export function postBounty(w: W, actor: Id, text: string, reward: number) {
   w.bounties[id] = { id, by: actor, text: t, reward: r, status: 'open', at: w.now, dueAt: w.now + 7 * DAY, taker: null, note: '' };
   gazette(w, 'streets', `Bounty, ${r} crowns: ${t}`, '#/market');
 }
-const bounty = (w: W, id: Id) => w.bounties[id] || fail('No such bounty.');
+const bounty = (w: W, id: Id) => own(w.bounties, id) || fail('No such bounty.');
 export function takeBounty(w: W, actor: Id, id: Id) {
   mustBeFree(w, actor);
   mustBeIn(w, actor);
@@ -304,7 +304,7 @@ export function doneBounty(w: W, actor: Id, id: Id, note: string, photo?: string
   if (b.status !== 'taken' || b.taker !== actor) fail('That bounty isn’t yours to finish.');
   b.photo = photoId(photo);
   b.status = 'done';
-  b.note = String(note || '').trim().slice(0, 200);
+  b.note = text(note, 0, 200, 'note');
   b.doneAt = w.now;
   b.doneDue = w.now + 48 * HOUR;
 }
@@ -357,19 +357,23 @@ export function openStall(w: W, actor: Id, title: string, price: number) {
   const p = Math.round(Number(price));
   if (!(p >= 1 && p <= 200)) fail('Price it between 1 and 200 crowns.');
   if (Object.values(w.stalls).filter((s: any) => s.by === actor && s.status === 'open').length >= 3) fail('You have 3 stalls open. Close one first.');
+  // closed stalls don't pile up: past 10, the oldest closed one with nothing outstanding goes
+  const mine = (Object.values(w.stalls) as any[]).filter((s) => s.by === actor).sort((a, b) => a.at - b.at);
+  const gone = mine.length >= 10 && mine.find((s) => s.status === 'closed' && !Object.values(w.orders).some((o: any) => o.stall === s.id && ['paid', 'delivered'].includes(o.status)));
+  if (gone) delete w.stalls[gone.id];
   const id = newId(w, 'sl');
   w.stalls[id] = { id, by: actor, title: t, price: p, status: 'open', at: w.now, sold: 0, ratings: {} };
   gazette(w, 'streets', `${nm(w, actor)} opens a stall: ${t}, ${p} crowns.`, '#/market');
 }
 export function closeStall(w: W, actor: Id, id: Id) {
-  const s = w.stalls[id];
+  const s = own(w.stalls, id);
   if (!s || s.by !== actor) fail('That isn’t your stall.');
   s.status = 'closed';
 }
 export function buy(w: W, actor: Id, id: Id) {
   mustBeFree(w, actor);
   mustBeIn(w, actor);
-  const s = w.stalls[id];
+  const s = own(w.stalls, id);
   if (!s || s.status !== 'open') fail('That stall is closed.');
   if (s.by === actor) fail('That’s your own stall.');
   if (Object.values(w.orders).some((o: any) => o.stall === id && o.buyer === actor && ['paid', 'delivered'].includes(o.status))) fail('You already have an order open here.');
@@ -377,7 +381,7 @@ export function buy(w: W, actor: Id, id: Id) {
   const oid = newId(w, 'or');
   w.orders[oid] = { id: oid, stall: id, title: s.title, buyer: actor, seller: s.by, price: s.price, status: 'paid', at: w.now, dueAt: w.now + 5 * DAY };
 }
-const order = (w: W, id: Id) => w.orders[id] || fail('No such order.');
+const order = (w: W, id: Id) => own(w.orders, id) || fail('No such order.');
 export function deliver(w: W, actor: Id, id: Id) {
   const o = order(w, id);
   if (o.seller !== actor || o.status !== 'paid') fail('There is nothing to deliver.');
@@ -429,11 +433,11 @@ export function addJob(w: W, e: any, law: string) {
 export const approver = (w: W) => holderOf(w, 'treasury') || w.pm;
 export function claimJob(w: W, actor: Id, jid: Id, note: string) {
   mustBeFree(w, actor);
-  const j = w.jobs[jid];
+  const j = own(w.jobs, jid);
   if (!j || !j.active) fail('That job no longer exists.');
   const wk = weekNo(w);
   if (w.jobClaims.some((c: any) => c.job === jid && c.by === actor && c.week === wk && c.status !== 'refused')) fail('One claim per job each week.');
-  w.jobClaims.unshift({ id: newId(w, 'jc'), job: jid, title: j.title, pay: j.pay, by: actor, note: String(note || '').trim().slice(0, 200), at: w.now, dueAt: w.now + 3 * DAY, week: wk, status: 'pending' });
+  w.jobClaims.unshift({ id: newId(w, 'jc'), job: jid, title: j.title, pay: j.pay, by: actor, note: text(note, 0, 200, 'note'), at: w.now, dueAt: w.now + 3 * DAY, week: wk, status: 'pending' });
   if (w.jobClaims.length > 200) w.jobClaims.length = 200;
 }
 export function approveJob(w: W, actor: Id, cid: Id, yes: boolean) {
@@ -505,6 +509,7 @@ export function startHunt(w: W) {
 function huntKill(w: W, hunter: Id, victim: Id) {
   const h = w.hunt;
   const t = w.citizens[victim];
+  if (ghost(w, victim)) fail(`${t.name} is already a ghost. Wait until they are back.`);
   t.tagCode = newCode(w);
   h.ring[hunter] = h.ring[victim];
   delete h.ring[victim];

@@ -2,8 +2,8 @@
 // The kind only changes who votes and what happens. Also: laws, PM's Questions, formal questions and lobbying.
 import {
   W, Id, DAY, HOUR, fail, newId, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, tick, meter,
-  isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, hasPower, officeWithPower, weekNo, adminDid, bump } from './core';
-import { TEMPLATES, POWERS, createOffice } from './offices';
+  isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, hasPower, officeWithPower, weekNo, adminDid, bump, own, text, int } from './core';
+import { TEMPLATES, POWERS, FILL, createOffice } from './offices';
 import { startHosSelection, callGeneralElection, governmentFalls, vacateSeat, HOS_METHODS, countback } from './politics';
 import { addJob, addZone } from './streets';
 import { openMarket, settleMarket } from './markets';
@@ -33,18 +33,19 @@ export function describe(w: W, e: any): string {
       return e.text;
     case 'office': {
       if (e.template) {
-        const t = TEMPLATES[e.template];
+        const t = own(TEMPLATES, e.template);
+        if (!t) return 'Creates an office.';
         return `Creates the ${t.name}, led by a ${t.title.toLowerCase()}. ${t.blurb}`;
       }
-      const o = e.office;
-      return `Creates the office of ${o.name}, ${({ pm: 'appointed by the PM', house: 'elected by MPs', citizens: 'elected by every citizen', lot: 'drawn by lot' } as any)[o.fill]}. Powers: ${o.powers.map((p: string) => POWERS[p]?.label.toLowerCase()).join('; ') || 'none'}.${o.budget ? ` Budget ${o.budget} crowns a week.` : ''} ${o.secrecy === 'secret' ? 'Its work is secret.' : ''}`;
+      const o = e.office || {};
+      return `Creates the office of ${o.name}, ${({ pm: 'appointed by the PM', house: 'elected by MPs', citizens: 'elected by every citizen', lot: 'drawn by lot' } as any)[o.fill]}. Powers: ${(Array.isArray(o?.powers) ? o.powers : []).map((p: string) => POWERS[p]?.label.toLowerCase()).join('; ') || 'none'}.${o.budget ? ` Budget ${o.budget} crowns a week.` : ''} ${o.secrecy === 'secret' ? 'Its work is secret.' : ''}`;
     }
     case 'abolish':
       return `Abolishes the ${w.offices[e.office]?.name ?? 'office'}.`;
     case 'budget':
       return `Sets the ${w.offices[e.office]?.name ?? 'office'} budget to ${e.value} crowns a week.`;
     case 'set':
-      return `Sets ${SETTABLE[e.key].label.toLowerCase()} to ${e.value}${SETTABLE[e.key].unit}.`;
+      return `Sets ${own(SETTABLE, e.key)?.label.toLowerCase() ?? 'a number'} to ${e.value}${own(SETTABLE, e.key)?.unit ?? ''}.`;
     case 'permit':
       return 'Allows any citizen to open a licensed bank, take savings and make loans.';
     case 'treaty':
@@ -69,42 +70,100 @@ export function describe(w: W, e: any): string {
   return '';
 }
 
+// every clause is checked in full when tabled, so enacting it later (often by the clock) can never fail
+function checkClause(w: W, e: any) {
+  const choose = (v: unknown, list: unknown[], msg: string) => (list.includes(v) ? v : fail(msg));
+  switch (e.t) {
+    case 'text':
+      e.text = text(e.text, 6, 1000, 'clause');
+      break;
+    case 'set':
+      if (!own(SETTABLE, e.key)) fail('Pick a number to change.');
+      e.value = int(e.value, SETTABLE[e.key].min, SETTABLE[e.key].max, SETTABLE[e.key].label.toLowerCase());
+      break;
+    case 'budget':
+      if (!own(w.offices, e.office)) fail('Pick an office.');
+      e.value = int(e.value, 0, 200, 'weekly budget');
+      break;
+    case 'abolish':
+      if (!own(w.offices, e.office)) fail('Pick an office.');
+      break;
+    case 'office':
+      if (e.template) {
+        if (!own(TEMPLATES, e.template)) fail('Unknown office.');
+        if (w.offices[e.template]) fail(`The ${TEMPLATES[e.template].name} already exists.`);
+        break;
+      }
+      if (!e.office || typeof e.office !== 'object') fail('Describe the new office.');
+      e.office = {
+        name: text(e.office.name, 3, 40, 'office name'),
+        powers: Array.isArray(e.office.powers) ? [...new Set(e.office.powers.filter((p: unknown) => own(POWERS, p)))] : fail('Pick the office’s powers.'),
+        fill: choose(e.office.fill ?? 'pm', Object.keys(FILL), 'Pick how the office is filled.'),
+        secrecy: choose(e.office.secrecy ?? 'public', ['public', 'restricted', 'secret'], 'Pick public, restricted or secret.'),
+        budget: int(e.office.budget ?? 0, 0, 200, 'weekly budget')
+      };
+      break;
+    case 'job':
+      e.title = text(e.title, 6, 120, 'civic job');
+      e.pay = int(e.pay, 1, 30, 'wage');
+      break;
+    case 'zone':
+      e.text = text(e.text, 4, 120, 'safe zone');
+      break;
+    case 'treaty':
+      if (typeof e.offer !== 'string') fail('Pick a treaty offer.');
+      break;
+    case 'breakTreaty':
+      if (own(w.treaties, e.treaty)?.status !== 'active') fail('Pick a treaty in force.');
+      break;
+    case 'repeal':
+      if (typeof e.ref !== 'string' || e.ref.length > 10 || !w.laws.some((l: any) => l.ref === e.ref)) fail('Pick a law to repeal.');
+      break;
+    case 'war':
+    case 'peace':
+      if (!own(w.nations, e.nation)) fail('Pick a nation.');
+      break;
+    case 'constitution': {
+      const ok: Record<string, unknown[]> = { seats: [3, 5, 7, 9], termDays: [14, 21, 28], hos: ['monarchy', 'republic'] };
+      if (e.key === 'hosMethod') ok.hosMethod = (HOS_METHODS[w.config.hos] || []).map((m: any) => m.id);
+      if (!own(ok, e.key)) fail('Pick what to change in the constitution.');
+      choose(e.value, ok[e.key], 'That value isn’t allowed.');
+      if (e.label !== undefined) e.label = text(e.label, 0, 40, 'label');
+      break;
+    }
+  }
+}
 export function propose(w: W, actor: Id, a: any) {
   mustBeFree(w, actor);
   if (w.phase !== 'running') fail('Proposals start once the constitution is adopted.');
   if (w.martial) fail('Parliament is suspended under martial law.');
   const kind = a.kind || 'bill';
-  if (!KINDS[kind]) fail('Unknown kind of proposal.');
-  const clauses = kind === 'bill' || kind === 'referendum' ? a.clauses || [] : [];
-  let title = (a.title || '').trim();
+  if (!own(KINDS, kind)) fail('Unknown kind of proposal.');
+  // a copy: checking a clause tidies it in place, and the caller's object must not change
+  const clauses = kind === 'bill' || kind === 'referendum' ? structuredClone(a.clauses || []) : [];
+  let title = kind === 'bill' || kind === 'referendum' ? text(a.title, kind === 'referendum' ? 8 : 4, 120, kind === 'referendum' ? 'question' : 'title') : '';
+  const summary = text(a.summary, 0, 500, 'summary');
   if (kind === 'confidence' || kind === 'dissolution') {
     if (!isPM(w, actor)) fail(`Only the Prime Minister can ask for ${kind === 'confidence' ? 'a confidence vote' : 'a dissolution'}.`);
   } else if (!isMP(w, actor) && !hasPower(w, actor, 'propose')) fail('Only MPs put proposals to the House.');
   if ((kind === 'no_confidence' || kind === 'confidence') && !w.pm) fail('There is no government.');
-  if (kind === 'censure' && !w.citizens[a.target]) fail('Pick who to censure.');
-  if ((kind === 'bill' || kind === 'referendum') && title.length < 4) fail('Give it a title.');
-  if (kind === 'bill' && !clauses.length) fail('Add at least one clause.');
-  if (kind === 'referendum' && title.length < 8) fail('Write the question.');
+  if (kind === 'censure' && !own(w.citizens, a.target)?.active) fail('Pick who to censure.');
   if (!Array.isArray(clauses)) fail('Clauses must be a list.');
+  if (kind === 'bill' && !clauses.length) fail('Add at least one clause.');
+  if (clauses.length > 20) fail('A bill can have 20 clauses at most.');
   for (const e of clauses) {
     if (!['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone'].includes(e?.t)) fail('Unknown kind of clause.');
-    if (e.t === 'text' && (e.text || '').trim().length < 6) fail('Write each clause in full.');
-    if (e.t === 'set' && (!SETTABLE[e.key] || !(e.value >= SETTABLE[e.key].min && e.value <= SETTABLE[e.key].max))) fail('That value is out of range.');
-    if (e.t === 'office' && e.template && w.offices[e.template]) fail(`The ${TEMPLATES[e.template].name} already exists.`);
-    if (e.t === 'office' && !e.template && (e.office?.name || '').trim().length < 3) fail('Name the new office.');
-    if (e.t === 'treaty' && !w.offers[e.offer]) fail('That treaty offer has expired.');
+    checkClause(w, e);
+    if (e.t === 'treaty' && !own(w.offers, e.offer)) fail('That treaty offer has expired.');
     if ((e.t === 'war' || e.t === 'peace') && !w.offices.army) fail('War and peace need an Army: pass the Defence Act first.');
     if (e.t === 'permit' && w.permits.banks) fail('Banks are already allowed.');
-    if (e.t === 'job' && (String(e.title || '').trim().length < 6 || String(e.title).length > 120)) fail('Describe the civic job in 6 to 120 characters.');
-    if (e.t === 'job' && !(Number.isInteger(e.pay) && e.pay >= 1 && e.pay <= 30)) fail('A civic job pays between 1 and 30 crowns.');
-    if (e.t === 'zone' && (String(e.text || '').trim().length < 4 || String(e.text).length > 120)) fail('Describe the safe zone in 4 to 120 characters.');
   }
   if (Object.values(w.proposals).some((p: any) => p.kind === kind && ['no_confidence', 'confidence', 'dissolution'].includes(kind) && ['debate', 'vote', 'hos'].includes(p.stage))) fail('One of those is already open.');
   if (kind === 'referendum') spend(w, actor, 20, 'Called a referendum');
   const open = Object.values(w.proposals).filter((p: any) => p.by === actor && ['debate', 'vote'].includes(p.stage)).length;
   if (open >= 2) spend(w, actor, 10, 'A third proposal at once');
   if (a.fast) spend(w, actor, 15, 'Fast-tracked a debate');
-  const constitutional = clauses.some((e: any) => CONSTITUTIONAL.includes(e.t) || (e.t === 'office' && TEMPLATES[e.template]?.constitutional));
+  const constitutional = clauses.some((e: any) => CONSTITUTIONAL.includes(e.t) || (e.t === 'office' && own(TEMPLATES, e.template)?.constitutional));
   w.propCount += 1;
   const id = newId(w, 'p');
   const titles: any = {
@@ -115,7 +174,7 @@ export function propose(w: W, actor: Id, a: any) {
   };
   const debateH = a.fast ? 12 : kind === 'no_confidence' || kind === 'confidence' || kind === 'censure' ? 12 : w.config.debateHours;
   w.proposals[id] = {
-    id, n: w.propCount, kind, title: titles[kind] || title, summary: (a.summary || '').trim(), by: actor, clauses, target: a.target || null,
+    id, n: w.propCount, kind, title: own(titles, kind) || title, summary, by: actor, clauses, target: a.target || null,
     constitutional, voters: kind === 'referendum' || (kind === 'bill' && w.config.billVoters === 'all') ? 'all' : 'mps', rule: w.config.passRule || 'cast', stage: kind === 'dissolution' ? 'hos' : 'debate', at: w.now,
     debateEndsAt: w.now + debateH * HOUR, voteEndsAt: null, assentDueAt: null, hosDueAt: kind === 'dissolution' ? w.now + DAY : null,
     speeches: [], votes: {}, casting: null, lobby: 0, result: null, lawRef: null, fast: !!a.fast
@@ -125,14 +184,15 @@ export function propose(w: W, actor: Id, a: any) {
   return id;
 }
 
-export function speak(w: W, actor: Id, pid: Id, side: string, text: string) {
+export function speak(w: W, actor: Id, pid: Id, side: string, speech: string) {
   mustBeFree(w, actor);
-  const p = w.proposals[pid];
+  const p = own(w.proposals, pid);
   if (!p || !['debate', 'vote', 'override'].includes(p.stage)) fail('This is not being debated.');
-  if ((text || '').trim().length < 3) fail('Write your speech.');
+  const said = text(speech, 3, 1000, 'speech');
   if (!['for', 'against', 'undecided', 'order'].includes(side)) fail('Speak for, against or undecided.');
+  if (p.speeches.filter((s: any) => s.by === actor).length >= 5) fail('You have made 5 speeches on this already.');
   if (side === 'order' && w.speaker !== actor) fail('Only the Speaker can call order.');
-  p.speeches.push({ id: newId(w, 's'), by: actor, side, text: text.trim(), at: w.now });
+  p.speeches.push({ id: newId(w, 's'), by: actor, side, text: said, at: w.now });
   const c = cit(w, actor);
   const day = Math.floor(w.now / DAY);
   if (c.speakDay !== day) (c.speakDay = day), (c.speaksToday = 0);
@@ -146,7 +206,7 @@ export function canVoteOn(w: W, p: any, id: Id) {
   return p.voters === 'all' ? !!w.citizens[id]?.active : isMP(w, id);
 }
 export function vote(w: W, actor: Id, pid: Id, v: string) {
-  const p = w.proposals[pid];
+  const p = own(w.proposals, pid);
   if (!p) fail('No such proposal.');
   if (p.stage === 'debate') fail('Voting opens when the debate ends.');
   if (p.stage !== 'vote' && p.stage !== 'override') fail('Voting has closed.');
@@ -162,7 +222,7 @@ export function vote(w: W, actor: Id, pid: Id, v: string) {
 }
 export function casting(w: W, actor: Id, pid: Id, v: 'aye' | 'no') {
   if (w.speaker !== actor) fail('Only the Speaker has the casting vote.');
-  const p = w.proposals[pid];
+  const p = own(w.proposals, pid);
   if (!p || p.stage !== 'vote') fail('There is no open vote.');
   if (v !== 'aye' && v !== 'no') fail('Cast aye or no.');
   p.casting = v;
@@ -269,7 +329,7 @@ function trackWhip(w: W, p: any) {
   if (rebels.length) gazette(w, 'government', `${rebels.map((r) => nm(w, r)).join(' and ')} defied the government whip.`, '#/p/' + p.id);
 }
 export function assent(w: W, actor: Id, pid: Id, yes: boolean) {
-  const p = w.proposals[pid];
+  const p = own(w.proposals, pid);
   if (!p || p.stage !== 'assent') fail('Nothing is waiting for assent.');
   if (!isHOS(w, actor)) fail(`Only the ${hosTitle(w)} can do this.`);
   if (yes) return enact(w, p, w.config.hos === 'monarchy' ? 'Royal Assent' : 'signed by the President');
@@ -296,7 +356,7 @@ export function block(w: W, actor: Id, pid: Id) {
   const o = officeWithPower(w, actor, 'block');
   if (!o) fail('You hold no office that can block bills.');
   if (o.blocksUsed >= 1) fail('That power has been used this term.');
-  const p = w.proposals[pid];
+  const p = own(w.proposals, pid);
   if (!p || p.stage !== 'assent') fail('Only a passed bill waiting for assent can be sent back.');
   o.blocksUsed++;
   p.stage = 'debate';
@@ -324,7 +384,7 @@ export function enact(w: W, p: any, how: string) {
 export function applyClause(w: W, e: any, ref: string) {
   switch (e.t) {
     case 'office':
-      createOffice(w, e.template ? { template: e.template } : e.office, ref);
+      if (e.template ? own(TEMPLATES, e.template) : e.office?.name) createOffice(w, e.template ? { template: e.template } : e.office, ref);
       break;
     case 'abolish':
       if (w.offices[e.office]) {
@@ -333,10 +393,10 @@ export function applyClause(w: W, e: any, ref: string) {
       }
       break;
     case 'budget':
-      if (w.offices[e.office]) w.offices[e.office].budget = e.value;
+      if (own(w.offices, e.office)) w.offices[e.office].budget = Math.max(0, Math.round(Number(e.value)) || 0);
       break;
     case 'set':
-      w.config[e.key] = e.value;
+      if (own(SETTABLE, e.key)) w.config[e.key] = e.value;
       break;
     case 'job':
       addJob(w, { title: String(e.title), pay: e.pay }, ref);
@@ -383,11 +443,12 @@ export function applyClause(w: W, e: any, ref: string) {
     }
     case 'constitution':
       if (e.key === 'seats') {
+        if (![3, 5, 7, 9].includes(e.value)) break;
         w.config.seats = e.value;
         gazette(w, 'law', `From the next general election the House will have ${e.value} seats.`);
       }
-      if (e.key === 'termDays') w.config.termDays = e.value;
-      if (e.key === 'hos' && e.value !== w.config.hos) {
+      if (e.key === 'termDays' && [14, 21, 28].includes(e.value)) w.config.termDays = e.value;
+      if (e.key === 'hos' && ['monarchy', 'republic'].includes(e.value) && e.value !== w.config.hos) {
         w.config.hos = e.value;
         w.config.hosMethod = e.value === 'monarchy' ? 'life' : 'citizens';
         w.hos = { holder: null, since: w.now, until: null };
@@ -401,11 +462,13 @@ export function applyClause(w: W, e: any, ref: string) {
       startHosSelection(w);
       break;
     case 'war':
+      if (!own(w.nations, e.nation)) break;
       w.army.war = e.nation;
       w.nations[e.nation].mood = 0;
       gazette(w, 'army', `The realm is at war with ${w.nations[e.nation].name}. Army upkeep doubles.`, '#/army');
       break;
     case 'peace':
+      if (!own(w.nations, e.nation)) break;
       if (w.army.war === e.nation) w.army.war = null;
       w.nations[e.nation].mood = 1;
       gazette(w, 'army', `Peace with ${w.nations[e.nation].name}.`, '#/army');
@@ -413,7 +476,7 @@ export function applyClause(w: W, e: any, ref: string) {
   }
 }
 export function answerDissolution(w: W, actor: Id, pid: Id, yes: boolean) {
-  const p = w.proposals[pid];
+  const p = own(w.proposals, pid);
   if (!p || p.stage !== 'hos') fail('There is no dissolution request.');
   if (!isHOS(w, actor)) fail(`Only the ${hosTitle(w)} decides.`);
   dissolve(w, p, yes);
@@ -428,18 +491,20 @@ export function dissolve(w: W, p: any, yes: boolean) {
 }
 export function forceEnact(w: W, actor: Id, pid: Id, reason: string) {
   if (!w.citizens[actor]?.admin) fail('Only the Returning Officer can do this.');
-  const p = w.proposals[pid];
+  const p = own(w.proposals, pid);
   if (!p || p.stage !== 'assent') fail('Only a passed bill stuck waiting for assent can be force-enacted.');
   if (p.by === actor || p.votes[actor]) fail('You took part in this bill, so you cannot use admin tools on it.');
-  if ((reason || '').trim().length < 6) fail('Give a reason. It is shown on the law.');
-  enact(w, p, `force-enacted by the Returning Officer: ${reason.trim()}`);
-  adminDid(w, actor, `force-enacted ${p.title}: ${reason.trim()}`, '#/p/' + p.id);
+  const why = text(reason, 6, 200, 'reason');
+  enact(w, p, `force-enacted by the Returning Officer: ${why}`);
+  adminDid(w, actor, `force-enacted ${p.title}: ${why}`, '#/p/' + p.id);
 }
 export function lobby(w: W, actor: Id, pid: Id, mp: Id, amount: number) {
   mustBeFree(w, actor);
-  const p = w.proposals[pid];
+  const p = own(w.proposals, pid);
   if (!p || !['debate', 'vote'].includes(p.stage)) fail('You can only lobby on a proposal still in the House.');
   if (!isMP(w, mp)) fail('You can only lobby MPs.');
+  if (mp === actor) fail('You cannot lobby yourself.');
+  amount = int(amount, 1, 100, 'amount');
   transfer(w, ca(actor), ca(mp), amount, `Lobbying on ${p.title}`);
   p.lobby += Math.round(amount);
   w.lobbying.unshift({ at: w.now, from: actor, to: mp, prop: pid, amt: Math.round(amount) });
@@ -447,20 +512,20 @@ export function lobby(w: W, actor: Id, pid: Id, mp: Id, amount: number) {
 }
 
 // ================= Questions: PMQs for everyone, formal questions for offices with the power =================
-export function ask(w: W, actor: Id, text: string, to?: Id) {
+export function ask(w: W, actor: Id, question: string, to?: Id) {
   mustBeFree(w, actor);
-  if ((text || '').trim().length < 8) fail('Write your question.');
+  const q = text(question, 8, 300, 'question');
   if (to && to !== 'pm') {
     const o = officeWithPower(w, actor, 'question');
     if (!o) fail('Only offices with the power to question ministers can do that. Ask the PM at PMQs instead.');
-    if (!w.citizens[to]) fail('Pick who to question.');
-    w.questions.unshift({ id: newId(w, 'q'), by: actor, to, text: text.trim(), backers: [], answer: null, status: 'open', formal: true, office: o.id, at: w.now, dueAt: w.now + 3 * DAY, week: weekNo(w) });
-    gazette(w, 'question', `The ${o.name} formally asks ${nm(w, to)}: "${text.trim()}" An answer is due in 3 days.`, '#/questions');
+    if (!own(w.citizens, to)?.active) fail('Pick who to question.');
+    w.questions.unshift({ id: newId(w, 'q'), by: actor, to, text: q, backers: [], answer: null, status: 'open', formal: true, office: o.id, at: w.now, dueAt: w.now + 3 * DAY, week: weekNo(w) });
+    gazette(w, 'question', `The ${o.name} formally asks ${nm(w, to)}: "${q}" An answer is due in 3 days.`, '#/questions');
     return;
   }
   if (!w.pm) fail('There is no Prime Minister to ask.');
   if (w.questions.some((q: any) => q.by === actor && !q.formal && q.week === weekNo(w))) fail('You get one PMQ a week.');
-  w.questions.unshift({ id: newId(w, 'q'), by: actor, to: 'pm', text: text.trim(), backers: [], answer: null, status: 'open', formal: false, at: w.now, week: weekNo(w) });
+  w.questions.unshift({ id: newId(w, 'q'), by: actor, to: 'pm', text: q, backers: [], answer: null, status: 'open', formal: false, at: w.now, week: weekNo(w) });
   tick(w, actor, 'asks');
 }
 export function back(w: W, actor: Id, qid: Id) {
@@ -474,12 +539,11 @@ export function back(w: W, actor: Id, qid: Id) {
     tick(w, actor, 'backs');
   }
 }
-export function answer(w: W, actor: Id, qid: Id, text: string) {
+export function answer(w: W, actor: Id, qid: Id, reply: string) {
   const q = w.questions.find((x: any) => x.id === qid);
   if (!q || q.status !== 'open') fail('That question is closed.');
   if (q.to === 'pm' ? !isPM(w, actor) : q.to !== actor) fail('This question is not for you.');
-  if ((text || '').trim().length < 3) fail('Write an answer.');
-  q.answer = text.trim();
+  q.answer = text(reply, 3, 1000, 'answer');
   q.answeredBy = actor;
   q.status = 'answered';
   earn(w, actor, 1, 'Answered a question');

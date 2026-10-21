@@ -6,8 +6,9 @@ import jwt from 'jsonwebtoken';
 import { Q, SCHEMA } from './db';
 import { publicApi, newKey, keyHash, MAX_KEYS } from './public';
 import { apps, APPS_SCHEMA, Sender } from './apps';
-import { SECURITY_SCHEMA, passwordProblem, hash, dummyCompare, needsRehash, account, lockedFor, failed, succeeded, headers, limiter } from './security';
+import { SECURITY_SCHEMA, passwordProblem, hash, dummyCompare, needsRehash, account, lockedFor, failed, succeeded, headers, limiter, safeAsync } from './security';
 import { providers, authorizeUrl, exchange, random } from './oauth';
+import { randomInt } from 'node:crypto';
 import { passkeys, PASSKEY_SCHEMA } from './passkeys';
 import { IMAGES_SCHEMA, imageGet, imageRoutes, photoProblem } from './images';
 import { INVITES_SCHEMA, inviteRoutes, claimInvite, releaseInvite, useInvite } from './invites';
@@ -33,7 +34,7 @@ export async function makeApp(o: Options) {
   const A = apps(q, (...a: any[]) => log(...a), o.send);
   const SITE = o.site || 'https://bigdreamerdev.github.io/democracy-sim/';
   // a player's alerts, from their own redacted view only, so a personal webhook can never carry someone else's secret
-  const alertsFor = (uid: number) => (world.citizens['u' + uid] ? needs(viewFor(world, 'u' + uid), 'u' + uid) : null);
+  const alertsFor = (uid: number) => (world.citizens['u' + uid] && world.citizens['u' + uid].active !== false ? needs(viewFor(world, 'u' + uid), 'u' + uid) : null);
 
   // ---------- the world ----------
   let world: any;
@@ -109,8 +110,13 @@ export async function makeApp(o: Options) {
     const before = world.now;
     const due = nextDeadline(world);
     if (due && due <= now()) {
-      advanceTo(world, now());
-      await save();
+      // a deadline that throws must never take reads and actions down with it: log it, keep what ran, carry on
+      try {
+        advanceTo(world, now());
+      } catch (e) {
+        log('clock error', e);
+      }
+      await save().catch((e) => log('save failed', e));
     } else world.now = Math.max(world.now, now());
     return world.now !== before;
   };
@@ -119,7 +125,7 @@ export async function makeApp(o: Options) {
     clearTimeout(timer);
     const due = nextDeadline(world);
     if (!due) return;
-    timer = setTimeout(() => serial(catchUp).then(schedule).catch((e) => log('clock error', e)), Math.min(Math.max(due - now(), 1000), 6 * 3600_000));
+    timer = setTimeout(() => serial(catchUp).catch((e) => log('clock error', e)).finally(schedule), Math.min(Math.max(due - now(), 1000), 6 * 3600_000));
     if (timer.unref) timer.unref();
   };
   schedule();
@@ -169,13 +175,13 @@ export async function makeApp(o: Options) {
   const audit = (actor: string, cmd: string, ok: boolean, error?: string) => q('INSERT INTO v2_log (actor, cmd, args, ok, error) VALUES ($1, $2, $3, $4, $5)', [actor, cmd, '{}', ok, error || null]).catch(() => {});
 
   // ---------- app ----------
-  const app = express();
+  const app = safeAsync(express());
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
   app.use(headers);
   app.use(express.json({ limit: '200kb' }));
   // the public API for players' own apps: any origin, API keys only (see public.ts and API.md)
-  const v1 = publicApi({ q, now, log, world: () => world, setWorld: (w) => (world = w), version: () => version, waitForChange, serial, catchUp, save, schedule, apps: A, alertsFor, loadUser: async (id) => userCache.get(id) || loadUser(id) });
+  const v1 = publicApi({ q, now, log, world: () => world, setWorld: (w) => (world = w), version: () => version, waitForChange, serial, catchUp, save, schedule, apps: A, alertsFor, loadUser: async (id) => userCache.get(id) || loadUser(id), limited });
   app.use('/api/v1', v1);
   // ---------- sign in with Discord, Google, Microsoft or Apple ----------
   const apiBase = (req: any) => (o.publicUrl || env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
@@ -208,10 +214,12 @@ export async function makeApp(o: Options) {
       if (!world.flags.openSignup) throw new Error(`No account is linked to that ${prov.name} account. Sign in with your password, then link ${prov.name} from your passport.`);
       const base = String(who.name || who.email?.split('@')[0] || prov.id).toLowerCase().normalize('NFKD').replace(/[^a-z0-9_]/g, '').slice(0, 14) || 'citizen';
       let username = base.length >= 3 ? base : base + 'citizen';
-      while ((await q('SELECT 1 FROM users WHERE lower(username) = $1', [username])).rows.length) username = base.slice(0, 14) + Math.floor(1000 + Math.random() * 9000);
+      while ((await q('SELECT 1 FROM users WHERE lower(username) = $1', [username])).rows.length) username = base.slice(0, 14) + randomInt(1000, 10000);
       const name = String(who.name || username).replace(/\s+/g, ' ').trim().slice(0, 24) || username;
       const approved = !world.flags.requireApproval;
-      const u = (await q('INSERT INTO users (username, display_name, password_hash, approved) VALUES ($1, $2, $3, $4) RETURNING *', [username, name, await hash(random(24)), approved])).rows[0];
+      const u = (await q('INSERT INTO users (username, display_name, password_hash, approved) VALUES ($1, $2, $3, $4) RETURNING *', [username, name, await hash(random(24)), approved]).catch((e: any) => {
+        throw e?.code === '23505' ? new Error('Someone took that name a moment ago. Try again.') : e;
+      })).rows[0];
       await q('INSERT INTO v2_accounts (user_id, no_password) VALUES ($1, TRUE) ON CONFLICT (user_id) DO UPDATE SET no_password = TRUE', [u.id]);
       await q('INSERT INTO v2_identities (provider, subject, user_id, email) VALUES ($1, $2, $3, $4)', [prov.id, who.sub, u.id, who.email || null]);
       await serial(async () => {
@@ -297,8 +305,9 @@ export async function makeApp(o: Options) {
     let u: any;
     try {
       u = (await q('INSERT INTO users (username, display_name, password_hash, approved) VALUES ($1, $2, $3, $4) RETURNING *', [username, name, await hash(password), approved])).rows[0];
-    } catch (e) {
+    } catch (e: any) {
       if (inv) await releaseInvite(q, inv.id);
+      if (e?.code === '23505') return res.status(409).json({ error: 'That username is taken.' });
       throw e;
     }
     if (inv) await useInvite(q, inv.id, u.id);
@@ -490,7 +499,7 @@ export async function makeApp(o: Options) {
   app.post('/api/apps/review', auth, handle((req) => A.review(req.user.id, req.body)));
   app.post('/api/apps/unreview', auth, handle((req) => A.unreview(req.user.id, String(req.body?.app || ''))));
   app.post('/api/hooks/delete', auth, handle(async (req) => (await A.removeHook(req.user.id, Number(req.body?.id) || 0), { ok: true })));
-  app.post('/api/hooks/test', auth, handle((req) => A.testHook(req.user.id, Number(req.body?.id) || 0, world.config.realmName)));
+  app.post('/api/hooks/test', auth, handle(async (req) => (limited('hooktest:' + req.user.id, 5) ? Promise.reject(new Error('Too many tests. Wait a minute.')) : A.testHook(req.user.id, Number(req.body?.id) || 0, world.config.realmName))));
 
   // the Returning Officer's tools that sit outside the game
   const admin = (req: any, res: any, next: any) => (req.user?.is_admin ? next() : res.status(403).json({ error: 'Returning Officer only.' }));
@@ -571,7 +580,7 @@ export async function makeApp(o: Options) {
     const cid = String(req.body?.citizen || '');
     const u = (await q('SELECT id, display_name FROM users WHERE id = $1', [Number(cid.replace(/^u/, '')) || 0])).rows[0];
     if (!u) return res.status(404).json({ error: 'No such account.' });
-    const temp = Array.from({ length: 3 }, () => Math.random().toString(36).slice(2, 6)).join('-');
+    const temp = Array.from({ length: 3 }, () => Array.from({ length: 4 }, () => 'abcdefghjkmnpqrstuvwxyz23456789'[randomInt(31)]).join('')).join('-');
     await q('UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2', [await hash(temp), u.id]);
     await account(q, u.id);
     await q('UPDATE v2_accounts SET failures = 0, locked_until = NULL, no_password = FALSE WHERE user_id = $1', [u.id]);
@@ -586,10 +595,12 @@ export async function makeApp(o: Options) {
     if (req.body?.confirm !== 'RESET THE REALM') return res.status(400).json({ error: 'Type RESET THE REALM to confirm.' });
     await serial(async () => {
       await q('INSERT INTO v2_snapshots (reason, state) VALUES ($1, $2)', ['before reset', JSON.stringify(world)]);
-      const keep = { fame: world.fame, zones: (world.streets?.zones || []).filter((z: any) => z.by === 'ro') };
+      const keep = { fame: world.fame, pending: world.pending || [], zones: (world.streets?.zones || []).filter((z: any) => z.by === 'ro') };
       world = createLiveWorld(await people(), now(), (now() % 2147483647) | 0);
       // the Hall of Fame outlives every realm, and so do the safety zones the RO added
       if (keep.fame) world.fame = keep.fame;
+      // people still waiting for approval stay in the queue
+      world.pending = keep.pending.filter((p: any) => !world.citizens[p.uid]);
       world.streets.zones.push(...keep.zones);
       adminDid(world, req.cid, 'reset the realm to a fresh Founding Convention');
       await save();
@@ -601,6 +612,8 @@ export async function makeApp(o: Options) {
 
   // bad JSON and the like: answer in JSON, with CORS on the public API so other apps can read the error
   app.use((err: any, req: any, res: any, _next: any) => {
+    if (!err.type && !err.status) log('request failed', req.method, req.path, err);
+    if (res.headersSent) return res.end();
     if (req.path.startsWith('/api/v1')) res.setHeader('Access-Control-Allow-Origin', '*');
     res.status(err.status || 500).json({ error: err.type === 'entity.parse.failed' ? 'That body is not valid JSON.' : err.type === 'entity.too.large' ? 'That request is too large.' : 'Something went wrong.' });
   });

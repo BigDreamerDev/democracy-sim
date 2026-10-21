@@ -1,7 +1,7 @@
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import './styles.css';
-import { useStore, ONLINE } from './store';
+import { useStore, ONLINE, toast as say } from './store';
 import { SignIn } from './pages/signin';
 import { Icon, applyTheme, getTheme } from './ui';
 import { DemoPanel, DemoRail } from './DemoPanel';
@@ -75,6 +75,8 @@ function route(hash: string) {
     wallet: () => <Wallet />, economy: () => <Economy />, banks: () => <Banks />, ventures: () => <Ventures />,
     foreign: () => <Foreign />, nation: () => <Nation id={b} />, security: () => <Security />, army: () => <Army />, press: () => <Press />, court: () => <Court />, case: () => <Case id={b} />, crises: () => <Crises />, crisis: () => <Crisis id={b} />, season: () => <Season />,
     backroom: () => <Backroom />, plots: () => <Plots />, exile: () => <Exile />, admin: () => <Admin />, learn: () => <Learn />, rolog: () => <RoLog />, developers: () => <Developers />, apps: () => <Apps />, app: () => <AppPage id={b} />, authorize: () => <Authorize query={q} />,
+    // an invitation link opened while already signed in: nothing to do but say so
+    join: () => (setTimeout(() => (say('You are already signed in. Invitations are for new players.'), (location.hash = '#/')), 0), <Today />),
     streets: () => <Streets />, hunt: () => <Hunt />, tag: () => <TagLanding code={b || ''} />, meet: () => <Meet code={b} />, market: () => <Market />, bets: () => <Bets />, polls: () => <Polls />, fame: () => <Fame />,
     // the copy desk only exists on the development server (npm run dev)
     ...(import.meta.env.DEV ? { copy: () => <CopyDesk /> } : {})

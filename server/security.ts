@@ -98,6 +98,31 @@ export function headers(_req: any, res: any, next: any) {
   next();
 }
 
+// Express 4 doesn't catch a rejected async handler, and on Node 22 an unhandled rejection ends the process.
+// This wraps every handler registered on an app or router so a failure reaches the error handler as a JSON 500.
+const wrap = (fn: any) => {
+  if (typeof fn !== 'function') return fn;
+  if (fn.length === 4) return fn; // error handlers stay as they are
+  const safe = function (this: any, req: any, res: any, next: any) {
+    try {
+      const r = fn.call(this, req, res, next);
+      if (r && typeof r.then === 'function') r.catch(next);
+    } catch (e) {
+      next(e);
+    }
+  };
+  // routers and sub-apps are passed through untouched (express checks for these)
+  return fn.handle || fn.stack ? fn : safe;
+};
+export function safeAsync<T>(r: T): T {
+  const x: any = r;
+  for (const m of ['use', 'get', 'post', 'all']) {
+    const orig = x[m].bind(x);
+    x[m] = (...args: any[]) => orig(...args.map((a) => (Array.isArray(a) ? a.map(wrap) : wrap(a))));
+  }
+  return r;
+}
+
 // a sliding window per key: `limit` requests per `ms`
 export function limiter(now: () => number) {
   const hits = new Map<string, number[]>();

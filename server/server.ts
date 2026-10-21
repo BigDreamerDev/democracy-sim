@@ -6,6 +6,8 @@ if (!secret) throw new Error('JWT_SECRET is not set.');
 if (process.env.DATABASE_URL && secret.length < 24) throw new Error('JWT_SECRET is too short: use at least 32 random characters.');
 const origins = (process.env.ALLOWED_ORIGINS || 'https://bigdreamerdev.github.io,http://localhost:5173').split(',').map((s) => s.trim()).filter(Boolean);
 
+// a backstop: a stray rejected promise is logged, never allowed to take the whole realm down
+process.on('unhandledRejection', (e) => console.error('[realm] unhandled rejection', e));
 const q = await connect(process.env.DATABASE_URL);
 if (!process.env.DATABASE_URL) {
   // local dev: one admin and two players, password "password"

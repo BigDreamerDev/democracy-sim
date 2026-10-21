@@ -1,5 +1,5 @@
 // The public face of the engine: every player action is a named command. run() applies one to a copy of the world.
-import { W, Id, fail, cit, nm, gazette, isPM, holderOf, hasPower, adminDid, ghost, fmtTime } from './core';
+import { W, Id, fail, cit, nm, gazette, isPM, holderOf, hasPower, adminDid, ghost, fmtTime, own } from './core';
 import * as P from './politics';
 import * as L from './proposals';
 import * as E from './economy';
@@ -164,7 +164,7 @@ export const COMMANDS: Record<string, Cmd> = {
   },
   'admin.crisis': (w, me, a) => {
     if (!w.citizens[me]?.admin) fail('Only the Returning Officer starts a crisis.');
-    const id = S.spawnCrisis(w, a.type || undefined);
+    const id = S.spawnCrisis(w, a.type || undefined) || fail('No crisis can start right now: one is already open, or Parliament isn’t running.');
     adminDid(w, me, `started a crisis: ${S.CRISES.find((c) => c.id === w.crises[id].type)!.title}`, '#/crisis/' + id);
   },
   'admin.calendar': (w, me, a) => {
@@ -181,7 +181,7 @@ export const COMMANDS: Record<string, Cmd> = {
 };
 
 export function run(world: W, actor: Id, cmd: string, args: any = {}): W {
-  const f = COMMANDS[cmd];
+  const f: Cmd | undefined = own(COMMANDS, cmd);
   if (!f) fail('Unknown action.');
   checkArgs(args);
   const w = structuredClone(world);

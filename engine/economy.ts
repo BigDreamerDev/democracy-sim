@@ -1,19 +1,22 @@
 // Money: wallets, the weekly payday, the Treasury, the Federal Reserve and prices, citizen banks and trade ventures.
-import { W, Id, DAY, fail, newId, rand, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, transfer, bal, ca, tick, meter, inDanger, hasPower, isPM, clamp, standing } from './core';
+import { W, Id, DAY, fail, newId, rand, cit, nm, own, text, int, allCitizens, exiled, mustBeFree, gazette, earn, transfer, bal, ca, tick, meter, inDanger, hasPower, isPM, clamp, standing } from './core';
 import { fundOffices, officePay } from './offices';
 
 export function send(w: W, actor: Id, to: Id, amount: number, note: string) {
   mustBeFree(w, actor);
-  cit(w, to);
-  transfer(w, ca(actor), ca(to), amount, note?.trim() ? `From ${nm(w, actor)}: ${note.trim()}` : `From ${nm(w, actor)}`);
+  if (!cit(w, to).active) fail('They are no longer a citizen.');
+  if (to === actor) fail('You cannot pay yourself.');
+  const amt = int(amount, 1, 1_000_000, 'amount');
+  const why = text(note, 0, 200, 'note');
+  transfer(w, ca(actor), ca(to), amt, why ? `From ${nm(w, actor)}: ${why}` : `From ${nm(w, actor)}`);
   tick(w, actor, 'sends');
 }
 
 // ---------- the Federal Reserve ----------
 export function setRate(w: W, actor: Id, rate: number) {
   if (!hasPower(w, actor, 'rate') && !(isPM(w, actor) && w.offices.reserve && !w.offices.reserve.holder)) fail('Only the Chair of the Reserve sets the rate.');
-  rate = Math.round(rate);
-  if (rate < 0 || rate > 15) fail('The rate must be between 0% and 15%.');
+  rate = Math.round(Number(rate));
+  if (!(rate >= 0 && rate <= 15)) fail('The rate must be between 0% and 15%.');
   w.economy.rate = rate;
   gazette(w, 'money', `The Federal Reserve sets the interest rate at ${rate}%.`, '#/economy');
 }
@@ -101,9 +104,9 @@ export function payday(w: W) {
 export function openBank(w: W, actor: Id, name: string, saveRate: number, loanRate: number) {
   if (!w.permits.banks) fail('Banks open once Parliament passes the Banking Act.');
   mustBeFree(w, actor);
-  if ((name || '').trim().length < 3) fail('Name your bank.');
+  name = text(name, 3, 40, 'bank name');
   if (Object.values(w.banks).some((b: any) => b.owner === actor && b.status === 'open')) fail('You already run a bank.');
-  if (!(saveRate >= 0 && saveRate <= 10) || !(loanRate >= 0 && loanRate <= 20)) fail('Savings 0–10%, loans 0–20%.');
+  if (typeof saveRate !== 'number' || typeof loanRate !== 'number' || !(saveRate >= 0 && saveRate <= 10) || !(loanRate >= 0 && loanRate <= 20)) fail('Savings 0–10%, loans 0–20%.');
   transfer(w, ca(actor), 'treasury', 25, 'Bank licence');
   const id = newId(w, 'b');
   w.banks[id] = { id, owner: actor, name: name.trim(), saveRate, loanRate, deposits: {}, loans: [], status: 'open', at: w.now };
@@ -111,29 +114,28 @@ export function openBank(w: W, actor: Id, name: string, saveRate: number, loanRa
   gazette(w, 'money', `${nm(w, actor)} opens ${name.trim()}, paying ${saveRate}% a week on savings.`, '#/banks');
 }
 export function deposit(w: W, actor: Id, bid: Id, amount: number) {
-  const b = w.banks[bid];
+  const b = own(w.banks, bid);
   if (!b || b.status !== 'open') fail('That bank is closed.');
+  amount = int(amount, 1, 1_000_000, 'amount');
   transfer(w, ca(actor), 'bank:' + bid, amount, `Saved at ${b.name}`);
-  b.deposits[actor] = (b.deposits[actor] || 0) + Math.round(amount);
+  b.deposits[actor] = (b.deposits[actor] || 0) + amount;
   tick(w, actor, 'saves');
 }
 export function withdraw(w: W, actor: Id, bid: Id, amount: number) {
-  const b = w.banks[bid];
+  const b = own(w.banks, bid);
   if (!b) fail('No such bank.');
-  amount = Math.round(amount);
+  amount = int(amount, 1, 1_000_000, 'amount');
   if ((b.deposits[actor] || 0) < amount) fail(`You have ${b.deposits[actor] || 0} saved there.`);
-  if (bal(w, 'bank:' + bid) < amount) {
-    failBank(w, b);
-    fail(`${b.name} has run out of cash and failed.`);
-  }
+  // a run on the bank: it fails (and stays failed), and nothing is paid out
+  if (bal(w, 'bank:' + bid) < amount) return failBank(w, b);
   b.deposits[actor] -= amount;
   transfer(w, 'bank:' + bid, ca(actor), amount, `Withdrew from ${b.name}`);
 }
 export function borrowFrom(w: W, actor: Id, bid: Id, amount: number, weeks: number) {
-  const b = w.banks[bid];
+  const b = own(w.banks, bid);
   if (!b || b.status !== 'open') fail('That bank is closed.');
-  amount = Math.round(amount);
-  if (amount > 100) fail('The most you can borrow is 100 crowns.');
+  amount = int(amount, 1, 100, 'loan (the most you can borrow is 100 crowns)');
+  weeks = int(weeks, 1, 10, 'number of weeks');
   if (b.loans.some((l: any) => l.who === actor && l.left > 0)) fail('Pay off your current loan first.');
   if (bal(w, 'bank:' + bid) < amount) fail(`${b.name} does not have that much to lend.`);
   const total = Math.round(amount * (1 + (b.loanRate / 100) * weeks));
@@ -172,20 +174,20 @@ function bankPayday(w: W) {
 
 // ---------- trade ventures: put crowns into a trading run abroad, get them back with profit or loss ----------
 export function ventureOdds(w: W, nid: Id) {
-  const n = w.nations[nid];
+  const n = own(w.nations, nid);
   const base = (n.mood - 2) * 6 + (w.meters.prosperity - 50) / 5;
   return { low: Math.round(base - 20), high: Math.round(base + 30) };
 }
 export function startVenture(w: W, actor: Id, nid: Id, amount: number) {
   mustBeFree(w, actor);
-  const n = w.nations[nid];
+  const n = own(w.nations, nid);
   if (!n) fail('Pick a country.');
   if (inDanger(w, 'standing')) fail('Embargo: no country will trade with us until our Standing recovers.');
   if (w.army.war === nid) fail('We are at war with them.');
   if (n.sanctionsUntil && n.sanctionsUntil > w.now) fail(`${n.name} has sanctions on us. No trade until they lift.`);
   if (n.mood < 1) fail(`${n.name} refuses to trade with us.`);
-  amount = Math.round(amount);
-  if (amount < 5 || amount > 100) fail('Put in between 5 and 100 crowns.');
+  amount = Math.round(Number(amount));
+  if (!(amount >= 5 && amount <= 100)) fail('Put in between 5 and 100 crowns.');
   if (w.ventures.some((v: any) => v.by === actor && v.status === 'out')) fail('You already have a venture at sea.');
   const free = Object.values(w.treaties).some((t: any) => t.status === 'active' && t.nation === nid && t.effect?.tariffFree);
   const tariff = free ? 0 : Math.round((amount * w.config.tariff) / 100);

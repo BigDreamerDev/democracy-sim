@@ -88,7 +88,7 @@ The app directory: apps players have registered and listed, most used first.
 The single-app form adds `reviewList: [{ stars, text, by, created_at }]`. Players review apps on
 their directory page; one review each, and makers can't review their own.
 
-### Webhooks — any key
+### Webhooks — any key lists them; adding, testing and deleting need an `act` key
 Rather than polling, have the realm POST to you. Two kinds:
 
 - **`gazette`**: every new public Gazette entry, for news bots.

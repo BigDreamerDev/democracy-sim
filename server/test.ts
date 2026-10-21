@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { createHash, generateKeyPairSync, sign as ecSign, randomBytes } from 'node:crypto';
 import { connect, SCHEMA } from './db';
 import { makeApp } from './app';
+import { defaultSender, privateIp } from './apps';
 
 let t = Date.UTC(2026, 9, 19, 12);
 const q = await connect(undefined);
@@ -321,6 +322,14 @@ try {
   const out = await call('/api/logout-all', {}, gl.body.token);
   assert.equal((await call('/api/state', undefined, gl.body.token)).status, 401, 'sign out everywhere kills old tokens');
   assert.equal((await call('/api/state', undefined, out.body.token)).status, 200);
+  // two sign-ups racing for one username: one wins, the other is told it's taken, and the server stays up
+  t += 61_000; // past the per-IP sign-up limit
+  const race = await Promise.all([1, 2].map(() => call('/api/signup', { username: 'racer', display_name: 'Racer', password: 'a long enough passphrase', who: 'Racer from the chat' })));
+  assert.deepEqual(race.map((r) => r.status).sort(), [200, 409], 'a username race is a 409, not a crash');
+  assert.equal((await call('/api/health')).status, 200);
+  // webhooks never reach private or reserved addresses
+  assert.ok(['10.0.0.1', '127.0.0.1', '224.0.0.1', '198.18.0.1', '::1', 'fd00::1', '::ffff:127.0.0.1', '64:ff9b::a00:1'].every(privateIp) && !privateIp('8.8.8.8'));
+  for (const u of ['https://127.0.0.1/x', 'https://localhost/x', 'https://[::1]/x']) await assert.rejects(defaultSender(u, '{}', {}), /not allowed/);
   console.log('server ok');
 } finally {
   srv.close();
