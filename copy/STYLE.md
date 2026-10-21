@@ -32,6 +32,20 @@ form, a bank, or a robot. Read each line out loud. If you wouldn't say it to som
 | Error: election not found | That election has closed or never existed. |
 | Are you sure you want to delete this item? | Remove the passkey “Phone”? You’ll need another way to sign in. |
 
+## Editing on the page
+
+`npm run dev`, open the game, and press **Edit text** (bottom left; bottom right on a wide screen).
+
+- Every line the game knows about gets an outline: amber dashes still to do, teal ones you've rewritten,
+  dotted ones you marked fine.
+- Click a line to reword it. Your version shows on the page straight away, so you see it in place. Hold
+  **Alt** while clicking to use the app normally (follow a link, press a button).
+- Parts the game fills in (names, numbers) are kept for you; the box shows them as `${…}`. Keep each one.
+- If the same words appear in several places in the code, the editor asks which one you mean.
+- **Apply** writes everything into the code and reloads. It all saves to the same `copy/edits.json` as the desk.
+
+Text that only appears in certain situations (a crisis, an error) is easier to find in the desk.
+
 ## Using the desk
 
 `npm run dev`, then open **http://localhost:5173/#/copy**.

@@ -744,3 +744,12 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .cd-flag { font-size: 13px; padding: 2px 8px; border-radius: 3px; background: var(--brown-tint); color: var(--brown); border: 1px solid var(--brown); }
 .cd-guide { margin-top: 14px; }
 .cd-guide ul { margin: 8px 0 0; padding-left: 20px; }
+/* edit text in place (development only) */
+[data-cd] { outline: 1.5px dashed var(--amber); outline-offset: 2px; cursor: text; border-radius: 2px; }
+[data-cd="edited"] { outline: 2px solid var(--teal); background: var(--teal-tint); }
+[data-cd="fine"] { outline: 1px dotted var(--rule); }
+.cd-bar { position: fixed; left: 12px; bottom: 76px; z-index: 60; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; max-width: calc(100vw - 24px); }
+.cd-bar.on { background: var(--card); border: 1.5px solid var(--ink); border-radius: 3px; padding: 6px 8px; box-shadow: 3px 3px 0 var(--ink); }
+@media (min-width: 900px) { .cd-bar { bottom: 16px; left: auto; right: 16px; } }
+.cd-pop { position: fixed; z-index: 61; width: min(340px, calc(100vw - 16px)); background: var(--card); color: var(--ink); border: 1.5px solid var(--ink); border-radius: 3px; padding: 10px 12px; box-shadow: 4px 4px 0 var(--ink); }
+.cd-pop select { margin-top: 4px; width: 100%; }

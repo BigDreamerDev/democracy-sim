@@ -20,6 +20,7 @@ import { Streets, TagLanding, Meet, Hunt } from './pages/streets';
 import { Market, Bets } from './pages/market';
 import { Polls, Fame } from './pages/glory';
 import { CopyDesk } from './pages/copydesk';
+import { CopyOverlay } from './copyEdit';
 
 const ROOTS = ['', 'house', 'realm', 'laws', 'you', 'gazette'];
 function level(hash: string) {
@@ -91,8 +92,10 @@ const TABS: [string, string, string, string[]][] = [
 
 function App() {
   const s = useStore();
-  if (!s.world) return <><SignIn />{s.toast && <div class={'toast' + (s.toast.err ? ' err' : '')} role="status">{s.toast.text}</div>}</>;
-  return <Game />;
+  // in development, "Edit text" lets you reword any line in place (see copyEdit.tsx)
+  const dev = import.meta.env.DEV && <CopyOverlay />;
+  if (!s.world) return <><SignIn />{s.toast && <div class={'toast' + (s.toast.err ? ' err' : '')} role="status">{s.toast.text}</div>}{dev}</>;
+  return <><Game />{dev}</>;
 }
 
 function Game() {

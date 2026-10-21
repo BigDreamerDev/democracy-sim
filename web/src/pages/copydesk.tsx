@@ -5,9 +5,9 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Page, Sec, Card, Btn, Empty, Field, Pick, Seg } from '../ui';
 import { toast } from '../store';
 
-type Str = { id: string; file: string; line: number; kind: string; where: string; text: string; template: boolean; ctx: string };
+export type Str = { id: string; file: string; line: number; kind: string; where: string; text: string; template: boolean; ctx: string };
 
-const AREAS: Record<string, string> = {
+export const AREAS: Record<string, string> = {
   'web/src/pages/today.tsx': 'Today, Gazette, passport', 'web/src/pages/house.tsx': 'The House', 'web/src/pages/elections.tsx': 'Elections and Convention',
   'web/src/pages/gov.tsx': 'Government', 'web/src/pages/money.tsx': 'Money', 'web/src/pages/world.tsx': 'World, press, court, season',
   'web/src/pages/backroom.tsx': 'Backroom', 'web/src/pages/streets.tsx': 'The Streets', 'web/src/pages/market.tsx': 'Market and bets',
@@ -17,8 +17,8 @@ const AREAS: Record<string, string> = {
   'engine/crises.ts': 'Crises (game text)', 'engine/glory.ts': 'Red Box, achievements (game text)', 'engine/streets.ts': 'Streets (game text)',
   'engine/world.ts': 'Demo world', 'engine/tutorial.ts': 'Tutorial (game text)', 'engine/alerts.ts': 'Alerts'
 };
-const area = (f: string) => AREAS[f] || (f.startsWith('engine/') ? 'Rules and messages (game text)' : 'Other pages');
-const KINDS: Record<string, string> = { screen: 'On screen', label: 'Labels and titles', message: 'Messages and errors', gazette: 'Gazette lines', data: 'Game text', stamp: 'Stamps', influence: 'Influence reasons' };
+export const area = (f: string) => AREAS[f] || (f.startsWith('engine/') ? 'Rules and messages (game text)' : 'Other pages');
+export const KINDS: Record<string, string> = { screen: 'On screen', label: 'Labels and titles', message: 'Messages and errors', gazette: 'Gazette lines', data: 'Game text', stamp: 'Stamps', influence: 'Influence reasons' };
 
 // the house style, as checks. Each returns a short reason when a line breaks it.
 const RULES: [RegExp, string][] = [
@@ -32,7 +32,7 @@ const RULES: [RegExp, string][] = [
   [/(^|[^\w$])'|'($|[^\w])|"/, 'Curly quotes: ’ “ ”'],
   [/  /, 'Double space']
 ];
-function lint(s: Str, text: string) {
+export function lint(s: Str, text: string) {
   const plain = text.replace(/\$\{[^}]*\}/g, 'X');
   const out = RULES.filter(([re]) => re.test(plain)).map(([, why]) => why);
   if (plain.split(/\s+/).length > 26) out.push('Long: split it into two sentences');
@@ -40,11 +40,12 @@ function lint(s: Str, text: string) {
   if (s.kind === 'label' && plain.split(' ').length <= 5 && (plain.match(/\b[A-Z][a-z]+/g) || []).length >= 3) out.push('Sentence case, not Title Case');
   return out;
 }
-const placeholders = (t: string) => (t.match(/\$\{[^}]*\}/g) || []).sort().join('|');
+export const placeholders = (t: string) => (t.match(/\$\{[^}]*\}/g) || []).sort().join('|');
 
-function Text({ t }: { t: string }) {
+export function Text({ t }: { t: string }) {
   // show the game's ${…} parts as chips, so they're easy to keep
-  return <>{t.split(/(\$\{[^}]*\})/).map((p) => (p.startsWith('${') ? <code class="cd-ph" title="Filled in by the game. Keep it.">{p.slice(2, -1).replace(/^.*\./, '').slice(0, 24)}</code> : p))}</>;
+  const label = (src: string) => (/^[\w.$]+(\([^()]*\))?$/.test(src) ? src.replace(/\(.*\)$/, '').split('.').pop()! : 'auto');
+  return <>{t.split(/(\$\{[^}]*\})/).map((p) => (p.startsWith('${') ? <code class="cd-ph" title={`Filled in by the game: ${p}. Keep it.`}>{label(p.slice(2, -1))}</code> : p))}</>;
 }
 
 export function CopyDesk() {
