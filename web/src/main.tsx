@@ -19,6 +19,7 @@ import { Developers, Apps, AppPage, Authorize } from './pages/developers';
 import { Streets, TagLanding, Meet, Hunt } from './pages/streets';
 import { Market, Bets } from './pages/market';
 import { Polls, Fame } from './pages/glory';
+import { CopyDesk } from './pages/copydesk';
 
 const ROOTS = ['', 'house', 'realm', 'laws', 'you', 'gazette'];
 function level(hash: string) {
@@ -73,7 +74,9 @@ function route(hash: string) {
     wallet: () => <Wallet />, economy: () => <Economy />, banks: () => <Banks />, ventures: () => <Ventures />,
     foreign: () => <Foreign />, nation: () => <Nation id={b} />, security: () => <Security />, army: () => <Army />, press: () => <Press />, court: () => <Court />, case: () => <Case id={b} />, crises: () => <Crises />, crisis: () => <Crisis id={b} />, season: () => <Season />,
     backroom: () => <Backroom />, plots: () => <Plots />, exile: () => <Exile />, admin: () => <Admin />, learn: () => <Learn />, rolog: () => <RoLog />, developers: () => <Developers />, apps: () => <Apps />, app: () => <AppPage id={b} />, authorize: () => <Authorize query={q} />,
-    streets: () => <Streets />, hunt: () => <Hunt />, tag: () => <TagLanding code={b || ''} />, meet: () => <Meet code={b} />, market: () => <Market />, bets: () => <Bets />, polls: () => <Polls />, fame: () => <Fame />
+    streets: () => <Streets />, hunt: () => <Hunt />, tag: () => <TagLanding code={b || ''} />, meet: () => <Meet code={b} />, market: () => <Market />, bets: () => <Bets />, polls: () => <Polls />, fame: () => <Fame />,
+    // the copy desk only exists on the development server (npm run dev)
+    ...(import.meta.env.DEV ? { copy: () => <CopyDesk /> } : {})
   };
   return { tab: a || '', key: hash, view: (pages[a || ''] || pages[''])() };
 }

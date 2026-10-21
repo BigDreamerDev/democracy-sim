@@ -32,6 +32,9 @@ cd server && npm install
 npm run dev                 # API at :4321 on in-memory PGlite; users admin/amara/bilal, password "password"
 npm test                    # end-to-end on PGlite: auth, CORS, act, secrecy, ledger, clock, restart, admin
 cd .. && npm run dev:online # the real UI against the local API
+
+npm run copy:extract        # every player-facing string → copy/strings.json
+npm run copy:apply          # write copy/edits.json into the source (the desk at #/copy does both, dev only)
 ```
 
 **Definition of done** for any change: `npm run typecheck`, `npm run smoke`, and
@@ -78,7 +81,8 @@ SECURITY.md  threat model, every finding and fix, what's accepted, and how to se
 API.md       public API docs for players. examples/ holds starter kits (one-file client, WhatsApp/Discord
              Gazette bots, vote reminder, webhook receiver); keep them working when the API changes.
 docs/        GitHub Pages output. Hand-kept: config.js, icons/, manifest.webmanifest, sw.js
-scripts/     smoke.ts
+scripts/     smoke.ts, copy.ts (the copy desk: extract strings with the TS compiler API, apply edits)
+copy/        STYLE.md (the house voice), edits.json (reviewed rewording in progress)
 ```
 
 ### The model

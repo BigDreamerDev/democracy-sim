@@ -13,5 +13,5 @@
     "types": []
   },
   "include": ["engine", "web/src", "scripts"],
-  "exclude": ["server/node_modules"]
+  "exclude": ["server/node_modules", "scripts/copy.ts"]
 }

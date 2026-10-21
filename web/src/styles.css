@@ -733,3 +733,14 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .fp-photo { margin: 10px 0; }
 .fp-photo img { filter: grayscale(.35) contrast(1.05); }
 .fp-photo figcaption, .photo figcaption { font-size: 13px; margin-top: 4px; font-style: italic; }
+
+/* ---------- the copy desk (development only) ---------- */
+.cd-meta { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.cd-orig { font-family: var(--serif); font-size: 19px; line-height: 1.25; margin: 6px 0 4px; }
+.cd-ctx { display: block; font-size: 12px; color: var(--muted); background: var(--soft); border-radius: 3px; padding: 4px 6px; overflow-x: auto; white-space: pre; }
+.cd-edit { margin-top: 8px; width: 100%; font: inherit; resize: vertical; }
+.cd-ph { font-size: 12px; background: var(--soft); border: 1px solid var(--rule); border-radius: 3px; padding: 0 4px; margin: 0 1px; font-family: var(--sans); }
+.cd-flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.cd-flag { font-size: 13px; padding: 2px 8px; border-radius: 3px; background: var(--brown-tint); color: var(--brown); border: 1px solid var(--brown); }
+.cd-guide { margin-top: 14px; }
+.cd-guide ul { margin: 8px 0 0; padding-left: 20px; }

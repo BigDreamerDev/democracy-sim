@@ -2,6 +2,48 @@ import { defineConfig } from 'vite';
 import preact from '@preact/preset-vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 import { rmSync } from 'node:fs';
+import type { Plugin } from 'vite';
+import * as C from './scripts/copy';
+
+// The copy desk (#/copy, `npm run dev` only): reads every player-facing string live from the source, saves your
+// rewording to copy/edits.json as you type, and writes it into the source when you press Apply.
+function copyDesk(): Plugin {
+  const body = (req: any) => new Promise<any>((ok) => {
+    let b = '';
+    req.on('data', (c: any) => (b += c));
+    req.on('end', () => ok(b ? JSON.parse(b) : {}));
+  });
+  return {
+    name: 'copy-desk',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use('/__copy', async (req: any, res: any) => {
+        const send = (x: any) => (res.setHeader('Content-Type', 'application/json'), res.end(JSON.stringify(x)));
+        try {
+          if (req.method === 'GET' && req.url.startsWith('/strings')) return send({ strings: C.extract().map(({ start, end, ...s }: any) => s) });
+          if (req.method === 'GET' && req.url.startsWith('/edits')) return send(C.readEdits());
+          if (req.method === 'POST' && req.url.startsWith('/edits')) return (C.saveEdits(await body(req)), send({ ok: true }));
+          if (req.method === 'POST' && req.url.startsWith('/apply')) {
+            const data = C.readEdits();
+            const r = C.applyEdits(data.edits || []);
+            // what you rewrote counts as reviewed under its new wording
+            const appliedTexts = new Set((data.edits || []).filter((e: any) => r.done.includes(e.id)).map((e: any) => e.text));
+            const fresh = C.extract();
+            const reviewed = new Set([...(data.reviewed || []), ...fresh.filter((s: any) => appliedTexts.has(s.text)).map((s: any) => s.id)]);
+            C.saveEdits({ edits: (data.edits || []).filter((e: any) => !r.done.includes(e.id)), reviewed: [...reviewed] });
+            C.writeStrings();
+            return send(r);
+          }
+          res.statusCode = 404;
+          send({ error: 'unknown' });
+        } catch (e: any) {
+          res.statusCode = 500;
+          send({ error: String(e?.message || e) });
+        }
+      });
+    }
+  };
+}
 
 // npm run dev         the demo, served locally (no server needed)
 // npm run dev:online  the real app against a local server on :4321 (run `npm run dev` in server/ too)
@@ -16,6 +58,7 @@ export default defineConfig(({ mode }) => {
     publicDir: false,
     plugins: [
       preact(),
+      copyDesk(),
       ...(mode === 'demo' ? [viteSingleFile()] : []),
       {
         name: 'api-config',

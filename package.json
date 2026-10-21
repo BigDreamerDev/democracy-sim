@@ -9,7 +9,9 @@
     "build": "vite build",
     "build:demo": "vite build --mode demo",
     "smoke": "tsx scripts/smoke.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "copy:extract": "tsx scripts/copy.ts extract",
+    "copy:apply": "tsx scripts/copy.ts apply"
   },
   "dependencies": {
     "preact": "^10.24.0",

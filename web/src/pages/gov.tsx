@@ -18,6 +18,7 @@ export function Realm() {
   ];
   groups.splice(5, 0, ['Real life', [['#/streets', 'The Streets', w.citizens[me].streets?.in ? 'Contracts, codes, safe zones' : 'Opt-in: contracts and tags'], ['#/hunt', 'The Hunt', w.hunt?.status === 'running' ? `${w.hunt.alive.length} still standing` : w.hunt?.status === 'signup' ? 'Sign-ups open' : 'A new round every payday'], ['#/meet', 'Meet up', 'Check in with someone in person'], ['#/market', 'The market', `${Object.values(w.bounties || {}).filter((b: any) => b.status === 'open').length} bounties, ${Object.values(w.stalls || {}).filter((s: any) => s.status === 'open').length} stalls`], ['#/bets', 'Bets', `${Object.values(w.markets || {}).filter((m: any) => m.status === 'open' && m.closesAt > w.now).length} open`]]]);
   groups.push(['Made by players', [['#/apps', 'App directory', 'Bots and frontends people have built'], ['#/developers', 'Build your own app', 'API keys, apps and webhooks']]]);
+  if (import.meta.env.DEV) groups.push(['Development', [['#/copy', 'Copy desk', 'Reword every line in the game']]]);
   if (w.citizens[me].admin) groups.push(['Returning Officer', [['#/admin', 'Admin', 'Approvals, calendar, fixes']]]);
   return (
     <Page kicker={w.config.realmName} title="The realm" intro="Everything in the game. Locked areas open once Parliament passes the law that creates them.">
