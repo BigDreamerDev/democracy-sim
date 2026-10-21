@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
+import { shareText } from '../store';
+import { digest } from '../../../engine/index';
 import { useStore, act, ONLINE, myInvites, sendInvite, inviteLink, signOut, changePassword, toast, securityInfo, unlinkProvider, beginOAuth, signOutEverywhere, passkeysWork, addPasskey, removePasskey, renamePasskey } from '../store';
 import { TUTORIAL } from '../../../engine/tutorial';
 import { Page, Sec, Card, Btn, Who, Left, When, Seal, Empty, LinkRow, Seg, Meter, Field, Pick, PasswordField, Photo, DiscordLogo, SectionNav, ThemeSwitch } from '../ui';
@@ -11,6 +13,8 @@ import { needs } from '../../../engine/alerts';
 import { RedBox } from './glory';
 import { RED_BOX } from '../../../engine/glory';
 import { ghost } from '../../../engine/index';
+import { RoleChips, YourDesk, NewJob } from '../Roles';
+import { rolesOf } from '../roles';
 export { needs };
 
 export function Meters({ compact }: { compact?: boolean }) {
@@ -126,7 +130,6 @@ export function Today() {
   const c = w.citizens[me];
   const list = needs(w, me);
   const up = upcoming(w, 3);
-  const mine = officesOf(w, me);
   return (
     <div class="page today">
       <div class="today-head" style={{ position: 'relative' }}>
@@ -139,9 +142,11 @@ export function Today() {
         </div>
         <div style={{ marginTop: 18 }}><SectionNav /></div>
         <h1 class="title today-title" style={{ marginTop: 18 }}>{list.length ? `${list.length} thing${list.length > 1 ? 's' : ''} need${list.length > 1 ? '' : 's'} you` : 'All caught up'}</h1>
+        <ShareRealm />
         <p class="intro">{w.phase === 'convention' ? <>Write the constitution together. The Convention closes in <Left at={w.convention.closesAt} />.</> : 'Democracy won\'t halt for anything, make sure to cast your vote and propose your bills before they close'}</p>
       </div>
       <InductionBanner />
+      <NewJob />
       {exiled(w, me) && <Card kind="warn" style={{ marginTop: 16, gridColumn: '1 / -1' }}><b>You are in exile</b> until <When at={c.exiledUntil} />. <a href="#/exile">What you can still do</a></Card>}
       {ghost(w, me) && <Card kind="warn" style={{ marginTop: 16, gridColumn: '1 / -1' }}><b>You were assassinated.</b> You’re a ghost until <When at={c.ghostUntil} />: you can vote, and nothing else. <a href="#/streets">The Streets</a></Card>}
       <div class="today-a">
@@ -157,12 +162,7 @@ export function Today() {
             </div>
           ))}
         </div>
-        {mine.length > 0 && (
-          <Card style={{ marginTop: 18, order: 2 }}>
-            <div class="small muted">Your office{mine.length > 1 ? 's' : ''}</div>
-            {mine.map((o: any) => <a href={'#/office/' + o.id} class="row" style={{ textDecoration: 'none', color: 'inherit', padding: '6px 0' }}><b class="serif" style={{ fontSize: 19 }}>{o.title}</b><span class="small">{o.powers.length} power{o.powers.length === 1 ? '' : 's'} →</span></a>)}
-          </Card>
-        )}
+        {w.phase === 'running' && <div style={{ order: 2 }}><YourDesk /></div>}
         {w.phase === 'running' && <div class="o4" style={{ marginTop: 18 }}><YourCorner /><OrderPaper /></div>}
         <section class="sec o5">
           <h2 class="h">In the Gazette</h2>
@@ -185,6 +185,11 @@ export function Today() {
   );
 }
 
+// the state of the realm as a message for the group chat
+export function ShareRealm() {
+  const { world: w } = useStore();
+  return <button type="button" class="btn ghost small share-realm" onClick={() => shareText(digest(w))}>Copy for the group chat</button>;
+}
 // one tap from Today for the simple answers: vote, sign, accept, join, open the Red Box
 function SlipActions({ k }: { k: string }) {
   const { world: w } = useStore();
@@ -232,11 +237,10 @@ function YourCorner() {
   const c = w.citizens[me];
   const party = c.party && w.parties[c.party];
   const offs = officesOf(w, me);
-  const role = [isPM(w, me) ? 'Prime Minister' : isMP(w, me) ? 'MP' : 'Citizen', isHOS(w, me) ? hosTitle(w) : '', ...offs.map((o: any) => o.title)].filter(Boolean).join(' · ');
   return (
     <Card>
       <div class="row" style={{ alignItems: 'flex-start' }}>
-        <span><b class="serif" style={{ fontSize: 22 }}>{c.name}</b><div class="small muted">{role}{party ? ` · ${party.leader === me ? 'leads the' : 'in the'} ${party.name}` : ' · no party'}</div></span>
+        <span><b class="serif" style={{ fontSize: 22 }}>{c.name}</b><div class="small muted">{party ? `${party.leader === me ? 'Leads the' : 'In the'} ${party.name}` : 'No party'}</div><RoleChips citizen /></span>
         <a class="small" href="#/you">Passport</a>
       </div>
       <div class="corner-stats">
@@ -374,13 +378,7 @@ export function Passport({ id }: { id?: string }) {
   const pid = id || me;
   const c = w.citizens[pid];
   if (!c) return <Page title="Not found" />;
-  const roles: string[] = [];
-  if (isMP(w, pid)) roles.push('Member of Parliament');
-  if (w.pm === pid) roles.push('Prime Minister');
-  if (w.hos.holder === pid) roles.push(hosTitle(w));
-  if (w.speaker === pid) roles.push('Speaker');
-  officesOf(w, pid).forEach((o: any) => roles.push(o.title));
-  if (c.admin) roles.push('Returning Officer (runs the game)');
+  const roles = rolesOf(w, pid);
   const whip = c.whip.loyal + c.whip.rebel;
   return (
     <div class="page" style={{ padding: 0 }}>
@@ -391,7 +389,13 @@ export function Passport({ id }: { id?: string }) {
       <div style={{ padding: '0 max(20px, env(safe-area-inset-right, 0px)) 24px max(20px, env(safe-area-inset-left, 0px))' }}>
         {(!id || id === me) && <div style={{ marginTop: 12 }}><SectionNav /></div>}
         <div class="grid2" style={{ marginTop: 16 }}>
-          <div style={{ gridColumn: '1 / -1' }}><div class="small muted">Name</div><div class="serif" style={{ fontSize: 30 }}>{c.name}</div></div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div class="small muted">Name</div><div class="serif" style={{ fontSize: 30 }}>{c.name}</div>
+            {c.suspended && <span class="chip red">Suspended</span>}
+            <RoleChips id={pid} citizen />
+            {c.bio && <p style={{ margin: '10px 0 0', whiteSpace: 'pre-wrap' }}>{c.bio}</p>}
+            {pid === me && <EditProfile />}
+          </div>
           <div><div class="small muted">Party</div><b>{c.party ? w.parties[c.party]?.name : 'Independent'}</b></div>
           <div><div class="small muted">Approval</div><b class="tnum">{c.approval}%</b></div>
           {c.invitedBy && <div><div class="small muted">Invited by</div><b><a href={'#/passport/' + c.invitedBy} style={{ color: 'inherit' }}>{nm(w, c.invitedBy)}</a></b></div>}
@@ -399,7 +403,8 @@ export function Passport({ id }: { id?: string }) {
           {(pid === me || !ONLINE) && <div><div class="small muted">Crowns</div><b class="tnum">{bal(w, ca(pid))}</b></div>}
         </div>
         <div style={{ marginTop: 10 }}><Meter value={c.approval} max={100} color={c.approval < 35 ? 'var(--red)' : 'var(--teal)'} /></div>
-        <Sec title="Offices">{roles.length ? <ul class="list">{roles.map((r) => <li>{r}</li>)}</ul> : <Empty>No offices held.</Empty>}</Sec>
+        <Sec title="Offices and roles">{roles.length ? <ul class="list">{roles.map((r) => <li><a href={r.href} class="row" style={{ color: 'inherit', textDecoration: 'none' }}><b>{r.title}</b>{r.can.length > 0 && <span class="small muted" style={{ textAlign: 'right' }}>{r.can[0]}{r.can.length > 1 ? ` +${r.can.length - 1}` : ''}</span>}</a></li>)}</ul> : <Empty>No offices held.</Empty>}</Sec>
+        <Career id={pid} />
         {whip > 0 && <Sec title="Voting record"><Card><b class="serif" style={{ fontSize: 28 }}>{Math.round((c.whip.loyal / whip) * 100)}%</b> with the government whip in {whip} votes.{c.whip.rebel ? <span class="err-line"> {c.whip.rebel} rebellion{c.whip.rebel > 1 ? 's' : ''}, latest on {c.whip.last}.</span> : ''}</Card></Sec>}
         <Sec title="Visas" sub="A stamp for every office, vote and scandal.">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>{c.stamps.slice(0, 24).map((s: any) => <span class={'visa ' + (s.tone === 'bad' ? 'bad' : s.tone === 'ink' ? 'ink' : '')}><b>{s.label}</b><small>{s.sub}</small></span>)}</div>
@@ -413,6 +418,57 @@ export function Passport({ id }: { id?: string }) {
         <p class="mrz" aria-hidden="true">P&lt;{w.config.realmName.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)}&lt;{c.name.toUpperCase()}&lt;&lt;{'<'.repeat(Math.max(0, 22 - c.name.length))}</p>
       </div>
     </div>
+  );
+}
+
+// your name and a line about yourself; a new name is announced, and allowed once a week
+function EditProfile() {
+  const { world: w, me } = useStore();
+  const c = w.citizens[me];
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState({ name: c.name, bio: c.bio || '' });
+  if (!open) return <button type="button" class="linkish small" style={{ marginTop: 8 }} onClick={() => (setF({ name: c.name, bio: c.bio || '' }), setOpen(true))}>Edit name and bio</button>;
+  const save = () => act('me.profile', { ...(f.name.trim() !== c.name ? { name: f.name.trim() } : {}), bio: f.bio }, 'Saved.') && setOpen(false);
+  return (
+    <Card style={{ marginTop: 10 }}>
+      <div class="stack">
+        <Field label="Name (once a week, announced in the Gazette)" value={f.name} onInput={(v) => setF({ ...f, name: v })} />
+        <Field label={`Bio (${280 - f.bio.length} left)`} area value={f.bio} onInput={(v) => setF({ ...f, bio: v.slice(0, 280) })} placeholder="Who you are, what you stand for." />
+        <div class="row" style={{ justifyContent: 'flex-start', gap: 8 }}><Btn small onClick={save}>Save</Btn><Btn small kind="plain" onClick={() => setOpen(false)}>Cancel</Btn></div>
+      </div>
+    </Card>
+  );
+}
+
+// a career in one column: stamps, bills tabled and how they ended, elections contested and how they went
+const OUTCOME: Record<string, string> = { enacted: 'became law', failed: 'defeated', withdrawn: 'withdrawn', vetoed: 'vetoed', withheld: 'refused assent', passed: 'passed', debate: 'in debate', vote: 'being voted on', assent: 'awaiting assent', override: 'veto override vote' };
+function Career({ id }: { id: string }) {
+  const { world: w } = useStore();
+  const [all, setAll] = useState(false);
+  const c = w.citizens[id];
+  const ev: { at: number; t: string; sub: string; href?: string; tone: string }[] = [];
+  c.stamps.forEach((s: any) => s.at && ev.push({ at: s.at, t: s.label, sub: s.sub, tone: s.tone === 'bad' ? 'red' : s.tone === 'ink' ? 'ink' : 'teal' }));
+  (Object.values(w.proposals) as any[]).filter((p) => p.by === id && !p.practice).forEach((p) => ev.push({ at: p.at || p.createdAt || 0, t: `${p.kind === 'bill' ? `Tabled Bill ${p.n}` : `Tabled a ${(KINDS[p.kind]?.name || 'proposal').toLowerCase()}`}: ${p.title}`, sub: OUTCOME[p.stage] || p.stage, href: '#/p/' + p.id, tone: p.stage === 'enacted' ? 'teal' : ['failed', 'vetoed', 'withheld'].includes(p.stage) ? 'red' : 'ink' }));
+  (Object.values(w.elections) as any[]).filter((e) => e.candidates?.[id]).forEach((e) => {
+    const won = e.results?.winners?.includes(id);
+    ev.push({ at: e.closedAt || e.opensAt || e.at || 0, t: `Stood in ${e.title}`, sub: e.status === 'closed' ? (won ? 'won' : 'lost') : 'polls open', href: '#/election/' + e.id, tone: won ? 'teal' : e.status === 'closed' ? 'red' : 'ink' });
+  });
+  ev.sort((a, b) => b.at - a.at);
+  if (!ev.length) return null;
+  const shown = all ? ev : ev.slice(0, 8);
+  return (
+    <Sec title="Career">
+      <ol class="career">
+        {shown.map((e) => (
+          <li class={e.tone}>
+            <span class="small muted tnum">{fmtDay(e.at)}</span>
+            {e.href ? <a href={e.href}><b>{e.t}</b></a> : <b>{e.t}</b>}
+            <span class="small muted"> · {e.sub}</span>
+          </li>
+        ))}
+      </ol>
+      {ev.length > 8 && <button type="button" class="linkish small" onClick={() => setAll(!all)}>{all ? 'Show less' : `Show all ${ev.length}`}</button>}
+    </Sec>
   );
 }
 

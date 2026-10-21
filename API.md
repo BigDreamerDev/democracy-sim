@@ -4,7 +4,7 @@ Build your own bot, dashboard or entire frontend for the realm. Your app sees ex
 what you see in the official site and can do exactly what you can do. The server
 enforces every rule, so there's nothing to break.
 
-- **Base URL:** `https://democracy-sim-thgx.onrender.com/api/v1`
+- **Base URL:** `https://democracy-sim-1.onrender.com/api/v1`
 - **Auth:** `Authorization: Bearer rlm_…` (a personal API key)
 - **CORS:** open. Any website, local file or script may call it.
 - **Format:** JSON in, JSON out.
@@ -27,7 +27,7 @@ immediately. A key is not affected by changing your password.
 ## 2. First request
 
 ```bash
-curl -H "Authorization: Bearer $KEY" https://democracy-sim-thgx.onrender.com/api/v1/me
+curl -H "Authorization: Bearer $KEY" https://democracy-sim-1.onrender.com/api/v1/me
 ```
 
 ```json
@@ -87,6 +87,18 @@ The app directory: apps players have registered and listed, most used first.
 `[{ client_id, name, description, homepage, scope, by, users, rating, reviews, can_sign_in, created_at }]`.
 The single-app form adds `reviewList: [{ stars, text, by, created_at }]`. Players review apps on
 their directory page; one review each, and makers can't review their own.
+
+### `GET /api/public/digest.txt`, `/api/public/status.json`, `/api/public/widget.svg` — no key
+Read-only summaries anyone can fetch (60 a minute per IP). `digest.txt` is the state of the realm as plain text,
+formatted for WhatsApp (the same text as the site's "Copy for the group chat" button). `status.json` gives the public
+headline numbers: phase, PM, head of state, seats, meters, open elections and bills, whether the clock is paused.
+`widget.svg` is a small card you can embed anywhere with an `<img>`.
+
+The game clock can be paused by the Returning Officer. While it is, `serverNow` stands still and no deadline passes;
+`GET /api/health` and `world.clock.pausedAt` say so.
+
+New commands (see `GET /api/v1/commands`): `me.profile {name?, bio?}`, `prop.edit {prop, title?, summary?, clauses?}`
+(author, during debate), `prop.withdraw {prop}`, `office.resign {office}`.
 
 ### Webhooks — any key lists them; adding, testing and deleting need an `act` key
 Rather than polling, have the realm POST to you. Two kinds:
@@ -226,7 +238,7 @@ the same error the server would (where your view holds enough to tell).
 ### A Gazette bot (Node 18+)
 
 ```js
-const KEY = process.env.REALM_KEY, BASE = 'https://democracy-sim-thgx.onrender.com/api/v1';
+const KEY = process.env.REALM_KEY, BASE = 'https://democracy-sim-1.onrender.com/api/v1';
 const get = (p) => fetch(BASE + p, { headers: { Authorization: 'Bearer ' + KEY } }).then((r) => r.json());
 let last = (await get('/gazette?limit=1'))[0]?.id;
 for (;;) {
@@ -242,7 +254,7 @@ for (;;) {
 
 ```python
 import requests
-B, H = "https://democracy-sim-thgx.onrender.com/api/v1", {"Authorization": "Bearer rlm_…"}
+B, H = "https://democracy-sim-1.onrender.com/api/v1", {"Authorization": "Bearer rlm_…"}
 w = requests.get(B + "/state", headers=H).json()["world"]
 for p in w["proposals"].values():
     if p["stage"] == "vote" and w["viewer"] not in p["votes"]:

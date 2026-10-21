@@ -4,12 +4,13 @@ import { Page, Sec, Card, Btn, Who, Left, Empty, LinkRow, Seg, Opt, Field, Pick,
 import { nm, isPM, isHOS, mps, sideOf, sideName, majority, allCitizens, exiled, intrigueOpen, bal, ca, hosTitle, holderOf, officesOf } from '../../../engine/index';
 import { leaderOfOpposition, leaderOfSide, sideSeats, supportFor, members, HOS_METHODS , commands, FORM_DAYS } from '../../../engine/politics';
 import { POWERS, TEMPLATES, FILL } from '../../../engine/offices';
+import { RoleChips } from '../Roles';
 
 export function Offices() {
   const { world: w } = useStore();
   const missing = Object.entries(TEMPLATES).filter(([k]) => !w.offices[k] && k !== 'whip');
   return (
-    <Page back={['#/realm', 'The realm']} title="Offices" intro="The Nation has many officies, each declared by law. If the Government grants you one, you hold it's powers">
+    <Page back={['#/realm', 'The realm']} title="Offices" intro="The Nation has many offices, each declared by law. If the Government grants you one, you hold its powers">
       <Sec>
         <div class="stack">
           {Object.values(w.offices).map((o: any) => (
@@ -39,7 +40,7 @@ export function Office({ id }: { id: string }) {
   const others = allCitizens(w).map((c: any) => [c.id, c.name]) as any;
   return (
     <Page back={['#/offices', 'Offices']} kicker={`${FILL[o.fill]} · ${o.law}${o.secrecy === 'secret' ? ' · secret' : ''}`} title={o.name} intro={o.template ? TEMPLATES[o.template].blurb : undefined}>
-      <Sec><Card kind={mine ? 'tint' : undefined}><div class="small muted">{o.title}</div><b class="serif" style={{ fontSize: 26 }}>{o.members.length > 1 ? o.members.map((m: string) => nm(w, m)).join(', ') : nm(w, o.holder)}</b>{mine && <div class="small" style={{ fontWeight: 700, marginTop: 4 }}>That's you.</div>}{o.budget > 0 && <div class="small" style={{ marginTop: 6 }}>Budget {o.budget} a week · {bal(w, 'office:' + o.id)} left this week</div>}</Card></Sec>
+      <Sec><Card kind={mine ? 'tint' : undefined}><div class="small muted">{o.title}</div><b class="serif" style={{ fontSize: 26 }}>{o.members.length > 1 ? o.members.map((m: string) => nm(w, m)).join(', ') : nm(w, o.holder)}</b>{mine && <div class="row small" style={{ fontWeight: 700, marginTop: 4 }}><span>That's you.</span>{o.holder === me && <button type="button" class="linkish small" style={{ color: 'var(--red)' }} onClick={() => confirm(`Resign as ${o.title}? It's announced, and ${o.fill === 'pm' ? 'the Prime Minister picks your successor' : 'the post is filled again the usual way'}.`) && act('office.resign', { office: o.id }, 'You resigned.')}>Resign</button>}</div>}{o.budget > 0 && <div class="small" style={{ marginTop: 6 }}>Budget {o.budget} a week · {bal(w, 'office:' + o.id)} left this week</div>}</Card></Sec>
       <Sec title="Powers" sub={mine ? 'Use them here, or on the page each one links to.' : `Only the ${o.title.toLowerCase()} can use these.`}>
         <div class="stack">
           {o.powers.map((p: string) => (
@@ -92,7 +93,7 @@ export function Cabinet() {
             </li>
           ))}
         </ul>
-        {pm && <div class="grid2" style={{ marginTop: 10 }}><Btn href="#/new?kind=confidence" kind="ghost">Ask for confidence</Btn><Btn kind="danger ghost" onClick={() => act('gov.resign', {}, 'You resigned.')}>Resign</Btn></div>}
+        {pm && <div class="grid2" style={{ marginTop: 10 }}><Btn href="#/new?kind=confidence" kind="ghost">Ask for confidence</Btn><Btn kind="danger ghost" onClick={() => confirm('Resign as Prime Minister? Your government falls and the ministers you appointed lose their posts.') && act('gov.resign', {}, 'You resigned.')}>Resign</Btn></div>}
       </Sec>
       <Sec title="Coalition" sub="Sides are parties or independent MPs.">
         <ul class="list">{sides.map((s) => <li class="row"><span><b>{sideName(w, s)}</b><div class="small muted">Led by {nm(w, leaderOfSide(w, s))}</div></span><b class="tnum">{sideSeats(w, s)} seat{sideSeats(w, s) === 1 ? '' : 's'}</b></li>)}</ul>
@@ -168,7 +169,7 @@ export function Parties() {
   const ps = Object.values(w.parties).filter((p: any) => ['active', 'forming'].includes(p.status)) as any[];
   const opts = allCitizens(w).filter((c: any) => c.id !== me).map((c: any) => [c.id, c.name]) as any;
   return (
-    <Page back={['#/realm', 'The realm']} title="Parties" intro="Parties are groups of similar minded individuals standing united in election. It costs 10 crows and 2 co-founders to make one">
+    <Page back={['#/realm', 'The realm']} title="Parties" intro="Parties are groups of similar minded individuals standing united in election. It costs 10 crowns and 2 co-founders to make one">
       <Sec><ul class="list">{ps.map((p) => <LinkRow href={'#/party/' + p.id} title={<><i class="dot" style={{ background: p.colour, marginRight: 8 }} />{p.name}</>} sub={p.status === 'forming' ? `Forming: ${p.signed.length} of 2 signed` : `Led by ${nm(w, p.leader)}, ${members(w, p.id).length} members, ${sideSeats(w, 'p:' + p.id)} seats`} />)}</ul></Sec>
       {ps.filter((p) => p.status === 'forming' && p.invited.includes(me) && !p.signed.includes(me)).map((p) => <Card kind="tint"><b>{nm(w, p.leader)} asked you to co-found the {p.name}.</b><Btn small style={{ marginTop: 8 }} onClick={() => act('party.cosign', { party: p.id }, 'Signed.')}>Co-sign</Btn></Card>)}
       <Sec title="Found a party">
@@ -179,6 +180,44 @@ export function Parties() {
           <Btn full onClick={() => act('party.found', { name: f.name, colour: f.colour, cofounders: [f.a, f.b] }, 'Forming. Co-founders have a day.')}>Found it (10 crowns)</Btn>
         </div></Card>
       </Sec>
+    </Page>
+  );
+}
+
+// who's who: everyone in the realm, grouped by what they do, with their party and standing
+export function People() {
+  const { world: w, me } = useStore();
+  const [q, setQ] = useState('');
+  const all = (allCitizens(w) as any[]).filter((c) => !q.trim() || c.name.toLowerCase().includes(q.trim().toLowerCase()));
+  const rank = (c: any) => (w.pm === c.id ? 0 : w.hos?.holder === c.id ? 1 : w.speaker === c.id ? 2 : officesOf(w, c.id).length ? 3 : w.seats.includes(c.id) ? 4 : c.party ? 5 : 6);
+  const groups: [string, (c: any) => boolean][] = [['Government and officers', (c) => rank(c) <= 3], ['Members of Parliament', (c) => rank(c) === 4], ['Citizens', (c) => rank(c) >= 5]];
+  return (
+    <Page kicker={`${allCitizens(w).length} citizens`} title="People" intro="Everyone in the realm, what they hold and which side they're on. Tap a name for their passport and record.">
+      <input class="input" type="search" placeholder="Find someone" aria-label="Find someone" value={q} onInput={(e: any) => setQ(e.currentTarget.value)} />
+      {groups.map(([title, f]) => {
+        const list = all.filter(f).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+        return list.length ? (
+          <Sec title={title}>
+            <ul class="list people">
+              {list.map((c) => {
+                const p = c.party && w.parties[c.party];
+                return (
+                  <li>
+                    <a href={'#/passport/' + c.id} class="row" style={{ color: 'inherit', textDecoration: 'none', alignItems: 'flex-start' }}>
+                      <span>
+                        <b>{c.name}{c.id === me ? ' (you)' : ''}</b>
+                        <div class="small muted">{p ? <><i class="dot" style={{ background: p.colour, marginRight: 6 }} />{p.name}{p.leader === c.id ? ', leader' : ''}</> : 'Independent'}{c.bot ? ' · practice bot' : ''}</div>
+                        <RoleChips id={c.id} max={3} />
+                      </span>
+                      <span class="small tnum muted">{c.approval}%</span>
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </Sec>
+        ) : null;
+      })}
     </Page>
   );
 }

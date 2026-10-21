@@ -33,6 +33,7 @@ export function SectionNav() {
   return (
     <nav class="secnav" aria-label={`${tab.label} sections`}>
       {list.map((s) => { const n = s.count?.(w, me); return <a href={s.href} class={s.id === section.id ? 'on' : ''} aria-current={s.id === section.id ? 'page' : undefined}>{s.label}{n ? <i class="tnum">{n}</i> : null}</a>; })}
+      <a href="#/search" class="secnav-find" aria-label="Find a page"><Icon name="search" /></a>
     </nav>
   );
 }
@@ -110,7 +111,7 @@ export const DiscordLogo = () => (
 
 export function Btn(p: { onClick?: () => void; href?: string; kind?: 'ghost' | 'plain' | 'danger' | 'danger ghost'; full?: boolean; small?: boolean; disabled?: boolean; children?: ComponentChildren; style?: any }) {
   const cls = ['btn', p.kind || '', p.full ? 'full' : '', p.small ? 'small' : ''].join(' ');
-  if (p.href) return <a class={cls} href={p.href} style={p.style}>{p.children}</a>;
+  if (p.href) return <a class={cls} href={p.href} style={p.style} onClick={p.onClick}>{p.children}</a>;
   return <button type="button" class={cls} onClick={p.onClick} disabled={p.disabled} style={p.style}>{p.children}</button>;
 }
 
@@ -213,11 +214,20 @@ export function getTheme(): 'auto' | 'light' | 'dark' {
   } catch {}
   return 'auto';
 }
+// the phone's status bar follows the theme too: a chosen theme overrides both media-matched colours
+export function themeBar(t: 'auto' | 'light' | 'dark') {
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m: any) => {
+    const media = m.dataset.media ?? (m.dataset.media = m.getAttribute('media') || '');
+    if (t === 'auto') media ? m.setAttribute('media', media) : m.removeAttribute('media');
+    else m.setAttribute('media', /dark/.test(media) === (t === 'dark') ? 'all' : 'not all');
+  });
+}
 export function applyTheme(t: 'auto' | 'light' | 'dark') {
   const root = document.documentElement;
   const go = () => {
     if (t === 'auto') root.removeAttribute('data-theme');
     else root.setAttribute('data-theme', t);
+    themeBar(t);
   };
   const d: any = document;
   if (d.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -266,7 +276,8 @@ export function Icon({ name }: { name: string }) {
     you: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c1.5-4 4.5-6 8-6s6.5 2 8 6',
     lock: 'M5 11h14v10H5zM8 11V8a4 4 0 018 0v3',
     key: 'M11 15a4 4 0 11-8 0 4 4 0 018 0zM10 12l10-10M15 7l3 3M18 4l2 2',
-    chev: 'M9 5l7 7-7 7'
+    chev: 'M9 5l7 7-7 7',
+    search: 'M11 18a7 7 0 100-14 7 7 0 000 14zM16 16l5 5'
   };
   return (
     <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

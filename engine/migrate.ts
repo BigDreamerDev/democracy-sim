@@ -9,6 +9,7 @@ export function migrate(w: W): W {
   w.flags ??= {};
   w.lastEvent ??= {};
   w.crisisQueue ??= [];
+  w.clock ??= { offset: 0, pausedAt: null };
   if (!w.pm && w.phase === 'running') w.formingSince ??= w.now;
   w.config.inductionDays ??= 7;
   if (w.phase === 'convention') {

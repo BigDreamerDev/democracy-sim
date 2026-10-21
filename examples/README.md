@@ -31,4 +31,4 @@ WEBHOOK_SECRET=whsec_… NTFY_TOPIC=realm-uzair-8f3k2 node webhook-receiver.mjs
 
 On Windows PowerShell set variables with `$env:REALM_KEY="rlm_…"` first, then `node discord-gazette.mjs`.
 
-`REALM_API` overrides the server address in every kit (default `https://democracy-sim-thgx.onrender.com/api/v1`).
+`REALM_API` overrides the server address in every kit (default `https://democracy-sim-1.onrender.com/api/v1`).

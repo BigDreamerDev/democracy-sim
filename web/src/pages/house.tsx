@@ -6,7 +6,7 @@ import { leaderOfOpposition, HOS_METHODS } from '../../../engine/politics';
 import { describe, KINDS, SETTABLE, canVoteOn, passCheck, PASS_RULES } from '../../../engine/proposals';
 import { TEMPLATES, POWERS, FILL } from '../../../engine/offices';
 
-const STAGE: Record<string, string> = { debate: 'Debate', vote: 'Voting', assent: 'Awaiting assent', override: 'Veto override', hos: 'With the head of state', enacted: 'Law', passed: 'Passed', failed: 'Defeated', vetoed: 'Vetoed', withheld: 'Assent refused' };
+const STAGE: Record<string, string> = { debate: 'Debate', vote: 'Voting', assent: 'Awaiting assent', override: 'Veto override', hos: 'With the head of state', enacted: 'Law', passed: 'Passed', failed: 'Defeated', vetoed: 'Vetoed', withheld: 'Assent refused', withdrawn: 'Withdrawn' };
 const LIVE = ['debate', 'vote', 'assent', 'override', 'hos'];
 // a whole number from 0 to max, for the bill form's crowns fields
 const whole = (v: string, max: number) => Math.min(max, Math.max(0, Math.round(Number(v)) || 0));
@@ -133,6 +133,7 @@ export function Proposal({ id }: { id: string }) {
   const [side, setSide] = useState('for');
   const [lob, setLob] = useState({ mp: '', amount: '10' });
   const [reason, setReason] = useState('');
+  const [edit, setEdit] = useState<any>(null);
   if (!p) return <Page title="No such proposal" back={['#/house', 'The House']} />;
   const book = p.stage === 'override' ? p.overrideVotes || {} : p.votes;
   const mine = book[me];
@@ -140,14 +141,34 @@ export function Proposal({ id }: { id: string }) {
   const ayes = Object.entries(book).filter(([k, v]) => v === 'aye' && voters.includes(k)).length;
   const noes = Object.entries(book).filter(([k, v]) => v === 'no' && voters.includes(k)).length;
   const steps = p.kind === 'bill' ? ['Debate', 'Vote', w.config.hos === 'monarchy' ? 'Royal Assent' : 'Signature', 'Law'] : p.kind === 'dissolution' ? ['Asked', 'Head of state decides', 'Result'] : ['Debate', 'Vote', 'Result'];
-  const idx = p.kind === 'dissolution' ? (p.stage === 'hos' ? 1 : 2) : ({ debate: 0, vote: 1, assent: 2, override: 2, enacted: 3, passed: p.kind === 'bill' ? 3 : 2, failed: p.kind === 'bill' ? 1 : 2, vetoed: 2, withheld: 2 } as any)[p.stage];
-  const failed = ['failed', 'vetoed', 'withheld'].includes(p.stage);
+  const idx = p.kind === 'dissolution' ? (p.stage === 'hos' ? 1 : 2) : ({ debate: 0, vote: 1, assent: 2, override: 2, enacted: 3, passed: p.kind === 'bill' ? 3 : 2, failed: p.kind === 'bill' ? 1 : 2, vetoed: 2, withheld: 2, withdrawn: p.debateEndsAt && p.result?.at > p.debateEndsAt ? 1 : 0 } as any)[p.stage];
+  const failed = ['failed', 'vetoed', 'withheld', 'withdrawn'].includes(p.stage);
+  const author = p.by === me && ['debate', 'vote'].includes(p.stage);
   const need = p.constitutional ? superMajority(w) : p.rule === 'seats' ? majority(w) : null;
   const blocker = officeWithPower(w, me, 'block');
   return (
     <Page back={['#/house', 'The House']} kicker={<>{KINDS[p.kind].name}{p.kind === 'bill' ? ` ${p.n}` : ''}, by <Who id={p.by} />{p.constitutional ? ', constitutional' : ''}{p.fast ? ', fast-tracked' : ''}</>} title={p.title}>
-      {['enacted', 'passed', 'failed', 'vetoed'].includes(p.stage) && <Stamp label={['enacted', 'passed'].includes(p.stage) ? 'Passed' : p.stage === 'vetoed' ? 'Vetoed' : 'Defeated'} sub={p.lawRef || (p.result ? `${p.result.ayes} to ${p.result.noes}` : '')} red={failed} style={{ top: 70, right: 16, transformOrigin: '100% 0' }} />}
+      {['enacted', 'passed', 'failed', 'vetoed', 'withdrawn'].includes(p.stage) && <Stamp label={['enacted', 'passed'].includes(p.stage) ? 'Passed' : p.stage === 'vetoed' ? 'Vetoed' : p.stage === 'withdrawn' ? 'Withdrawn' : 'Defeated'} sub={p.lawRef || (p.result ? `${p.result.ayes} to ${p.result.noes}` : '')} red={failed} style={{ top: 70, right: 16, transformOrigin: '100% 0' }} />}
       {p.summary && <p class="intro">{p.summary}</p>}
+      {p.editedAt && <p class="small muted" style={{ margin: '4px 0 0' }}>Amended by its author {p.edits > 1 ? `${p.edits} times, last ` : ''}{fmtTime(w, p.editedAt)}.</p>}
+      {author && !edit && (
+        <div class="row" style={{ justifyContent: 'flex-start', gap: 8, marginTop: 10 }}>
+          {p.stage === 'debate' && ['bill', 'referendum'].includes(p.kind) && <Btn small kind="ghost" onClick={() => setEdit({ title: p.title, summary: p.summary || '', clauses: structuredClone(p.clauses) })}>Edit it</Btn>}
+          {!(['no_confidence', 'confidence'].includes(p.kind) && p.stage === 'vote') && <Btn small kind="plain" onClick={() => confirm('Withdraw it? It stops here, and any bets on it are refunded.') && act('prop.withdraw', { prop: p.id }, 'Withdrawn.')}>Withdraw</Btn>}
+        </div>
+      )}
+      {edit && (
+        <Card style={{ marginTop: 12 }}><div class="stack">
+          <b>Edit your {KINDS[p.kind].name.toLowerCase()}</b>
+          <span class="small muted">Allowed until the vote opens. The change is announced, and speeches already made are marked as about the earlier wording.</span>
+          <Field label={p.kind === 'referendum' ? 'Question' : 'Title'} value={edit.title} onInput={(v) => setEdit({ ...edit, title: v })} />
+          <Field label="Summary" area value={edit.summary} onInput={(v) => setEdit({ ...edit, summary: v })} />
+          {edit.clauses.length > 0 && <ol class="list small" style={{ margin: 0 }}>{edit.clauses.map((e: any, i: number) => <li class="row"><span>{describe(w, e)}</span>{(p.kind !== 'bill' || edit.clauses.length > 1) && <Btn small kind="plain" onClick={() => setEdit({ ...edit, clauses: edit.clauses.filter((_: any, j: number) => j !== i) })}>Remove</Btn>}</li>)}</ol>}
+          <span class="small muted">To add a clause, withdraw it and table a new draft.</span>
+          <div class="row" style={{ justifyContent: 'flex-start', gap: 8 }}><Btn small onClick={() => act('prop.edit', { prop: p.id, ...edit }, 'Amended. It is in the Gazette.') && setEdit(null)}>Save changes</Btn><Btn small kind="plain" onClick={() => setEdit(null)}>Cancel</Btn></div>
+        </div></Card>
+      )}
+      {p.stage === 'withdrawn' && <Card kind="warn" style={{ marginTop: 12 }}><b>Withdrawn by its author</b>{p.result?.at ? <> {fmtTime(w, p.result.at)}</> : ''}.</Card>}
       <ol class="steps" aria-label="Stages" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
         {steps.map((s, i) => <li aria-current={i === idx ? 'step' : undefined} class={i < idx || (i === idx && !failed && !LIVE.includes(p.stage)) ? 'done' : i === idx ? (failed ? 'bad' : 'now') : ''}><span />{s}</li>)}
       </ol>
@@ -158,7 +179,7 @@ export function Proposal({ id }: { id: string }) {
       )}
       {p.kind !== 'bill' && p.kind !== 'referendum' && <p class="small muted" style={{ marginTop: 14 }}>{KINDS[p.kind].blurb}</p>}
 
-      {(p.stage === 'vote' || p.stage === 'override' || p.result) && p.kind !== 'dissolution' && (
+      {(p.stage === 'vote' || p.stage === 'override' || p.result) && p.stage !== 'withdrawn' && p.kind !== 'dissolution' && (
         <Sec>
           <Card>
             <div class="row"><h2 class="h" style={{ margin: 0 }}>{p.stage === 'override' ? 'Override vote' : p.voters === 'all' ? 'The referendum' : 'The vote'}</h2>{(p.stage === 'vote' || p.stage === 'override') && <b class="small" style={{ color: 'var(--red)' }}>Closes in <Left at={p.stage === 'override' ? p.overrideEndsAt : p.voteEndsAt} /></b>}</div>
@@ -220,7 +241,7 @@ export function Proposal({ id }: { id: string }) {
           <ol class="list">
             {p.speeches.map((s: any) => (
               <li>
-                <div class="row"><b class="serif" style={{ fontSize: 18 }}><Who id={s.by} /></b><span class="small muted">{fmtTime(w, s.at)}</span></div>
+                <div class="row"><b class="serif" style={{ fontSize: 18 }}><Who id={s.by} /></b><span class="small muted">{fmtTime(w, s.at)}{p.editedAt && s.at < p.editedAt ? ' · on the earlier wording' : ''}</span></div>
                 <div class="small" style={{ fontWeight: 700, color: s.side === 'for' ? 'var(--teal)' : s.side === 'against' ? 'var(--red)' : 'var(--muted)' }}>{s.side === 'order' ? 'Order' : s.side[0].toUpperCase() + s.side.slice(1)}</div>
                 <p style={{ margin: '4px 0 0', fontStyle: s.side === 'order' ? 'italic' : 'normal' }}>{s.text}</p>
               </li>

@@ -1,0 +1,38 @@
+# A nightly copy of the database, encrypted, kept as a workflow artifact for 30 days. Neon's free tier keeps only a
+# short history, so this is the backup that survives a bad deploy or a deleted branch.
+# Needs two repository secrets (Settings → Secrets and variables → Actions):
+#   DATABASE_URL       the Neon connection string (the same one Render uses)
+#   BACKUP_PASSPHRASE  a long random passphrase; keep a copy somewhere safe, it's the only way to open a backup
+# To restore: download the artifact, then
+#   gpg --batch --passphrase "$BACKUP_PASSPHRASE" -d realm.sql.gz.gpg | gunzip | psql "$DATABASE_URL"
+name: backup
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check the secrets are set
+        env: { DATABASE_URL: '${{ secrets.DATABASE_URL }}', BACKUP_PASSPHRASE: '${{ secrets.BACKUP_PASSPHRASE }}' }
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then echo "Set DATABASE_URL and BACKUP_PASSPHRASE as repository secrets."; exit 1; fi
+      - name: Install the Postgres 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+      - name: Dump and encrypt
+        env: { DATABASE_URL: '${{ secrets.DATABASE_URL }}', BACKUP_PASSPHRASE: '${{ secrets.BACKUP_PASSPHRASE }}' }
+        run: |
+          /usr/lib/postgresql/17/bin/pg_dump --no-owner --no-privileges "$DATABASE_URL" | gzip -9 \
+            | gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$BACKUP_PASSPHRASE" -o realm.sql.gz.gpg
+          ls -l realm.sql.gz.gpg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: realm-backup-${{ github.run_id }}
+          path: realm.sql.gz.gpg
+          retention-days: 30

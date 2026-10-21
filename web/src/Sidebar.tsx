@@ -5,6 +5,7 @@ import { nm, bal, ca, intrigueOpen, fmtTime, ordinal, standing, canSeeCard, TUTO
 import { needs } from './pages/today';
 import { TABS, where, visible } from './nav';
 import { SearchBox } from './search';
+import { RoleChips } from './Roles';
 
 export function Sidebar({ tabs, current }: { tabs: [string, string, string, boolean][]; current: string }) {
   const { world: w, me } = useStore();
@@ -41,6 +42,7 @@ export function Sidebar({ tabs, current }: { tabs: [string, string, string, bool
       </nav>
       <div class="side-foot">
         <div class="small muted">Playing as <b style={{ color: 'var(--ink)' }}>{nm(w, me)}</b> · {c.influence} Influence</div>
+        <RoleChips max={3} />
         <div class="small muted tnum">{fmtTime(w, w.now)}</div>
         <ThemeSwitch />
       </div>

@@ -6,7 +6,7 @@ import {
 import { TEMPLATES, POWERS, FILL, createOffice } from './offices';
 import { startHosSelection, callGeneralElection, governmentFalls, vacateSeat, HOS_METHODS, countback } from './politics';
 import { addJob, addZone } from './streets';
-import { openMarket, settleMarket } from './markets';
+import { openMarket, settleMarket, voidMarket } from './markets';
 
 export const KINDS: Record<string, { name: string; who: string; blurb: string }> = {
   bill: { name: 'Bill', who: 'MPs', blurb: 'Changes the law. Each clause is a rule in words or something the game carries out.' },
@@ -45,7 +45,9 @@ export function describe(w: W, e: any): string {
     case 'budget':
       return `Sets the ${w.offices[e.office]?.name ?? 'office'} budget to ${e.value} crowns a week.`;
     case 'set':
-      return `Sets ${own(SETTABLE, e.key)?.label.toLowerCase() ?? 'a number'} to ${e.value}${own(SETTABLE, e.key)?.unit ?? ''}.`;
+      return typeof e.from === 'number' && e.from !== e.value
+        ? `Changes ${own(SETTABLE, e.key)?.label.toLowerCase() ?? 'a number'} from ${e.from}${own(SETTABLE, e.key)?.unit ?? ''} to ${e.value}${own(SETTABLE, e.key)?.unit ?? ''}.`
+        : `Sets ${own(SETTABLE, e.key)?.label.toLowerCase() ?? 'a number'} to ${e.value}${own(SETTABLE, e.key)?.unit ?? ''}.`;
     case 'permit':
       return 'Allows any citizen to open a licensed bank, take savings and make loans.';
     case 'treaty':
@@ -80,6 +82,7 @@ function checkClause(w: W, e: any) {
     case 'set':
       if (!own(SETTABLE, e.key)) fail('Pick a number to change.');
       e.value = int(e.value, SETTABLE[e.key].min, SETTABLE[e.key].max, SETTABLE[e.key].label.toLowerCase());
+      e.from = w.config[e.key]; // what it was when tabled, so the bill and the law can say "from … to …"
       break;
     case 'budget':
       if (!own(w.offices, e.office)) fail('Pick an office.');
@@ -133,6 +136,19 @@ function checkClause(w: W, e: any) {
     }
   }
 }
+// every clause checked in full: the same rules for a new proposal and an edited one
+function checkClauses(w: W, kind: string, clauses: any) {
+  if (!Array.isArray(clauses)) fail('Clauses must be a list.');
+  if (kind === 'bill' && !clauses.length) fail('Add at least one clause.');
+  if (clauses.length > 20) fail('A bill can have 20 clauses at most.');
+  for (const e of clauses) {
+    if (!['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone'].includes(e?.t)) fail('Unknown kind of clause.');
+    checkClause(w, e);
+    if (e.t === 'treaty' && !own(w.offers, e.offer)) fail('That treaty offer has expired.');
+    if ((e.t === 'war' || e.t === 'peace') && !w.offices.army) fail('War and peace need an Army: pass the Defence Act first.');
+    if (e.t === 'permit' && w.permits.banks) fail('Banks are already allowed.');
+  }
+}
 export function propose(w: W, actor: Id, a: any) {
   mustBeFree(w, actor);
   if (w.phase !== 'running') fail('Proposals start once the constitution is adopted.');
@@ -148,16 +164,7 @@ export function propose(w: W, actor: Id, a: any) {
   } else if (!isMP(w, actor) && !hasPower(w, actor, 'propose')) fail('Only MPs put proposals to the House.');
   if ((kind === 'no_confidence' || kind === 'confidence') && !w.pm) fail('There is no government.');
   if (kind === 'censure' && !own(w.citizens, a.target)?.active) fail('Pick who to censure.');
-  if (!Array.isArray(clauses)) fail('Clauses must be a list.');
-  if (kind === 'bill' && !clauses.length) fail('Add at least one clause.');
-  if (clauses.length > 20) fail('A bill can have 20 clauses at most.');
-  for (const e of clauses) {
-    if (!['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone'].includes(e?.t)) fail('Unknown kind of clause.');
-    checkClause(w, e);
-    if (e.t === 'treaty' && !own(w.offers, e.offer)) fail('That treaty offer has expired.');
-    if ((e.t === 'war' || e.t === 'peace') && !w.offices.army) fail('War and peace need an Army: pass the Defence Act first.');
-    if (e.t === 'permit' && w.permits.banks) fail('Banks are already allowed.');
-  }
+  checkClauses(w, kind, clauses);
   if (Object.values(w.proposals).some((p: any) => p.kind === kind && ['no_confidence', 'confidence', 'dissolution'].includes(kind) && ['debate', 'vote', 'hos'].includes(p.stage))) fail('One of those is already open.');
   if (kind === 'referendum') spend(w, actor, 20, 'Called a referendum');
   const open = Object.values(w.proposals).filter((p: any) => p.by === actor && ['debate', 'vote'].includes(p.stage)).length;
@@ -182,6 +189,37 @@ export function propose(w: W, actor: Id, a: any) {
   tick(w, actor, 'proposals');
   gazette(w, 'proposal', `${nm(w, actor)} puts a ${KINDS[kind].name.toLowerCase()} to the House: ${w.proposals[id].title}${constitutional ? ' (constitutional: needs ' + superMajority(w) + ' of ' + w.config.seats + ')' : ''}.`, '#/p/' + id);
   return id;
+}
+
+// the author can reword a bill while it's still being debated (speeches made so far are marked as on the earlier draft),
+// or withdraw it any time before the vote closes. Bets on it are refunded.
+export function editProposal(w: W, actor: Id, pid: unknown, a: any) {
+  const p = own(w.proposals, pid);
+  if (!p || p.by !== actor) fail('Only the author can edit a proposal.');
+  if (p.stage !== 'debate') fail('You can only edit it while it’s being debated, before the vote opens.');
+  if (p.kind !== 'bill' && p.kind !== 'referendum') fail('Only bills and referendums have wording to edit.');
+  const clauses = structuredClone(a?.clauses ?? p.clauses);
+  const title = a?.title === undefined ? p.title : text(a.title, p.kind === 'referendum' ? 8 : 4, 120, p.kind === 'referendum' ? 'question' : 'title');
+  const summary = a?.summary === undefined ? p.summary : text(a.summary, 0, 500, 'summary');
+  checkClauses(w, p.kind, clauses);
+  if (p.kind === 'bill' && !clauses.length) fail('Add at least one clause.');
+  p.title = title;
+  p.summary = summary;
+  p.clauses = clauses;
+  p.constitutional = clauses.some((e: any) => CONSTITUTIONAL.includes(e.t) || (e.t === 'office' && own(TEMPLATES, e.template)?.constitutional));
+  p.editedAt = w.now;
+  p.edits = (p.edits || 0) + 1;
+  gazette(w, 'proposal', `${nm(w, actor)} amends their ${KINDS[p.kind].name.toLowerCase()}: ${p.title}.`, '#/p/' + p.id);
+}
+export function withdrawProposal(w: W, actor: Id, pid: unknown) {
+  const p = own(w.proposals, pid);
+  if (!p || p.by !== actor) fail('Only the author can withdraw a proposal.');
+  if (!['debate', 'vote'].includes(p.stage)) fail('It’s too late to withdraw it.');
+  if (['no_confidence', 'confidence'].includes(p.kind) && p.stage === 'vote') fail('A confidence vote can’t be withdrawn once voting has started.');
+  p.stage = 'withdrawn';
+  p.result = { withdrawn: true, at: w.now };
+  Object.values(w.markets || {}).forEach((m: any) => m.kind === 'prop' && m.ref === p.id && m.status === 'open' && voidMarket(w, m, 'The proposal was withdrawn.'));
+  gazette(w, 'proposal', `${nm(w, actor)} withdraws ${p.title}.`, '#/p/' + p.id);
 }
 
 export function speak(w: W, actor: Id, pid: Id, side: string, speech: string) {

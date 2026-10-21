@@ -133,3 +133,11 @@ export function lotOfficeRefresh(w: W, o: any) {
   while (o.members.length < (o.template === 'court' ? 3 : 1) && extra.length) o.members.push(extra.shift());
   o.holder = o.members[0] || null;
 }
+
+// step down from an office you hold; the post falls vacant and whoever fills it can fill it again
+export function resignOffice(w: W, actor: Id, oid: unknown) {
+  const o = own(w.offices, oid);
+  if (!o || o.holder !== actor) fail('You don’t hold that office.');
+  o.holder = null;
+  gazette(w, 'government', `${nm(w, actor)} resigns as ${o.title}.`, '#/office/' + o.id);
+}

@@ -829,3 +829,31 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .search.compact .search-hits { position: absolute; left: 0; right: 0; z-index: 40; }
 .search-hits a { display: flex; flex-direction: column; padding: 6px 8px; border-radius: 3px; text-decoration: none; color: var(--ink); }
 .search-hits a:hover { background: var(--soft); }
+/* roles: chips under your name, the desk on Today, the new-job notice */
+.role-chips { margin-top: 6px; }
+.role-chips a.chip { text-decoration: none; }
+.role-chips a.chip:hover { background: var(--soft); }
+.side-foot .role-chips { margin: 6px 0 4px; }
+.side-foot .role-chips .chip { font-size: 11px; padding: 1px 6px; }
+.desk { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; }
+.desk li + li { border-top: 1px solid var(--rule); }
+.desk-row { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 0; color: inherit; text-decoration: none; }
+.desk-row:hover .chip { background: var(--soft); }
+/* career timeline on the passport */
+.career { list-style: none; margin: 0; padding: 0 0 0 16px; border-left: 2px solid var(--rule); display: flex; flex-direction: column; gap: 10px; }
+.career li { position: relative; }
+.career li::before { content: ''; position: absolute; left: -23px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--paper); border: 2px solid var(--ink); }
+.career li.teal::before { border-color: var(--teal); background: var(--teal); }
+.career li.red::before { border-color: var(--red); }
+.career li > span:first-child { display: block; }
+.career a { color: inherit; }
+/* find a page */
+.sitemap { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px 24px; }
+.sitemap a { color: inherit; }
+.secnav .secnav-find { margin-left: auto; padding: 0 10px; }
+@media (min-width: 960px) { .secnav .secnav-find { display: none; } }
+.people li > a { padding: 4px 0; }
+/* paused or under emergency rule: on every page */
+.status-banner { margin: 0 0 12px; padding: 10px 14px; border: 1.5px solid var(--ink); border-radius: 3px; background: var(--brown-tint); color: var(--ink); font-size: 15px; }
+.status-banner.martial { background: var(--red-tint); border-color: var(--red); }
+.share-realm { margin-top: 10px; }

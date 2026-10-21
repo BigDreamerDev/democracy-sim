@@ -11,6 +11,7 @@ import type { Q } from './db';
 export type Ctx = {
   q: Q;
   now: () => number;
+  gameNow?: () => number;
   log: (...a: any[]) => void;
   world: () => any;
   setWorld: (w: any) => void;
@@ -119,7 +120,7 @@ export function publicApi(c: Ctx) {
     await c.serial(c.catchUp);
     c.schedule();
     if (req.headers['if-none-match'] === tagFor(req)) return res.status(304).end();
-    reply(req, res, { world: viewFor(c.world(), req.cid), me: req.cid, serverNow: c.now(), version: c.version() });
+    reply(req, res, { world: viewFor(c.world(), req.cid), me: req.cid, serverNow: (c.gameNow || c.now)(), version: c.version() });
   });
 
   // ?since=<gazette id>&limit=<n up to 100>: the public record, newest first
@@ -152,7 +153,7 @@ export function publicApi(c: Ctx) {
       });
       c.schedule();
       c.q('INSERT INTO v2_log (actor, cmd, args, ok) VALUES ($1, $2, $3, TRUE)', [req.cid + ' via ' + req.key.prefix, cmd, JSON.stringify(args || {})]).catch(() => {});
-      reply(req, res, { ok: true, world: viewFor(c.world(), req.cid), me: req.cid, serverNow: c.now(), version: c.version() });
+      reply(req, res, { ok: true, world: viewFor(c.world(), req.cid), me: req.cid, serverNow: (c.gameNow || c.now)(), version: c.version() });
     } catch (e: any) {
       c.q('INSERT INTO v2_log (actor, cmd, args, ok, error) VALUES ($1, $2, $3, FALSE, $4)', [req.cid + ' via ' + req.key.prefix, cmd, JSON.stringify(args || {}), String(e.message)]).catch(() => {});
       if (e instanceof GameError) return res.status(400).json({ ok: false, error: e.message });

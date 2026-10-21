@@ -1,6 +1,6 @@
 // Posts every new Gazette entry to a Discord channel.
 // REALM_KEY=rlm_… DISCORD_WEBHOOK=https://discord.com/api/webhooks/… node discord-gazette.mjs
-const API = process.env.REALM_API || 'https://democracy-sim-thgx.onrender.com/api/v1';
+const API = process.env.REALM_API || 'https://democracy-sim-1.onrender.com/api/v1';
 const KEY = process.env.REALM_KEY;
 const HOOK = process.env.DISCORD_WEBHOOK;
 const SITE = process.env.REALM_SITE || 'https://bigdreamerdev.github.io/democracy-sim/';

@@ -10,7 +10,7 @@ import qrcode from 'qrcode-terminal';
 import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth } = pkg;
 
-const API = process.env.REALM_API || 'https://democracy-sim-thgx.onrender.com/api/v1';
+const API = process.env.REALM_API || 'https://democracy-sim-1.onrender.com/api/v1';
 const KEY = process.env.REALM_KEY;
 const GROUP = process.env.WHATSAPP_GROUP;
 const SITE = process.env.REALM_SITE || 'https://bigdreamerdev.github.io/democracy-sim/';

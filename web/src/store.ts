@@ -8,11 +8,16 @@ const KEY = 'realm-demo-v2';
 const API: string = ((window as any).API_BASE || '').replace(/\/$/, '');
 export const ONLINE = !!API;
 const TOKEN = 'realm-token';
+const LAST = 'realm-last';
 
 type State = { world: any; me: string; autoBots: boolean; history: any[]; toast: { text: string; err: boolean } | null; tick: number; signedIn?: boolean; loading?: boolean; offline?: boolean; oauthNote?: string };
 
 function load(): State {
-  if (ONLINE) return { world: null, me: '', autoBots: false, history: [], toast: null, tick: 0, signedIn: !!getToken(), loading: !!getToken() };
+  if (ONLINE) {
+    // the realm as this device last saw it, so the site opens with no signal; the server's copy replaces it at once
+    const last = getToken() ? lastSeen() : null;
+    return { world: last?.world || null, me: last?.me || '', autoBots: false, history: [], toast: null, tick: 0, signedIn: !!getToken(), loading: !!getToken() && !last };
+  }
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
@@ -190,15 +195,25 @@ async function api(path: string, body?: any) {
   if (fresh && getToken()) setToken(fresh);
   if (r.status === 401 && getToken()) {
     setToken('');
+    forget();
     set({ signedIn: false, world: null, loading: false });
   }
   if (!r.ok) throw new Error(data.error || 'The server said no (' + r.status + ').');
   if (state.offline) set({ offline: false });
   return data;
 }
+
+function lastSeen(): { world: any; me: string } | null {
+  try { return JSON.parse(localStorage.getItem(LAST) || 'null'); } catch { return null; }
+}
+let keptAt = 0;
 function receive(d: any) {
   if (d.serverNow) skew = d.serverNow - Date.now();
   if (d.world) set({ world: d.world, me: d.me, loading: false, signedIn: true });
+  if (d.world && Date.now() - keptAt > 60_000) {
+    keptAt = Date.now();
+    try { localStorage.setItem(LAST, JSON.stringify({ world: d.world, me: d.me })); } catch {}
+  }
 }
 export async function refresh() {
   if (!getToken()) return;
@@ -245,8 +260,12 @@ export async function signUp(username: string, display_name: string, password: s
   await refresh();
   return 'in';
 }
+function forget() {
+  try { localStorage.removeItem(LAST); } catch {}
+}
 export function signOut() {
   setToken('');
+  forget();
   set({ signedIn: false, world: null, me: '' });
 }
 export async function changePassword(current: string, next: string) {
@@ -395,7 +414,7 @@ if (ONLINE) {
   finishOAuth().then((handled) => !handled && refresh());
   // poll while the page is open; the local clock ticks between polls so countdowns move
   setInterval(() => !document.hidden && !pending && refresh(), 15_000);
-  setInterval(() => state.world && !document.hidden && set({ world: { ...state.world, now: Math.max(state.world.now, Date.now() + skew) } }), 30_000);
+  setInterval(() => state.world && !document.hidden && !state.world.clock?.pausedAt && set({ world: { ...state.world, now: Math.max(state.world.now, Date.now() + skew) } }), 30_000);
   document.addEventListener('visibilitychange', () => !document.hidden && refresh());
 }
 
@@ -464,6 +483,36 @@ export const setAllowance = (citizen: string, n: number) => api('/api/admin/invi
 export const adminNotes = () => api('/api/admin/notes');
 export const saveNote = (citizen: string, text: string) => api('/api/admin/notes', { citizen, text });
 export const adminDevices = () => api('/api/admin/devices');
+// RO powers with a side outside the world (the login, the admin flag, the real clock) have their own routes online
+async function adminRoute(path: string, cmd: string, body: any, done: string) {
+  if (!ONLINE) return act(cmd, cmd === 'admin.clock' ? { ...body, real: state.world.now } : body, done);
+  receive(await api(path, body));
+  toast(done);
+  return true;
+}
+export const pauseClock = (on: boolean, reason = '') => adminRoute('/api/admin/clock', 'admin.clock', { on, reason }, on ? 'The realm is paused. Every deadline waits.' : 'The clock is running again.');
+export const suspendCitizen = (citizen: string, on: boolean, reason = '') => adminRoute('/api/admin/suspend', 'admin.suspend', { citizen, on, reason }, on ? 'Suspended. It is in the Gazette.' : 'Restored.');
+export const setRO = (citizen: string, on: boolean) => adminRoute('/api/admin/ro', 'admin.ro', { citizen, on }, on ? 'They can now run the game with you.' : 'No longer a Returning Officer.');
+export const actionLog = (failed = false) => api('/api/admin/log' + (failed ? '?failed=1' : ''));
+export const listSnapshots = () => api('/api/admin/snapshots');
+export async function restoreSnapshot(id: number, confirm: string) {
+  receive(await api('/api/admin/snapshots/restore', { id, confirm }));
+  toast('Restored. A copy of how things stood just before is kept as a snapshot.');
+}
+// the state of the realm as text for the group chat: the phone's share sheet, or the clipboard
+export async function shareText(text: string, done = 'Copied. Paste it in the group.') {
+  try {
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) return void (await navigator.share({ text }));
+  } catch (e: any) {
+    if (e?.name === 'AbortError') return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(done);
+  } catch {
+    toast('Couldn’t copy. Select the text and copy it yourself.', true);
+  }
+}
 // development: see the realm as a monarchy (King or Queen) or a republic, to check wording that depends on it.
 // It changes only this browser's copy; online, the next refresh from the server puts it back.
 export function previewGovernment(kind: 'queen' | 'king' | 'president') {

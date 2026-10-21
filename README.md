@@ -77,6 +77,22 @@ It runs free: GitHub Pages for the site, Render for the API, Neon for Postgres.
 
 Sign-in with Discord, Google, Microsoft or Apple is optional; [SECURITY.md](SECURITY.md) explains each.
 
+## Troubleshooting
+
+| What you see | Why, and the fix |
+|-|-|
+| "Can't reach the server. Retrying…" for a minute | Render's free tier was asleep. It wakes in under a minute; the game clock catches up on its own. |
+| "Refused origin" in the Render log, and the site can't sign in | `ALLOWED_ORIGINS` doesn't list the site's address. Use the origin only (`https://you.github.io`); a pasted page address or trailing slash is now trimmed, and the boot log prints what was accepted. |
+| The server won't boot: "JWT_SECRET" | It must be 24+ characters. Keep the old value if you have one, or everyone is signed out. |
+| "running scripts is disabled" (Windows) | Use `npm.cmd`, or run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once. |
+| Discord/Google sign-in says the redirect is wrong | `PUBLIC_URL` must be the Render address, and the provider's redirect must be `PUBLIC_URL/api/oauth/<provider>/callback`. |
+| Someone's stuck or a deadline went wrong | Admin → Action log shows every command and the error they saw. Admin → Snapshots rolls back to any day in the last week. |
+| Exams, a holiday, a server problem | Admin → Pause the realm. Every deadline waits, then carries on with the same time left. |
+| The site looks out of date after a deploy | Pages takes a minute or two. Pull to refresh; the offline copy is network-first, so it never serves an old version while you're online. |
+
+Backups: `.github/workflows/backup.yml` dumps the database nightly, encrypted, as a 30-day workflow artifact. Set the
+repository secrets `DATABASE_URL` and `BACKUP_PASSPHRASE` to switch it on; the file says how to restore.
+
 ## Develop
 
 [CLAUDE.md](CLAUDE.md) is the guide to the code: the engine, the server, the invariants and how to add things.

@@ -90,10 +90,13 @@ Rated by impact for *this* game. ✓ = fixed in this review.
 | S25 ✓ | Secrets left in `viewFor`: the Hunt ring's order (`hunt.alive`), who leaked an anonymous card (`leakedBy`), other players' counters (`stats`, `life`, `weekIncome`: sends, insider trades, highest balance), a venture's result before it returns, stall ratings (who bought), unpublished stories. | High | All stripped or reduced to what the rules make public. |
 | S26 ✓ | Player text had no length cap and several lists no count cap, so one account could bloat the saved world (rewritten to Neon on every save). | Medium | Length caps on all player text, caps on speeches per person per proposal and similar. |
 | S27 ✓ | The dev server listened on the network, and its copy-desk endpoints (which write source files) accepted requests from any site open in your browser. | Medium | Dev server on `localhost` only; `/__copy` refuses foreign origins and bad bodies. The production CSP no longer allows `http://localhost`. |
+| S28 ✓ | New unauthenticated endpoints (`/api/public/digest.txt`, `status.json`, `widget.svg`) for the group chat and embeds. | Low | Built only from `digest()` and public fields (no `viewFor` of anyone, no secret offices); text is XML-escaped in the SVG; 60/min/IP; `*` CORS with no credentials. |
+| S29 ✓ | New RO powers: suspend a player, appoint a second RO, pause the clock, restore a snapshot. | Medium | Each goes through `adminDid()` (public log and Gazette) and its own RO-only route; `/api/act` refuses them. Suspending bumps `token_version` (sessions die) and sets `is_active = false` (API keys, passkeys and providers are refused); `run()` refuses a suspended citizen. There is always at least one RO. A restore snapshots the current world first. |
+| S30 ✓ | The site now keeps your last view of the realm in `localStorage` and a service worker caches the site's own files, so it opens offline. | Low | Only your own redacted view is stored (the same data the page already holds); it's removed on sign-out and on a 401. The worker never touches the API (another origin). |
 
 ### The Returning Officer
 
-The RO can reset any password (and so sign in as anyone), take a full export, and reset the realm. That
+The RO can reset any password (and so sign in as anyone), take a full export, reset the realm, suspend a player, make a second RO, pause the clock and roll the realm back to a snapshot. That
 can't be avoided, since somebody has to run the game, so every one of those actions is **announced in the Gazette and
 kept in the public log**. A password reset also clears any lockout.
 
@@ -118,7 +121,7 @@ kept in the public log**. A password reset also clears any lockout.
 
 Each provider needs an app registered with them, and two settings in Render. The **redirect URI** for each is
 `https://<your-render-url>/api/oauth/<provider>/callback`, e.g.
-`https://democracy-sim-thgx.onrender.com/api/oauth/google/callback`. Set `PUBLIC_URL` in Render to your
+`https://democracy-sim-1.onrender.com/api/oauth/google/callback`. Set `PUBLIC_URL` in Render to your
 Render address so the server builds those URIs correctly.
 
 | Provider | Where | Render settings |

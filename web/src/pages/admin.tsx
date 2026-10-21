@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { useEffect } from 'preact/hooks';
-import { useStore, act, ONLINE, resetRealm, downloadExport, resetPassword, adminApps, removeApp, restoreApp, toast, adminInvites, makeInvite, makeInvites, revokeInvite, inviteLink, removeDuplicate, adminNotes, saveNote, adminAllowances, setAllowance, adminDevices } from '../store';
+import { useStore, act, ONLINE, resetRealm, downloadExport, resetPassword, adminApps, removeApp, restoreApp, toast, adminInvites, makeInvite, makeInvites, revokeInvite, inviteLink, removeDuplicate, adminNotes, saveNote, adminAllowances, setAllowance, adminDevices, pauseClock, suspendCitizen, setRO, actionLog, listSnapshots, restoreSnapshot } from '../store';
 import { Page, Sec, Card, Btn, Empty, LinkRow, Field, Pick, When, Seg } from '../ui';
 import { CRISES } from '../../../engine/crises';
 import { nm, ledgerTotal, fmtTime, acctLabel } from '../../../engine/index';
@@ -29,6 +29,9 @@ export function Admin() {
         <Btn href="#/calendar" kind="ghost" small style={{ marginTop: 10 }}>Change the calendar</Btn>
         <p class="small muted">Game rules change only through Parliament.</p>
       </Sec>
+      <PauseRealm />
+      <Suspensions />
+      <ReturningOfficers />
       {w.induction && !w.induction.done && (
         <Sec title="Induction week" sub="Everything is practice until it ends. Ending it early is announced.">
           <Card kind="tint"><div class="row"><span>Ends <When at={w.induction.until} /></span><Btn small kind="danger ghost" onClick={() => act('admin.endInduction', {}, 'Induction is over. The real game begins.')}>End it now</Btn></div></Card>
@@ -50,6 +53,8 @@ export function Admin() {
         <Card kind={total === 0 ? 'tint' : 'warn'}><b>{total === 0 ? 'Balanced.' : 'Out of balance.'}</b> All accounts sum to {total}. The Reserve's negative balance is every crown it has issued.</Card>
         <ul class="list" style={{ marginTop: 10 }}>{Object.entries(w.accounts).filter(([k]) => !k.startsWith('c:')).map(([k, v]: any) => <li class="row"><span>{acctLabel(w, k)}</span><b class="tnum">{v}</b></li>)}</ul>
       </Sec>
+      {ONLINE && <ActionLog />}
+      {ONLINE && <Snapshots />}
       <Sec title="Admin log" sub="Everyone can read this."><LinkRow href="#/rolog" title="The public log" sub={`${w.adminLog.length} entries`} /></Sec>
       {ONLINE && (
         <Sec title="Forgotten password" sub="Gives you a temporary password to DM them. The Gazette records that you did it.">
@@ -220,6 +225,107 @@ function Duplicates() {
         <Pick label="Belongs to" value={keep} onChange={setKeep} empty="Pick their real account" options={people.filter(([id]) => id !== dup)} />
         <Btn kind="danger ghost" onClick={go}>Remove the extra account</Btn>
       </div>
+    </Sec>
+  );
+}
+
+const err = (e: any) => toast(e.message, true);
+// stop the clock for exams, a holiday or a server problem: no deadline passes while it's paused, and players can still look round
+function PauseRealm() {
+  const { world: w } = useStore();
+  const [why, setWhy] = useState('');
+  const paused = w.clock?.pausedAt;
+  return (
+    <Sec title="Pause the realm" sub="While paused, no deadline passes: votes, elections, payday and debates all wait, then carry on with the same time left. Announced in the Gazette.">
+      {paused ? (
+        <Card kind="warn"><div class="row"><span><b>Paused</b> since <When at={paused} />{w.clock.reason ? `: ${w.clock.reason}` : ''}.</span><Btn small onClick={() => pauseClock(false).catch(err)}>Resume</Btn></div></Card>
+      ) : (
+        <div class="grid2"><Field label="Reason (public)" value={why} onInput={setWhy} placeholder="e.g. exam week" /><Btn kind="danger ghost" style={{ alignSelf: 'end' }} onClick={() => pauseClock(true, why).then(() => setWhy('')).catch(err)}>Pause</Btn></div>
+      )}
+    </Sec>
+  );
+}
+// a cooling-off period for someone breaking the group's rules: signed out, can't act, keeps their party; reversible
+function Suspensions() {
+  const { world: w, me } = useStore();
+  const [who, setWho] = useState('');
+  const [why, setWhy] = useState('');
+  const out = (Object.values(w.citizens) as any[]).filter((c) => c.suspended);
+  return (
+    <Sec title="Suspend a player" sub="They're signed out and can't act until you restore them. They lose any seat or office; their party and crowns stay. The reason goes in the Gazette.">
+      {out.length > 0 && <ul class="list">{out.map((c) => <li class="row"><span><b>{c.name}</b><div class="small muted">Since <When at={c.suspended.at} />{c.suspended.reason ? `: ${c.suspended.reason}` : ''}</div></span><Btn small kind="ghost" onClick={() => suspendCitizen(c.id, false).catch(err)}>Restore</Btn></li>)}</ul>}
+      <div class="grid2" style={{ marginTop: 8 }}>
+        <Pick value={who} onChange={setWho} empty="Who" options={(Object.values(w.citizens) as any[]).filter((c) => c.active && !c.bot && c.id !== me).map((c) => [c.id, c.name])} />
+        <Field label="Reason (public)" value={why} onInput={setWhy} />
+      </div>
+      <Btn small kind="danger" style={{ marginTop: 8 }} disabled={!who || why.trim().length < 4} onClick={() => confirm(`Suspend ${nm(w, who)}? They lose any seat or office.`) && suspendCitizen(who, true, why).then(() => (setWho(''), setWhy(''))).catch(err)}>Suspend</Btn>
+    </Sec>
+  );
+}
+// a deputy, so the game survives you being away
+function ReturningOfficers() {
+  const { world: w, me } = useStore();
+  const [who, setWho] = useState('');
+  const ros = (Object.values(w.citizens) as any[]).filter((c) => c.admin && c.active);
+  return (
+    <Sec title="Returning Officers" sub="A second RO has every power on this page. Both are announced. There's always at least one.">
+      <ul class="list">{ros.map((c) => <li class="row"><b>{c.name}{c.id === me ? ' (you)' : ''}</b>{ros.length > 1 && <Btn small kind="plain" onClick={() => confirm(`Take ${c.name}'s Returning Officer powers away?`) && setRO(c.id, false).catch(err)}>Remove</Btn>}</li>)}</ul>
+      <div class="grid2" style={{ marginTop: 8 }}>
+        <Pick value={who} onChange={setWho} empty="Add someone" options={(Object.values(w.citizens) as any[]).filter((c) => c.active && !c.bot && !c.admin).map((c) => [c.id, c.name])} />
+        <Btn kind="ghost" style={{ alignSelf: 'end' }} disabled={!who} onClick={() => confirm(`Make ${nm(w, who)} a Returning Officer? They'll have every power on this page.`) && setRO(who, true).then(() => setWho('')).catch(err)}>Make RO</Btn>
+      </div>
+    </Sec>
+  );
+}
+// every command anyone ran, so "it didn't work" can be answered
+function ActionLog() {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [who, setWho] = useState('');
+  const load = (f = failed) => actionLog(f).then(setRows).catch(err);
+  const shown = (rows || []).filter((r) => !who.trim() || r.name.toLowerCase().includes(who.trim().toLowerCase()) || r.cmd.includes(who.trim()));
+  return (
+    <Sec title="Action log" sub="Every action anyone took, newest first, with the error they saw. Private: arguments can include ballots.">
+      {!rows ? <Btn small kind="ghost" onClick={() => load()}>Load the last 200</Btn> : (
+        <>
+          <div class="grid2"><Field label="Filter by name or command" value={who} onInput={setWho} /><Seg value={failed ? 'f' : 'a'} options={[['a', 'Everything'], ['f', 'Only errors']]} onChange={(v) => (setFailed(v === 'f'), load(v === 'f'))} /></div>
+          <ul class="list small" style={{ marginTop: 8, maxHeight: 420, overflow: 'auto' }}>
+            {shown.map((r) => (
+              <li>
+                <div class="row"><span><b>{r.name}</b> <code>{r.cmd}</code></span><span class="muted tnum">{new Date(r.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
+                {!r.ok && <div class="err-line">{r.error}</div>}
+              </li>
+            ))}
+          </ul>
+          {!shown.length && <Empty>Nothing matches.</Empty>}
+        </>
+      )}
+    </Sec>
+  );
+}
+// one a day, kept for a week, plus one before every reset and restore
+function Snapshots() {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [pick, setPick] = useState<number | null>(null);
+  const [typed, setTyped] = useState('');
+  const load = () => listSnapshots().then(setRows).catch(err);
+  return (
+    <Sec title="Snapshots" sub="The server keeps a copy of the realm each day for a week, and one before every reset or restore. Restoring rolls everything back to that moment, and is announced.">
+      {!rows ? <Btn small kind="ghost" onClick={load}>Show snapshots</Btn> : rows.length ? (
+        <ul class="list">
+          {rows.map((r) => (
+            <li>
+              <div class="row"><span><b>{new Date(r.at).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</b> <span class="small muted">{r.reason} · {Math.round(r.size / 1024)} KB</span></span><Btn small kind="plain" onClick={() => (setPick(pick === r.id ? null : r.id), setTyped(''))}>Restore…</Btn></div>
+              {pick === r.id && (
+                <Card kind="warn" style={{ marginTop: 6 }}><div class="stack">
+                  <span class="small">Everything since then is undone for everyone: votes, money, offices. Type RESTORE to confirm.</span>
+                  <div class="grid2"><Field label="Confirm" value={typed} onInput={setTyped} /><Btn kind="danger" style={{ alignSelf: 'end' }} disabled={typed !== 'RESTORE'} onClick={() => restoreSnapshot(r.id, typed).then(() => (setPick(null), load())).catch(err)}>Restore it</Btn></div>
+                </div></Card>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : <Empty>No snapshots yet. The first is taken within a day.</Empty>}
     </Sec>
   );
 }

@@ -909,6 +909,117 @@ export function checkObjectives(w: W, id: Id) {
   });
 }
 
+// out of every post: seat, offices, the premiership, the chair, the throne, party leadership (and, unless kept, the party)
+function leavePosts(w: W, id: Id, why: string, keepParty: boolean) {
+  const d = w.citizens[id];
+  if (isMP(w, id)) vacateSeat(w, id, why);
+  Object.values(w.offices).forEach((o: any) => {
+    if (o.holder === id) o.holder = null;
+    o.members = (o.members || []).filter((m: Id) => m !== id);
+  });
+  if (w.pm === id) {
+    w.pm = null;
+    clearMinisters(w);
+    w.pmInviteDue = w.now + DAY;
+    w.formingSince = w.now;
+  }
+  if (w.speaker === id) w.speaker = null;
+  if (w.hos.holder === id) {
+    w.hos = { holder: null, since: w.now, until: null };
+    startHosSelection(w);
+  }
+  if (d.party) {
+    const pt = w.parties[d.party];
+    if (pt?.leader === id) {
+      const rest = members(w, pt.id).filter((m: Id) => m !== id);
+      pt.leader = rest[0] || null;
+      if (!rest.length) pt.status = 'dissolved';
+    }
+    if (!keepParty) d.party = null;
+  }
+  Object.values(w.elections).forEach((e: any) => e.status === 'open' && delete e.candidates[id]);
+  if (d.streets?.in) leave(w, id);
+}
+
+// ================= Suspension, a second Returning Officer, pausing the clock =================
+// Suspend someone who has left the group: they lose their seat and posts but keep their crowns, party and record,
+// and can be restored later (as an ordinary citizen; posts aren't given back). The server switches the login off and on.
+export function suspend(w: W, actor: Id, target: unknown, on: unknown, reason: unknown) {
+  if (!w.citizens[actor]?.admin) fail('Only the Returning Officer can suspend an account.');
+  const c = own(w.citizens, target);
+  if (!c) fail('Pick a citizen.');
+  if (c.id === actor) fail('You can’t suspend yourself.');
+  if (c.removed) fail(`${c.name} was removed as a duplicate account.`);
+  const why = text(reason, 0, 200, 'reason');
+  if (on === true) {
+    if (c.suspended) fail(`${c.name} is already suspended.`);
+    if (c.admin) fail('Take away their Returning Officer role first.');
+    leavePosts(w, c.id, 'a suspended account', true);
+    c.active = false;
+    c.suspended = { at: w.now, reason: why };
+    adminDid(w, actor, `suspended ${c.name}${why ? `: ${why}` : ''}`, '#/rolog');
+  } else if (on === false) {
+    if (!c.suspended) fail(`${c.name} isn’t suspended.`);
+    c.active = true;
+    delete c.suspended;
+    adminDid(w, actor, `restored ${c.name}'s account${why ? `: ${why}` : ''}`, '#/rolog');
+  } else fail('Say whether to suspend or restore.');
+}
+// share the job: another citizen becomes a Returning Officer too (or stops being one). There's always at least one.
+export function setRO(w: W, actor: Id, target: unknown, on: unknown) {
+  if (!w.citizens[actor]?.admin) fail('Only a Returning Officer can do this.');
+  const c = own(w.citizens, target);
+  if (!c?.active) fail('Pick an active citizen.');
+  if (on === true) {
+    if (c.admin) fail(`${c.name} is already a Returning Officer.`);
+    c.admin = true;
+    adminDid(w, actor, `made ${c.name} a Returning Officer too`, '#/rolog');
+  } else if (on === false) {
+    if (!c.admin) fail(`${c.name} isn’t a Returning Officer.`);
+    if (allCitizens(w).filter((x: any) => x.admin).length < 2) fail('There must always be at least one Returning Officer.');
+    c.admin = false;
+    adminDid(w, actor, `${c.id === actor ? 'stepped down' : `took away ${c.name}'s role`} as Returning Officer`, '#/rolog');
+  } else fail('Say whether to add or remove.');
+}
+// pause the realm (exam week, a holiday): game time stops; on resume every deadline is exactly as far away as it was.
+// `real` is the server's clock, passed only by the server's own route (never by a player).
+export function pauseClock(w: W, actor: Id, on: unknown, real: unknown, reason: unknown) {
+  if (!w.citizens[actor]?.admin) fail('Only the Returning Officer can pause the realm.');
+  const t = Number(real);
+  if (!Number.isFinite(t)) fail('The server clock is missing.');
+  w.clock ??= { offset: 0, pausedAt: null };
+  const why = text(reason, 0, 200, 'reason');
+  if (on === true) {
+    if (w.clock.pausedAt) fail('The realm is already paused.');
+    w.clock.pausedAt = t;
+    w.clock.reason = why;
+    adminDid(w, actor, `paused the realm${why ? `: ${why}` : ''}. Nothing closes and no deadline moves until it resumes`, '#/rolog');
+  } else if (on === false) {
+    if (!w.clock.pausedAt) fail('The realm isn’t paused.');
+    const gone = Math.max(0, t - w.clock.pausedAt);
+    w.clock.offset = (w.clock.offset || 0) + gone;
+    w.clock.pausedAt = null;
+    delete w.clock.reason;
+    adminDid(w, actor, `resumed the realm after ${Math.round(gone / 3600000)} hours. Every deadline moved back by the same`, '#/rolog');
+  } else fail('Say whether to pause or resume.');
+}
+
+// ================= Your own name and bio =================
+export function setProfile(w: W, actor: Id, name: unknown, bio: unknown) {
+  const c = cit(w, actor);
+  if (bio !== undefined) c.bio = text(bio, 0, 280, 'bio');
+  if (name !== undefined && name !== c.name) {
+    const n = text(name, 2, 30, 'name').replace(/\s+/g, ' ');
+    if (!/^[\p{L}\p{N} '’.-]+$/u.test(n)) fail('Use letters, numbers, spaces, apostrophes, dots or hyphens.');
+    if (allCitizens(w).some((x: any) => x.id !== actor && x.name.toLowerCase() === n.toLowerCase())) fail('Someone already has that name.');
+    if (c.renamedAt && w.now - c.renamedAt < 7 * DAY) fail('You can change your name once a week.');
+    const old = c.name;
+    c.name = n;
+    c.renamedAt = w.now;
+    gazette(w, 'citizen', `${old} is now known as ${n}.`, '#/passport/' + actor);
+  }
+}
+
 // ================= Duplicate accounts =================
 // The Returning Officer strikes out a second account belonging to someone who already has one. Its crowns
 // go to the real account, its open votes and ballots are struck out (so nobody voted twice), it loses any
@@ -954,32 +1065,7 @@ export function removeDuplicate(w: W, actor: Id, dup: Id, keep: Id) {
   if (w.phase === 'convention') w.convention.clauses.forEach((c: any) => c.votes[dup] !== undefined && (delete c.votes[dup], struck++));
   Object.values(w.crises).forEach((c: any) => c.status === 'open' && c.votes?.[dup] !== undefined && (delete c.votes[dup], struck++));
   if (w.daily?.votes?.[dup] !== undefined) delete w.daily.votes[dup];
-  // out of every post
-  if (isMP(w, dup)) vacateSeat(w, dup, 'a duplicate account');
-  Object.values(w.offices).forEach((o: any) => {
-    if (o.holder === dup) o.holder = null;
-    o.members = (o.members || []).filter((m: Id) => m !== dup);
-  });
-  if (w.pm === dup) {
-    w.pm = null;
-    clearMinisters(w);
-    w.pmInviteDue = w.now + DAY;
-  }
-  if (w.speaker === dup) w.speaker = null;
-  if (w.hos.holder === dup) {
-    w.hos = { holder: null, since: w.now, until: null };
-    startHosSelection(w);
-  }
-  if (d.party) {
-    const pt = w.parties[d.party];
-    if (pt?.leader === dup) {
-      const rest = members(w, pt.id).filter((m: Id) => m !== dup);
-      pt.leader = rest[0] || null;
-      if (!rest.length) pt.status = 'dissolved';
-    }
-    d.party = null;
-  }
-  if (d.streets?.in) leave(w, dup);
+  leavePosts(w, dup, 'a duplicate account', false);
   d.active = false;
   d.removed = { at: w.now, as: 'duplicate', of: keep };
   adminDid(w, actor, `removed ${d.name} as a duplicate account of ${k.name}: ${cash} crowns moved to ${k.name}${struck ? `, ${struck} open vote${struck > 1 ? 's' : ''} struck out` : ''}`, '#/rolog');

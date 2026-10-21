@@ -41,6 +41,7 @@ export const COMMANDS: Record<string, Cmd> = {
   'party.challenge': (w, me, a) => P.challengeLeader(w, me, a.backers),
   'gov.invite': (w, me, a) => P.invitePM(w, me, a.target),
   'gov.resign': (w, me) => P.resignPM(w, me),
+  'office.resign': (w, me, a) => O.resignOffice(w, me, a.office),
   'gov.appoint': (w, me, a) => O.appoint(w, me, a.office, a.target),
   'gov.shadow': (w, me, a) => P.setShadow(w, me, a.post, a.target),
   'coalition.propose': (w, me, a) => P.proposeCoalition(w, me, a.partners, a.kind, a.terms),
@@ -55,6 +56,8 @@ export const COMMANDS: Record<string, Cmd> = {
   'prop.new': (w, me, a) => L.propose(w, me, a),
   'prop.speak': (w, me, a) => L.speak(w, me, a.prop, a.side, a.text),
   'prop.vote': (w, me, a) => L.vote(w, me, a.prop, a.vote),
+  'prop.edit': (w, me, a) => L.editProposal(w, me, a.prop, a),
+  'prop.withdraw': (w, me, a) => L.withdrawProposal(w, me, a.prop),
   'prop.casting': (w, me, a) => L.casting(w, me, a.prop, a.vote),
   'prop.assent': (w, me, a) => L.assent(w, me, a.prop, a.yes),
   'prop.dissolve': (w, me, a) => L.answerDissolution(w, me, a.prop, a.yes),
@@ -134,6 +137,10 @@ export const COMMANDS: Record<string, Cmd> = {
   'hunt.withdraw': (w, me) => R.withdrawHunt(w, me),
   'admin.zone': (w, me, a) => R.adminZone(w, me, a),
   'admin.duplicate': (w, me, a) => P.removeDuplicate(w, me, a.dup, a.keep),
+  'admin.suspend': (w, me, a) => P.suspend(w, me, a.citizen, a.on, a.reason),
+  'admin.ro': (w, me, a) => P.setRO(w, me, a.citizen, a.on),
+  'admin.clock': (w, me, a) => P.pauseClock(w, me, a.on, a.real, a.reason),
+  'me.profile': (w, me, a) => P.setProfile(w, me, a.name, a.bio),
   'admin.bounty': (w, me, a) => R.removeBounty(w, me, a.id, a.reason),
   'admin.forceEnact': (w, me, a) => L.forceEnact(w, me, a.prop, a.reason),
   'admin.approve': (w, me, a) => {
@@ -185,7 +192,8 @@ export function run(world: W, actor: Id, cmd: string, args: any = {}): W {
   if (!f) fail('Unknown action.');
   checkArgs(args);
   const w = structuredClone(world);
-  cit(w, actor);
+  const who = cit(w, actor);
+  if (who.suspended) fail('Your account is suspended. Ask the Returning Officer.');
   if (ghost(w, actor) && !R.isGhostOk(cmd)) fail(`You were assassinated. Until ${fmtTime(w, w.citizens[actor].ghostUntil)} you are a ghost: you can vote, and nothing else.`);
   f(w, actor, args || {});
   T.afterCommand(w, actor, cmd);
@@ -215,3 +223,4 @@ export function skip(world: W, ms: number): W {
   return w;
 }
 export const nameOf = nm;
+export { digest } from './digest';

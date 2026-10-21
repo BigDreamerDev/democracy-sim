@@ -319,6 +319,39 @@ try {
   assert.equal((await call('/api/admin/notes', undefined, C)).status, 403, 'notes are the RO\'s alone');
   assert.equal((await call('/api/admin/devices', undefined, RI)).body.length, 1);
 
+  // suspend and restore, a second RO, pausing the clock, the action log, snapshots
+  assert.equal((await call('/api/admin/suspend', { citizen: 'u4', on: true, reason: 'test' }, C)).status, 403, 'RO only');
+  assert.equal((await call('/api/admin/suspend', { citizen: 'u4', on: true, reason: 'cooling off' }, RI)).status, 200);
+  assert.ok(getWorld().citizens.u4.suspended, 'suspended in the world');
+  assert.equal((await call('/api/state', undefined, C)).status, 401, 'a suspended player is signed out');
+  assert.ok((await call('/api/login', { username: 'cara', password: 'password' })).status >= 400, 'and cannot sign in');
+  assert.equal((await call('/api/admin/suspend', { citizen: 'u4', on: false }, RI)).status, 200);
+  const C2 = (await call('/api/login', { username: 'cara', password: 'password' })).body.token;
+  assert.ok(C2 && !getWorld().citizens.u4.suspended, 'restored');
+  assert.equal((await call('/api/admin/ro', { citizen: 'u4', on: true }, RI)).status, 200);
+  assert.equal((await call('/api/admin/log', undefined, C2)).status, 200, 'a second RO has the RO routes');
+  assert.equal((await call('/api/admin/ro', { citizen: 'u4', on: false }, C2)).status, 200);
+  assert.equal((await call('/api/admin/log', undefined, C2)).status, 403);
+  assert.equal((await call('/api/act', { cmd: 'admin.clock', args: { on: true, real: 0 } }, RI)).status, 400, 'pausing only through its own route');
+  assert.equal((await call('/api/admin/clock', { on: true, reason: 'exams' }, RI)).status, 200);
+  const frozen = (await call('/api/state', undefined, RI)).body.serverNow;
+  t += 3600_000;
+  assert.equal((await call('/api/state', undefined, RI)).body.serverNow, frozen, 'game time stands still while paused');
+  assert.equal((await call('/api/health')).body.paused, true);
+  assert.equal((await call('/api/admin/clock', { on: false }, RI)).status, 200);
+  t += 1000;
+  assert.equal((await call('/api/state', undefined, RI)).body.serverNow, frozen + 1000, 'and resumes where it stopped');
+  assert.ok((await call('/api/admin/log', undefined, RI)).body.some((r: any) => r.cmd === 'admin.clock'));
+  assert.match(await (await fetch(base + '/api/public/digest.txt')).text(), /Parliament|Convention/);
+  assert.equal((await call('/api/public/status.json')).status, 200);
+  const snaps = (await call('/api/admin/snapshots', undefined, RI)).body;
+  assert.ok(snaps.length >= 1, 'a daily snapshot was taken');
+  assert.equal((await call('/api/admin/snapshots/restore', { id: snaps[0].id }, RI)).status, 400, 'needs confirming');
+  const rs = await call('/api/admin/snapshots/restore', { id: snaps[0].id, confirm: 'RESTORE' }, RI);
+  assert.equal(rs.status, 200, JSON.stringify(rs.body));
+  assert.ok(getWorld().adminLog.some((x: any) => /restored the realm/.test(x.text)), 'a restore is announced');
+  getWorld().flags.openSignup = true; // the snapshot predates the tests below switching it on
+
   const out = await call('/api/logout-all', {}, gl.body.token);
   assert.equal((await call('/api/state', undefined, gl.body.token)).status, 401, 'sign out everywhere kills old tokens');
   assert.equal((await call('/api/state', undefined, out.body.token)).status, 200);

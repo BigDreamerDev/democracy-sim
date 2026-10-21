@@ -4,7 +4,9 @@ import { makeApp } from './app';
 const secret = process.env.JWT_SECRET || (process.env.DATABASE_URL ? '' : 'dev-secret');
 if (!secret) throw new Error('JWT_SECRET is not set.');
 if (process.env.DATABASE_URL && secret.length < 24) throw new Error('JWT_SECRET is too short: use at least 32 random characters.');
-const origins = (process.env.ALLOWED_ORIGINS || 'https://bigdreamerdev.github.io,http://localhost:5173').split(',').map((s) => s.trim()).filter(Boolean);
+// each entry is reduced to its origin, so a pasted page address (https://x.github.io/democracy-sim/) or a trailing slash still works
+const origins = [...new Set((process.env.ALLOWED_ORIGINS || 'https://bigdreamerdev.github.io,http://localhost:5173').split(',').map((s) => s.trim()).filter(Boolean).map((s) => { try { return new URL(s).origin; } catch { console.log(`[realm] ALLOWED_ORIGINS: "${s}" isn't a web address; ignoring it.`); return ''; } }).filter(Boolean))];
+console.log(`[realm] Browser requests accepted from: ${origins.join(', ') || 'nowhere (set ALLOWED_ORIGINS)'}`);
 
 // a backstop: a stray rejected promise is logged, never allowed to take the whole realm down
 process.on('unhandledRejection', (e) => console.error('[realm] unhandled rejection', e));

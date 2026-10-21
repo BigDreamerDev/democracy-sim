@@ -13,7 +13,7 @@ import { passkeys, PASSKEY_SCHEMA } from './passkeys';
 import { IMAGES_SCHEMA, imageGet, imageRoutes, photoProblem } from './images';
 import { INVITES_SCHEMA, inviteRoutes, claimInvite, releaseInvite, useInvite } from './invites';
 import { VETTING_SCHEMA, vettingRoutes, recordDevice, sameDevice, allowanceOf } from './vetting';
-import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate, needs, adminDid, nm } from '../engine/index';
+import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate, needs, adminDid, nm, digest } from '../engine/index';
 
 export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void; send?: Sender; site?: string; devOrigins?: boolean; env?: Record<string, string | undefined>; publicUrl?: string; saveEvery?: number };
 
@@ -38,6 +38,8 @@ export async function makeApp(o: Options) {
 
   // ---------- the world ----------
   let world: any;
+  // game time: real time minus every pause so far, frozen while the realm is paused (admin.clock)
+  const gameNow = () => { const c = world?.clock; return c?.pausedAt ? c.pausedAt - (c.offset || 0) : now() - (c?.offset || 0); };
   const people = async () => (await q('SELECT id, display_name, is_admin FROM users WHERE is_active AND approved ORDER BY id')).rows.map((u: any) => ({ id: 'u' + u.id, name: u.display_name, admin: !!u.is_admin }));
   const saved = (await q('SELECT state FROM v2_world WHERE id = 1')).rows[0];
   if (saved) world = migrate(saved.state);
@@ -74,10 +76,21 @@ export async function makeApp(o: Options) {
   };
   // logs and snapshots don't need to live forever
   await q("DELETE FROM v2_log WHERE at < now() - interval '45 days'").catch(() => {});
-  await q('DELETE FROM v2_snapshots WHERE id NOT IN (SELECT id FROM v2_snapshots ORDER BY at DESC LIMIT 5)').catch(() => {});
+  // snapshots: the 7 newest daily ones, and the 5 newest taken before a reset or a restore
+  const prune = () => Promise.all([
+    q("DELETE FROM v2_snapshots WHERE reason = 'daily' AND id NOT IN (SELECT id FROM v2_snapshots WHERE reason = 'daily' ORDER BY at DESC LIMIT 7)"),
+    q("DELETE FROM v2_snapshots WHERE reason <> 'daily' AND id NOT IN (SELECT id FROM v2_snapshots WHERE reason <> 'daily' ORDER BY at DESC LIMIT 5)")
+  ]).catch(() => {});
+  await prune();
+  let lastDaily = Number((await q("SELECT extract(epoch FROM max(at)) * 1000 AS t FROM v2_snapshots WHERE reason = 'daily'").catch(() => ({ rows: [] }))).rows[0]?.t || 0);
   const save = async () => {
     version++;
     await persist();
+    // once a day, a copy of the world the RO can restore (Admin → Snapshots)
+    if (now() - lastDaily > 86400_000) {
+      lastDaily = now();
+      q('INSERT INTO v2_snapshots (reason, state) VALUES ($1, $2)', ['daily', JSON.stringify(world)]).then(prune).catch((e) => log('snapshot failed', e));
+    }
     // push new Gazette entries to webhooks, oldest first, without holding up the request
     const top = world.gazette[0]?.id;
     if (top !== lastGz) {
@@ -109,15 +122,15 @@ export async function makeApp(o: Options) {
   const catchUp = async () => {
     const before = world.now;
     const due = nextDeadline(world);
-    if (due && due <= now()) {
+    if (due && due <= gameNow()) {
       // a deadline that throws must never take reads and actions down with it: log it, keep what ran, carry on
       try {
-        advanceTo(world, now());
+        advanceTo(world, gameNow());
       } catch (e) {
         log('clock error', e);
       }
       await save().catch((e) => log('save failed', e));
-    } else world.now = Math.max(world.now, now());
+    } else world.now = Math.max(world.now, gameNow());
     return world.now !== before;
   };
   let timer: any = null;
@@ -125,7 +138,7 @@ export async function makeApp(o: Options) {
     clearTimeout(timer);
     const due = nextDeadline(world);
     if (!due) return;
-    timer = setTimeout(() => serial(catchUp).catch((e) => log('clock error', e)).finally(schedule), Math.min(Math.max(due - now(), 1000), 6 * 3600_000));
+    timer = setTimeout(() => serial(catchUp).catch((e) => log('clock error', e)).finally(schedule), Math.min(Math.max(due - gameNow(), 1000), 6 * 3600_000));
     if (timer.unref) timer.unref();
   };
   schedule();
@@ -181,7 +194,7 @@ export async function makeApp(o: Options) {
   app.use(headers);
   app.use(express.json({ limit: '200kb' }));
   // the public API for players' own apps: any origin, API keys only (see public.ts and API.md)
-  const v1 = publicApi({ q, now, log, world: () => world, setWorld: (w) => (world = w), version: () => version, waitForChange, serial, catchUp, save, schedule, apps: A, alertsFor, loadUser: async (id) => userCache.get(id) || loadUser(id), limited });
+  const v1 = publicApi({ q, now, gameNow, log, world: () => world, setWorld: (w) => (world = w), version: () => version, waitForChange, serial, catchUp, save, schedule, apps: A, alertsFor, loadUser: async (id) => userCache.get(id) || loadUser(id), limited });
   app.use('/api/v1', v1);
   // ---------- sign in with Discord, Google, Microsoft or Apple ----------
   const apiBase = (req: any) => (o.publicUrl || env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
@@ -239,6 +252,30 @@ export async function makeApp(o: Options) {
   app.get('/api/oauth/:provider/callback', oauthCallback);
   app.post('/api/oauth/:provider/callback', express.urlencoded({ extended: false, limit: '20kb' }), oauthCallback);
   imageGet(app, q);
+  // public, no key and no sign-in: the state of the realm for widgets, Shortcuts and the group chat. Public facts only.
+  const pub = (res: any, type: string, body: any) => (res.setHeader('Access-Control-Allow-Origin', '*'), res.setHeader('Cache-Control', 'public, max-age=60'), res.type(type).send(body));
+  const throttled = (req: any, res: any) => (limited('pub:' + req.ip, 60) ? (res.status(429).json({ error: 'Too many requests. Try again in a minute.' }), true) : false);
+  app.get('/api/public/digest.txt', (req, res) => { if (!throttled(req, res)) pub(res, 'text/plain; charset=utf-8', digest(world)); });
+  app.get('/api/public/status.json', (req, res) => {
+    if (throttled(req, res)) return;
+    const w = world;
+    const seats: Record<string, number> = {};
+    w.seats.filter(Boolean).forEach((m: string) => { const p = w.citizens[m]?.party; const k = p && w.parties[p] ? w.parties[p].name : 'Independents'; seats[k] = (seats[k] || 0) + 1; });
+    pub(res, 'application/json', {
+      realm: w.config.realmName, phase: w.phase, now: gameNow(), paused: !!w.clock?.pausedAt, pm: w.pm ? nm(w, w.pm) : null, seats,
+      meters: { prosperity: w.meters.prosperity, stability: w.meters.stability },
+      elections: Object.values(w.elections).filter((e: any) => e.status === 'open').map((e: any) => ({ title: e.title, closesAt: e.closesAt, standing: Object.keys(e.candidates).length })),
+      bills: Object.values(w.proposals).filter((p: any) => ['debate', 'vote'].includes(p.stage)).map((p: any) => ({ title: p.title, stage: p.stage, closesAt: p.stage === 'vote' ? p.voteEndsAt : p.debateEndsAt })),
+      latest: w.gazette.filter((g: any) => !g.practice && g.kind !== 'admin').slice(0, 5).map((g: any) => ({ at: g.at, text: g.text }))
+    });
+  });
+  app.get('/api/public/widget.svg', (req, res) => {
+    if (throttled(req, res)) return;
+    const w = world;
+    const esc = (t: string) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[c]);
+    const lines = [`PM ${w.pm ? nm(w, w.pm) : 'none'}`, `Prosperity ${w.meters.prosperity} · Stability ${w.meters.stability}`, ...Object.values(w.proposals).filter((p: any) => ['debate', 'vote'].includes(p.stage)).slice(0, 3).map((p: any) => `${p.stage === 'vote' ? 'Voting' : 'Debate'}: ${p.title}`)];
+    pub(res, 'image/svg+xml', `<svg xmlns="http://www.w3.org/2000/svg" width="340" height="${60 + lines.length * 20}"><rect width="100%" height="100%" rx="10" fill="#EEF0E8" stroke="#1B2430" stroke-width="2"/><text x="16" y="30" font-family="Georgia, serif" font-size="18" font-weight="bold" fill="#1B2430">${esc(w.config.realmName)}</text>${lines.map((l, i) => `<text x="16" y="${56 + i * 20}" font-family="sans-serif" font-size="13" fill="#1B2430">${esc(l.length > 46 ? l.slice(0, 45) + '…' : l)}</text>`).join('')}</svg>`);
+  });
 
   // CORS that fails loudly: an unknown origin gets a clear 403 instead of a silent 200 with no header
   app.use((req, res, next) => {
@@ -259,7 +296,7 @@ export async function makeApp(o: Options) {
     next();
   });
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true, now: now(), phase: world.phase }));
+  app.get('/api/health', (_req, res) => res.json({ ok: true, now: gameNow(), phase: world.phase, paused: !!world.clock?.pausedAt }));
 
   app.post('/api/login', async (req, res) => {
     if (limited('login:' + req.ip)) return res.status(429).json({ error: 'Too many attempts from here. Wait a minute.' });
@@ -421,13 +458,13 @@ export async function makeApp(o: Options) {
   app.get('/api/state', auth, async (req: any, res) => {
     await serial(catchUp);
     schedule();
-    res.json({ world: viewFor(world, req.cid), me: req.cid, serverNow: now() });
+    res.json({ world: viewFor(world, req.cid), me: req.cid, serverNow: gameNow() });
   });
 
   app.post('/api/act', auth, async (req: any, res) => {
     const { cmd, args } = req.body || {};
     // admin.duplicate also deactivates a login, so it only runs through its own route
-    if (typeof cmd !== 'string' || cmd.startsWith('admin.reset') || cmd === 'admin.duplicate') return res.status(400).json({ error: 'Unknown action.' });
+    if (typeof cmd !== 'string' || cmd.startsWith('admin.reset') || ['admin.duplicate', 'admin.suspend', 'admin.ro', 'admin.clock'].includes(cmd)) return res.status(400).json({ error: 'Unknown action.' });
     const bad = await photoProblem(q, req.user.id, args);
     if (bad) return res.status(400).json({ error: bad });
     try {
@@ -442,7 +479,7 @@ export async function makeApp(o: Options) {
       });
       schedule();
       q('INSERT INTO v2_log (actor, cmd, args, ok) VALUES ($1, $2, $3, TRUE)', [req.cid, cmd, JSON.stringify(args || {})]).catch(() => {});
-      res.json({ world: viewFor(world, req.cid), me: req.cid, serverNow: now() });
+      res.json({ world: viewFor(world, req.cid), me: req.cid, serverNow: gameNow() });
     } catch (e: any) {
       q('INSERT INTO v2_log (actor, cmd, args, ok, error) VALUES ($1, $2, $3, FALSE, $4)', [req.cid, String(cmd), JSON.stringify(args || {}), String(e.message)]).catch(() => {});
       if (e instanceof GameError) return res.status(400).json({ error: e.message });
@@ -534,11 +571,76 @@ export async function makeApp(o: Options) {
       });
       schedule();
       audit(req.cid, 'admin.duplicate', true);
-      res.json({ world: viewFor(world, req.cid), me: req.cid, serverNow: now() });
+      res.json({ world: viewFor(world, req.cid), me: req.cid, serverNow: gameNow() });
     } catch (e: any) {
       if (e instanceof GameError) return res.status(400).json({ error: e.message });
       log('duplicate failed', e);
       res.status(500).json({ error: 'Something went wrong on the server. It has been logged.' });
+    }
+  });
+  // RO commands with a side outside the world: the login (suspend), the admin flag (a second RO), the real clock (pause)
+  const adminRun = (cmd: string, args: (req: any) => any, after?: (req: any) => Promise<void>) => async (req: any, res: any) => {
+    try {
+      await serial(async () => {
+        await catchUp();
+        world = run(world, req.cid, cmd, args(req));
+        if (after) await after(req);
+        await save();
+      });
+      schedule();
+      audit(req.cid, cmd, true);
+      res.json({ world: viewFor(world, req.cid), me: req.cid, serverNow: gameNow() });
+    } catch (e: any) {
+      if (e instanceof GameError) return res.status(400).json({ error: e.message });
+      log(cmd + ' failed', e);
+      res.status(500).json({ error: 'Something went wrong on the server. It has been logged.' });
+    }
+  };
+  const uidOf = (cid: unknown) => (typeof cid === 'string' && /^u\d+$/.test(cid) ? Number(cid.slice(1)) : null);
+  app.post('/api/admin/suspend', auth, admin, adminRun('admin.suspend', (req) => ({ citizen: req.body?.citizen, on: req.body?.on === true, reason: req.body?.reason || '' }), async (req) => {
+    const id = uidOf(req.body?.citizen);
+    if (!id) return;
+    if (req.body?.on === true) await q('UPDATE users SET is_active = FALSE, token_version = token_version + 1 WHERE id = $1', [id]);
+    else await q('UPDATE users SET is_active = TRUE WHERE id = $1', [id]);
+    userCache.delete(id);
+  }));
+  app.post('/api/admin/ro', auth, admin, adminRun('admin.ro', (req) => ({ citizen: req.body?.citizen, on: req.body?.on === true }), async (req) => {
+    const id = uidOf(req.body?.citizen);
+    if (!id) return;
+    await q('UPDATE users SET is_admin = $2 WHERE id = $1', [id, req.body?.on === true]);
+    userCache.delete(id);
+  }));
+  app.post('/api/admin/clock', auth, admin, adminRun('admin.clock', (req) => ({ on: req.body?.on === true, real: now(), reason: req.body?.reason || '' })));
+  // the action log: every command anyone ran, ok or not, newest first (RO only: arguments can be private)
+  app.get('/api/admin/log', auth, admin, async (req: any, res) => {
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 200));
+    const fails = req.query.failed === '1';
+    const rows = (await q(`SELECT id, at, actor, cmd, args, ok, error FROM v2_log ${fails ? 'WHERE NOT ok' : ''} ORDER BY id DESC LIMIT $1`, [limit])).rows;
+    res.json(rows.map((r: any) => ({ ...r, name: world.citizens[r.actor]?.name || r.actor })));
+  });
+  // snapshots: daily copies and ones taken before a reset or a restore; restoring one is announced
+  app.get('/api/admin/snapshots', auth, admin, async (_req, res) => {
+    res.json((await q('SELECT id, at, reason, length(state::text) AS size FROM v2_snapshots ORDER BY at DESC')).rows);
+  });
+  app.post('/api/admin/snapshots/restore', auth, admin, async (req: any, res) => {
+    if (req.body?.confirm !== 'RESTORE') return res.status(400).json({ error: 'Type RESTORE to confirm.' });
+    const row = (await q('SELECT id, at, state FROM v2_snapshots WHERE id = $1', [Number(req.body?.id) || 0])).rows[0];
+    if (!row) return res.status(404).json({ error: 'No such snapshot.' });
+    try {
+      await serial(async () => {
+        await q('INSERT INTO v2_snapshots (reason, state) VALUES ($1, $2)', ['before restore', JSON.stringify(world)]);
+        const state = typeof row.state === 'string' ? JSON.parse(row.state) : row.state;
+        world = migrate(state);
+        adminDid(world, req.cid, `restored the realm to how it stood on ${new Date(row.at).toUTCString().slice(0, 22)} UTC`);
+        await catchUp();
+        await save();
+      });
+      schedule();
+      audit(req.cid, 'admin.restore', true);
+      res.json({ world: viewFor(world, req.cid), me: req.cid, serverNow: gameNow() });
+    } catch (e: any) {
+      log('restore failed', e);
+      res.status(500).json({ error: 'Something went wrong restoring that snapshot. It has been logged.' });
     }
   });
   imageRoutes(app, {
@@ -609,7 +711,7 @@ export async function makeApp(o: Options) {
     });
     schedule();
     log(`Realm reset by ${req.user.username}.`);
-    res.json({ world: viewFor(world, req.cid), me: req.cid, serverNow: now() });
+    res.json({ world: viewFor(world, req.cid), me: req.cid, serverNow: gameNow() });
   });
 
   // bad JSON and the like: answer in JSON, with CORS on the public API so other apps can read the error

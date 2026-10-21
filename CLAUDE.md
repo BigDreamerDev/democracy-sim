@@ -63,6 +63,7 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   view.ts      viewFor(world, me) — the redacted copy one player may see
   migrate.ts   migrate(world) — upgrades a saved world on server boot
   alerts.ts    needs(view, me) — what needs a player now; Today, the sidebar badge and personal webhooks
+  digest.ts    digest(w) — the state of the realm as plain text for the group chat (Copy button, /api/public/digest.txt)
   catalog.ts   CATALOG — public description of every player command and its args (served by /api/v1/commands)
   index.ts     COMMANDS table; run(world, actor, cmd, args) applies one to a structuredClone
   bots.ts      bot turns: botsAct (demo, smoke) and actBots(w, isBot) — the clock runs practice bots during induction
@@ -72,7 +73,8 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   glory.ts     achievements (BADGES, from c.life counters via bump()), the daily Red Box and streaks, weekly polls,
                season awards, the Hall of Fame (w.fame, kept through induction and RO resets); afterChange()
 web/src/     Preact + Vite. main.tsx (router), nav.ts (the five tabs and their sections: sidebar, tab bar and the
-             section strip on every page all read it), store.ts, ui.tsx (shared components; Page, Combined),
+             section strip on every page all read it; places() is the page index search and #/search use),
+             roles.ts + Roles.tsx (every hat a player wears: chips, Today's "Your desk", the new-job notice), share.ts, store.ts, ui.tsx (shared components; Page, Combined),
              Sidebar.tsx, DemoPanel.tsx (demo only), pages/*.tsx (pages/combined.tsx: Government, Money, World,
              Society, Backroom, Honours, each several pages as one), styles.css
 server/      app.ts (first-party routes), public.ts (/api/v1 for players' own apps), db.ts (pg or PGlite + SCHEMA),
@@ -101,6 +103,8 @@ copy/        STYLE.md (the house voice), edits.json (reviewed rewording in progr
 
 ### The server (`server/app.ts`)
 
+- **Game time can be paused.** `w.clock = {offset, pausedAt, reason}`; `gameNow()` = real time − offset, frozen while
+  paused. Every `catchUp`, `schedule` and `serverNow` uses `gameNow()`, never `now()`. Resuming adds the pause to `offset`.
 - Loads `v2_world` row 1 at boot (`migrate()` first), or creates it with
   `createLiveWorld` from every active, approved user.
 - All writes go through `serial()` (one promise queue). `catchUp()` advances the world
@@ -122,7 +126,7 @@ copy/        STYLE.md (the house voice), edits.json (reviewed rewording in progr
 | `GET/POST /api/invites` | user | a trusted player's own invitations, from their allowance (`v2_invite_allowance`); the Gazette and `citizen.invitedBy` record who invited whom |
 | `POST /api/admin/invites/allow` `{citizen, n}`, `GET /api/admin/allowances` | RO | invitation allowance 0–10; announced |
 | `GET/POST /api/admin/notes`, `GET /api/admin/devices` | RO | private notes per citizen/applicant (`v2_notes`); accounts that shared a browser (`v2_devices`, from the hashed `X-Realm-Device` id the site sends). Neither is in the world |
-| `POST /api/admin/duplicate` | RO | `{dup, keep}`: runs `admin.duplicate` (crowns moved, open votes struck, posts lost, citizen inactive) and switches the login off. `/api/act` refuses that command |
+| `POST /api/admin/duplicate` | RO | `{dup, keep}`: runs `admin.duplicate` (crowns moved, open votes struck, posts lost, citizen inactive) and switches the login off. `/api/act` refuses that command (and `admin.suspend`, `admin.ro`, `admin.clock`: each has its own route) |
 | `GET /api/state` | user | → `{world, me, serverNow}` |
 | `POST /api/act` | user | `{cmd, args}` → `{world, me, serverNow}`; 400 `{error}` on GameError |
 | `POST /api/password` | user | `{current, next}` → `{token}`; bumps token_version. `current` not needed if the account has no password yet |
@@ -140,6 +144,12 @@ copy/        STYLE.md (the house voice), edits.json (reviewed rewording in progr
 | `POST /api/images` `{data}`, `GET /api/images`, `POST /api/images/delete` `{id}` | user | upload (base64 JPEG ≤140 KB, 25 per player) → `{id}`; an action with `args.photo` must name your own live photo |
 | `POST /api/admin/images/remove` | RO | `{id, reason}`; announced |
 | `GET /api/admin/export` | RO | full unredacted world |
+| `POST /api/admin/clock` `{on, reason}` | RO | pause/resume game time (`admin.clock` with the server's real time) |
+| `POST /api/admin/suspend` `{citizen, on, reason}` | RO | `admin.suspend`; also switches the login off (token_version bumped) or back on |
+| `POST /api/admin/ro` `{citizen, on}` | RO | `admin.ro`; sets `users.is_admin`. There is always at least one RO |
+| `GET /api/admin/log?failed=1` | RO | last 200 `v2_log` rows with names (args can be private: RO only) |
+| `GET /api/admin/snapshots`, `POST /api/admin/snapshots/restore` `{id, confirm:'RESTORE'}` | RO | daily snapshots (7 kept) plus pre-reset/restore ones (5 kept); a restore snapshots first and is announced |
+| `GET /api/public/digest.txt`, `/status.json`, `/widget.svg` | — | public summary only (from `digest()` and public fields), `*` CORS, 60/min/IP |
 | `POST /api/admin/password` | RO | `{citizen}` → `{temp}`; announced in the Gazette |
 | `POST /api/admin/reset` | RO | `{confirm:'RESET THE REALM'}`; snapshots first |
 | `GET /api/keys` | user | the caller's live API keys (no secrets) |
@@ -189,14 +199,15 @@ Citizen id = `'u' + users.id`.
    tests assert it.
 2. **Secrets never leave the server.** Ballots, other wallets and ledger rows, cards,
    deals, demands, plots, ambitions, objectives, intel, classified offices, the rng,
-   the sign-up queue, the admin log. **Any new private field must be stripped in
+   the sign-up queue, the action log (`v2_log`). **Any new private field must be stripped in
    `viewFor`**, or every player can read it in devtools.
 3. **The client is untrusted.** Every rule lives in the engine and is re-checked on the
    server. Hiding a button is cosmetic.
 4. **Rules change only through Parliament.** The RO's powers are exactly: approve sign-ups,
    toggle `requireApproval`/`openSignup`, move the calendar, start a crisis, force-enact a stuck
    bill, reset a password, make or revoke an invitation, give a player invitations, remove a duplicate account, remove or restore a player app, add or remove a Streets safe zone, take down a
-   bounty or a photo, export, reset the realm. The safe-zone, bounty and photo powers exist for real-world safety only. Don't add RO
+   bounty or a photo, export, reset the realm, suspend or restore a player, make or remove a second RO, pause the
+   clock, restore a snapshot. The safe-zone, bounty and photo powers exist for real-world safety only. Don't add RO
    powers over game rules. **Every one of them goes through `adminDid()`** (engine/core.ts), which
    writes the public admin log and the Gazette. A new admin power must too.
 5. **The RO is a full player** and can stand, vote and hold any office. **Check offices before

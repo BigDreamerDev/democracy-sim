@@ -2,8 +2,10 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import './styles.css';
 import { useStore, ONLINE, toast as say } from './store';
+import { When } from './ui';
+import { nm } from '../../engine/index';
 import { SignIn } from './pages/signin';
-import { Icon, applyTheme, getTheme } from './ui';
+import { Icon, getTheme, themeBar } from './ui';
 import { DemoPanel, DemoRail } from './DemoPanel';
 import { Sidebar } from './Sidebar';
 import { TABS, where } from './nav';
@@ -12,7 +14,7 @@ import { markSeen } from './pages/today';
 import { Today, Gazette, FrontPage, Passport, Laws, Law, Calendar } from './pages/today';
 import { House, Proposals, Proposal, NewProposal, Questions } from './pages/house';
 import { Elections, Election, Convention } from './pages/elections';
-import { Office, Parties, Party } from './pages/gov';
+import { Office, Parties, Party, People } from './pages/gov';
 import { Government, Money, World, Society, BackroomAll, Honours } from './pages/combined';
 import { Nation, Case, Crisis } from './pages/world';
 import { Admin, RoLog } from './pages/admin';
@@ -74,7 +76,7 @@ function route(hash: string) {
     house: () => <House />, proposals: () => <Proposals />, p: () => <Proposal id={b} />, new: () => <NewProposal query={q} />, questions: () => <Questions />,
     elections: () => <Elections />, election: () => <Election id={b} />, convention: () => <Convention />,
     // combined sections: the old addresses open the part they name
-    search: () => <Search />, government: () => <Government />, cabinet: () => <Government focus="cabinet" />, offices: () => <Government focus="offices" />, hos: () => <Government focus="hos" />, office: () => <Office id={b} />,
+    search: () => <Search />, map: () => <Search />, people: () => <People />, redbox: () => <Honours focus="redbox" />, government: () => <Government />, cabinet: () => <Government focus="cabinet" />, offices: () => <Government focus="offices" />, hos: () => <Government focus="hos" />, office: () => <Office id={b} />,
     parties: () => <Parties />, party: () => <Party id={b} />,
     money: () => <Money />, realm: () => <Money />, wallet: () => <Money focus="wallet" />, economy: () => <Money focus="economy" />, banks: () => <Money focus="banks" />, ventures: () => <Money focus="ventures" />, bets: () => <Money focus="bets" />,
     world: () => <World />, foreign: () => <World focus="foreign" />, security: () => <World focus="security" />, army: () => <World focus="army" />,
@@ -110,7 +112,7 @@ function Game() {
   return (
     <div class={'app' + (ONLINE ? ' online' : '')}>
       <Sidebar tabs={marked} current={'#/' + hash.replace(/^#\/?/, '').split('?')[0]} />
-      <main key={r.key}>{r.view}</main>
+      <main key={r.key}><StatusBanner />{r.view}</main>
       <nav class="nav" aria-label="Main"><div class="in">
         {marked.map(([href, label, icon, on]) => (
           <a href={href} class={on ? 'on' : ''} aria-current={on ? 'page' : undefined}>{on && <span class="mark" aria-hidden="true" />}<Icon name={icon} /><span>{label}</span></a>
@@ -123,6 +125,27 @@ function Game() {
       {!ONLINE && <DemoRail />}
     </div>
   );
+}
+
+// on every page while it's true: the clock is paused, or the realm is under emergency rule
+function StatusBanner() {
+  const { world: w } = useStore();
+  const p = w.clock?.pausedAt;
+  const m = w.martial;
+  if (!p && !m) return null;
+  return (
+    <div class={'status-banner' + (m && !p ? ' martial' : '')} role="status">
+      {p ? <><b>The realm is paused</b>{w.clock.reason ? `: ${w.clock.reason}` : ''}. No deadline passes until the Returning Officer resumes it.</> : <><b>{m.emergency ? 'State of emergency' : 'Martial law'}</b>, led by {nm(w, m.leader)}, until <When at={m.until} />.</>}
+    </div>
+  );
+}
+
+// the theme you picked last time, before the first paint; and the offline copy of the site, online only
+{
+  const t = getTheme();
+  if (t !== 'auto') document.documentElement.setAttribute('data-theme', t);
+  themeBar(t);
+  if (ONLINE && 'serviceWorker' in navigator && location.protocol === 'https:') addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
 
 render(<App />, document.getElementById('app')!);

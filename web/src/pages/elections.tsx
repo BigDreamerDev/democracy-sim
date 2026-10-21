@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { useStore, act, ONLINE } from '../store';
+import { shareResult } from '../share';
 import { Page, Sec, Card, Btn, Who, Left, Empty, LinkRow, Meter, Stamp, Seg, Field, Pick, BallotPaper, MultiBallot } from '../ui';
 import { nm, allCitizens, fmtDay } from '../../../engine/index';
 import { canVote, conventionNeed, conventionSpec, SETTABLE_START, DOW, VOTING } from '../../../engine/politics';
@@ -29,7 +30,7 @@ export function Election({ id }: { id: string }) {
   if (e.status !== 'open') {
     return (
       <Page back={['#/elections', 'Elections']} kicker={`Closed ${fmtDay(e.closedAt || e.closesAt)}${e.results ? `, turnout ${e.results.turnout}` : ''}`} title={e.title}>
-        {e.results && <div style={{ marginTop: 14 }}><Btn kind="ghost" small onClick={() => setNight(!night)}>{night ? 'Show the full count' : 'Replay election night'}</Btn></div>}
+        {e.results && <div class="row" style={{ marginTop: 14, justifyContent: 'flex-start', gap: 8 }}><Btn kind="ghost" small onClick={() => setNight(!night)}>{night ? 'Show the full count' : 'Replay election night'}</Btn><Btn kind="plain" small onClick={() => shareResult(w, e)}>Share as a picture</Btn></div>}
         {night ? <Night e={e} /> : <Count e={e} />}
       </Page>
     );

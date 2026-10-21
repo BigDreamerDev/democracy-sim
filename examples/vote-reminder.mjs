@@ -1,7 +1,7 @@
 // Pings your phone through ntfy (https://ntfy.sh, free, no account) when something needs you:
 // a vote to cast, a bill to sign, a deal waiting. Then once more when it's about to close.
 // REALM_KEY=rlm_… NTFY_TOPIC=pick-something-unguessable node vote-reminder.mjs
-const API = process.env.REALM_API || 'https://democracy-sim-thgx.onrender.com/api/v1';
+const API = process.env.REALM_API || 'https://democracy-sim-1.onrender.com/api/v1';
 const KEY = process.env.REALM_KEY;
 const TOPIC = process.env.NTFY_TOPIC;
 const SITE = process.env.REALM_SITE || 'https://bigdreamerdev.github.io/democracy-sim/';
