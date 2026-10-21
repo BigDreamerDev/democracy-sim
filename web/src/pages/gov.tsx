@@ -5,31 +5,6 @@ import { nm, isPM, isHOS, mps, sideOf, sideName, majority, allCitizens, exiled, 
 import { leaderOfOpposition, leaderOfSide, sideSeats, supportFor, members, HOS_METHODS } from '../../../engine/politics';
 import { POWERS, TEMPLATES, FILL } from '../../../engine/offices';
 
-export function Realm() {
-  const { world: w, me } = useStore();
-  const has = (k: string) => !!w.offices[k];
-  const groups: [string, [string, string, string, boolean?][]][] = [
-    ['Parliament', [['#/house', 'The House', `${w.config.seats} seats`], ['#/proposals', 'Proposals', 'Bills, motions, referendums'], ['#/questions', 'Questions', 'PMQs and formal questions'], ['#/elections', 'Elections', 'Ballots and results']]],
-    ['Government', [['#/offices', 'Offices', `${Object.keys(w.offices).length} created by law`], ['#/cabinet', 'Cabinet and coalition', w.pm ? `PM ${nm(w, w.pm)}` : 'No government'], ['#/hos', w.config.hos === 'monarchy' ? 'The Crown' : 'The President', nm(w, w.hos.holder)], ['#/parties', 'Parties', `${Object.values(w.parties).filter((p: any) => p.status === 'active').length} active`]]],
-    ['Money', [['#/wallet', 'Your wallet', `${bal(w, ca(me))} crowns`], ['#/economy', 'Treasury and Reserve', `Rate ${w.economy.rate}%`], ['#/banks', 'Banks', w.permits.banks ? `${Object.keys(w.banks).length} open` : 'Needs the Banking Act', !w.permits.banks], ['#/ventures', 'Trade ventures', 'Invest abroad']]],
-    ['The world', [['#/foreign', 'Foreign Office', has('foreign') ? 'Five nations' : 'Needs the Foreign Affairs Act', !has('foreign')], ['#/security', 'Security Service', has('security') ? 'Intelligence' : 'Needs the Security Service Act', !has('security')], ['#/army', 'The Army', has('army') ? `${w.army.readiness}, loyalty ${w.army.loyalty}/5` : 'Needs the Defence Act', !has('army')]]],
-    ['Society', [['#/press', 'The press', `${Object.keys(w.papers).length} papers`], ['#/gazette', 'The Gazette', 'Record and front pages'], ['#/court', 'Supreme Court', has('court') ? 'Cases' : 'Needs an amendment', !has('court')], ['#/crises', 'Crises', 'One a week'], ['#/season', 'Season', `Season ${w.season.n}`], ['#/polls', 'The polls', w.polls?.[0] ? 'Out every payday' : 'First one on payday'], ['#/fame', 'Hall of Fame', 'Kept forever'], ['#/calendar', 'Calendar', 'The weekly rhythm'], ['#/rolog', 'Returning Officer’s log', 'Every use of admin powers']]],
-    ['The backroom', [['#/backroom', 'Cards and deals', intrigueOpen(w) ? 'Secrets you hold' : 'Opens in week 3', !intrigueOpen(w)], ['#/plots', 'Plots', intrigueOpen(w) ? 'Coups' : 'Opens in week 3', !intrigueOpen(w)], ['#/exile', 'Exile', 'Where traitors go']]]
-  ];
-  groups.splice(5, 0, ['Real life', [['#/streets', 'The Streets', w.citizens[me].streets?.in ? 'Contracts, codes, safe zones' : 'Opt-in: contracts and tags'], ['#/hunt', 'The Hunt', w.hunt?.status === 'running' ? `${w.hunt.alive.length} still standing` : w.hunt?.status === 'signup' ? 'Sign-ups open' : 'A new round every payday'], ['#/meet', 'Meet up', 'Check in with someone in person'], ['#/market', 'The market', `${Object.values(w.bounties || {}).filter((b: any) => b.status === 'open').length} bounties, ${Object.values(w.stalls || {}).filter((s: any) => s.status === 'open').length} stalls`], ['#/bets', 'Bets', `${Object.values(w.markets || {}).filter((m: any) => m.status === 'open' && m.closesAt > w.now).length} open`]]]);
-  groups.push(['Made by players', [['#/apps', 'App directory', 'Bots and frontends people have built'], ['#/developers', 'Build your own app', 'API keys, apps and webhooks']]]);
-  if (import.meta.env.DEV) groups.push(['Development', [['#/copy', 'Copy desk', 'Reword every line in the game']]]);
-  if (w.citizens[me].admin) groups.push(['Returning Officer', [['#/admin', 'Admin', 'Approvals, calendar, fixes']]]);
-  return (
-    <Page kicker={w.config.realmName} title="The realm" intro="The Nation has a vast myriad of different actions, offices and systems, all accessible here">
-      {groups.map(([g, items]) => (
-        <Sec title={g}><ul class="list">{items.map(([href, t, s, locked]) => <LinkRow href={href} title={<span style={{ opacity: locked ? 0.55 : 1 }}>{t}</span>} sub={s} right={locked ? <Icon name="lock" /> : undefined} />)}</ul></Sec>
-      ))}
-      <Sec title="Appearance" sub="Auto matches device settings"><ThemeSwitch /></Sec>
-    </Page>
-  );
-}
-
 export function Offices() {
   const { world: w } = useStore();
   const missing = Object.entries(TEMPLATES).filter(([k]) => !w.offices[k] && k !== 'whip');

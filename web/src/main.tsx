@@ -6,19 +6,19 @@ import { SignIn } from './pages/signin';
 import { Icon, applyTheme, getTheme } from './ui';
 import { DemoPanel, DemoRail } from './DemoPanel';
 import { Sidebar } from './Sidebar';
+import { TABS, where } from './nav';
 import { Today, Gazette, FrontPage, Passport, Laws, Law, Calendar } from './pages/today';
 import { House, Proposals, Proposal, NewProposal, Questions } from './pages/house';
 import { Elections, Election, Convention } from './pages/elections';
-import { Realm, Offices, Office, Cabinet, HOS, Parties, Party } from './pages/gov';
-import { Wallet, Economy, Banks, Ventures } from './pages/money';
-import { Foreign, Nation, Security, Army, Press, Court, Case, Crises, Crisis, Season } from './pages/world';
-import { Backroom, Plots, Exile } from './pages/backroom';
+import { Office, Parties, Party } from './pages/gov';
+import { Government, Money, World, Society, BackroomAll, Honours } from './pages/combined';
+import { Nation, Case, Crisis } from './pages/world';
 import { Admin, RoLog } from './pages/admin';
 import { Learn, Tour } from './pages/learn';
 import { Developers, Apps, AppPage, Authorize } from './pages/developers';
 import { Streets, TagLanding, Meet, Hunt } from './pages/streets';
-import { Market, Bets } from './pages/market';
-import { Polls, Fame } from './pages/glory';
+import { Market } from './pages/market';
+import { Polls } from './pages/glory';
 import { CopyDesk } from './pages/copydesk';
 import { CopyOverlay } from './copyEdit';
 
@@ -71,26 +71,24 @@ function route(hash: string) {
     '': () => <Today />, gazette: () => <Gazette />, frontpage: () => <FrontPage id={b} />, passport: () => <Passport id={b} />, you: () => <Passport />, laws: () => <Laws />, law: () => <Law refId={b} />, calendar: () => <Calendar />,
     house: () => <House />, proposals: () => <Proposals />, p: () => <Proposal id={b} />, new: () => <NewProposal query={q} />, questions: () => <Questions />,
     elections: () => <Elections />, election: () => <Election id={b} />, convention: () => <Convention />,
-    realm: () => <Realm />, offices: () => <Offices />, office: () => <Office id={b} />, cabinet: () => <Cabinet />, hos: () => <HOS />, parties: () => <Parties />, party: () => <Party id={b} />,
-    wallet: () => <Wallet />, economy: () => <Economy />, banks: () => <Banks />, ventures: () => <Ventures />,
-    foreign: () => <Foreign />, nation: () => <Nation id={b} />, security: () => <Security />, army: () => <Army />, press: () => <Press />, court: () => <Court />, case: () => <Case id={b} />, crises: () => <Crises />, crisis: () => <Crisis id={b} />, season: () => <Season />,
-    backroom: () => <Backroom />, plots: () => <Plots />, exile: () => <Exile />, admin: () => <Admin />, learn: () => <Learn />, rolog: () => <RoLog />, developers: () => <Developers />, apps: () => <Apps />, app: () => <AppPage id={b} />, authorize: () => <Authorize query={q} />,
+    // combined sections: the old addresses open the part they name
+    government: () => <Government />, cabinet: () => <Government focus="cabinet" />, offices: () => <Government focus="offices" />, hos: () => <Government focus="hos" />, office: () => <Office id={b} />,
+    parties: () => <Parties />, party: () => <Party id={b} />,
+    money: () => <Money />, realm: () => <Money />, wallet: () => <Money focus="wallet" />, economy: () => <Money focus="economy" />, banks: () => <Money focus="banks" />, ventures: () => <Money focus="ventures" />, bets: () => <Money focus="bets" />,
+    world: () => <World />, foreign: () => <World focus="foreign" />, security: () => <World focus="security" />, army: () => <World focus="army" />,
+    society: () => <Society />, press: () => <Society focus="press" />, court: () => <Society focus="court" />, crises: () => <Society focus="crises" />,
+    honours: () => <Honours />, season: () => <Honours focus="season" />, fame: () => <Honours focus="fame" />,
+    nation: () => <Nation id={b} />, case: () => <Case id={b} />, crisis: () => <Crisis id={b} />,
+    backroom: () => <BackroomAll />, plots: () => <BackroomAll focus="plots" />, exile: () => <BackroomAll focus="exile" />, admin: () => <Admin />, learn: () => <Learn />, rolog: () => <RoLog />, developers: () => <Developers />, apps: () => <Apps />, app: () => <AppPage id={b} />, authorize: () => <Authorize query={q} />,
     // an invitation link opened while already signed in: nothing to do but say so
     join: () => (setTimeout(() => (say('You are already signed in. Invitations are for new players.'), (location.hash = '#/')), 0), <Today />),
-    streets: () => <Streets />, hunt: () => <Hunt />, tag: () => <TagLanding code={b || ''} />, meet: () => <Meet code={b} />, market: () => <Market />, bets: () => <Bets />, polls: () => <Polls />, fame: () => <Fame />,
+    streets: () => <Streets />, hunt: () => <Hunt />, tag: () => <TagLanding code={b || ''} />, meet: () => <Meet code={b} />, market: () => <Market />, polls: () => <Polls />,
     // the copy desk only exists on the development server (npm run dev)
     ...(import.meta.env.DEV ? { copy: () => <CopyDesk /> } : {})
   };
   return { tab: a || '', key: hash, view: (pages[a || ''] || pages[''])() };
 }
 
-const TABS: [string, string, string, string[]][] = [
-  ['#/', 'Today', 'today', ['', 'gazette', 'frontpage']],
-  ['#/house', 'House', 'house', ['house', 'proposals', 'p', 'new', 'questions', 'cabinet']],
-  ['#/realm', 'Realm', 'realm', []],
-  ['#/laws', 'Laws', 'laws', ['laws', 'law', 'convention', 'calendar']],
-  ['#/you', 'You', 'you', ['you', 'passport', 'developers', 'authorize', 'learn']]
-];
 
 function App() {
   const s = useStore();
@@ -104,8 +102,8 @@ function Game() {
   const hash = useHash();
   const { toast, offline } = useStore();
   const r = route(hash);
-  const known = TABS.some((x) => x[3].includes(r.tab));
-  const marked = TABS.map(([href, label, icon, tabs]) => [href, label, icon, tabs.includes(r.tab) || (!known && !tabs.length)] as [string, string, string, boolean]);
+  const here = where(hash).tab.id;
+  const marked = TABS.map((t) => [t.href, t.label, t.icon, t.id === here] as [string, string, string, boolean]);
   return (
     <div class={'app' + (ONLINE ? ' online' : '')}>
       <Sidebar tabs={marked} current={'#/' + hash.replace(/^#\/?/, '').split('?')[0]} />

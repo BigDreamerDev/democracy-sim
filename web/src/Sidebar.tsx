@@ -1,32 +1,15 @@
-// Desktop navigation: the five sections, live counts, and shortcuts into the realm.
+// Desktop navigation: the five tabs, and the open tab's sections with live counts.
 import { useStore } from './store';
 import { Icon, Seal, ThemeSwitch } from './ui';
 import { nm, bal, ca, intrigueOpen, fmtTime, ordinal, standing, canSeeCard, TUTORIAL } from '../../engine/index';
 import { needs } from './pages/today';
+import { TABS, where, visible } from './nav';
 
 export function Sidebar({ tabs, current }: { tabs: [string, string, string, boolean][]; current: string }) {
   const { world: w, me } = useStore();
   const c = w.citizens[me];
   const n = needs(w, me).length;
-  const cards = w.cards.filter((k: any) => canSeeCard(w, k, me)).length;
-  const tut = Object.keys(c.tutorial || {}).length;
-  const short: [string, string, string?][] = [
-    ['#/learn', 'How to play', tut < TUTORIAL.length ? `${tut}/${TUTORIAL.length}` : ''],
-    ['#/proposals', 'Proposals', String(Object.values(w.proposals).filter((p: any) => ['debate', 'vote'].includes(p.stage)).length || '')],
-    ['#/questions', 'Questions'],
-    ['#/elections', 'Elections', String(Object.values(w.elections).filter((e: any) => e.status === 'open').length || '')],
-    ['#/offices', 'Offices'],
-    ['#/cabinet', 'Cabinet'],
-    ['#/parties', 'Parties'],
-    ['#/wallet', 'Wallet', `${bal(w, ca(me))}`],
-    ['#/economy', 'Economy'],
-    ['#/ventures', 'Ventures'],
-    ['#/foreign', 'Foreign Office'],
-    ['#/press', 'Press'],
-    ['#/season', 'Leaderboard', `${c.influence}`],
-    ['#/backroom', intrigueOpen(w) ? 'Backroom' : 'Backroom (locked)', intrigueOpen(w) && cards ? String(cards) : '']
-  ];
-  if (c.admin) short.push(['#/admin', 'Admin', String(w.pending.length || '')]);
+  const here = where(current).section;
   const meters: [string, number][] = [['P', w.meters.prosperity], ['S', w.meters.stability], ['W', standing(w)]];
   return (
     <aside class="side" aria-label="Sections">
@@ -40,16 +23,20 @@ export function Sidebar({ tabs, current }: { tabs: [string, string, string, bool
         </div>
       )}
       <nav class="side-main">
-        {tabs.map(([href, label, icon, on]) => (
-          <a href={href} class={on ? 'on' : ''} aria-current={on ? 'page' : undefined}>
-            {on && <span class="mark" aria-hidden="true" />}
-            <Icon name={icon} /><span>{label}</span>
-            {label === 'Today' && n > 0 && <i class="badge">{n}</i>}
-          </a>
-        ))}
+        {TABS.map((t, i) => {
+          const [href, label, icon, on] = tabs[i];
+          return (
+            <>
+              <a href={href} class={on ? 'on' : ''} aria-current={on ? 'page' : undefined}>
+                {on && <span class="mark" aria-hidden="true" />}
+                <Icon name={icon} /><span>{label}</span>
+                {t.id === 'today' && n > 0 && <i class="badge">{n}</i>}
+              </a>
+              {on && <div class="side-sub">{visible(t, w, me).map((s) => { const k = s.count?.(w, me); return <a href={s.href} class={here.id === s.id ? 'on' : ''}><span>{s.label}</span>{k ? <i class="tnum">{k}</i> : null}</a>; })}</div>}
+            </>
+          );
+        })}
       </nav>
-      <div class="side-label">Shortcuts</div>
-      <nav class="side-short">{short.map(([href, label, count]) => <a href={href} class={current === href ? 'on' : ''}><span>{label}</span>{count && <i class="tnum">{count}</i>}</a>)}</nav>
       <div class="side-foot">
         <div class="small muted">Playing as <b style={{ color: 'var(--ink)' }}>{nm(w, me)}</b> · {c.influence} Influence</div>
         <div class="small muted tnum">{fmtTime(w, w.now)}</div>

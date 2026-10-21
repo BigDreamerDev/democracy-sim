@@ -71,8 +71,10 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   markets.ts   betting pools on bills, elections and crises; opened and settled by those systems
   glory.ts     achievements (BADGES, from c.life counters via bump()), the daily Red Box and streaks, weekly polls,
                season awards, the Hall of Fame (w.fame, kept through induction and RO resets); afterChange()
-web/src/     Preact + Vite. main.tsx (router, tabs), store.ts, ui.tsx (shared components),
-             Sidebar.tsx, DemoPanel.tsx (demo only), pages/*.tsx, styles.css
+web/src/     Preact + Vite. main.tsx (router), nav.ts (the five tabs and their sections: sidebar, tab bar and the
+             section strip on every page all read it), store.ts, ui.tsx (shared components; Page, Combined),
+             Sidebar.tsx, DemoPanel.tsx (demo only), pages/*.tsx (pages/combined.tsx: Government, Money, World,
+             Society, Backroom, Honours, each several pages as one), styles.css
 server/      app.ts (first-party routes), public.ts (/api/v1 for players' own apps), db.ts (pg or PGlite + SCHEMA),
              security.ts (passwords, lockout, headers, rate limits), oauth.ts (Discord/Google/Microsoft/Apple),
              passkeys.ts (WebAuthn: v2_passkeys, routes), images.ts (photos: v2_images, JPEG-only, metadata stripped),
@@ -259,9 +261,12 @@ Citizen id = `'u' + users.id`.
 `collect()` in `engine/clock.ts`: `add(x.dueAt, () => settle(w, x))`. The settle
 function must change state so the deadline doesn't fire again.
 
-**Add a page** — component in `web/src/pages/*.tsx` using `Page`, `Sec`, `Card`, `Btn`,
-`Field`, `Pick` from `ui.tsx`; route in `route()` in `main.tsx`; add its first path
-segment to the right tab in `TABS`; link to it from a hub page with `LinkRow`.
+**Add a page** — prefer adding a part to an existing section over a new page. A new part: component in
+`web/src/pages/*.tsx` using `Page`, `Sec`, `Card`, `Btn`, `Field`, `Pick` from `ui.tsx`, added to the right
+`Combined` in `pages/combined.tsx` (it renders as one titled part; `back` is dropped). A whole new section: route
+in `route()` in `main.tsx`, then a `Section` in the right tab in `web/src/nav.ts` (its `routes` list every path
+segment that should light it up; old addresses stay as routes so Gazette links and players' apps keep working).
+Detail pages (`#/p/12`, `#/party/x`) keep a `back` link; section roots don't show one.
 
 **Add a world field** — default in `blank()` in `engine/world.ts`, `??=` in
 `engine/migrate.ts`, redact in `view.ts` if private.

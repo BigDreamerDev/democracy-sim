@@ -1,6 +1,8 @@
 // Shared building blocks, styled like the mockup canvas.
 import { ComponentChildren } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useContext, useEffect, useRef, useState } from 'preact/hooks';
+import { createContext } from 'preact';
+import { where, visible, isSectionRoot } from './nav';
 import qrcode from 'qrcode-generator';
 import { useStore, ONLINE, photoUrl, uploadPhoto, removePhoto, toast } from './store';
 import { fmtLeft, fmtTime, nm } from '../../engine/index';
@@ -20,16 +22,56 @@ export function useRoute(): string[] {
 }
 export const go = (path: string) => (location.hash = path.startsWith('#') ? path : '#/' + path);
 
+// a page shown inside a combined page (Money, Government, World…): it becomes one titled part of the bigger page
+const Embedded = createContext<string | null>(null);
+// the strip of section tabs at the top of every page in a tab
+export function SectionNav() {
+  const { world: w, me } = useStore();
+  const { tab, section } = where(location.hash);
+  const list = visible(tab, w, me);
+  if (list.length < 2) return null;
+  return (
+    <nav class="secnav" aria-label={`${tab.label} sections`}>
+      {list.map((s) => { const n = s.count?.(w, me); return <a href={s.href} class={s.id === section.id ? 'on' : ''} aria-current={s.id === section.id ? 'page' : undefined}>{s.label}{n ? <i class="tnum">{n}</i> : null}</a>; })}
+    </nav>
+  );
+}
+// several pages as one: each part keeps its own content under its own heading; #/wallet still lands on its part
+export function Combined(p: { kicker?: ComponentChildren; title: ComponentChildren; intro?: ComponentChildren; dark?: boolean; parts: [string, string, () => any][]; focus?: string }) {
+  useEffect(() => {
+    if (!p.focus || p.focus === p.parts[0][0]) return;
+    const el = document.getElementById('part-' + p.focus);
+    if (el) setTimeout(() => el.scrollIntoView({ block: 'start' }), 30);
+  }, [p.focus]);
+  return (
+    <Page kicker={p.kicker} title={p.title} intro={p.intro} dark={p.dark}>
+      <div class="partnav">{p.parts.map(([id, label]) => <a href={'#part-' + id} onClick={(e) => (e.preventDefault(), document.getElementById('part-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))}>{label}</a>)}</div>
+      {p.parts.map(([id, , C]) => <Embedded.Provider value={id}>{C()}</Embedded.Provider>)}
+    </Page>
+  );
+}
+
 export function Page(p: { kicker?: ComponentChildren; title: ComponentChildren; intro?: ComponentChildren; back?: [string, string]; dark?: boolean; children?: ComponentChildren; right?: ComponentChildren }) {
   const { world: w } = useStore();
+  const part = useContext(Embedded);
+  if (part !== null) return (
+    <section class={'part' + (p.dark ? ' dark' : '')} id={'part-' + part}>
+      <div class="row" style={{ alignItems: 'flex-end' }}><h2 class="h part-title">{p.title}</h2>{p.right}</div>
+      {p.intro && <p class="small muted part-intro">{p.intro}</p>}
+      <div class="part-body">{p.children}</div>
+    </section>
+  );
+  // top-level pages of a section don't need a back link: the section tabs are right there
+  const back = p.back && !isSectionRoot(location.hash) ? p.back : null;
   return (
     <div class={'page' + (p.dark ? ' dark' : '')}>
       <div>
         <div class="masthead" aria-hidden="true"><span>{p.dark ? 'Eyes only · not for the Gazette' : `${w.config.realmName} · ${fmtTime(w, w.now).split(',')[0]}`}</span></div>
-        {p.back && (
-          <a class="back" href={p.back[0]} style={{ marginTop: 4 }}>
+        <SectionNav />
+        {back && (
+          <a class="back" href={back[0]} style={{ marginTop: 4 }}>
             <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
-            {p.back[1]}
+            {back[1]}
           </a>
         )}
         <div class="row" style={{ alignItems: 'flex-end' }}>
@@ -217,6 +259,7 @@ export function rosette(c: number, base: number, amp: number, lobes: number, rin
 export function Icon({ name }: { name: string }) {
   const paths: Record<string, string> = {
     today: 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
+    politics: 'M4 11h16v10H4zM8 11V4h8v7M10 7.5h4',
     house: 'M3 9l9-5 9 5M5 9v9M10 9v9M14 9v9M19 9v9M3 21h18',
     realm: 'M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z',
     laws: 'M4 4h11a3 3 0 013 3v13H7a3 3 0 01-3-3zM4 17a3 3 0 013-3h11',

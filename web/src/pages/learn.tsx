@@ -75,7 +75,7 @@ export const openTour = () => opener?.();
 const SLIDES: { title: string; body: (w: any) => string }[] = [
   { title: 'Welcome to the realm', body: (w) => `${w.config.realmName} is a country run by this group chat. You vote, stand, legislate, trade and scheme. Everything happens here; the group chat is for arguing about it.` },
   { title: 'Today is your front door', body: () => 'Today shows what needs you right now, with a red badge when something does: a vote closing, a bill to sign, a deal waiting. Check it once a day.' },
-  { title: 'Five tabs', body: () => 'Today for what matters now. House for Parliament. Realm for everything else: offices, money, the press, crises. Laws for the statute book. You for your passport.' },
+  { title: 'Five tabs', body: () => 'Today for what matters now. Parliament for the chamber, bills, questions, the government and the law. Politics for elections and parties. Realm for money, the world, the press and the backroom. You for your passport and honours. Each tab has a row of sections at the top of the page.' },
   { title: 'The rhythm of the week', body: (w) => `Payday is ${['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'][w.calendar.payday.dow]}, when money arrives and a crisis lands. PM's Questions and the front page come later in the week. Elections every few weeks.` },
   { title: 'Learn by doing', body: (w) => (w.phase === 'convention' ? 'After the Convention comes induction week: a full week of practice that resets at the end. Use it to try everything.' : 'The missions on How to play walk you through each part of the game. You can reopen this tour there any time.') }
 ];

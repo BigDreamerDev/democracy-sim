@@ -14,35 +14,39 @@ const whole = (v: string, max: number) => Math.min(max, Math.max(0, Math.round(N
 export function House() {
   const { world: w } = useStore();
   const lo = leaderOfOpposition(w);
-  const bench = (gov: boolean) => w.seats.filter((s: string) => s && inGovernment(w, s) === gov);
+  const bench = (gov: boolean) => w.seats.filter((s: string) => s && inGovernment(w, s) === gov).sort((a: string, b: string) => (w.pm === b ? 1 : 0) - (w.pm === a ? 1 : 0) || String(w.citizens[a].party || '~').localeCompare(String(w.citizens[b].party || '~')));
   const live = Object.values(w.proposals).filter((p: any) => LIVE.includes(p.stage)).sort((a: any, b: any) => b.n - a.n) as any[];
   const empty = w.seats.filter((s: any) => !s).length;
+  const [all, setAll] = useState([false, false]);
   return (
     <Page kicker={w.martial ? 'Suspended under martial law' : 'Parliament'} title="The House" intro={`${w.config.seats} MPs and a Speaker. ${w.pm ? `The government needs ${majority(w)} votes to win.` : 'No government has been formed.'}`}>
-      <Sec title="The chamber">
-        <Card>
-          <div style={{ textAlign: 'center', marginBottom: 12 }}><span aria-hidden="true" class="chair-box" /><div style={{ fontSize: 14 }}><Who id={w.speaker} />, Speaker</div></div>
+      <Sec id="chamber" title="The chamber" sub={`${bench(true).length} government, ${bench(false).length} opposition.`}>
+        <Card><div class="chamber">
+          <Hemicycle />
           <div class="benches">
             {[true, false].map((gov) => (
               <div>
                 <div class="small" style={{ fontWeight: 700, color: gov ? 'var(--teal)' : 'var(--red)', marginBottom: 6 }}>{gov ? 'Government' : 'Opposition'}, {bench(gov).length}</div>
-                <div class="stack" style={{ gap: 6 }}>
-                  {bench(gov).map((id: string) => {
+                <div class="bench-grid">
+                  {bench(gov).slice(0, all[gov ? 1 : 0] || w.seats.length <= 24 ? undefined : 10).map((id: string) => {
                     const c = w.citizens[id];
+                    const role = w.pm === id ? 'PM' : lo === id ? 'Opp. leader' : w.speaker === id ? 'Speaker' : '';
                     return (
-                      <a href={'#/passport/' + id} class={'bench ' + (gov ? '' : c.party ? 'opp' : 'ind')} style={{ textDecoration: 'none', color: 'inherit' }}>
-                        <div class="row"><b style={{ fontSize: 15 }}>{c.name}</b><span class="small tnum">{c.approval}%</span></div>
-                        <div class="small muted">{[w.pm === id ? 'PM' : '', lo === id ? 'Leader of the Opposition' : '', c.party ? w.parties[c.party].name : 'Independent'].filter(Boolean).join(', ')}</div>
+                      <a href={'#/passport/' + id} class={'bench ' + (gov ? '' : c.party ? 'opp' : 'ind')} style={{ textDecoration: 'none', color: 'inherit' }} title={c.party ? w.parties[c.party].name : 'Independent'}>
+                        <div class="row"><b>{c.name}</b><span class="small tnum">{c.approval}%</span></div>
+                        <div class="small muted bench-sub"><i class="dot" style={{ background: c.party ? w.parties[c.party].colour : 'var(--muted)' }} />{role || (c.party ? w.parties[c.party].name : 'Independent')}</div>
                       </a>
                     );
                   })}
                 </div>
+                {w.seats.length > 24 && bench(gov).length > 10 && <button type="button" class="linkish small" style={{ marginTop: 6 }} onClick={() => setAll(gov ? [all[0], !all[1]] : [!all[0], all[1]])}>{all[gov ? 1 : 0] ? 'Show fewer' : `Show all ${bench(gov).length}`}</button>}
               </div>
             ))}
           </div>
+          </div>
           {empty > 0 && <p class="small muted" style={{ margin: '10px 0 0' }}>{empty} empty seat{empty > 1 ? 's' : ''}: nobody left on the countback list.</p>}
           <div class="row" style={{ marginTop: 10, flexWrap: 'wrap', justifyContent: 'flex-start' }}>
-            <a href="#/cabinet" class="small">Cabinet and coalition</a><a href="#/questions" class="small">Questions</a><a href="#/offices" class="small">Offices</a>
+            <span class="small">Speaker: <Who id={w.speaker} /></span><a href="#/cabinet" class="small">Cabinet and coalition</a><a href="#/questions" class="small">Questions</a><a href="#/offices" class="small">Offices</a>
           </div>
         </Card>
       </Sec>
@@ -54,6 +58,61 @@ export function House() {
         <div class="grid2" style={{ marginTop: 12 }}><Btn href="#/new">New proposal</Btn><Btn href="#/proposals" kind="ghost">All proposals</Btn></div>
       </Sec>
     </Page>
+  );
+}
+
+// the seats as a half-circle of dots, government on the left, coloured by party: it scales to any size of House
+function Hemicycle() {
+  const { world: w } = useStore();
+  const seats: (string | null)[] = w.seats;
+  const n = seats.length;
+  const rows = n <= 12 ? 2 : n <= 30 ? 3 : n <= 60 ? 4 : n <= 110 ? 5 : 7;
+  const r0 = 0.42, r1 = 1;
+  const radii = Array.from({ length: rows }, (_, i) => r0 + ((r1 - r0) * i) / Math.max(1, rows - 1));
+  const total = radii.reduce((a, r) => a + r, 0);
+  const per = radii.map((r) => Math.max(1, Math.round((n * r) / total)));
+  per[rows - 1] += n - per.reduce((a, x) => a + x, 0);
+  const pts: { x: number; y: number; a: number }[] = [];
+  radii.forEach((r, i) => { for (let k = 0; k < per[i]; k++) { const a = Math.PI * (1 - (per[i] === 1 ? 0.5 : k / (per[i] - 1))); pts.push({ x: r * Math.cos(a), y: r * Math.sin(a), a }); } });
+  pts.sort((p, q) => q.a - p.a);
+  const rank = (id: string | null) => (!id ? 3 : inGovernment(w, id) ? 0 : w.citizens[id].party ? 1 : 2);
+  const order = seats.slice().sort((a, b) => rank(a) - rank(b) || String(a && w.citizens[a].party).localeCompare(String(b && w.citizens[b].party)));
+  const gap = Math.min((r1 - r0) / Math.max(1, rows - 1), ...radii.map((r, i) => (per[i] > 1 ? (Math.PI * r) / (per[i] - 1) : 2)));
+  const dot = Math.min(0.09, gap * 0.42);
+  const parties = [...new Set(order.filter(Boolean).map((id) => w.citizens[id!].party || 'ind'))];
+  return (
+    <figure class="hemi" aria-label={`Seats in the House: ${parties.map((p) => `${p === 'ind' ? 'Independents' : w.parties[p].name} ${order.filter((id) => id && (w.citizens[id].party || 'ind') === p).length}`).join(', ')}`}>
+      <svg viewBox={`${-1 - dot} ${-1 - dot} ${2 + dot * 2} ${1 + dot * 2.5}`} role="img">
+        {pts.map((p, i) => {
+          const id = order[i];
+          const c = id && w.citizens[id];
+          const fill = !c ? 'none' : c.party ? w.parties[c.party].colour : 'var(--muted)';
+          return <a href={id ? '#/passport/' + id : undefined}><circle cx={p.x} cy={-p.y} r={dot} fill={fill} stroke={c && inGovernment(w, id!) ? 'var(--ink)' : 'var(--line, currentColor)'} stroke-width={c && inGovernment(w, id!) ? dot * 0.35 : dot * 0.15} opacity={c ? 1 : 0.5}><title>{c ? `${c.name}, ${c.party ? w.parties[c.party].name : 'Independent'}${inGovernment(w, id!) ? ', government' : ''}` : 'Empty seat'}</title></circle></a>;
+        })}
+      </svg>
+      <figcaption class="hemi-key">{parties.map((p) => <span class="small"><i class="dot" style={{ background: p === 'ind' ? 'var(--muted)' : w.parties[p].colour }} />{p === 'ind' ? 'Independents' : w.parties[p].name} <b class="tnum">{order.filter((id) => id && (w.citizens[id].party || 'ind') === p).length}</b></span>)}<span class="small muted">Outlined: government. Majority {majority(w)}.</span></figcaption>
+    </figure>
+  );
+}
+
+// the party whips on a bill: set yours if you lead a party; see everyone else's; after the vote, the rebels
+function Whips({ p }: { p: any }) {
+  const { world: w, me } = useStore();
+  const pid = w.citizens[me]?.party;
+  const lead = pid && w.parties[pid]?.leader === me && w.parties[pid]?.status === 'active';
+  const open = ['debate', 'vote'].includes(p.stage);
+  const whips = Object.entries(p.whips || {}).filter(([k]) => w.parties[k]);
+  if (!lead && !whips.length && !p.rebels?.length) return null;
+  const word = (l: string) => (l === 'aye' ? 'Aye' : l === 'no' ? 'No' : 'Free vote');
+  return (
+    <Sec title="The whips" sub="Party leaders tell their MPs how to vote. Loyal members follow; the unhappy rebel.">
+      <Card>
+        {lead && open && <div style={{ marginBottom: 10 }}><div class="small" style={{ fontWeight: 700, marginBottom: 6 }}>Whip the {w.parties[pid].name}</div><Seg value={p.whips?.[pid] || ''} onChange={(v) => act('party.whip', { prop: p.id, line: v }, v === 'free' ? 'A free vote. Your MPs choose.' : `Your MPs are whipped to vote ${v === 'aye' ? 'Aye' : 'No'}.`)} options={[['aye', 'Aye'], ['no', 'No'], ['free', 'Free vote']]} /></div>}
+        {whips.length ? <ul class="list">{whips.map(([k, l]: any) => <li class="row"><span><i class="dot" style={{ background: w.parties[k].colour, marginRight: 8 }} />{w.parties[k].name}{k === pid && !lead ? <span class="small muted"> (your party)</span> : ''}</span><b>{word(l)}</b></li>)}</ul> : <p class="small muted" style={{ margin: 0 }}>No whips yet.</p>}
+        {pid && !lead && p.whips?.[pid] && p.whips[pid] !== 'free' && open && <p class="small" style={{ margin: '8px 0 0' }}>Your party wants you to vote <b>{word(p.whips[pid])}</b>. Defy it and your colleagues will notice.</p>}
+        {p.rebels?.length > 0 && <p class="small" style={{ margin: '8px 0 0' }}>Defied the whip: {p.rebels.map((x: string) => nm(w, x)).join(', ')}.</p>}
+      </Card>
+    </Sec>
   );
 }
 

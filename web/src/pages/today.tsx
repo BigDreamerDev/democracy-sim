@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { useStore, act, ONLINE, myInvites, sendInvite, inviteLink, signOut, changePassword, toast, securityInfo, unlinkProvider, beginOAuth, signOutEverywhere, passkeysWork, addPasskey, removePasskey, renamePasskey } from '../store';
 import { TUTORIAL } from '../../../engine/tutorial';
-import { Page, Sec, Card, Btn, Who, Left, When, Seal, Empty, LinkRow, Seg, Meter, Field, Pick, PasswordField, Photo, DiscordLogo } from '../ui';
+import { Page, Sec, Card, Btn, Who, Left, When, Seal, Empty, LinkRow, Seg, Meter, Field, Pick, PasswordField, Photo, DiscordLogo, SectionNav, ThemeSwitch } from '../ui';
 import { nm, isMP, isPM, isHOS, bal, ca, intrigueOpen, fmtTime, fmtDay, ordinal, METERS, standing, inDanger, canSeeCard, CAL_EVENTS, DAYS, nextAt, hosTitle, upcoming, officesOf, exiled } from '../../../engine/index';
 import { canVote } from '../../../engine/politics';
 import { canVoteOn, describe, KINDS } from '../../../engine/proposals';
@@ -127,7 +127,6 @@ export function Today() {
   const list = needs(w, me).filter((n) => !n.key.startsWith('daily:'));
   const up = upcoming(w, 3);
   const mine = officesOf(w, me);
-  const quick: [string, string][] = [['#/house', 'Parliament'], ['#/realm', 'Everything'], ['#/wallet', `${bal(w, ca(me))} crowns`], ['#/season', `${c.influence} Influence`]];
   return (
     <div class="page today">
       <div class="today-head" style={{ position: 'relative' }}>
@@ -138,7 +137,8 @@ export function Today() {
             <div class="small muted">{w.phase === 'convention' ? 'Founding Convention' : w.induction && !w.induction.done ? 'Induction week: practice, resets at the end' : `${ordinal(Math.max(1, w.season.n))} Parliament. ${w.pm ? nm(w, w.pm) + ' is Prime Minister' : 'No government'}.`}</div>
           </div>
         </div>
-        <h1 class="title today-title" style={{ marginTop: 30 }}>{list.length ? `${list.length} thing${list.length > 1 ? 's' : ''} need${list.length > 1 ? '' : 's'} you` : 'All caught up'}</h1>
+        <div style={{ marginTop: 18 }}><SectionNav /></div>
+        <h1 class="title today-title" style={{ marginTop: 18 }}>{list.length ? `${list.length} thing${list.length > 1 ? 's' : ''} need${list.length > 1 ? '' : 's'} you` : 'All caught up'}</h1>
         <p class="intro">{w.phase === 'convention' ? <>Write the constitution together. The Convention closes in <Left at={w.convention.closesAt} />.</> : 'Democracy won\'t halt for anything, make sure to cast your vote and propose your bills before they close'}</p>
       </div>
       <InductionBanner />
@@ -160,7 +160,7 @@ export function Today() {
             {mine.map((o: any) => <a href={'#/office/' + o.id} class="row" style={{ textDecoration: 'none', color: 'inherit', padding: '6px 0' }}><b class="serif" style={{ fontSize: 19 }}>{o.title}</b><span class="small">{o.powers.length} power{o.powers.length === 1 ? '' : 's'} →</span></a>)}
           </Card>
         )}
-        <div class="grid2 o4" style={{ marginTop: 18 }}>{quick.map(([h, l]) => <Btn href={h} kind="plain">{l}</Btn>)}</div>
+        {w.phase === 'running' && <div class="o4" style={{ marginTop: 18 }}><YourCorner /><OrderPaper /></div>}
         <section class="sec o5">
           <h2 class="h">In the Gazette</h2>
           <GazetteList items={w.gazette.slice(0, 8)} />
@@ -179,6 +179,57 @@ export function Today() {
         {w.phase === 'running' && <div style={{ order: 3 }}><SeatMap /></div>}
       </div>
     </div>
+  );
+}
+
+// you at a glance: who you are in the realm, and your crowns, Influence and standing
+function YourCorner() {
+  const { world: w, me } = useStore();
+  const c = w.citizens[me];
+  const party = c.party && w.parties[c.party];
+  const offs = officesOf(w, me);
+  const role = [isPM(w, me) ? 'Prime Minister' : isMP(w, me) ? 'MP' : 'Citizen', isHOS(w, me) ? hosTitle(w) : '', ...offs.map((o: any) => o.title)].filter(Boolean).join(' · ');
+  return (
+    <Card>
+      <div class="row" style={{ alignItems: 'flex-start' }}>
+        <span><b class="serif" style={{ fontSize: 22 }}>{c.name}</b><div class="small muted">{role}{party ? ` · ${party.leader === me ? 'leads the' : 'in the'} ${party.name}` : ' · no party'}</div></span>
+        <a class="small" href="#/you">Passport</a>
+      </div>
+      <div class="corner-stats">
+        <a href="#/wallet"><b class="tnum">{bal(w, ca(me))}</b><span>crowns</span></a>
+        <a href="#/season"><b class="tnum">{c.influence}</b><span>Influence</span></a>
+        <a href="#/you"><b class="tnum">{c.approval}%</b><span>approval</span></a>
+        {offs.map((o: any) => <a href={'#/office/' + o.id}><b class="corner-office">{o.title}</b><span>your office</span></a>)}
+      </div>
+    </Card>
+  );
+}
+// everything before the House, soonest deadline first; vote right here when you can
+const STAGE: Record<string, string> = { debate: 'Debate', vote: 'Voting', assent: 'Awaiting assent', override: 'Veto override', hos: 'With the head of state' };
+function OrderPaper() {
+  const { world: w, me } = useStore();
+  const live = (Object.values(w.proposals) as any[]).filter((p) => STAGE[p.stage]);
+  const due = (p: any) => (p.stage === 'debate' ? p.debateEndsAt : p.stage === 'vote' ? p.voteEndsAt : p.stage === 'override' ? p.overrideEndsAt : null) || Infinity;
+  live.sort((a, b) => due(a) - due(b));
+  return (
+    <Card style={{ marginTop: 12 }}>
+      <div class="row"><h2 class="h" style={{ margin: 0, fontSize: 21 }}>Order paper</h2><span class="small"><a href="#/new">New proposal</a> · <a href="#/proposals">All</a></span></div>
+      {live.length ? <ul class="list" style={{ marginTop: 6 }}>{live.slice(0, 8).map((p) => {
+        const book = p.stage === 'override' ? p.overrideVotes || {} : p.votes || {};
+        const mine = book[me];
+        const open = (p.stage === 'vote' || p.stage === 'override') && canVoteOn(w, p, me);
+        const yes = p.voters === 'all' ? 'Yes' : 'Aye';
+        const secret = p.voters === 'all' && p.stage === 'vote';
+        return (
+          <li class="op-item">
+            <a href={'#/p/' + p.id} class="op-link"><b>{p.kind === 'bill' ? `Bill ${p.n}, ` : ''}{p.title}</b>
+              <div class="small muted">{KINDS[p.kind]?.name} by {nm(w, p.by)}. {STAGE[p.stage]}{due(p) !== Infinity ? <>, {p.stage === 'debate' ? 'vote opens' : 'closes'} in <Left at={due(p)} /></> : ''}.</div></a>
+            {open && !mine ? <span class="op-vote"><Btn small onClick={() => act('prop.vote', { prop: p.id, vote: 'aye' }, 'Vote cast. +2 Influence.')}>{yes}</Btn><Btn small kind="ghost" onClick={() => act('prop.vote', { prop: p.id, vote: 'no' }, 'Vote cast. +2 Influence.')}>No</Btn></span>
+              : p.by === me ? <span class="chip">Yours</span> : mine ? <span class="small muted">{secret ? 'Voted' : `You: ${mine === 'aye' ? yes : mine === 'no' ? 'No' : mine}`}</span> : null}
+          </li>
+        );
+      })}</ul> : <p class="small muted" style={{ margin: '6px 0 0' }}>Nothing before the House. <a href="#/new">Table something</a>.</p>}
+    </Card>
   );
 }
 
@@ -294,6 +345,7 @@ export function Passport({ id }: { id?: string }) {
         <div><div class="small" style={{ opacity: 0.85 }}>{w.config.realmName}</div><h1 class="title" style={{ fontSize: 34, margin: 0 }}>Passport</h1></div>
       </header>
       <div style={{ padding: '0 max(20px, env(safe-area-inset-right, 0px)) 24px max(20px, env(safe-area-inset-left, 0px))' }}>
+        {(!id || id === me) && <div style={{ marginTop: 12 }}><SectionNav /></div>}
         <div class="grid2" style={{ marginTop: 16 }}>
           <div style={{ gridColumn: '1 / -1' }}><div class="small muted">Name</div><div class="serif" style={{ fontSize: 30 }}>{c.name}</div></div>
           <div><div class="small muted">Party</div><b>{c.party ? w.parties[c.party]?.name : 'Independent'}</b></div>
@@ -313,6 +365,7 @@ export function Passport({ id }: { id?: string }) {
         {pid === me && <Sec title="Learning"><a class="btn ghost small" href="#/learn">How to play · {Object.keys(c.tutorial || {}).length}/{TUTORIAL.length} missions</a></Sec>}
         {pid === me && ONLINE && <InviteFriends />}
         {pid === me && ONLINE && <Account />}
+        {pid === me && <Sec title="Appearance" sub="Auto follows your device."><ThemeSwitch /></Sec>}
         <p class="mrz" aria-hidden="true">P&lt;{w.config.realmName.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)}&lt;{c.name.toUpperCase()}&lt;&lt;{'<'.repeat(Math.max(0, 22 - c.name.length))}</p>
       </div>
     </div>
