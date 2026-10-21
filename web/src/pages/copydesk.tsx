@@ -54,6 +54,9 @@ export function CopyDesk() {
   const [f, setF] = useState({ area: '', kind: '', status: 'todo', q: '' });
   const [page, setPage] = useState(0);
   const [report, setReport] = useState<any>(null);
+  // lines you've touched stay on screen until you change the filter or page, even if they no longer match it
+  const [held, setHeld] = useState<Set<string>>(new Set());
+  const hold = (id: string) => held.has(id) || setHeld(new Set([...held, id]));
   const timer = useRef<any>(null);
   const load = async () => {
     try {
@@ -76,11 +79,13 @@ export function CopyDesk() {
     }, 500);
   };
   const edit = (id: string, t: string) => {
+    hold(id);
     const next = { ...edits, [id]: t };
     setEdits(next);
     persist(next, reviewed);
   };
   const mark = (id: string, on: boolean) => {
+    hold(id);
     const rv = new Set(reviewed);
     on ? rv.add(id) : rv.delete(id);
     setReviewed(rv);
@@ -97,6 +102,7 @@ export function CopyDesk() {
 
   const status = (s: Str) => (edits[s.id] !== undefined && edits[s.id] !== s.text ? 'edited' : reviewed.has(s.id) ? 'fine' : 'todo');
   const shown = all.filter((s) => {
+    if (held.has(s.id)) return true;
     if (f.area && area(s.file) !== f.area) return false;
     if (f.kind && s.kind !== f.kind) return false;
     const st = status(s);
@@ -113,7 +119,7 @@ export function CopyDesk() {
   const done = all.filter((s) => status(s) !== 'todo').length;
   const nEdited = all.filter((s) => status(s) === 'edited').length;
   const areas = [...new Set(all.map((s) => area(s.file)))].sort();
-  const setFilter = (x: any) => (setF({ ...f, ...x }), setPage(0));
+  const setFilter = (x: any) => (setF({ ...f, ...x }), setPage(0), setHeld(new Set()));
   const apply = async () => {
     if (!confirm(`Write ${nEdited} edit${nEdited === 1 ? '' : 's'} into the source code?`)) return;
     const r = await fetch('/__copy/apply', { method: 'POST' }).then((x) => x.json());
@@ -175,7 +181,7 @@ export function CopyDesk() {
           })}
           {!shown.length && <Empty>Nothing here. Try another filter.</Empty>}
         </div>
-        {pages > 1 && <div class="row" style={{ marginTop: 12 }}><Btn small kind="plain" disabled={at === 0} onClick={() => (setPage(at - 1), scrollTo(0, 0))}>Previous</Btn><span class="small tnum">{at + 1} / {pages}</span><Btn small kind="plain" disabled={at >= pages - 1} onClick={() => (setPage(at + 1), scrollTo(0, 0))}>Next</Btn></div>}
+        {pages > 1 && <div class="row" style={{ marginTop: 12 }}><Btn small kind="plain" disabled={at === 0} onClick={() => (setPage(at - 1), setHeld(new Set()), scrollTo(0, 0))}>Previous</Btn><span class="small tnum">{at + 1} / {pages}</span><Btn small kind="plain" disabled={at >= pages - 1} onClick={() => (setPage(at + 1), setHeld(new Set()), scrollTo(0, 0))}>Next</Btn></div>}
       </Sec>
     </Page>
   );
