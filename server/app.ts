@@ -595,14 +595,16 @@ export async function makeApp(o: Options) {
     if (req.body?.confirm !== 'RESET THE REALM') return res.status(400).json({ error: 'Type RESET THE REALM to confirm.' });
     await serial(async () => {
       await q('INSERT INTO v2_snapshots (reason, state) VALUES ($1, $2)', ['before reset', JSON.stringify(world)]);
-      const keep = { fame: world.fame, pending: world.pending || [], zones: (world.streets?.zones || []).filter((z: any) => z.by === 'ro') };
+      // the Hall of Fame normally outlives every realm; `fame: 'clear'` wipes it too (before the real launch)
+      const clearFame = req.body?.fame === 'clear';
+      const keep = { fame: clearFame ? null : world.fame, pending: world.pending || [], zones: (world.streets?.zones || []).filter((z: any) => z.by === 'ro') };
       world = createLiveWorld(await people(), now(), (now() % 2147483647) | 0);
       // the Hall of Fame outlives every realm, and so do the safety zones the RO added
       if (keep.fame) world.fame = keep.fame;
       // people still waiting for approval stay in the queue
       world.pending = keep.pending.filter((p: any) => !world.citizens[p.uid]);
       world.streets.zones.push(...keep.zones);
-      adminDid(world, req.cid, 'reset the realm to a fresh Founding Convention');
+      adminDid(world, req.cid, `reset the realm to a fresh Founding Convention${clearFame ? ' and cleared the Hall of Fame' : ''}`);
       await save();
     });
     schedule();

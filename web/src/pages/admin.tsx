@@ -1,13 +1,14 @@
 import { useState } from 'preact/hooks';
 import { useEffect } from 'preact/hooks';
 import { useStore, act, ONLINE, resetRealm, downloadExport, resetPassword, adminApps, removeApp, restoreApp, toast, adminInvites, makeInvite, makeInvites, revokeInvite, inviteLink, removeDuplicate, adminNotes, saveNote, adminAllowances, setAllowance, adminDevices } from '../store';
-import { Page, Sec, Card, Btn, Empty, LinkRow, Field, Pick, When } from '../ui';
+import { Page, Sec, Card, Btn, Empty, LinkRow, Field, Pick, When, Seg } from '../ui';
 import { CRISES } from '../../../engine/crises';
 import { nm, ledgerTotal, fmtTime, acctLabel } from '../../../engine/index';
 
 export function Admin() {
   const { world: w, me } = useStore();
   const [confirm, setConfirm] = useState('');
+  const [fame, setFame] = useState<'keep' | 'clear'>('keep');
   const [who, setWho] = useState('');
   const [crisis, setCrisis] = useState('');
   const [temp, setTemp] = useState('');
@@ -77,9 +78,10 @@ export function Admin() {
           <Btn kind="ghost" small onClick={() => downloadExport().catch((e) => toast(e.message, true))}>Download full export</Btn>
           <Card kind="warn" style={{ marginTop: 12 }}><div class="stack">
             <b>Start over</b>
-            <span class="small">Wipes the game and opens a fresh Founding Convention for every approved account. A snapshot is kept on the server first.</span>
+            <span class="small">Wipes the game and opens a fresh Founding Convention for every approved account. Accounts, sign-in methods and the sign-up queue stay. A snapshot is kept on the server first.</span>
+            <div><div class="small" style={{ fontWeight: 700, marginBottom: 6 }}>Hall of Fame</div><Seg value={fame} onChange={setFame} options={[['keep', 'Keep it'], ['clear', 'Clear it too']]} /></div>
             <Field label="Type RESET THE REALM" value={confirm} onInput={setConfirm} />
-            <Btn kind="danger" disabled={confirm !== 'RESET THE REALM'} onClick={() => resetRealm(confirm).then(() => (setConfirm(''), toast('A new realm begins.'), (location.hash = '#/'))).catch((e) => toast(e.message, true))}>Reset the realm</Btn>
+            <Btn kind="danger" disabled={confirm !== 'RESET THE REALM'} onClick={() => resetRealm(confirm, fame === 'clear').then(() => (setConfirm(''), toast('A new realm begins.'), (location.hash = '#/'))).catch((e) => toast(e.message, true))}>Reset the realm</Btn>
           </div></Card>
         </Sec>
       )}

@@ -253,8 +253,8 @@ export async function changePassword(current: string, next: string) {
   const d = await api('/api/password', { current, next });
   setToken(d.token);
 }
-export async function resetRealm(confirm: string) {
-  receive(await api('/api/admin/reset', { confirm }));
+export async function resetRealm(confirm: string, clearFame = false) {
+  receive(await api('/api/admin/reset', { confirm, ...(clearFame ? { fame: 'clear' } : {}) }));
 }
 export async function resetPassword(citizen: string): Promise<string> {
   const d = await api('/api/admin/password', { citizen });
