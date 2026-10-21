@@ -1,158 +1,82 @@
-# The Republic
+# The Realm
 
-A small parliamentary democracy for one group chat. Static front end on GitHub Pages, API on Render, Postgres anywhere.
+A political game for one group chat. Friends write a constitution together, stand for election, form parties
+and governments, pass laws, run the economy, deal with crises and foreign powers, and plot against each other.
+Some of it is played in real life.
 
-- **[SETUP.md](SETUP.md)** — deploying it, start to finish
-- **[HANDBOOK.md](HANDBOOK.md)** — how the game works, for the people playing it
-- **[constitution.md](constitution.md)** — the founding document, to paste in at startup
-- **[CLAUDE.md](CLAUDE.md)** — conventions, architecture and traps, for anyone (or anything) editing the code
-- **[docs-src/](docs-src/README.md)** — the documentation index: reference, diplomacy, and the foreign-power runbook
+Everything closes on its own: miss a vote and it goes ahead without you. You need about five minutes a day.
 
-Look at it without deploying: `cd server && npm install && npm run dev`.
+## How it plays
 
-The state has a flag, and the flag is a law. `L001 — The Flag Act` is in force from the first minute and the site takes its entire palette from it. Amend the Act and everything re-skins itself the moment the President assents.
+- **The Founding Convention.** Three days to agree the rules: the realm's name, how many seats, monarchy or
+  republic, the voting system, payday, the dividend. Anyone can add options or table new clauses.
+- **Induction week.** A week of practice with everything switched on, then it all resets and the first real
+  election opens.
+- **Parliament.** Elections every few weeks (first past the post, ranked choice, approval or Borda, as the
+  Convention decided). The head of state invites a Prime Minister, who appoints ministers. MPs table bills,
+  debate, vote, censure, and bring governments down. Everyone can ask questions at PMQs.
+- **Money.** Crowns: a weekly dividend, pay for office, tax, a central bank, licensed banks, trade ventures
+  abroad, lobbying in public, and a Treasury that quietly borrows when it runs dry.
+- **The world.** Five nations with moods of their own. They offer treaties, demand tribute, impose sanctions
+  and occasionally declare war. A crisis lands every week; some choices come back weeks later.
+- **The press.** Anyone can start a paper. The best story of the week leads the Friday front page.
+- **The backroom** (from week three). Secret cards about real players, private deals, blackmail, coups, exile.
+- **Bets.** Stake crowns on bills, elections and crises. Winners split the pool. Betting on something you
+  then decide yourself leaves a card that can be leaked.
+- **Glory.** A daily question (the Red Box) with streaks, achievements, season awards, weekly polls, and a
+  Hall of Fame that outlives every reset.
 
-```
-republic/
-├── docs/              → GitHub Pages serves this
-│   ├── index.html
-│   ├── config.js        ← the only file you edit after deploying
-│   ├── styles.css
-│   └── app.js
-├── server/            → Render runs this
-│   ├── server.js
-│   ├── schema.sql
-│   ├── package.json
-│   └── test/            npm test — 22 suites, each on a fresh database
-├── constitution.md      paste into the admin page at startup
-├── flag.png             the flag as designed, for reference
-├── render.yaml          optional Render blueprint
-├── SETUP.md
-└── HANDBOOK.md
-```
+## The Streets (real life, opt-in)
 
-## Deploy
+Players who join can take out contracts on each other: a target, a secret "weapon" (a spoon, a sticky note,
+a code word) and 72 hours to tag them in person. The target confirms with a code on their phone. Hits make
+the target a ghost for two days. There's a weekly Hunt, bounties for real tasks, stalls for selling favours,
+and check-ins when you meet up.
 
-**1. Database.** Create a free Postgres and copy its connection string.
-[Neon](https://neon.tech) is the safe pick — the free tier doesn't expire. Render's own free Postgres works too but has historically been time-limited, so check before you rely on it.
+The ground rules are built in:
 
-**2. API on Render.** New → Web Service → connect this repo.
+- Nobody who hasn't joined can be targeted, and anyone can leave at any time.
+- A tag is a tap or a hand-over, nothing more. Safe zones (lessons, homes, clubs, travel) never count.
+- No real money, ever. Crowns can't be bought or cashed out.
+- No locations are collected. Photos are stripped of hidden data, including GPS, before they're stored.
+- Whoever runs the game can add safe zones and take down bounties and photos, always in public.
 
-| Setting | Value |
-|---|---|
-| Root directory | `server` |
-| Build command | `npm install` |
-| Start command | `npm start` |
-| `DATABASE_URL` | your Postgres connection string |
-| `JWT_SECRET` | 32+ random characters — the server refuses to start without it |
-| `ALLOWED_ORIGINS` | `https://you.github.io` (optional, locks the API to your Pages site) |
+## Fair play
 
-The schema builds itself on first boot. Hit `https://your-service.onrender.com/api/health` to confirm.
+The server keeps the only full copy of the game and sends each player just what they're allowed to see: no
+one else's ballot, wallet, cards, deals, plots, contracts or bets. Every action is re-checked on the server.
+The organiser plays too, so every admin action is announced in the game's Gazette and kept in a public log.
+[SECURITY.md](SECURITY.md) has the full threat model and every fix.
 
-**3. Front end on GitHub Pages.** Settings → Pages → Source: `main` branch, `/docs` folder.
-Then edit `docs/config.js`:
+## Build your own app
 
-```js
-window.API_BASE = "https://your-service.onrender.com";
-```
+There's a public API for bots, alternative frontends and dashboards. See [API.md](API.md), and
+[examples/](examples/) for starter kits: a one-file client, Gazette bots for WhatsApp and Discord, a vote
+reminder and a webhook receiver.
 
-Commit. Done.
-
-**4. Found the state.** Open the site and register. The first account ever created becomes admin automatically and needs no invite code. Everyone after that needs one.
-
-## Running it
-
-Go to **Returning officer** (admin only):
-
-- **Approve new accounts.** Anyone who registers waits in a queue until you check the name against the group chat. This is the main defence against one person holding two votes — take it seriously.
-- **Generate invite codes** one at a time and DM them. Single-use, and the queue shows you which code each applicant used.
-- **Rules of the game** — seats, thresholds, quorum, the name of the state. All live, all editable.
-- **Appoint and remove** — for ties, resignations and coups.
-
-Then: call a parliamentary election → let people stand → open the poll → close and certify. Certifying seats the winners automatically. Do a Speaker election next (only MPs can stand or vote), then a presidential one.
-
-**Who changes the rules**
-
-Most settings are not yours alone. Anyone can propose a bill of kind **rule**, written as one `setting = value` per line; if it passes and gets assent, the setting changes. The bill page shows the before-and-after so people vote on the actual effect, and the change goes into the record.
+## Try it
 
 ```
-cycle_days = 5
-campaign_days = 1
+npm install
+npm run dev        # http://localhost:5173: the whole game in your browser, bots play everyone else
 ```
 
-Two settings are deliberately not legislatable: `require_approval` and `allow_open_signup`. They decide who gets an account, and a faction with one temporary majority could use them to admit enough sockpuppets to hold every majority after that. They stay with the returning officer. Everything else — seats, thresholds, quorum, timings, who votes on bills, even the name of the state — is the House's to change.
+## Run your own realm
 
-**How a bill becomes law**
+It runs free: GitHub Pages for the site, Render for the API, Neon for Postgres.
 
-```
-anyone proposes  →  N citizens second it  →  Speaker tables it
-     →  Speaker calls a division  →  MPs vote aye / no / abstain
-     →  Speaker closes it  →  President assents (or vetoes)
-     →  statute book
-```
+1. Create a Neon database and a Render web service with root `server/`, start command `npm start`, and the
+   environment variables `DATABASE_URL`, `JWT_SECRET` (24+ random characters), `ALLOWED_ORIGINS` (your
+   Pages address), `PUBLIC_URL` (the Render address) and `NODE_VERSION=22`.
+2. Put the Render address in `docs/config.js` as `window.API_BASE`.
+3. Serve `docs/` with GitHub Pages.
+4. Make the organiser's account. The server creates its tables on first boot; then add one row to `users`
+   with `is_admin = true`. A password hash comes from
+   `cd server && node -e "console.log(require('bcryptjs').hashSync('your password', 12))"`. Sign in, open
+   **Realm → Admin**, and switch on sign-ups so everyone else can join.
 
-A veto can be overridden by the Speaker if the original division cleared the override threshold. Bills of kind `amendment` rewrite the law they target; `repeal` strikes it from the active book but leaves it in the archive; `constitutional` publishes a new version of the constitution and needs a supermajority; `motion` resolves without entering the statute book.
+Sign-in with Discord, Google, Microsoft or Apple is optional; [SECURITY.md](SECURITY.md) explains each.
 
-## Settings
+## Develop
 
-| Key | Default | What it does |
-|---|---|---|
-| `nation_name`, `motto` | — | Branding |
-| `seats` | 5 | Seats in parliament |
-| `term_days` | 14 | Term length, for your own reference |
-| `seconds_required` | 2 | Seconders before the Speaker may table a bill |
-| `quorum` | 3 | Votes needed for a division to count |
-| `pass_threshold` | 0.5 | Ordinary bills, as a share of aye + no |
-| `constitutional_threshold` | 0.667 | Constitutional amendments |
-| `veto_override` | 0.667 | Override a presidential veto |
-| `bill_voters` | `mps` | Set to `citizens` for direct democracy on bills |
-| `secret_ballot` | `true` | Hide election counts until the poll closes |
-| `allow_open_signup` | `false` | Set `true` to drop invite codes |
-
-## Can players cheat it?
-
-Assume every player reads the source, because the front end is public and so is this repo. Nothing in `docs/` is trusted: hiding a button hides a button, and every rule is enforced again on the server.
-
-**Run the tests before you trust any of this.** `cd server && npm install && npm test` boots the real server against a real Postgres and runs 22 suites. `test/attack.mjs` is the one to read: it asserts against players actively trying to cheat — forged tokens, spoofed voter IDs, concurrent ballot floods, SQL injection, privilege escalation, mid-poll sockpuppets.
-
-**What holds, and why**
-
-| Attack | What stops it |
-|---|---|
-| Voting twice | `UNIQUE (election_id, voter_id)` in Postgres. Ten simultaneous requests still produce one row. |
-| Voting twice in a division | `PRIMARY KEY (bill_id, user_id)`, same guarantee. |
-| Voting as someone else | Identity comes only from the signed token. `voter_id` in a request body is read by nothing. |
-| Forging a token | Signed with `JWT_SECRET`. The server refuses to boot if that is missing or under 24 characters, so there is no weak default to guess. |
-| Reusing a stolen token | Tokens carry a version. Changing a password, or an admin resetting one, invalidates every token issued before it. |
-| Guessing a password | 8 character minimum, obvious ones blocked, and lockout after 8 failed attempts on an account. |
-| Making sockpuppets | Invite codes are single-use, **and** every new account waits in an approval queue you check against the group chat. |
-| Registering mid-poll to vote | The electoral roll freezes the moment the poll opens. Accounts created after it are not on it. |
-| Withdrawing to void ballots | Blocked once voting starts. |
-| Reopening a finished election | A certified election cannot be reopened. |
-| Seizing an office or rewriting the rules | Every admin, Speaker and President action is re-checked server-side against the `offices` table. |
-| Reading the secret ballot | No endpoint joins voters to candidates. The log records *that* you voted, never *what*. |
-| SQL injection | Every query is parameterised. |
-
-**What does not hold, and you should know it**
-
-- **You can cheat.** Admins bypass office checks and can reset any password, which means logging in as anyone. That is unavoidable — somebody has to run it. The mitigation is that *every* admin action on an account writes to the public record, so a reset shows up under **The record** where everyone can see it. If you want the game to feel fair, make a second person admin and let them watch you.
-- **Codes pasted into the group chat are first-come-first-served.** Generate one at a time, note who it is for, and DM it. The approval queue is your backstop.
-- **Rate limits are per IP and live in memory.** People sharing WiFi share a limit, and a Render restart clears them.
-- **Someone who gets into a friend's WhatsApp gets their vote.** No app-side fix exists for that.
-
-## Other guarantees
-
-- **One party membership per citizen**, `PRIMARY KEY (user_id)` on the membership table.
-- **Nothing is deleted.** Repealed laws, lost bills, old constitutions and every action taken are kept and readable under *The record*.
-
-## Things you'll want on day one
-
-- Render's free tier sleeps after inactivity. The first request after a quiet spell takes ~30 seconds. Tell people to wait, or ping `/api/health` on a schedule.
-- **The record** page has a paste-ready digest of the current state for the group chat. Copy button, one tap.
-- If someone forgets their password, reset it from the admin page — it hands you a temporary one to send them.
-
-## Ideas the system is already shaped for
-
-- **Votes of no confidence** — propose a `motion`, and if it carries, dissolve parliament from the admin page and call a fresh election.
-- **Coalitions** — parties are cosmetic in the code but MPs' party colours show in the chamber, which is enough to make deals feel real.
-- **Referendums** — create an election of kind `referendum`; the "candidates" become the options and nobody gets seated.
+[CLAUDE.md](CLAUDE.md) is the guide to the code: the engine, the server, the invariants and how to add things.

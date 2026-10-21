@@ -1,0 +1,272 @@
+// The copy desk's back end. Finds every piece of text a player can read, and writes reviewed wording back.
+//
+//   npm run copy:extract          → copy/strings.json (every player-facing string, with where it lives)
+//   npm run copy:apply [file]     → writes the edits from copy/edits.json (exported by the desk) into the source
+//
+// "Player-facing" means: text inside JSX, user-facing props (title, intro, label, placeholder…), toasts and
+// confirms, fail() messages, Gazette lines, Influence reasons, stamps, and the text fields of the engine's data
+// tables (crises, the Red Box, tutorial missions…). Code-ish strings (ids, routes, class names) are skipped.
+// Template strings keep their ${…} parts: an edit must keep every one of them, in any order.
+import ts from 'typescript';
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+
+import { existsSync as has } from 'node:fs';
+// the project root: where npm runs from (the dev server bundles this file elsewhere, so not import.meta.url)
+const ROOT = has(join(process.cwd(), 'web/src')) ? process.cwd() : new URL('..', import.meta.url).pathname;
+const DIRS = ['web/src', 'engine'];
+const SKIP_FILES = ['engine/catalog.ts', 'engine/bots.ts', 'web/src/DemoPanel.tsx', 'web/src/copyEdit.tsx', 'web/src/pages/copydesk.tsx'];
+const PROPS = new Set(['title', 'intro', 'sub', 'label', 'placeholder', 'hint', 'kicker', 'alt', 'aria-label', 'empty', 'confirm', 'head', 'castLabel', 'foot', 'caption']);
+const KEYS = new Set(['text', 'title', 'label', 'what', 'blurb', 'q', 'a', 'sub', 'low', 'about', 'effects', 'give', 'get', 'wants', 'name', 'unit', 'hint', 'body', 'intro', 'reason', 'why', 'question', 'headline', 'tag', 'desc', 'description']);
+// calls whose arguments are read by players: name → which argument indexes
+const CALLS: Record<string, number[]> = { fail: [0], toast: [0], confirm: [0], gazette: [2], earn: [3], spend: [3], stamp: [2, 3], adminDid: [2], act: [2], Error: [0], setMsg: [], meter: [3], approve: [], moodShift: [2], armyLoyalty: [2], addCard: [] };
+
+// spans: the exact source of each ${…} in a template (they can nest); parts: the text between them, as shown
+// group/cond: this line is one version of several, picked by a condition (monarchy or republic, one or many…);
+// pieces: ${…} parts that glue bits of words on (thing${n > 1 ? 's' : ''}), which can be rewritten as whole sentences
+export type Piece = { span: number; cond: string; yes: string; no: string };
+export type Str = { id: string; file: string; line: number; kind: string; where: string; text: string; template: boolean; start: number; end: number; ctx: string; spans?: string[]; parts?: string[]; group?: string; cond?: string; pieces?: Piece[] };
+
+const files = (dir: string): string[] =>
+  readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? files(join(dir, d.name)) : /\.(tsx?|ts)$/.test(d.name) ? [join(dir, d.name)] : []));
+// does this look like words a person reads, rather than code?
+const wordy = (s: string) => /[A-Za-z]/.test(s) && (/\s/.test(s.trim()) || /^[A-Z][a-z’']+[.!?]?$/.test(s.trim()) || /[.!?…]$/.test(s.trim())) && !/^#\//.test(s) && !/^[a-z0-9_.:-]+$/.test(s) && !/^(https?:|\/api)/.test(s) && !/[{};]\s*$/.test(s);
+
+function extractFile(file: string): Str[] {
+  const src = readFileSync(join(ROOT, file), 'utf8');
+  const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, file.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  const out: Str[] = [];
+  const seen = new Set<number>();
+  const where = (n: ts.Node) => {
+    for (let p: ts.Node | undefined = n; p; p = p.parent) {
+      if ((ts.isFunctionDeclaration(p) || ts.isClassDeclaration(p)) && p.name) return p.name.text;
+      if (ts.isVariableDeclaration(p) && ts.isIdentifier(p.name) && p.parent.parent && ts.isVariableStatement(p.parent.parent)) return p.name.text;
+    }
+    return '';
+  };
+  const unwrap = (e: ts.Expression): ts.Expression => (ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e);
+  const lit = (e: ts.Expression) => (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e) ? e.text : null);
+  // ${n > 1 ? 's' : ''}: a span that only adds a few letters
+  const piecesOf = (n: ts.TemplateExpression): Piece[] =>
+    n.templateSpans.flatMap((sp, i) => {
+      const e = unwrap(sp.expression);
+      if (!ts.isConditionalExpression(e)) return [];
+      const yes = lit(unwrap(e.whenTrue)), no = lit(unwrap(e.whenFalse));
+      return yes !== null && no !== null && yes.length <= 4 && no.length <= 4 ? [{ span: i, cond: e.condition.getText(sf), yes, no }] : [];
+    });
+  // which version of a line is this? Climb to the nearest a ? b : c around it (not past a function)
+  const branchOf = (n: ts.Node): { group: string; cond: string } | null => {
+    let child: ts.Node = n;
+    for (let p = n.parent; p && !ts.isSourceFile(p); child = p, p = p.parent) {
+      if (ts.isFunctionLike(p) || ts.isBlock(p)) return null;
+      if (!ts.isConditionalExpression(p) || child === p.condition) continue;
+      // the whole a ? b : c ? d : e chain shares one group
+      let top: ts.ConditionalExpression = p;
+      while (ts.isParenthesizedExpression(top.parent) || (ts.isConditionalExpression(top.parent) && top.parent.whenFalse === top)) top = ts.isParenthesizedExpression(top.parent) ? (top.parent.parent as any) : top.parent;
+      if (!ts.isConditionalExpression(top)) top = p;
+      const c = p.condition.getText(sf).replace(/\s+/g, ' ');
+      return { group: `${file}:${top.getStart(sf)}`, cond: child === p.whenTrue ? `when ${c}` : `when not (${c})` };
+    }
+    return null;
+  };
+  const add = (n: ts.Node, kind: string) => {
+    let text: string, start: number, end: number, template = false;
+    let spans: string[] | undefined, parts: string[] | undefined;
+    if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) {
+      text = n.text;
+      start = n.getStart(sf) + 1;
+      end = n.getEnd() - 1;
+      template = ts.isNoSubstitutionTemplateLiteral(n);
+    } else if (ts.isTemplateExpression(n)) {
+      start = n.getStart(sf) + 1;
+      end = n.getEnd() - 1;
+      text = src.slice(start, end);
+      template = true;
+      spans = n.templateSpans.map((sp, i) => src.slice((i ? n.templateSpans[i - 1].literal.getEnd() : n.head.getEnd()) - 2, sp.literal.getStart(sf) + 1));
+      parts = [n.head.text, ...n.templateSpans.map((sp) => sp.literal.text)];
+    } else if (ts.isJsxText(n)) {
+      const raw = n.getText(sf);
+      const lead = raw.length - raw.trimStart().length;
+      text = raw.trim().replace(/\s+/g, ' ');
+      start = n.getStart(sf) + lead;
+      end = start + raw.trim().length;
+      if (raw.trim() !== text) return; // multi-line JSX text: rare, and rewrapping it would be risky
+    } else return;
+    const probe = parts ? parts.join(' x ') : text;
+    if (!wordy(probe) || seen.has(start)) return;
+    seen.add(start);
+    const line = sf.getLineAndCharacterOfPosition(start).line + 1;
+    const ctx = src.split('\n')[line - 1].trim().slice(0, 240);
+    const alt = branchOf(n);
+    const pieces = ts.isTemplateExpression(n) ? piecesOf(n) : [];
+    out.push({ id: '', file, line, kind, where: where(n), text, template, start, end, ctx, ...(spans ? { spans, parts } : {}), ...(alt || {}), ...(pieces.length ? { pieces } : {}) });
+  };
+  const strings = (e: ts.Node | undefined, kind: string) => {
+    if (!e) return;
+    if (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) return add(e, kind);
+    // a template, and any wording inside its ${…} parts ("No government has been formed.")
+    if (ts.isTemplateExpression(e)) return (add(e, kind), e.templateSpans.forEach((sp) => strings(sp.expression, kind)));
+    if (ts.isConditionalExpression(e)) return (strings(e.whenTrue, kind), strings(e.whenFalse, kind));
+    if (ts.isBinaryExpression(e) && [ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.AmpersandAmpersandToken].includes(e.operatorToken.kind)) return (strings(e.left, kind), strings(e.right, kind));
+    if (ts.isParenthesizedExpression(e)) return strings(e.expression, kind);
+    if (ts.isArrayLiteralExpression(e)) return e.elements.forEach((x) => strings(x, kind));
+    if (ts.isArrowFunction(e) && !ts.isBlock(e.body)) return strings(e.body, kind);
+  };
+  const visit = (n: ts.Node) => {
+    if (ts.isJsxText(n)) add(n, 'screen');
+    else if (ts.isJsxAttribute(n) && PROPS.has(n.name.getText(sf)) && n.initializer) {
+      if (ts.isStringLiteral(n.initializer)) add(n.initializer, 'label');
+      else if (ts.isJsxExpression(n.initializer)) strings(n.initializer.expression, 'label');
+    } else if (ts.isJsxExpression(n) && n.parent && (ts.isJsxElement(n.parent) || ts.isJsxFragment(n.parent))) strings(n.expression, 'screen');
+    else if (ts.isCallExpression(n) || ts.isNewExpression(n)) {
+      const callee = n.expression;
+      const name = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : '';
+      (Object.hasOwn(CALLS, name) ? CALLS[name] : []).forEach((i) => strings(n.arguments?.[i], name === 'gazette' || name === 'adminDid' ? 'gazette' : name === 'fail' || name === 'Error' ? 'message' : name === 'earn' || name === 'spend' ? 'influence' : name === 'stamp' ? 'stamp' : 'message'));
+    } else if (ts.isPropertyAssignment(n) && KEYS.has(n.name.getText(sf).replace(/['"]/g, ''))) strings(n.initializer, 'data');
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  // stable ids: file + text + which occurrence of that text in the file
+  const count: Record<string, number> = {};
+  out.sort((a, b) => a.start - b.start).forEach((s) => {
+    const k = s.text;
+    count[k] = (count[k] || 0) + 1;
+    s.id = createHash('sha1').update(`${s.file}\n${k}\n${count[k]}`).digest('hex').slice(0, 12);
+  });
+  return out;
+}
+
+export function extract(): Str[] {
+  return DIRS.flatMap(files).filter((f) => !SKIP_FILES.includes(f.replace(/\\/g, '/'))).map((f) => f.replace(/\\/g, '/')).flatMap(extractFile);
+}
+
+// writing an edit back: escape for the kind of literal it lives in, and keep every ${…} of a template
+// a line rewritten as whole sentences: ${cond ? `one wording` : `the other`}, replacing the word pieces
+function encodeWhole(s: Str, w: { cond: string; yes: string; no: string }) {
+  const piece = (s.pieces || []).find((p) => p.cond === w.cond);
+  if (!piece) throw new Error('that line no longer has the same word pieces');
+  const keep = (s.spans || []).filter((_, i) => !(s.pieces || []).some((p) => p.span === i));
+  const branch = (t: string) => {
+    let rest = t;
+    keep.forEach((x) => (rest = rest.split(x).join('')));
+    if (rest.includes('${')) throw new Error('a new ${…} would become code; remove it');
+    let out = '';
+    for (let i = 0; i < t.length; ) {
+      const sp = keep.find((x) => t.startsWith(x, i));
+      if (sp) (out += sp), (i += sp.length);
+      else (out += t[i] === '`' ? '\\`' : t[i]), i++;
+    }
+    return out;
+  };
+  return '${' + w.cond + ' ? `' + branch(w.yes) + '` : `' + branch(w.no) + '`}';
+}
+function encode(s: Str, text: string, src: string, whole?: { cond: string; yes: string; no: string }): string {
+  if (whole) return encodeWhole(s, whole);
+  const quote = src[s.start - 1];
+  if (s.kind === 'screen' && quote !== "'" && quote !== '"' && quote !== '`') {
+    // JSX text: braces and angle brackets would become code
+    if (/[{}<>]/.test(text)) throw new Error('JSX text can’t contain { } < or >');
+    return text;
+  }
+  if (quote === '`') {
+    // every ${…} must still be there exactly as often, and no new ones may appear
+    const spans = s.spans || [];
+    const count = (hay: string, x: string) => hay.split(x).length - 1;
+    const missing = [...new Set(spans)].filter((x) => count(text, x) !== spans.filter((y) => y === x).length);
+    if (missing.length) throw new Error(`keep every placeholder exactly once: ${missing.join(' ')}`);
+    let rest = text;
+    [...new Set(spans)].forEach((x) => (rest = rest.split(x).join('')));
+    if (rest.includes('${')) throw new Error('a new ${…} would become code; remove it');
+    // escape backticks only in the wording, never inside a ${…} (it may hold a template of its own)
+    let out = '';
+    let i = 0;
+    while (i < text.length) {
+      const sp = spans.find((x) => text.startsWith(x, i));
+      if (sp) (out += sp), (i += sp.length);
+      else (out += text[i] === '`' ? '\\`' : text[i]), i++;
+    }
+    return out;
+  }
+  return text.replace(/\\/g, '\\\\').replace(new RegExp(quote, 'g'), '\\' + quote).replace(/\n/g, '\\n');
+}
+
+export type Edit = { id: string; text: string; original?: string; whole?: { cond: string; yes: string; no: string } };
+export function applyEdits(edits: Edit[]) {
+  const all = extract();
+  const byId = new Map(all.map((s) => [s.id, s]));
+  const byFile: Record<string, { s: Str; text: string; id: string; whole?: Edit['whole'] }[]> = {};
+  const problems: string[] = [];
+  const done: string[] = [];
+  edits.forEach((e) => {
+    const s = byId.get(e.id);
+    if (!s) return problems.push(`Not found, the source changed since: “${e.original ?? e.id}”`);
+    if (e.original !== undefined && e.original !== s.text) return problems.push(`${s.file}:${s.line}: the original changed in the source; skipped`);
+    if (e.text === s.text && !e.whole) return done.push(e.id);
+    (byFile[s.file] ||= []).push({ s, text: e.text, id: e.id, whole: e.whole });
+  });
+  Object.entries(byFile).forEach(([file, list]) => {
+    let src = readFileSync(join(ROOT, file), 'utf8');
+    // innermost first: wording can sit inside another string's ${…} ("No government has been formed." inside the
+    // House's intro). After each edit, shift the offsets of the rest, and carry the change into any edit around it.
+    const todo = list.map((x) => ({ ...x, s: { ...x.s, spans: x.s.spans?.slice() } }));
+    todo.sort((a, b) => a.s.end - a.s.start - (b.s.end - b.s.start));
+    while (todo.length) {
+      const { s, text, id, whole } = todo.shift()!;
+      let enc: string;
+      try {
+        enc = encode(s, text, src, whole);
+      } catch (err: any) {
+        problems.push(`${s.file}:${s.line}: ${err.message}. Skipped “${text}”`);
+        continue;
+      }
+      const old = src.slice(s.start, s.end);
+      src = src.slice(0, s.start) + enc + src.slice(s.end);
+      done.push(id);
+      const delta = enc.length - old.length;
+      todo.forEach((o) => {
+        if (o.s.start <= s.start && o.s.end >= s.end) {
+          // an edit around this one: its wording and its ${…} parts still hold the old inner text
+          o.s.end += delta;
+          o.s.spans = o.s.spans?.map((sp) => sp.replace(old, enc));
+          o.text = o.text.replace(old, enc);
+          if (o.whole) o.whole = { ...o.whole, yes: o.whole.yes.replace(old, enc), no: o.whole.no.replace(old, enc) };
+        } else if (o.s.start >= s.end) {
+          o.s.start += delta;
+          o.s.end += delta;
+        }
+      });
+    }
+    writeFileSync(join(ROOT, file), src);
+  });
+  return { applied: done.length, files: Object.keys(byFile).length, problems, done };
+}
+export function writeStrings() {
+  const all = extract();
+  if (!existsSync(join(ROOT, 'copy'))) mkdirSync(join(ROOT, 'copy'));
+  writeFileSync(join(ROOT, 'copy/strings.json'), JSON.stringify({ at: new Date().toISOString(), strings: all.map(({ start, end, ...s }) => s) }, null, 1));
+  return all;
+}
+export const EDITS = join(ROOT, 'copy/edits.json');
+export const readEdits = () => (existsSync(EDITS) ? JSON.parse(readFileSync(EDITS, 'utf8')) : { edits: [], reviewed: [] });
+export const saveEdits = (d: any) => (existsSync(join(ROOT, 'copy')) || mkdirSync(join(ROOT, 'copy')), writeFileSync(EDITS, JSON.stringify(d, null, 1)));
+
+// the command line (only when run directly, not when the dev server imports this file)
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/').split('/').pop()!)) {
+  const [, , cmd, arg] = process.argv;
+  if (cmd === 'extract') {
+    const all = writeStrings();
+    const kinds: Record<string, number> = {};
+    all.forEach((s) => (kinds[s.kind] = (kinds[s.kind] || 0) + 1));
+    console.log(`${all.length} strings → copy/strings.json`, kinds);
+  } else if (cmd === 'apply') {
+    const path = arg ? join(ROOT, arg) : EDITS;
+    const data = JSON.parse(readFileSync(path, 'utf8'));
+    const r = applyEdits(data.edits || []);
+    console.log(`Applied ${r.applied} edit${r.applied === 1 ? '' : 's'} across ${r.files} file${r.files === 1 ? '' : 's'}.`);
+    r.problems.forEach((p) => console.log('  ! ' + p));
+    if (!arg) saveEdits({ ...data, edits: (data.edits || []).filter((e: Edit) => !r.done.includes(e.id)) });
+    writeStrings();
+    console.log('Next: npm run typecheck && npm run smoke.');
+  } else console.log('npm run copy:extract | npm run copy:apply [copy/edits.json]');
+}

@@ -1,0 +1,90 @@
+<!doctype html>
+<!-- The smallest possible Realm client. Open this file in a browser, paste an API key, play.
+     Everything here goes through the public API documented in API.md. Make it yours. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Minimal Realm client</title>
+  <style>
+    body { font: 16px/1.5 Georgia, serif; max-width: 640px; margin: 24px auto; padding: 0 16px; background: #f4f1e8; color: #1b1b1b; }
+    input, button, select { font: inherit; padding: 6px 10px; }
+    li { margin: 6px 0; }
+    .err { color: #b3261e; }
+    small { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Minimal Realm</h1>
+  <p><input id="key" placeholder="rlm_… API key" size="40"> <button id="go">Connect</button></p>
+  <p id="msg"></p>
+  <div id="app"></div>
+  <script>
+    const BASE = 'https://democracy-sim-thgx.onrender.com/api/v1';
+    const $ = (id) => document.getElementById(id);
+    let KEY = localStorage.getItem('realm-key') || '';
+    $('key').value = KEY;
+
+    async function realm(path, body) {
+      const r = await fetch(BASE + path, {
+        method: body ? 'POST' : 'GET',
+        headers: { Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' },
+        body: body && JSON.stringify(body)
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error);
+      return data;
+    }
+    const say = (t, err) => (($('msg').textContent = t), ($('msg').className = err ? 'err' : ''));
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+    async function act(cmd, args) {
+      try {
+        const d = await realm('/act', { cmd, args });
+        say('Done.');
+        draw(d.world);
+      } catch (e) { say(e.message, true); }
+    }
+
+    function draw(w) {
+      const me = w.citizens[w.viewer];
+      const name = (id) => esc(w.citizens[id]?.name || 'nobody');
+      const open = Object.values(w.proposals).filter((p) => p.stage === 'debate' || p.stage === 'vote');
+      $('app').innerHTML = `
+        <h2>${esc(w.config.realmName)}</h2>
+        <p>You are <b>${esc(me.name)}</b>: ${w.accounts['c:' + w.viewer] || 0} crowns, ${me.influence} Influence.<br>
+        <small>PM ${name(w.pm)} · Speaker ${name(w.speaker)} · House: ${w.seats.map(name).join(', ') || 'empty'}</small></p>
+        ${w.phase === 'convention' ? `<h3>Convention</h3><ul>${w.convention.clauses.filter((c) => c.adopted === null).map((c) =>
+          `<li>${esc(c.q)}<br>${c.options.map((o, i) => `<button onclick="act('convention.vote',{clause:'${c.id}',option:${i}})">${esc(o)}</button>`).join(' ')}</li>`).join('')}</ul>` : ''}
+        <h3>In the House</h3>
+        <ul>${open.map((p) => `<li><b>${esc(p.title)}</b> <small>${p.stage}</small>
+          ${p.stage === 'vote' ? ['aye', 'no', 'abstain'].map((v) => `<button onclick="act('prop.vote',{prop:'${p.id}',vote:'${v}'})">${v}</button>`).join(' ') : ''}</li>`).join('') || '<li><small>Nothing open.</small></li>'}</ul>
+        <h3>Gazette</h3>
+        <ul>${w.gazette.slice(0, 10).map((g) => `<li>${esc(g.text)} <small>${new Date(g.at).toLocaleString()}</small></li>`).join('')}</ul>`;
+    }
+
+    // keep up to date with long-polling: the server answers when something changes, or after 25s
+    async function loop() {
+      let version = -1;
+      for (;;) {
+        try {
+          const d = await realm(version < 0 ? '/state' : `/state?since=${version}&wait=25`);
+          version = d.version;
+          draw(d.world);
+        } catch (e) {
+          say(e.message, true);
+          await new Promise((r) => setTimeout(r, 5000));
+        }
+      }
+    }
+
+    $('go').onclick = () => {
+      KEY = $('key').value.trim();
+      localStorage.setItem('realm-key', KEY);
+      say('Connecting… (the server can take 30 seconds to wake)');
+      loop();
+    };
+    if (KEY) $('go').onclick();
+  </script>
+</body>
+</html>

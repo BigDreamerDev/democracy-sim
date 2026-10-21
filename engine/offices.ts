@@ -1,0 +1,135 @@
+// Offices: every role in government is one of these. A law creates an office from a template or from
+// a list of powers; whoever holds it gets those powers as buttons.
+import { W, Id, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, exiled, holdsAnything, own, text, int } from './core';
+
+export const POWERS: Record<string, { label: string; strong?: boolean }> = {
+  grant: { label: 'Pay citizens from its weekly budget' },
+  rate: { label: 'Set the interest rate' },
+  envoy: { label: 'Send envoys and offer treaties' },
+  intel: { label: 'Request intelligence on other countries' },
+  army: { label: 'Set the Army’s readiness' },
+  question: { label: 'Put formal questions to ministers' },
+  files: { label: 'Receive the government’s restricted cards' },
+  judge: { label: 'Rule on cases before the Court' },
+  fine: { label: 'Fine a citizen up to 10 crowns', strong: true },
+  block: { label: 'Send one passed bill back for 48 hours each term', strong: true },
+  protect: { label: 'Guard one citizen from assassins each day' }
+};
+
+export const TEMPLATES: Record<string, { name: string; title: string; act: string; powers: string[]; fill: string; budget: number; secrecy: string; blurb: string; constitutional?: boolean }> = {
+  treasury: { name: 'Treasury', title: 'Chancellor', act: 'Treasury Act', powers: ['grant', 'files'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'The Treasury maintains financial aspects of the government' },
+  reserve: { name: 'Federal Reserve', title: 'Chair of the Reserve', act: 'Currency Act', powers: ['rate', 'files'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'The Fed determines banking standards and loaning of the nation\n' },
+  foreign: { name: 'Foreign Office', title: 'Foreign Minister', act: 'Foreign Affairs Act', powers: ['envoy'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'The Foreign Office maintains diplomatic relationships with the other 5 nations' },
+  security: { name: 'Security Service', title: 'Director', act: 'Security Service Act', powers: ['intel', 'files'], fill: 'pm', budget: 40, secrecy: 'restricted', blurb: 'The Security Service handles discrete intelligence collection of foreign and domestic threats' },
+  army: { name: 'The Army', title: 'General', act: 'Defence Act', powers: ['army'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'The Army acts to defend the Nation, but comes at a financial and loyalty cost.' },
+  court: { name: 'Supreme Court', title: 'Justice', act: 'Supreme Court Amendment', powers: ['judge'], fill: 'lot', budget: 0, secrecy: 'public', blurb: 'The Court handles protecting the rights of citizens and protecting against constitutional violations', constitutional: true },
+  guard: { name: 'Protection Service', title: 'Bodyguard', act: 'Protection Act', powers: ['protect'], fill: 'pm', budget: 0, secrecy: 'restricted', blurb: 'The Protection Service ensures that those who face a bounty are protected, but only one at a time' },
+  whip: { name: 'Chief Whip', title: 'Chief Whip', act: 'Founding Act', powers: ['files'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'Keeps government MPs voting together. Sees who rebels.' }
+};
+
+export const FILL: Record<string, string> = { pm: 'The Prime Minister appoints', house: 'MPs elect', citizens: 'Every citizen elects', lot: 'Drawn by lot' };
+
+export function createOffice(w: W, spec: any, law: string) {
+  const t = spec.template ? own(TEMPLATES, spec.template) : null;
+  const id = spec.template && !w.offices[spec.template] ? spec.template : newId(w, 'o');
+  const o: any = {
+    id,
+    template: spec.template || null,
+    name: t ? t.name : spec.name,
+    title: t ? t.title : spec.name,
+    powers: t ? t.powers.slice() : (Array.isArray(spec.powers) ? spec.powers : []).filter((p: string) => own(POWERS, p)),
+    fill: t ? t.fill : own(FILL, spec.fill) ? spec.fill : 'pm',
+    budget: Math.max(0, Math.round(Number(spec.budget ?? (t ? t.budget : 0))) || 0),
+    secrecy: t ? t.secrecy : spec.secrecy || 'public',
+    holder: null,
+    members: [],
+    law,
+    at: w.now,
+    blocksUsed: 0,
+    config: {}
+  };
+  w.offices[id] = o;
+  if (o.fill === 'lot') {
+    const n = spec.template === 'court' ? 3 : 1;
+    const pool = shuffle(w, allCitizens(w).filter((c: any) => !holdsAnything(w, c.id) && !exiled(w, c.id)).map((c: any) => c.id));
+    o.members = pool.slice(0, n);
+    o.holder = o.members[0] || null;
+    o.members.forEach((m: Id) => stamp(w, m, o.title, o.name + ', by lot', 'ink'));
+  }
+  if (o.fill === 'house' || o.fill === 'citizens') {
+    const eid = newId(w, 'e');
+    w.elections[eid] = { id: eid, kind: 'office', office: id, title: `Election: ${o.name}`, status: 'open', voters: o.fill === 'house' ? 'mps' : 'all', stand: 'all', winners: 1, candidates: {}, ballots: {}, opensAt: w.now, closesAt: w.now + 86400000, results: null };
+  }
+  gazette(w, 'law', `The ${o.name} is created. ${FILL[o.fill]} its ${String(o.title).toLowerCase()}.`, '#/offices');
+  return o;
+}
+
+export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
+  if (!isPM(w, actor)) fail('Only the Prime Minister makes appointments.');
+  const o = own(w.offices, officeId);
+  if (!o) fail('No such office.');
+  if (o.fill !== 'pm') fail(`The ${o.name} is not appointed by the PM.`);
+  if (target) {
+    const t = cit(w, target);
+    if (!t.active) fail('They are no longer a citizen.');
+    if (exiled(w, target)) fail('They are in exile.');
+    const promised = Object.entries(w.coalition?.promises || {}).find(([k]) => k === officeId)?.[1];
+    o.holder = target;
+    t.stats.heldOffice = true;
+    stamp(w, target, o.title, 'Appointed by ' + nm(w, actor), 'ink');
+    gazette(w, 'government', `${t.name} is appointed ${o.title}.`, '#/offices');
+    if (promised && promised !== target) gazette(w, 'government', `The PM broke a coalition promise: the ${o.title} post was promised to ${nm(w, promised as string)}.`, '#/cabinet');
+  } else {
+    o.holder = null;
+    gazette(w, 'government', `The post of ${o.title} is left vacant.`);
+  }
+}
+
+export function useGrant(w: W, actor: Id, officeId: string, target: Id, amount: number, reason: string) {
+  const o = own(w.offices, officeId);
+  if (!o || o.holder !== actor || !o.powers.includes('grant')) fail('You cannot pay out from that office.');
+  const why = text(reason, 4, 200, 'reason');
+  amount = int(amount, 1, 100, 'grant');
+  if (!cit(w, target).active) fail('They are no longer a citizen.');
+  if (target === actor) fail('Grants go to someone else.');
+  const from = o.id === 'treasury' ? 'treasury' : 'office:' + o.id;
+  // a grant spends what is there; it never makes the Treasury borrow
+  if (bal(w, from) < amount) fail(`The ${o.name} has only ${bal(w, from)} crowns.`);
+  transfer(w, from, 'c:' + target, amount, `Grant from the ${o.name}: ${why}`);
+  gazette(w, 'money', `The ${o.name} pays ${nm(w, target)} ${amount} crowns: ${why}.`, '#/offices');
+}
+
+export function useFine(w: W, actor: Id, officeId: string, target: Id, amount: number, reason: string) {
+  const o = own(w.offices, officeId);
+  if (!o || (o.holder !== actor && !o.members.includes(actor)) || !o.powers.includes('fine')) fail('That office cannot fine anyone.');
+  amount = int(amount, 1, 10, 'fine');
+  const why = text(reason, 4, 200, 'reason');
+  if (!cit(w, target).active) fail('They are no longer a citizen.');
+  transfer(w, 'c:' + target, 'treasury', amount, `Fined by the ${o.name}: ${why}`);
+  gazette(w, 'money', `The ${o.name} fines ${nm(w, target)} ${amount} crowns: ${why}.`);
+}
+
+// weekly office budgets are swept back and refilled at payday
+export function fundOffices(w: W) {
+  Object.values(w.offices).forEach((o: any) => {
+    // older worlds may hold a budget that isn't a whole positive number; skip it rather than stop payday
+    const budget = Math.round(Number(o.budget));
+    if (!(budget > 0) || o.id === 'treasury') return;
+    const acct = 'office:' + o.id;
+    if (bal(w, acct) > 0) transfer(w, acct, 'treasury', bal(w, acct), `Unspent ${o.name} budget returned`);
+    transfer(w, 'treasury', acct, budget, `${o.name} weekly budget`);
+  });
+}
+
+export function officePay(w: W) {
+  return Object.values(w.offices).filter((o: any) => o.holder && o.fill === 'pm').map((o: any) => ({ id: o.holder, why: `${o.title} pay` }));
+}
+
+export function lotOfficeRefresh(w: W, o: any) {
+  if (o.fill !== 'lot') return;
+  const pool = allCitizens(w).filter((c: any) => !exiled(w, c.id) && !o.members.includes(c.id)).map((c: any) => c.id);
+  o.members = o.members.filter((m: Id) => !exiled(w, m));
+  const extra = shuffle(w, pool);
+  while (o.members.length < (o.template === 'court' ? 3 : 1) && extra.length) o.members.push(extra.shift());
+  o.holder = o.members[0] || null;
+}

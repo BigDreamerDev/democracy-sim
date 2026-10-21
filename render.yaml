@@ -7,14 +7,44 @@ services:
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
+    buildFilter:
+      paths: ["server/**", "engine/**"]   # the server imports ../engine, so engine changes must redeploy too
     envVars:
+      - key: NODE_VERSION
+        value: "22"
       - key: JWT_SECRET
-        generateValue: true
+        sync: false   # keep the v1 value so old sessions stay valid
       - key: DATABASE_URL
-        sync: false   # paste your Postgres connection string in the Render dashboard
-
-# Optional free-only diplomacy cabinet variables are best added in the Render dashboard:
-# LLM_FREE_ONLY=true
-# GROQ_API_KEY=...
-# GEMINI_API_KEY=...
-# OPENROUTER_API_KEY=...
+        sync: false   # the Neon connection string
+      - key: ALLOWED_ORIGINS
+        value: https://bigdreamerdev.github.io
+      - key: PUBLIC_URL
+        value: https://democracy-sim-thgx.onrender.com   # used to build the sign-in redirect URIs
+      # a brand-new database: these create the Returning Officer on first boot. Remove ADMIN_PASSWORD afterwards.
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_NAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      # Sign in with … (see SECURITY.md). Leave any pair empty to hide that button.
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
+      - key: APPLE_CLIENT_ID
+        sync: false
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: APPLE_KEY_ID
+        sync: false
+      - key: APPLE_PRIVATE_KEY
+        sync: false
