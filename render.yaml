@@ -20,6 +20,13 @@ services:
         value: https://bigdreamerdev.github.io
       - key: PUBLIC_URL
         value: https://democracy-sim-thgx.onrender.com   # used to build the sign-in redirect URIs
+      # a brand-new database: these create the Returning Officer on first boot. Remove ADMIN_PASSWORD afterwards.
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_NAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
       # Sign in with … (see SECURITY.md). Leave any pair empty to hide that button.
       - key: DISCORD_CLIENT_ID
         sync: false

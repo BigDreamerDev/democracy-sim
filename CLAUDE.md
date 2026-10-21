@@ -99,7 +99,8 @@ scripts/     smoke.ts
   `createLiveWorld` from every active, approved user.
 - All writes go through `serial()` (one promise queue). `catchUp()` advances the world
   to `Date.now()` before every read and action. A `setTimeout` wakes at the next deadline.
-- Saves the whole world after every change. `v2_log` gets every action (ok or error).
+- Saves the whole world after every change, coalesced in production (`saveEvery` 20 s: the first write is immediate,
+  the rest of a burst becomes one trailing write; `flush()` on SIGTERM). Tests use 0. This keeps Neon's free tier alive. `v2_log` gets every action (ok or error).
   `v2_snapshots` gets the world before an RO reset.
 - Sends only `viewFor(world, me)`, plus `me` and `serverNow`.
 
@@ -273,6 +274,8 @@ only; never alter or drop v1's `users`. Tell Uzair to **snapshot Neon before dep
 - Commit the rebuilt `docs/assets` and `docs/index.html` with any web/engine change —
   Pages serves `docs/` straight from the branch, there is no CI build.
 - Merging to `main` deploys both: Render redeploys the API, Pages republishes `docs/`.
+- A brand-new database has no admin: set `ADMIN_USERNAME`, `ADMIN_PASSWORD` (and `ADMIN_NAME`) on Render for the first
+  boot, then remove the password. Boot also prunes `v2_log` to 45 days and keeps the 5 newest snapshots.
 - Render env: `DATABASE_URL`, `JWT_SECRET` (the v1 value), `ALLOWED_ORIGINS`, `NODE_VERSION=22`, `PUBLIC_URL`, and any
   `DISCORD_/GOOGLE_/MICROSOFT_/APPLE_*` sign-in settings (SECURITY.md).
 - `.github/workflows/keepawake.yml` pings `/api/health` every 10 min, 06:00–00:59 UTC.

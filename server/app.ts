@@ -12,7 +12,7 @@ import { passkeys, PASSKEY_SCHEMA } from './passkeys';
 import { IMAGES_SCHEMA, imageGet, imageRoutes, photoProblem } from './images';
 import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate, needs, adminDid, nm } from '../engine/index';
 
-export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void; send?: Sender; site?: string; devOrigins?: boolean; env?: Record<string, string | undefined>; publicUrl?: string };
+export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void; send?: Sender; site?: string; devOrigins?: boolean; env?: Record<string, string | undefined>; publicUrl?: string; saveEvery?: number };
 
 export async function makeApp(o: Options) {
   const { q, secret } = o;
@@ -45,9 +45,34 @@ export async function makeApp(o: Options) {
   let version = Number((await q('SELECT version FROM v2_world WHERE id = 1')).rows[0]?.version || 0);
   let waiters: (() => void)[] = [];
   let lastGz: string | undefined = world.gazette[0]?.id;
+  // Writes are coalesced: the first change writes at once, and any more within `saveEvery` ms become one
+  // trailing write. Every write rewrites the whole world, so on Neon's free tier this is what keeps storage
+  // history and compute time down. Players see changes instantly either way; flush() runs on shutdown.
+  const SAVE_EVERY = o.saveEvery ?? 0;
+  let lastWrite = 0;
+  let pending: any = null;
+  const write = async () => {
+    clearTimeout(pending);
+    pending = null;
+    lastWrite = Date.now();
+    await q('UPDATE v2_world SET state = $1, version = $2, updated_at = now() WHERE id = 1', [JSON.stringify(world), version]);
+  };
+  const persist = async () => {
+    if (!SAVE_EVERY) return write();
+    if (pending) return;
+    const wait = lastWrite + SAVE_EVERY - Date.now();
+    if (wait <= 0) return write();
+    pending = setTimeout(() => write().catch((e) => log('save failed', e)), wait);
+  };
+  const flush = async () => {
+    if (pending) await write();
+  };
+  // logs and snapshots don't need to live forever
+  await q("DELETE FROM v2_log WHERE at < now() - interval '45 days'").catch(() => {});
+  await q('DELETE FROM v2_snapshots WHERE id NOT IN (SELECT id FROM v2_snapshots ORDER BY at DESC LIMIT 5)').catch(() => {});
   const save = async () => {
-    await q('UPDATE v2_world SET state = $1, version = version + 1, updated_at = now() WHERE id = 1', [JSON.stringify(world)]);
     version++;
+    await persist();
     // push new Gazette entries to webhooks, oldest first, without holding up the request
     const top = world.gazette[0]?.id;
     if (top !== lastGz) {
@@ -518,7 +543,7 @@ export async function makeApp(o: Options) {
     res.status(err.status || 500).json({ error: err.type === 'entity.parse.failed' ? 'That body is not valid JSON.' : err.type === 'entity.too.large' ? 'That request is too large.' : 'Something went wrong.' });
   });
 
-  return { app, getWorld: () => world, tick: () => serial(catchUp) };
+  return { app, getWorld: () => world, tick: () => serial(catchUp), flush };
 }
 
 function addCitizen(w: any, id: string, name: string, admin: boolean) {
