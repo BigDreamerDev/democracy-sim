@@ -687,6 +687,14 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; }
 .or::before, .or::after { content: ''; flex: 1; border-top: 1px solid var(--rule); }
 .sso-mark svg { width: 16px; height: 16px; }
+/* Discord's brand colours: white on blurple, in light and dark mode alike */
+.sso-btn.discord, .dark .sso-btn.discord { background: #5865F2; border-color: #5865F2; color: #fff; }
+.sso-btn.discord:hover:not(:disabled) { background: #4752C4; border-color: #4752C4; }
+.sso-btn.discord .sso-mark { border: 0; width: 28px; }
+.sso-btn.discord .sso-mark svg { width: 24px; height: 24px; }
+.btn.discord { background: #5865F2; border-color: #5865F2; color: #fff; box-shadow: 0 3px 0 #3C45A5; }
+.btn.discord:hover { background: #4752C4; color: #fff; }
+.btn.discord svg { width: 18px; height: 18px; }
 .dark .sso-btn { background: var(--night-2); color: var(--night-ink); border-color: var(--night-line); }
 
 /* ---------- the Red Box: a minister's despatch box, one question a day ---------- */

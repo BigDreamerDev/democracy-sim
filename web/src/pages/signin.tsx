@@ -1,7 +1,7 @@
 // The door. Old Republic accounts sign in with the same username and password, or with a linked
 // Discord, Google, Microsoft or Apple account, or a passkey added from their passport.
 import { useEffect, useState } from 'preact/hooks';
-import { Seal, Btn, ThemeSwitch, PasswordField, Icon } from '../ui';
+import { Seal, Btn, ThemeSwitch, PasswordField, Icon, DiscordLogo } from '../ui';
 import { signIn, signUp, useStore, oauthProviders, beginOAuth, passkeysWork, signInWithPasskey, checkInvite } from '../store';
 
 const MARK: Record<string, string> = { discord: 'D', google: 'G', microsoft: 'M', apple: 'A' };
@@ -90,7 +90,7 @@ export function SignIn() {
               )}
               {provs.map((x) => (
                 <button type="button" class={'sso-btn ' + x.id} disabled={!!busy} onClick={() => viaProvider(x.id)}>
-                  <span class="sso-mark" aria-hidden="true">{MARK[x.id] || x.name[0]}</span>
+                  <span class="sso-mark" aria-hidden="true">{x.id === 'discord' ? <DiscordLogo /> : MARK[x.id] || x.name[0]}</span>
                   <span>{busy === x.id ? 'Opening…' : `Continue with ${x.name}`}</span>
                 </button>
               ))}
@@ -105,7 +105,7 @@ export function SignIn() {
         {msg && <p class={'small ' + (msg.err ? 'bad' : 'good')} role="alert">{msg.text}</p>}
         <button class="btn full" type="submit" disabled={!!busy || !u || !p}>{busy === 'form' ? 'One moment…' : mode === 'in' ? 'Sign in' : invite ? 'Join the realm' : 'Apply'}</button>
         <Btn kind="plain" full onClick={() => (setMode(mode === 'in' ? 'up' : 'in'), setMsg(null))}>{mode === 'in' ? 'New here? Apply for citizenship' : 'Have an account? Sign in'}</Btn>
-        {(provs.length > 0 || keys) && mode === 'in' && <p class="small muted" style={{ margin: 0, textAlign: 'center' }}>Already have an account? Sign in with your password once, then add a passkey{provs.length > 0 ? ' or link Discord, Google, Microsoft or Apple' : ''} from your passport.</p>}
+        {(provs.length > 0 || keys) && mode === 'in' && <p class="small muted" style={{ margin: 0, textAlign: 'center' }}>Already have an account? Sign in with your password once, then add a passkey{provs.length > 0 ? ' or link ' + provs.map((x) => x.name).join(provs.length > 2 ? ', ' : ' or ').replace(/, ([^,]*)$/, ' or $1') : ''} from your passport.</p>}
         <div style={{ display: 'flex', justifyContent: 'center' }}><ThemeSwitch /></div>
       </form>
     </div>

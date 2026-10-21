@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { useStore, act, ONLINE, myInvites, sendInvite, inviteLink, signOut, changePassword, toast, securityInfo, unlinkProvider, beginOAuth, signOutEverywhere, passkeysWork, addPasskey, removePasskey, renamePasskey } from '../store';
 import { TUTORIAL } from '../../../engine/tutorial';
-import { Page, Sec, Card, Btn, Who, Left, When, Seal, Empty, LinkRow, Seg, Meter, Field, Pick, PasswordField, Photo } from '../ui';
+import { Page, Sec, Card, Btn, Who, Left, When, Seal, Empty, LinkRow, Seg, Meter, Field, Pick, PasswordField, Photo, DiscordLogo } from '../ui';
 import { nm, isMP, isPM, isHOS, bal, ca, intrigueOpen, fmtTime, fmtDay, ordinal, METERS, standing, inDanger, canSeeCard, CAL_EVENTS, DAYS, nextAt, hosTitle, upcoming, officesOf, exiled } from '../../../engine/index';
 import { canVote } from '../../../engine/politics';
 import { canVoteOn, describe, KINDS } from '../../../engine/proposals';
@@ -362,7 +362,9 @@ function Account() {
                   <span>{x.name}{linked(x.id)?.email && <span class="small muted"> · {linked(x.id).email}</span>}</span>
                   {linked(x.id)
                     ? <Btn small kind="plain" onClick={() => unlinkProvider(x.id).then(() => (toast(`${x.name} unlinked.`), load())).catch(err)}>Unlink</Btn>
-                    : <Btn small kind="ghost" onClick={() => beginOAuth(x.id, 'link').catch(err)}>Link</Btn>}
+                    : x.id === 'discord'
+                      ? <button type="button" class="btn small discord" onClick={() => beginOAuth(x.id, 'link').catch(err)}><DiscordLogo />Link Discord</button>
+                      : <Btn small kind="ghost" onClick={() => beginOAuth(x.id, 'link').catch(err)}>Link</Btn>}
                 </li>
               ))}
             </ul>
