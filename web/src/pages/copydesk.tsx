@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Page, Sec, Card, Btn, Empty, Field, Pick, Seg } from '../ui';
 import { toast } from '../store';
 
-export type Str = { id: string; file: string; line: number; kind: string; where: string; text: string; template: boolean; ctx: string };
+export type Str = { id: string; file: string; line: number; kind: string; where: string; text: string; template: boolean; ctx: string; spans?: string[]; parts?: string[] };
 
 export const AREAS: Record<string, string> = {
   'web/src/pages/today.tsx': 'Today, Gazette, passport', 'web/src/pages/house.tsx': 'The House', 'web/src/pages/elections.tsx': 'Elections and Convention',
@@ -33,19 +33,46 @@ const RULES: [RegExp, string][] = [
   [/  /, 'Double space']
 ];
 export function lint(s: Str, text: string) {
-  const plain = text.replace(/\$\{[^}]*\}/g, 'X');
+  const sp = s.spans?.length ? split(text, s.spans) : null;
+  const plain = sp ? sp.parts.join('X') : text;
   const out = RULES.filter(([re]) => re.test(plain)).map(([, why]) => why);
   if (plain.split(/\s+/).length > 26) out.push('Long: split it into two sentences');
   // short labels with three or more Capitalised Words are probably Title Case (proper nouns can trip this)
   if (s.kind === 'label' && plain.split(' ').length <= 5 && (plain.match(/\b[A-Z][a-z]+/g) || []).length >= 3) out.push('Sentence case, not Title Case');
   return out;
 }
-export const placeholders = (t: string) => (t.match(/\$\{[^}]*\}/g) || []).sort().join('|');
+// a template's ${…} parts can nest, so they come from the source (s.spans), not a regex.
+// split(): the wording between them and which span is where, or null if any span is missing.
+export function split(text: string, spans: string[]) {
+  const found: { i: number; at: number; len: number }[] = [];
+  for (let i = 0; i < spans.length; i++) {
+    let from = 0;
+    let at = text.indexOf(spans[i], from);
+    while (at >= 0 && found.some((f) => at < f.at + f.len && f.at < at + spans[i].length)) at = text.indexOf(spans[i], (from = at + 1));
+    if (at < 0) return null;
+    found.push({ i, at, len: spans[i].length });
+  }
+  found.sort((a, b) => a.at - b.at);
+  const parts: string[] = [];
+  let pos = 0;
+  found.forEach((f) => (parts.push(text.slice(pos, f.at)), (pos = f.at + f.len)));
+  parts.push(text.slice(pos));
+  return { parts, order: found.map((f) => f.i) };
+}
+// is this wording safe to write back? every span kept, none added
+export function spansOk(s: Str, text: string) {
+  if (!s.spans?.length) return true;
+  const sp = split(text, s.spans);
+  return !!sp && !sp.parts.some((p) => p.includes('${'));
+}
+export const spanNames = (s: Str) => (s.spans || []).map((x) => chipLabel(x.slice(2, -1))).join(', ');
+const chipLabel = (src: string) => (/^[\w.$]+(\([^()]*\))?$/.test(src) ? src.replace(/\(.*\)$/, '').split('.').pop()! : 'auto');
 
-export function Text({ t }: { t: string }) {
+export function Text({ t, spans }: { t: string; spans?: string[] }) {
   // show the game's ${…} parts as chips, so they're easy to keep
-  const label = (src: string) => (/^[\w.$]+(\([^()]*\))?$/.test(src) ? src.replace(/\(.*\)$/, '').split('.').pop()! : 'auto');
-  return <>{t.split(/(\$\{[^}]*\})/).map((p) => (p.startsWith('${') ? <code class="cd-ph" title={`Filled in by the game: ${p}. Keep it.`}>{label(p.slice(2, -1))}</code> : p))}</>;
+  const sp = spans?.length ? split(t, spans) : null;
+  if (!sp) return <>{t}</>;
+  return <>{sp.parts.map((p, k) => <>{p}{k < sp.order.length && <code class="cd-ph" title={`Filled in by the game: ${spans![sp.order[k]]}. Keep it.`}>{chipLabel(spans![sp.order[k]].slice(2, -1))}</code>}</>)}</>;
 }
 
 export function CopyDesk() {
@@ -164,14 +191,14 @@ export function CopyDesk() {
             const now = edits[s.id] ?? s.text;
             const st = status(s);
             const flags = lint(s, now);
-            const broken = s.template && placeholders(now) !== placeholders(s.text);
+            const broken = !spansOk(s, now);
             return (
               <Card kind={st === 'edited' ? 'green' : undefined}>
                 <div class="small muted cd-meta"><span>{area(s.file)} · {KINDS[s.kind]}{s.where ? ` · ${s.where}` : ''}</span><span class="tnum">{s.file.split('/').pop()}:{s.line}</span></div>
-                <div class="cd-orig"><Text t={s.text} /></div>
+                <div class="cd-orig"><Text t={s.text} spans={s.spans} /></div>
                 <code class="cd-ctx">{s.ctx}</code>
                 <textarea class="input cd-edit" rows={Math.min(6, Math.ceil(now.length / 44) + 1)} value={now} aria-label="New wording" onInput={(e: any) => edit(s.id, e.currentTarget.value)} onKeyDown={(e: any) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && mark(s.id, true)} />
-                {broken && <p class="small bad" style={{ margin: '4px 0 0' }}>Keep every grey chip from the original: {placeholders(s.text).split('|').map((p) => p.slice(2, -1)).join(', ')}.</p>}
+                {broken && <p class="small bad" style={{ margin: '4px 0 0' }}>Keep every grey chip from the original, once each: {spanNames(s)}.</p>}
                 {flags.length > 0 && <div class="cd-flags">{flags.map((x) => <span class="cd-flag">{x}</span>)}</div>}
                 <div class="row" style={{ gap: 6, marginTop: 8, justifyContent: 'flex-start' }}>
                   {st !== 'edited' && <Btn small kind={st === 'fine' ? undefined : 'ghost'} onClick={() => mark(s.id, st !== 'fine')}>{st === 'fine' ? 'Marked fine' : 'Fine as it is'}</Btn>}

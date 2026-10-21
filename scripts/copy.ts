@@ -22,7 +22,8 @@ const KEYS = new Set(['text', 'title', 'label', 'what', 'blurb', 'q', 'a', 'sub'
 // calls whose arguments are read by players: name → which argument indexes
 const CALLS: Record<string, number[]> = { fail: [0], toast: [0], confirm: [0], gazette: [2], earn: [3], spend: [3], stamp: [2, 3], adminDid: [2], act: [2], Error: [0], setMsg: [], meter: [3], approve: [], moodShift: [2], armyLoyalty: [2], addCard: [] };
 
-export type Str = { id: string; file: string; line: number; kind: string; where: string; text: string; template: boolean; start: number; end: number; ctx: string };
+// spans: the exact source of each ${…} in a template (they can nest); parts: the text between them, as shown
+export type Str = { id: string; file: string; line: number; kind: string; where: string; text: string; template: boolean; start: number; end: number; ctx: string; spans?: string[]; parts?: string[] };
 
 const files = (dir: string): string[] =>
   readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? files(join(dir, d.name)) : /\.(tsx?|ts)$/.test(d.name) ? [join(dir, d.name)] : []));
@@ -43,6 +44,7 @@ function extractFile(file: string): Str[] {
   };
   const add = (n: ts.Node, kind: string) => {
     let text: string, start: number, end: number, template = false;
+    let spans: string[] | undefined, parts: string[] | undefined;
     if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) {
       text = n.text;
       start = n.getStart(sf) + 1;
@@ -53,6 +55,8 @@ function extractFile(file: string): Str[] {
       end = n.getEnd() - 1;
       text = src.slice(start, end);
       template = true;
+      spans = n.templateSpans.map((sp, i) => src.slice((i ? n.templateSpans[i - 1].literal.getEnd() : n.head.getEnd()) - 2, sp.literal.getStart(sf) + 1));
+      parts = [n.head.text, ...n.templateSpans.map((sp) => sp.literal.text)];
     } else if (ts.isJsxText(n)) {
       const raw = n.getText(sf);
       const lead = raw.length - raw.trimStart().length;
@@ -61,16 +65,18 @@ function extractFile(file: string): Str[] {
       end = start + raw.trim().length;
       if (raw.trim() !== text) return; // multi-line JSX text: rare, and rewrapping it would be risky
     } else return;
-    const probe = template ? text.replace(/\$\{[^}]*\}/g, ' x ') : text;
+    const probe = parts ? parts.join(' x ') : text;
     if (!wordy(probe) || seen.has(start)) return;
     seen.add(start);
     const line = sf.getLineAndCharacterOfPosition(start).line + 1;
     const ctx = src.split('\n')[line - 1].trim().slice(0, 240);
-    out.push({ id: '', file, line, kind, where: where(n), text, template, start, end, ctx });
+    out.push({ id: '', file, line, kind, where: where(n), text, template, start, end, ctx, ...(spans ? { spans, parts } : {}) });
   };
   const strings = (e: ts.Node | undefined, kind: string) => {
     if (!e) return;
-    if (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e) || ts.isTemplateExpression(e)) return add(e, kind);
+    if (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) return add(e, kind);
+    // a template, and any wording inside its ${…} parts ("No government has been formed.")
+    if (ts.isTemplateExpression(e)) return (add(e, kind), e.templateSpans.forEach((sp) => strings(sp.expression, kind)));
     if (ts.isConditionalExpression(e)) return (strings(e.whenTrue, kind), strings(e.whenFalse, kind));
     if (ts.isBinaryExpression(e) && [ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.AmpersandAmpersandToken].includes(e.operatorToken.kind)) return (strings(e.left, kind), strings(e.right, kind));
     if (ts.isParenthesizedExpression(e)) return strings(e.expression, kind);
@@ -114,10 +120,23 @@ function encode(s: Str, text: string, src: string): string {
     return text;
   }
   if (quote === '`') {
-    const want = (s.text.match(/\$\{[^}]*\}/g) || []).sort().join('|');
-    const got = (text.match(/\$\{[^}]*\}/g) || []).sort().join('|');
-    if (want !== got) throw new Error(`keep every placeholder exactly: ${want.split('|').filter(Boolean).join(' ') || '(none)'}`);
-    return text.replace(/`/g, '\\`');
+    // every ${…} must still be there exactly as often, and no new ones may appear
+    const spans = s.spans || [];
+    const count = (hay: string, x: string) => hay.split(x).length - 1;
+    const missing = [...new Set(spans)].filter((x) => count(text, x) !== spans.filter((y) => y === x).length);
+    if (missing.length) throw new Error(`keep every placeholder exactly once: ${missing.join(' ')}`);
+    let rest = text;
+    [...new Set(spans)].forEach((x) => (rest = rest.split(x).join('')));
+    if (rest.includes('${')) throw new Error('a new ${…} would become code; remove it');
+    // escape backticks only in the wording, never inside a ${…} (it may hold a template of its own)
+    let out = '';
+    let i = 0;
+    while (i < text.length) {
+      const sp = spans.find((x) => text.startsWith(x, i));
+      if (sp) (out += sp), (i += sp.length);
+      else (out += text[i] === '`' ? '\\`' : text[i]), i++;
+    }
+    return out;
   }
   return text.replace(/\\/g, '\\\\').replace(new RegExp(quote, 'g'), '\\' + quote).replace(/\n/g, '\\n');
 }
@@ -138,15 +157,35 @@ export function applyEdits(edits: Edit[]) {
   });
   Object.entries(byFile).forEach(([file, list]) => {
     let src = readFileSync(join(ROOT, file), 'utf8');
-    // from the end of the file backwards, so earlier offsets stay right
-    list.sort((a, b) => b.s.start - a.s.start).forEach(({ s, text, id }) => {
+    // innermost first: wording can sit inside another string's ${…} ("No government has been formed." inside the
+    // House's intro). After each edit, shift the offsets of the rest, and carry the change into any edit around it.
+    const todo = list.map((x) => ({ ...x, s: { ...x.s, spans: x.s.spans?.slice() } }));
+    todo.sort((a, b) => a.s.end - a.s.start - (b.s.end - b.s.start));
+    while (todo.length) {
+      const { s, text, id } = todo.shift()!;
+      let enc: string;
       try {
-        src = src.slice(0, s.start) + encode(s, text, src) + src.slice(s.end);
-        done.push(id);
+        enc = encode(s, text, src);
       } catch (err: any) {
         problems.push(`${s.file}:${s.line}: ${err.message}. Skipped “${text}”`);
+        continue;
       }
-    });
+      const old = src.slice(s.start, s.end);
+      src = src.slice(0, s.start) + enc + src.slice(s.end);
+      done.push(id);
+      const delta = enc.length - old.length;
+      todo.forEach((o) => {
+        if (o.s.start <= s.start && o.s.end >= s.end) {
+          // an edit around this one: its wording and its ${…} parts still hold the old inner text
+          o.s.end += delta;
+          o.s.spans = o.s.spans?.map((sp) => sp.replace(old, enc));
+          o.text = o.text.replace(old, enc);
+        } else if (o.s.start >= s.end) {
+          o.s.start += delta;
+          o.s.end += delta;
+        }
+      });
+    }
     writeFileSync(join(ROOT, file), src);
   });
   return { applied: done.length, files: Object.keys(byFile).length, problems, done };
