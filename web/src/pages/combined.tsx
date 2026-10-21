@@ -7,7 +7,8 @@ import { Wallet, Economy, Banks, Ventures } from './money';
 import { Bets } from './market';
 import { Foreign, Security, Army, Press, Court, Crises, Season } from './world';
 import { Backroom, Plots, Exile } from './backroom';
-import { Fame } from './glory';
+import { Fame, RedBox } from './glory';
+import { Page } from '../ui';
 
 export function Government({ focus }: { focus?: string }) {
   const { world: w } = useStore();
@@ -26,5 +27,5 @@ export function BackroomAll({ focus }: { focus?: string }) {
   return <Combined dark kicker="Only you can see this" title="The backroom" intro="Secrets, private deals, plots against the government, and where traitors end up." focus={focus} parts={[['backroom', 'Cards and deals', () => <Backroom />], ['plots', 'Plots', () => <Plots />], ['exile', 'Exile', () => <Exile />]]} />;
 }
 export function Honours({ focus }: { focus?: string }) {
-  return <Combined kicker="Glory" title="Honours" intro="This season's leaderboard and awards, and the Hall of Fame across every season." focus={focus} parts={[['season', 'This season', () => <Season />], ['fame', 'Hall of Fame', () => <Fame />]]} />;
+  return <Combined kicker="Glory" title="Honours" intro="The daily Red Box, this season's leaderboard and awards, and the Hall of Fame across every season." focus={focus} parts={[['redbox', 'The Red Box', () => <Page title="The Red Box" intro="One question a day. Answer to keep your streak going."><RedBox /></Page>], ['season', 'This season', () => <Season />], ['fame', 'Hall of Fame', () => <Fame />]]} />;
 }

@@ -4,6 +4,7 @@ import { Icon, Seal, ThemeSwitch } from './ui';
 import { nm, bal, ca, intrigueOpen, fmtTime, ordinal, standing, canSeeCard, TUTORIAL } from '../../engine/index';
 import { needs } from './pages/today';
 import { TABS, where, visible } from './nav';
+import { SearchBox } from './search';
 
 export function Sidebar({ tabs, current }: { tabs: [string, string, string, boolean][]; current: string }) {
   const { world: w, me } = useStore();
@@ -22,6 +23,7 @@ export function Sidebar({ tabs, current }: { tabs: [string, string, string, bool
           {meters.map(([k, v]) => <div title={{ P: 'Prosperity', S: 'Stability', W: 'Standing' }[k]} class={v <= 15 ? 'danger' : ''}><span>{{ P: 'Prosperity', S: 'Stability', W: 'Standing' }[k]}</span><i><b style={{ width: v + '%' }} /></i><em class="tnum">{v}</em></div>)}
         </div>
       )}
+      <SearchBox compact />
       <nav class="side-main">
         {TABS.map((t, i) => {
           const [href, label, icon, on] = tabs[i];

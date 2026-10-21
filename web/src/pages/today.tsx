@@ -9,6 +9,7 @@ import { POWERS } from '../../../engine/offices';
 
 import { needs } from '../../../engine/alerts';
 import { RedBox } from './glory';
+import { RED_BOX } from '../../../engine/glory';
 import { ghost } from '../../../engine/index';
 export { needs };
 
@@ -123,8 +124,7 @@ function InductionBanner() {
 export function Today() {
   const { world: w, me } = useStore();
   const c = w.citizens[me];
-  // the Red Box has its own card here, so it isn't one of the slips
-  const list = needs(w, me).filter((n) => !n.key.startsWith('daily:'));
+  const list = needs(w, me);
   const up = upcoming(w, 3);
   const mine = officesOf(w, me);
   return (
@@ -146,12 +146,15 @@ export function Today() {
       {ghost(w, me) && <Card kind="warn" style={{ marginTop: 16, gridColumn: '1 / -1' }}><b>You were assassinated.</b> You’re a ghost until <When at={c.ghostUntil} />: you can vote, and nothing else. <a href="#/streets">The Streets</a></Card>}
       <div class="today-a">
         <div class="stack o1" style={{ marginTop: 18 }}>
-          <RedBox />
+          {w.phase === 'running' && <Guide />}
           {list.map((n) => (
-            <a class="slip rise" href={n.href}>
-              <div class="main"><span class="small muted">{n.label}</span><span class="t">{n.title}</span></div>
-              {n.at && <div class="stub"><b class="tnum" style={{ color: n.urgent ? 'var(--red)' : 'var(--ink)' }}><Left at={n.at} /></b><span class="small muted">left</span></div>}
-            </a>
+            <div class="slip-wrap rise">
+              <a class="slip" href={n.href}>
+                <div class="main"><span class="small muted">{n.label}</span><span class="t">{n.title}</span></div>
+                {n.at && <div class="stub"><b class="tnum" style={{ color: n.urgent ? 'var(--red)' : 'var(--ink)' }}><Left at={n.at} /></b><span class="small muted">left</span></div>}
+              </a>
+              <SlipActions k={n.key} />
+            </div>
           ))}
         </div>
         {mine.length > 0 && (
@@ -179,6 +182,47 @@ export function Today() {
         {w.phase === 'running' && <div style={{ order: 3 }}><SeatMap /></div>}
       </div>
     </div>
+  );
+}
+
+// one tap from Today for the simple answers: vote, sign, accept, join, open the Red Box
+function SlipActions({ k }: { k: string }) {
+  const { world: w } = useStore();
+  const [kind, id] = k.split(':');
+  const two = (yes: string, no: string, cmd: string, args: (v: boolean) => any, done: [string, string]) => (
+    <div class="slip-acts"><Btn small onClick={() => act(cmd, args(true), done[0])}>{yes}</Btn><Btn small kind="ghost" onClick={() => act(cmd, args(false), done[1])}>{no}</Btn></div>
+  );
+  if (kind === 'prop') { const p = w.proposals[id]; if (!p) return null; const all = p.voters === 'all'; return <div class="slip-acts"><Btn small onClick={() => act('prop.vote', { prop: id, vote: 'aye' }, 'Vote cast. +2 Influence.')}>{all ? 'Yes' : 'Aye'}</Btn><Btn small kind="ghost" onClick={() => act('prop.vote', { prop: id, vote: 'no' }, 'Vote cast. +2 Influence.')}>No</Btn>{!all && <Btn small kind="plain" onClick={() => act('prop.vote', { prop: id, vote: 'abstain' }, 'Abstention recorded.')}>Abstain</Btn>}</div>; }
+  if (kind === 'assent') return two(w.config.hos === 'monarchy' ? 'Give assent' : 'Sign', w.config.hos === 'monarchy' ? 'Refuse' : 'Veto', 'prop.assent', (v) => ({ prop: id, yes: v }), ['Signed into law.', 'Refused.']);
+  if (kind === 'deal') return two('Accept', 'Refuse', 'deal.answer', (v) => ({ id, yes: v }), ['Deal accepted.', 'Deal refused.']);
+  if (kind === 'plot') return two('Join', 'Refuse', 'plot.answer', (v) => ({ plot: id, join: v }), ['You’re in.', 'You said no.']);
+  if (kind === 'daily' && w.daily) return <div class="slip-acts">{RED_BOX[w.daily.qi].a.map((a: string, i: number) => <Btn small kind="ghost" onClick={() => act('daily.answer', { option: i }, 'In the Red Box.')}>{a}</Btn>)}</div>;
+  return null;
+}
+// the first week: five steps that walk a new player round the tabs; ticks itself off, and can be put away
+const GUIDE_KEY = 'realm-guide';
+const seen = (): Record<string, boolean> => { try { return JSON.parse(localStorage.getItem(GUIDE_KEY) || '{}'); } catch { return {}; } };
+export function markSeen(tab: string) { try { const s = seen(); if (!s[tab]) { s[tab] = true; localStorage.setItem(GUIDE_KEY, JSON.stringify(s)); } } catch {} }
+function Guide() {
+  const { world: w, me } = useStore();
+  const [hidden, setHidden] = useState(() => !!seen().done);
+  const c = w.citizens[me];
+  const s = seen();
+  const voted = Object.values(w.proposals).some((p: any) => p.votes?.[me]);
+  const steps: [string, string, string, boolean][] = [
+    ['#/house', 'Parliament', 'See who sits in the House and what’s on the order paper.', !!s.house],
+    ['#/proposals', 'Vote on a bill', 'Every vote earns Influence. Use the buttons on Today or open a bill.', voted],
+    ['#/parties', 'Join or found a party', 'Parties win seats together.', !!c.party],
+    ['#/money', 'Check your money', 'Your wallet, the economy and the betting pools live under Realm.', !!s.realm],
+    ['#/learn', 'Do the missions', 'How to play walks you through every part of the game.', Object.keys(c.tutorial || {}).length >= 3]
+  ];
+  const done = steps.filter((x) => x[3]).length;
+  if (hidden || done === steps.length) return null;
+  return (
+    <Card kind="tint">
+      <div class="row"><b>Getting started · {done}/{steps.length}</b><button type="button" class="linkish small" onClick={() => { try { localStorage.setItem(GUIDE_KEY, JSON.stringify({ ...seen(), done: true })); } catch {} setHidden(true); }}>Hide</button></div>
+      <ol class="guide">{steps.map(([href, t, sub, ok]) => <li class={ok ? 'ok' : ''}><a href={href}><b>{t}</b></a> <span class="small muted">{sub}</span></li>)}</ol>
+    </Card>
   );
 }
 

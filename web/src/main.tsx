@@ -7,6 +7,8 @@ import { Icon, applyTheme, getTheme } from './ui';
 import { DemoPanel, DemoRail } from './DemoPanel';
 import { Sidebar } from './Sidebar';
 import { TABS, where } from './nav';
+import { Search } from './search';
+import { markSeen } from './pages/today';
 import { Today, Gazette, FrontPage, Passport, Laws, Law, Calendar } from './pages/today';
 import { House, Proposals, Proposal, NewProposal, Questions } from './pages/house';
 import { Elections, Election, Convention } from './pages/elections';
@@ -72,7 +74,7 @@ function route(hash: string) {
     house: () => <House />, proposals: () => <Proposals />, p: () => <Proposal id={b} />, new: () => <NewProposal query={q} />, questions: () => <Questions />,
     elections: () => <Elections />, election: () => <Election id={b} />, convention: () => <Convention />,
     // combined sections: the old addresses open the part they name
-    government: () => <Government />, cabinet: () => <Government focus="cabinet" />, offices: () => <Government focus="offices" />, hos: () => <Government focus="hos" />, office: () => <Office id={b} />,
+    search: () => <Search />, government: () => <Government />, cabinet: () => <Government focus="cabinet" />, offices: () => <Government focus="offices" />, hos: () => <Government focus="hos" />, office: () => <Office id={b} />,
     parties: () => <Parties />, party: () => <Party id={b} />,
     money: () => <Money />, realm: () => <Money />, wallet: () => <Money focus="wallet" />, economy: () => <Money focus="economy" />, banks: () => <Money focus="banks" />, ventures: () => <Money focus="ventures" />, bets: () => <Money focus="bets" />,
     world: () => <World />, foreign: () => <World focus="foreign" />, security: () => <World focus="security" />, army: () => <World focus="army" />,
@@ -103,6 +105,7 @@ function Game() {
   const { toast, offline } = useStore();
   const r = route(hash);
   const here = where(hash).tab.id;
+  useEffect(() => markSeen(here), [here]);
   const marked = TABS.map((t) => [t.href, t.label, t.icon, t.id === here] as [string, string, string, boolean]);
   return (
     <div class={'app' + (ONLINE ? ' online' : '')}>

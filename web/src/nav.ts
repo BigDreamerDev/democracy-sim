@@ -12,7 +12,8 @@ export const TABS: Tab[] = [
   { id: 'today', label: 'Today', icon: 'today', href: '#/', sections: [
     { id: 'today', label: 'Today', href: '#/', routes: [''] },
     { id: 'news', label: 'News', href: '#/gazette', routes: ['gazette', 'frontpage'] },
-    { id: 'calendar', label: 'Calendar', href: '#/calendar', routes: ['calendar'] }
+    { id: 'calendar', label: 'Calendar', href: '#/calendar', routes: ['calendar'] },
+    { id: 'search', label: 'Search', href: '#/search', routes: ['search'] }
   ] },
   { id: 'house', label: 'Parliament', icon: 'house', href: '#/house', sections: [
     { id: 'house', label: 'Chamber', href: '#/house', routes: ['house'] },
@@ -36,7 +37,7 @@ export const TABS: Tab[] = [
   ] },
   { id: 'you', label: 'You', icon: 'you', href: '#/you', sections: [
     { id: 'you', label: 'Passport', href: '#/you', routes: ['you', 'passport'] },
-    { id: 'honours', label: 'Honours', href: '#/honours', routes: ['honours', 'season', 'fame'] },
+    { id: 'honours', label: 'Honours', href: '#/honours', routes: ['honours', 'season', 'fame', 'redbox'], count: (w, me) => (w.daily && w.daily.votes?.[me] === undefined ? 1 : null) },
     { id: 'learn', label: 'How to play', href: '#/learn', routes: ['learn'] },
     { id: 'apps', label: 'Apps', href: '#/apps', routes: ['apps', 'app', 'developers', 'authorize'] },
     { id: 'admin', label: 'Admin', href: '#/admin', routes: ['admin', 'rolog', 'copy'], show: (w, me) => !!w.citizens[me]?.admin, count: (w) => w.pending?.length || null }
