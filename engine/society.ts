@@ -1,6 +1,7 @@
 // The press and the Friday front page, the Supreme Court, and the weekly crisis.
 import { W, Id, DAY, WEEK, fail, newId, pick, cit, nm, allCitizens, mustBeFree, gazette, earn, stamp, transfer, ca, meter, approve, tick, isPM, weekNo, standing, fmtDay, addCard, holderOf } from './core';
 import { armyLoyalty } from './foreign';
+import { photoId } from './streets';
 
 // ---------- press ----------
 export function foundPaper(w: W, actor: Id, name: string) {
@@ -18,13 +19,13 @@ export function follow(w: W, actor: Id, pid: Id) {
   const i = p.followers.indexOf(actor);
   i >= 0 ? p.followers.splice(i, 1) : p.followers.push(actor);
 }
-export function submitStory(w: W, actor: Id, pid: Id, headline: string, body: string) {
+export function submitStory(w: W, actor: Id, pid: Id, headline: string, body: string, photo?: string | null) {
   mustBeFree(w, actor);
   const p = w.papers[pid];
   if (!p) fail('Pick a paper.');
   if ((headline || '').trim().length < 5) fail('Write a headline.');
   const own = p.editor === actor;
-  w.stories.unshift({ id: newId(w, 'st'), paper: pid, by: actor, headline: headline.trim(), body: (body || '').trim(), status: own ? 'published' : 'submitted', at: w.now, cheers: [] });
+  w.stories.unshift({ id: newId(w, 'st'), paper: pid, by: actor, headline: headline.trim(), body: (body || '').trim(), photo: photoId(photo), status: own ? 'published' : 'submitted', at: w.now, cheers: [] });
   tick(w, actor, 'stories');
   if (own) earn(w, actor, 1, 'Published a story');
 }
@@ -70,7 +71,8 @@ export function makeFrontPage(w: W) {
   const crisisLeads = !!crisis && (crisis.extreme || !lead);
   const fp = {
     id: newId(w, 'fp'), at: w.now, week: weekNo(w), crisis, crisisLeads,
-    lead: lead ? { headline: lead.headline, body: lead.body, by: lead.by, paper: w.papers[lead.paper]?.name } : null,
+    lead: lead ? { headline: lead.headline, body: lead.body, by: lead.by, paper: w.papers[lead.paper]?.name, photo: lead.photo || null } : null,
+    snapshot: snapshotOfWeek(w, since),
     laws: w.laws.filter((l: any) => l.at > since && !l.classified).map((l: any) => ({ ref: l.ref, title: l.title })),
     meters: { prosperity: w.meters.prosperity, stability: w.meters.stability, standing: standing(w) },
     pm: w.pm, dodged: w.questions.filter((q: any) => q.status === 'dodged' && q.at > since).length,
@@ -80,6 +82,12 @@ export function makeFrontPage(w: W) {
   w.frontpages.unshift(fp);
   w.frontpages = w.frontpages.slice(0, 12);
   gazette(w, 'press', `This week's front page: ${crisisLeads ? crisis!.title : lead ? lead.headline : 'a quiet week in the realm'}.`, '#/frontpage/' + fp.id);
+}
+
+// the snapshot of the week: the latest finished bounty with a photo
+function snapshotOfWeek(w: W, since: number) {
+  const b = (Object.values(w.bounties || {}) as any[]).filter((x) => x.status === 'paid' && x.photo && x.paidAt > since).sort((a, c) => c.paidAt - a.paidAt)[0];
+  return b ? { photo: b.photo, text: b.text, by: b.taker, reward: b.reward } : null;
 }
 
 // ---------- the Supreme Court ----------

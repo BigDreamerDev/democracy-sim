@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
-import { Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Field, Pick, Locked, Seg, Opt } from '../ui';
+import { Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Field, Pick, Locked, Seg, Opt, Photo, PhotoPick } from '../ui';
 import { nm, isPM, allCitizens, fmtTime, fmtDay, bal, hasPower, holderOf, standing, isMP } from '../../../engine/index';
 import { MOODS, TREATIES, INTEL_Q } from '../../../engine/foreign';
 import { ARMY_COST } from '../../../engine/economy';
@@ -118,19 +118,20 @@ export function Army() {
 export function Press() {
   const { world: w, me } = useStore();
   const [name, setName] = useState('');
-  const [f, setF] = useState({ paper: Object.keys(w.papers)[0] || '', headline: '', body: '' });
+  const [f, setF] = useState<any>({ paper: Object.keys(w.papers)[0] || '', headline: '', body: '', photo: null });
   const waiting = w.stories.filter((s: any) => s.status === 'submitted' && w.papers[s.paper]?.editor === me);
   const stories = w.stories.filter((s: any) => s.status === 'published').slice(0, 20);
   return (
     <Page back={['#/realm', 'The realm']} title="The press" intro="Anyone can start a paper. The most-cheered story of the week leads Friday's front page. Leaked cards make the best stories.">
       <Sec title="Papers"><ul class="list">{Object.values(w.papers).map((p: any) => <li class="row"><span><b>{p.name}</b><div class="small muted">Editor {nm(w, p.editor)} · {p.followers.length} readers</div></span><Btn small kind={p.followers.includes(me) ? 'plain' : 'ghost'} onClick={() => act('press.follow', { paper: p.id })}>{p.followers.includes(me) ? 'Following' : 'Follow'}</Btn></li>)}</ul></Sec>
-      {waiting.length > 0 && <Sec title="Waiting for your decision">{waiting.map((s: any) => <Card><b>{s.headline}</b><p class="small">{s.body}</p><div class="small muted">By {nm(w, s.by)}</div><div class="grid2" style={{ marginTop: 8 }}><Btn small onClick={() => act('press.edit', { story: s.id, yes: true }, 'Published.')}>Publish</Btn><Btn small kind="plain" onClick={() => act('press.edit', { story: s.id, yes: false })}>Spike</Btn></div></Card>)}</Sec>}
+      {waiting.length > 0 && <Sec title="Waiting for your decision">{waiting.map((s: any) => <Card><b>{s.headline}</b><Photo id={s.photo} alt={s.headline} /><p class="small">{s.body}</p><div class="small muted">By {nm(w, s.by)}</div><div class="grid2" style={{ marginTop: 8 }}><Btn small onClick={() => act('press.edit', { story: s.id, yes: true }, 'Published.')}>Publish</Btn><Btn small kind="plain" onClick={() => act('press.edit', { story: s.id, yes: false })}>Spike</Btn></div></Card>)}</Sec>}
       <Sec title="Latest">
         <div class="stack">
           {stories.map((s: any) => (
             <Card kind={s.leak ? 'warn' : undefined}>
               <div class="kicker" style={{ margin: 0 }}>{w.papers[s.paper]?.name}{s.leak ? ' · leaked' : ''}</div>
               <div class="serif" style={{ fontSize: 21, lineHeight: 1.15 }}>{s.headline}</div>
+              <Photo id={s.photo} alt={s.headline} />
               <p style={{ margin: '4px 0' }}>{s.body}</p>
               <div class="row"><span class="small muted">{nm(w, s.by)}, {fmtDay(s.at)}</span><button type="button" class={'cheer' + (s.cheers.includes(me) ? ' on' : '')} aria-pressed={s.cheers.includes(me) ? 'true' : 'false'} onClick={() => act('press.cheer', { story: s.id })}>Cheer <b class="tnum">{s.cheers.length}</b></button></div>
             </Card>
@@ -142,7 +143,8 @@ export function Press() {
         <Pick label="Paper" value={f.paper} onChange={(v) => setF({ ...f, paper: v })} options={Object.values(w.papers).map((p: any) => [p.id, p.name])} />
         <Field label="Headline" value={f.headline} onInput={(v) => setF({ ...f, headline: v })} />
         <Field label="Story" area value={f.body} onInput={(v) => setF({ ...f, body: v })} />
-        <Btn onClick={() => act('press.submit', f, 'Submitted.') && setF({ ...f, headline: '', body: '' })}>Submit</Btn>
+        <PhotoPick value={f.photo} onChange={(photo) => setF({ ...f, photo })} />
+        <Btn onClick={() => { act('press.submit', f, 'Submitted.'); setF({ ...f, headline: '', body: '', photo: null }); }}>Submit</Btn>
       </div></Card></Sec>
       <Sec title="Start a paper (10 crowns)"><div class="grid2"><Field label="Name" value={name} onInput={setName} /><Btn style={{ alignSelf: 'end' }} onClick={() => act('press.found', { name }, 'Paper founded.')}>Start it</Btn></div></Sec>
     </Page>

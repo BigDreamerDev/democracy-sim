@@ -388,3 +388,47 @@ if (ONLINE) {
   setInterval(() => state.world && !document.hidden && set({ world: { ...state.world, now: Math.max(state.world.now, Date.now() + skew) } }), 30_000);
   document.addEventListener('visibilitychange', () => !document.hidden && refresh());
 }
+
+// ---------- photos: shrunk to a small JPEG here (which also drops any location data), then uploaded ----------
+const DEMO_PHOTOS = 'realm-demo-photos';
+const demoPhotos = (): Record<string, string> => {
+  try {
+    return JSON.parse(localStorage.getItem(DEMO_PHOTOS) || '{}');
+  } catch {
+    return {};
+  }
+};
+async function shrink(file: File): Promise<string> {
+  const img = await createImageBitmap(file).catch(() => null);
+  if (!img) throw new Error('That file isn’t a photo this browser can read.');
+  for (const [max, q] of [[1024, 0.78], [800, 0.7], [640, 0.62], [480, 0.55]] as const) {
+    const k = Math.min(1, max / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * k);
+    c.height = Math.round(img.height * k);
+    c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
+    const url = c.toDataURL('image/jpeg', q);
+    if (url.length * 0.75 < 135_000) return url;
+  }
+  throw new Error('That photo is too detailed to shrink. Try another.');
+}
+export async function uploadPhoto(file: File): Promise<string> {
+  const url = await shrink(file);
+  if (ONLINE) return (await api('/api/images', { data: url })).id;
+  // the demo keeps photos in this browser; only a few fit
+  const all = demoPhotos();
+  const keys = Object.keys(all);
+  if (keys.length >= 12) delete all[keys[0]];
+  const id = 'im' + Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join('');
+  all[id] = url;
+  try {
+    localStorage.setItem(DEMO_PHOTOS, JSON.stringify(all));
+  } catch {
+    throw new Error('This browser is out of room for demo photos.');
+  }
+  return id;
+}
+export const photoUrl = (id: string) => (ONLINE ? `${API}/api/images/${id}` : demoPhotos()[id] || '');
+export const removePhoto = (id: string, reason: string) => api('/api/admin/images/remove', { id, reason });
+export const deletePhoto = (id: string) => api('/api/images/delete', { id });
+export const myPhotos = () => api('/api/images');

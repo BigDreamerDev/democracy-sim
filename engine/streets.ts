@@ -1,7 +1,7 @@
 // The Streets: the parts of the game played in real life. Everything here is opt-in, and nobody who hasn't
 // joined can be targeted or can target anyone. Contracts (Assassins), check-ins, bounties, market stalls and
 // civic jobs. Crowns never turn into real money and real money never turns into crowns.
-import { W, Id, DAY, HOUR, fail, newId, rand, chance, cit, nm, gazette, earn, spend, stamp, approve, transfer, ca, addCard, needIntrigue, mustBeFree, ghost, hasPower, holderOf, isPM, bump, weekNo, adminDid } from './core';
+import { W, Id, DAY, HOUR, fail, newId, rand, chance, shuffle, cit, nm, gazette, earn, spend, stamp, approve, transfer, ca, addCard, needIntrigue, mustBeFree, ghost, hasPower, holderOf, isPM, bump, weekNo, adminDid } from './core';
 
 export const SAFE_ZONES = [
   'Lessons, exams, and anywhere a teacher is teaching',
@@ -72,6 +72,7 @@ export function leave(w: W, actor: Id) {
     } else if (b.taker === actor && b.status === 'taken') reopen(b);
   });
   Object.values(w.stalls || {}).forEach((x: any) => x.by === actor && (x.status = 'closed'));
+  outOfHunt(w, actor, 'left the Streets');
   c.streets = { in: false, leftAt: w.now };
   c.tagCode = null;
   if (s.protect?.who === actor) s.protect = null;
@@ -134,8 +135,9 @@ export function tagByCode(w: W, actor: Id, code: string) {
   if (!t) fail('That code isn’t live. Codes change after every tag.');
   if (t.id === actor) fail('That’s your own code.');
   const ct = mine(w, actor, t.id);
-  if (!ct) fail(`You have no contract on ${t.name}.`);
-  complete(w, ct, 'code');
+  if (ct) return complete(w, ct, 'code');
+  if (huntTarget(w, actor) === t.id) return huntKill(w, actor, t.id);
+  fail(`You have no contract on ${t.name}, and they aren’t your Hunt target.`);
 }
 // the assassin says they did it without a code; the target confirms or denies (silence for 24 hours counts as yes)
 export function claim(w: W, actor: Id, id: Id) {
@@ -158,8 +160,9 @@ export function answerClaim(w: W, actor: Id, id: Id, yes: boolean) {
 // the target owns up: "they got me"
 export function gotMe(w: W, actor: Id, by: Id) {
   const ct = mine(w, by, actor);
-  if (!ct) fail(`${nm(w, by)} had no contract on you. Nothing happens.`);
-  complete(w, ct, 'confessed');
+  if (ct) return complete(w, ct, 'confessed');
+  if (huntTarget(w, by) === actor) return huntKill(w, by, actor);
+  fail(`${nm(w, by)} had no contract on you and wasn’t hunting you. Nothing happens.`);
 }
 export function settleClaim(w: W, k: any) {
   if (k.status === 'claimed') complete(w, k, 'unanswered');
@@ -296,9 +299,10 @@ export function takeBounty(w: W, actor: Id, id: Id) {
   b.takenAt = w.now;
   b.takenDue = w.now + 48 * HOUR;
 }
-export function doneBounty(w: W, actor: Id, id: Id, note: string) {
+export function doneBounty(w: W, actor: Id, id: Id, note: string, photo?: string | null) {
   const b = bounty(w, id);
   if (b.status !== 'taken' || b.taker !== actor) fail('That bounty isn’t yours to finish.');
+  b.photo = photoId(photo);
   b.status = 'done';
   b.note = String(note || '').trim().slice(0, 200);
   b.doneAt = w.now;
@@ -447,4 +451,99 @@ export function approveJob(w: W, actor: Id, cid: Id, yes: boolean) {
   }
 }
 export const isGhostOk = (cmd: string) => GHOST_OK.includes(cmd) || cmd.startsWith('admin.');
-const GHOST_OK = ['election.vote', 'prop.vote', 'crisis.vote', 'convention.vote', 'convention.rank', 'tutorial.visit', 'daily.answer', 'streets.leave', 'streets.newCode', 'streets.answer', 'market.bet', 'stall.receive', 'bounty.confirm'];
+const GHOST_OK = ['election.vote', 'prop.vote', 'crisis.vote', 'convention.vote', 'convention.rank', 'tutorial.visit', 'daily.answer', 'daily.freeze', 'streets.leave', 'streets.newCode', 'streets.answer', 'market.bet', 'stall.receive', 'bounty.confirm'];
+
+// photos are uploaded to the server first; the world only holds their id (the server checks you own it)
+export function photoId(p: unknown): string | null {
+  if (p === undefined || p === null || p === '') return null;
+  if (typeof p !== 'string' || !/^im[a-z0-9]{24}$/.test(p)) fail('That photo isn’t right. Upload it again.');
+  return p;
+}
+
+// ---------- the weekly Hunt: a ring of Streets players, each hunting the next ----------
+// Sign-ups open every payday for 24 hours. Then everyone gets the next person in a shuffled ring as their target
+// and this week's weapon. Tag your target (their tag code, or they own up) and you take on their target.
+// Last one standing wins; if the week runs out first, whoever got the most wins.
+export function huntTarget(w: W, id: Id): Id | null {
+  const h = w.hunt;
+  return h && h.status === 'running' ? h.ring[id] || null : null;
+}
+export function openHunt(w: W) {
+  if (w.phase !== 'running' || (w.hunt && ['signup', 'running'].includes(w.hunt.status))) return;
+  const n = (w.hunt?.n || 0) + 1;
+  const weapon = WEAPONS[Math.floor(rand(w) * WEAPONS.length)].replace('{w}', WORDS[Math.floor(rand(w) * WORDS.length)]);
+  w.hunt = { n, status: 'signup', entrants: [], startsAt: w.now + DAY, endsAt: null, ring: {}, alive: [], kills: {}, log: [], winners: [], weapon };
+  gazette(w, 'streets', `The Hunt, round ${n}: sign up in the next 24 hours. Everyone in it hunts one person and is hunted by another. This round’s weapon: ${weapon.charAt(0).toLowerCase() + weapon.slice(1)}.`, '#/hunt');
+}
+export function enterHunt(w: W, actor: Id) {
+  mustBeFree(w, actor);
+  mustBeIn(w, actor);
+  const h = w.hunt;
+  if (!h || h.status !== 'signup') fail('The Hunt isn’t taking sign-ups. A new round opens every payday.');
+  if (h.entrants.includes(actor)) fail('You’re already in.');
+  h.entrants.push(actor);
+}
+export function withdrawHunt(w: W, actor: Id) {
+  const h = w.hunt;
+  if (!h || h.status !== 'signup' || !h.entrants.includes(actor)) fail('You can only drop out before the Hunt starts.');
+  h.entrants = h.entrants.filter((x: Id) => x !== actor);
+}
+export function startHunt(w: W) {
+  const h = w.hunt;
+  const order = shuffle(w, h.entrants.filter((id: Id) => inStreets(w, id) && w.citizens[id]?.active));
+  if (order.length < 3) {
+    h.status = 'cancelled';
+    gazette(w, 'streets', `The Hunt, round ${h.n}, is called off: it needs at least 3 players.`, '#/hunt');
+    return;
+  }
+  order.forEach((id: Id, i: number) => (h.ring[id] = order[(i + 1) % order.length]));
+  h.alive = order;
+  h.status = 'running';
+  h.endsAt = w.now + 5 * DAY;
+  gazette(w, 'streets', `The Hunt, round ${h.n}, begins: ${order.length} players, 5 days. Check who you’re hunting.`, '#/hunt');
+}
+function huntKill(w: W, hunter: Id, victim: Id) {
+  const h = w.hunt;
+  const t = w.citizens[victim];
+  t.tagCode = newCode(w);
+  h.ring[hunter] = h.ring[victim];
+  delete h.ring[victim];
+  h.alive = h.alive.filter((x: Id) => x !== victim);
+  h.kills[hunter] = (h.kills[hunter] || 0) + 1;
+  h.log.unshift({ by: hunter, victim, at: w.now });
+  bump(w, hunter, 'huntKills');
+  earn(w, hunter, 3, `Got ${t.name} in the Hunt`);
+  gazette(w, 'streets', `The Hunt: ${nm(w, hunter)} takes out ${t.name}. ${h.alive.length} left.`, '#/hunt');
+  if (h.alive.length <= 1) finishHunt(w);
+}
+function outOfHunt(w: W, id: Id, why: string) {
+  const h = w.hunt;
+  if (!h) return;
+  if (h.status === 'signup') h.entrants = h.entrants.filter((x: Id) => x !== id);
+  if (h.status !== 'running' || !h.alive.includes(id)) return;
+  const hunter = Object.keys(h.ring).find((k) => h.ring[k] === id);
+  if (hunter) h.ring[hunter] = h.ring[id];
+  delete h.ring[id];
+  h.alive = h.alive.filter((x: Id) => x !== id);
+  gazette(w, 'streets', `The Hunt: ${nm(w, id)} ${why}. ${h.alive.length} left.`, '#/hunt');
+  if (h.alive.length <= 1) finishHunt(w);
+}
+export function finishHunt(w: W) {
+  const h = w.hunt;
+  if (h.status !== 'running') return;
+  h.status = 'done';
+  h.endedAt = w.now;
+  if (h.alive.length === 1) h.winners = h.alive.slice();
+  else {
+    const top = Math.max(0, ...Object.values(h.kills).map(Number));
+    h.winners = top > 0 ? Object.keys(h.kills).filter((k) => h.kills[k] === top) : [];
+  }
+  h.ring = {};
+  h.winners.forEach((id: Id) => {
+    earn(w, id, 20, `Won the Hunt, round ${h.n}`);
+    stamp(w, id, 'Hunt champion', `Round ${h.n}`, 'ink');
+    w.citizens[id].titles.push(`Hunt champion, round ${h.n}`);
+    bump(w, id, 'huntWins');
+  });
+  gazette(w, 'streets', h.winners.length ? `The Hunt, round ${h.n}, is over. ${h.winners.map((x: Id) => nm(w, x)).join(' and ')} ${h.winners.length > 1 ? 'share' : 'takes'} the title${h.alive.length === 1 ? ', the last one standing' : ' with the most hits'}.` : `The Hunt, round ${h.n}, ends with nobody caught. Everyone survives; nobody wins.`, '#/hunt');
+}

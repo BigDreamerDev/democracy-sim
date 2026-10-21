@@ -69,7 +69,7 @@ export const CATALOG: Record<string, CmdInfo> = {
   'exile.pardonRequest': { about: 'In exile: ask for a pardon.', args: {} },
   'press.found': { about: 'Start a newspaper (10 crowns).', args: { name: 'text' } },
   'press.follow': { about: 'Follow a paper.', args: { paper: 'id' } },
-  'press.submit': { about: 'Submit a story to a paper.', args: { paper: 'id', headline: 'text', body: 'text' } },
+  'press.submit': { about: 'Submit a story to a paper.', args: { paper: 'id', headline: 'text', body: 'text', photo: 'id (optional, from the site’s photo upload)' } },
   'press.edit': { about: 'Editor: run or spike a story.', args: { story: 'id', yes: 'bool' } },
   'press.cheer': { about: 'Cheer a story.', args: { story: 'id' } },
   'court.file': { about: 'Bring a case to the court (5 crowns).', args: { question: 'text', against: 'id (citizen, optional)', lawRef: 'text (optional)', argument: 'text' } },
@@ -84,7 +84,7 @@ export const CATALOG: Record<string, CmdInfo> = {
   'streets.newCode': { about: 'Get a new tag code (if someone saw yours), or a meet code for check-ins.', args: { kind: "'tag' (default) | 'meet'" } },
   'streets.meet': { about: 'Check in with someone you met in person, using their meet code. +3 Influence each, once per pair per day.', args: { code: 'text (6 characters)' } },
   'streets.contract': { about: 'Take out a contract on someone in the Streets (10 Influence, 10–100 crowns staked). You get a secret weapon and 72 hours.', args: { target: 'id (citizen)', crowns: 'number' } },
-  'streets.tag': { about: 'Complete your contract with the target’s tag code (they show you their code).', args: { code: 'text' } },
+  'streets.tag': { about: 'Complete your contract, or a Hunt hit, with the target’s tag code (they show you their code).', args: { code: 'text' } },
   'streets.claim': { about: 'Say you completed your contract without a code. The target confirms or denies; silence for 24 hours counts as yes.', args: { contract: 'id' } },
   'streets.answer': { about: 'Target: confirm or deny a claim that someone got you.', args: { contract: 'id', yes: 'bool' } },
   'streets.gotMe': { about: 'Own up that someone got you. Counts only if they held a contract on you.', args: { by: 'id (citizen)' } },
@@ -92,7 +92,7 @@ export const CATALOG: Record<string, CmdInfo> = {
   'streets.protect': { about: 'Bodyguard: guard one citizen for a day.', args: { target: 'id (citizen)' } },
   'bounty.post': { about: 'Post a real-world task with a reward (5–200 crowns, held in escrow).', args: { text: 'text', reward: 'number' } },
   'bounty.take': { about: 'Take on an open bounty. You have 48 hours.', args: { id: 'id (bounty)' } },
-  'bounty.done': { about: 'Say you finished a bounty. The poster has 48 hours to confirm, or it pays out.', args: { id: 'id (bounty)', note: 'text (optional)' } },
+  'bounty.done': { about: 'Say you finished a bounty. The poster has 48 hours to confirm, or it pays out.', args: { id: 'id (bounty)', note: 'text (optional)', photo: 'id (optional proof photo)' } },
   'bounty.confirm': { about: 'Poster: pay out a finished bounty, or send it back to open.', args: { id: 'id (bounty)', yes: 'bool' } },
   'bounty.cancel': { about: 'Poster: cancel an open bounty and get the crowns back.', args: { id: 'id (bounty)' } },
   'stall.open': { about: 'Open a market stall selling a favour or a thing (1–200 crowns).', args: { title: 'text', price: 'number' } },
@@ -104,5 +104,8 @@ export const CATALOG: Record<string, CmdInfo> = {
   'job.claim': { about: 'Claim the wage for a civic job created by law (once per job each week).', args: { job: 'id', note: 'text (what you did)' } },
   'job.approve': { about: 'Chancellor (or PM): pay or refuse a wage claim from the Treasury.', args: { claim: 'id', yes: 'bool' } },
   'market.bet': { about: 'Bet crowns on an open market (w.markets): a bill passing, an election, a crisis. Up to 100 per market. Winners split the pool.', args: { market: 'id', option: "text ('yes'/'no' for bills, a candidate id for elections, an option index for crises)", amount: 'number' } },
-  'daily.answer': { about: 'Answer today’s Red Box question (w.daily). Keeps your streak going.', args: { option: 'number (answer index)' } }
+  'daily.answer': { about: 'Answer today’s Red Box question (w.daily). Keeps your streak going.', args: { option: 'number (answer index)' } },
+  'daily.freeze': { about: 'Buy a streak freeze (10 Influence, hold up to 2). Each covers one missed Red Box day.', args: {} },
+  'hunt.enter': { about: 'Sign up for this round of the Hunt (w.hunt, while status is signup). Streets players only.', args: {} },
+  'hunt.withdraw': { about: 'Drop out of the Hunt before it starts.', args: {} }
 };

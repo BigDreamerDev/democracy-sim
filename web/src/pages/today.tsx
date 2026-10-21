@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { useStore, act, ONLINE, signOut, changePassword, toast, securityInfo, unlinkProvider, beginOAuth, signOutEverywhere, passkeysWork, addPasskey, removePasskey, renamePasskey } from '../store';
 import { TUTORIAL } from '../../../engine/tutorial';
-import { Page, Sec, Card, Btn, Who, Left, When, Seal, Empty, LinkRow, Seg, Meter, Field, Pick, PasswordField } from '../ui';
+import { Page, Sec, Card, Btn, Who, Left, When, Seal, Empty, LinkRow, Seg, Meter, Field, Pick, PasswordField, Photo } from '../ui';
 import { nm, isMP, isPM, isHOS, bal, ca, intrigueOpen, fmtTime, fmtDay, ordinal, METERS, standing, inDanger, canSeeCard, CAL_EVENTS, DAYS, nextAt, hosTitle, upcoming, officesOf, exiled } from '../../../engine/index';
 import { canVote } from '../../../engine/politics';
 import { canVoteOn, describe, KINDS } from '../../../engine/proposals';
@@ -239,10 +239,12 @@ export function FrontPage({ id }: { id: string }) {
         ) : (
           <>
             <h2 class="fp-head">{f.lead ? f.lead.headline : 'A quiet week in the realm'}</h2>
+            {f.lead?.photo && <div class="fp-photo"><Photo id={f.lead.photo} alt={f.lead.headline} /></div>}
             {f.lead && <p class="fp-dek">{f.lead.body} <span class="small">By {nm(w, f.lead.by)}, {f.lead.paper}.</span></p>}
             {f.crisis && <p class="fp-dek" style={{ borderTop: '1px solid #C3B9A0', paddingTop: 8 }}><b>Crisis of the week: {f.crisis.title}.</b> {f.crisis.how === 'house' ? 'The House chose' : f.crisis.how === 'pm' ? 'The PM chose' : 'Nobody chose, so:'} “{f.crisis.choice}”.</p>}
           </>
         )}
+        {f.snapshot && <div class="fp-photo" style={{ borderTop: '1px solid #C3B9A0', paddingTop: 8 }}><b>Snapshot of the week</b><Photo id={f.snapshot.photo} alt={f.snapshot.text} /><div class="small">{nm(w, f.snapshot.by)} collects {f.snapshot.reward} crowns: {f.snapshot.text}</div></div>}
         <div class="fp-cols">
           <div>
             <h3>The state of the realm</h3>

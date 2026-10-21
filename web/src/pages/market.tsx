@@ -1,7 +1,7 @@
 // The market: bounties, stalls and civic jobs (real life, for crowns), and the betting pools.
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
-import { Page, Sec, Card, Btn, Left, Empty, Field, Pick, Seg, Who } from '../ui';
+import { Page, Sec, Card, Btn, Left, Empty, Field, Pick, Seg, Who, Photo, PhotoPick } from '../ui';
 import { nm, holderOf, isPM, fmtTime, bal, ca } from '../../../engine/index';
 import { rating, inStreets } from '../../../engine/streets';
 import { odds, MAX_STAKE } from '../../../engine/markets';
@@ -14,6 +14,7 @@ export function Market() {
   const [nb, setNb] = useState({ text: '', reward: '20' });
   const [ns, setNs] = useState({ title: '', price: '10' });
   const [note, setNote] = useState<Record<string, string>>({});
+  const [proof, setProof] = useState<Record<string, string | null>>({});
   const [stars, setStars] = useState<Record<string, string>>({});
   const [why, setWhy] = useState('');
   const isIn = inStreets(w, me);
@@ -43,10 +44,11 @@ export function Market() {
                   <p style={{ margin: '4px 0' }}>{b.text}</p>
                   <div class="small muted">Posted by <Who id={b.by} />{b.taker && <> · taken by <Who id={b.taker} /></>}{b.status === 'open' && <> · <Left at={b.dueAt} /> left</>}</div>
                   {b.note && <p class="small" style={{ margin: '6px 0 0' }}>“{b.note}”</p>}
+                  <Photo id={b.photo} alt={`Proof: ${b.text}`} />
                   <div class="stack" style={{ marginTop: 8, gap: 6 }}>
                     {b.status === 'open' && b.by !== me && isIn && <Btn small onClick={() => act('bounty.take', { id: b.id }, 'It’s yours. 48 hours.')}>Take it on</Btn>}
                     {b.status === 'open' && b.by === me && <Btn small kind="plain" onClick={() => act('bounty.cancel', { id: b.id }, 'Cancelled and refunded.')}>Cancel</Btn>}
-                    {b.status === 'taken' && b.taker === me && <div class="grid2"><Field label="How it went" value={note[b.id] || ''} onInput={(v) => setNote({ ...note, [b.id]: v })} placeholder="Delivered at lunch" /><Btn style={{ alignSelf: 'end' }} onClick={() => act('bounty.done', { id: b.id, note: note[b.id] || '' }, 'Sent for sign-off.')}>It’s done</Btn></div>}
+                    {b.status === 'taken' && b.taker === me && <div class="stack" style={{ gap: 6 }}><Field label="How it went" value={note[b.id] || ''} onInput={(v) => setNote({ ...note, [b.id]: v })} placeholder="Delivered at lunch" /><PhotoPick label="Add a proof photo" value={proof[b.id] || null} onChange={(id) => setProof({ ...proof, [b.id]: id })} /><Btn onClick={() => act('bounty.done', { id: b.id, note: note[b.id] || '', photo: proof[b.id] || null }, 'Sent for sign-off.')}>It’s done</Btn></div>}
                     {b.status === 'done' && b.by === me && <div class="grid2"><Btn onClick={() => act('bounty.confirm', { id: b.id, yes: true }, 'Paid.')}>Pay out</Btn><Btn kind="plain" onClick={() => act('bounty.confirm', { id: b.id, yes: false }, 'Sent back to open.')}>Not done</Btn></div>}
                     {admin && <details><summary class="small">Returning Officer: take it down</summary><div class="grid2" style={{ marginTop: 6 }}><Field label="Reason (published)" value={why} onInput={setWhy} /><Btn small kind="danger ghost" style={{ alignSelf: 'end' }} onClick={() => act('admin.bounty', { id: b.id, reason: why }, 'Taken down and refunded. It’s in the Gazette.')}>Take down</Btn></div></details>}
                   </div>
@@ -64,7 +66,7 @@ export function Market() {
               </div></Card>
             </Sec>
           )}
-          {settled.length > 0 && <Sec title="Settled"><ul class="list">{settled.map((b) => <li class="row"><span>{b.text}<div class="small muted">{b.status === 'paid' ? <>{nm(w, b.taker)} collected {b.reward}</> : STATUS[b.status]}{b.reason ? `: ${b.reason}` : ''}</div></span><span class="small muted">{fmtTime(w, b.paidAt || b.at)}</span></li>)}</ul></Sec>}
+          {settled.length > 0 && <Sec title="Settled"><ul class="list">{settled.map((b) => <li class="row"><span>{b.text}{b.photo && b.status === 'paid' && <Photo id={b.photo} alt={`Proof: ${b.text}`} />}<div class="small muted">{b.status === 'paid' ? <>{nm(w, b.taker)} collected {b.reward}</> : STATUS[b.status]}{b.reason ? `: ${b.reason}` : ''}</div></span><span class="small muted">{fmtTime(w, b.paidAt || b.at)}</span></li>)}</ul></Sec>}
         </>
       )}
 

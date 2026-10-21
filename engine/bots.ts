@@ -209,6 +209,10 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
     const stalls = Object.values(w.stalls).filter((x: any) => x.status === 'open' && x.by !== b.id);
     if (stalls.length && p(0.015)) go(b.id, 'stall.buy', { id: (pick(w, stalls) as any).id });
   });
+  // the Hunt: bots join, and own up when another bot gets them
+  if (w.hunt?.status === 'signup') bots.forEach((b: any) => inS(b.id) && !w.hunt.entrants.includes(b.id) && p(0.3) && go(b.id, 'hunt.enter'));
+  if (w.hunt?.status === 'running') Object.entries(w.hunt.ring).forEach(([hunter, prey]: any) => isBot(hunter) && isBot(prey) && w.hunt.status === 'running' && w.hunt.ring[hunter] === prey && p(0.05) && go(prey, 'streets.gotMe', { by: hunter }));
+  bots.forEach((b: any) => (b.streak?.n || 0) >= 3 && !(b.streak?.freezes) && b.influence > 40 && p(0.02) && go(b.id, 'daily.freeze'));
   Object.values(w.streets?.contracts || {}).forEach((k: any) => {
     if (k.status === 'live' && isBot(k.by) && isBot(k.target) && p(0.08)) go(k.target, 'streets.gotMe', { by: k.by });
     if (k.status === 'claimed' && isBot(k.target) && p(0.4)) go(k.target, 'streets.answer', { contract: k.id, yes: chance(w, 0.7) });

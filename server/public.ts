@@ -1,6 +1,7 @@
 // The public API: /api/v1/*. For players building their own apps, bots and frontends.
 // Authenticated with personal API keys (never passwords), open to any origin, and given the same
 // redacted view of the world the official site gets. Every rule is still enforced by the engine.
+import { photoProblem } from './images';
 import express from 'express';
 import { createHash, randomBytes } from 'node:crypto';
 import { viewFor, run, GameError, CATALOG } from '../engine/index';
@@ -132,6 +133,8 @@ export function publicApi(c: Ctx) {
     if (req.key.scope !== 'act') return res.status(403).json({ error: 'This key is read-only. Make a key with the "act" scope.' });
     const { cmd, args } = req.body || {};
     if (typeof cmd !== 'string' || !CATALOG[cmd]) return res.status(400).json({ error: 'Unknown action. GET /api/v1/commands lists them.' });
+    const bad = await photoProblem(c.q, Number(String(req.cid).slice(1)), args);
+    if (bad) return res.status(400).json({ ok: false, error: bad });
     try {
       await c.serial(async () => {
         await c.catchUp();

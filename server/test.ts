@@ -264,6 +264,18 @@ try {
   assert.equal((await call('/api/passkeys/remove', { id: b64(credId) }, C)).status, 200, 'can remove when a password exists');
   assert.equal((await login(3)).status, 401, 'a removed passkey no longer works');
 
+  // photos: JPEG only, metadata stripped, yours only
+  const seg = (m: number, body: Buffer) => Buffer.concat([Buffer.from([0xff, m, (body.length + 2) >> 8, (body.length + 2) & 255]), body]);
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), seg(0xe0, Buffer.from('JFIF\0')), seg(0xe1, Buffer.from('Exif\0\0GPS 51.5N 0.1W')), seg(0xdb, Buffer.alloc(8, 1)), Buffer.from([0xff, 0xda, 0, 2, 9, 9, 9, 0xff, 0xd9])]);
+  assert.equal((await call('/api/images', { data: Buffer.from('not a jpeg').toString('base64') }, gl.body.token)).status, 400, 'non-JPEG refused');
+  const up = await call('/api/images', { data: jpeg.toString('base64') }, gl.body.token);
+  assert.equal(up.status, 200, JSON.stringify(up.body));
+  const got = Buffer.from(await (await fetch(base + '/api/images/' + up.body.id)).arrayBuffer());
+  assert.ok(!got.includes(Buffer.from('GPS')) && got.includes(Buffer.from('JFIF')), 'EXIF stripped, the picture kept');
+  assert.equal((await call('/api/act', { cmd: 'daily.answer', args: { option: 0, photo: up.body.id } }, C)).status, 400, 'someone else\'s photo refused');
+  assert.equal((await call('/api/images/delete', { id: up.body.id }, gl.body.token)).status, 200);
+  assert.equal((await fetch(base + '/api/images/' + up.body.id)).status, 404, 'a deleted photo is gone');
+
   const out = await call('/api/logout-all', {}, gl.body.token);
   assert.equal((await call('/api/state', undefined, gl.body.token)).status, 401, 'sign out everywhere kills old tokens');
   assert.equal((await call('/api/state', undefined, out.body.token)).status, 200);

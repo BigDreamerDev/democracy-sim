@@ -201,6 +201,8 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | `bounties`, `stalls`, `orders`, `jobs`, `jobClaims` | the market: public bounties and stalls; orders you're in; civic jobs created by law and wage claims |
 | `markets` | betting: `question`, `kind` (`prop`/`election`/`crisis`), `ref`, `options`, `pools` (public), `bets` (yours only), `backers`, `status`, `closesAt`, `outcome` |
 | `daily`, `dailyPast` | the Red Box: today's `qi` (question index; the questions are in `engine/glory.ts`), `answered`, your answer in `votes`; past results |
+| `hunt` | the weekly Hunt: `n`, `status` (`signup`/`running`/`done`/`cancelled`), `weapon`, `entrants`, `alive`, `kills`, `log`, `winners`, `ring` (only your own target) |
+| photos | `stories[].photo`, `bounties[].photo`, front pages' `lead.photo` and `snapshot.photo` are ids; the picture is at `GET <API>/api/images/<id>` (no key). Uploading is for the official site only |
 | `polls`, `fame`, `ultimatums` | weekly polls; the Hall of Fame (`pms`, `seasons`, `records`); foreign demands for tribute |
 | `gazette[]` | newest first, up to 300. `via` names the app, if one did it. |
 | `viewer` | your id |

@@ -479,7 +479,7 @@ export function closeElection(w: W, e: any) {
   const r: any = countElection(w, e);
   const winners = r.ranked.slice(0, e.winners);
   e.results = { counts: r.counts, ranked: r.ranked, winners, draw: r.draw, turnout: Object.keys(e.ballots).length, method: e.method || 'single', rounds: r.rounds || null, quota: r.quota || null };
-  settleMarket(w, 'election', e.id, r.ranked[0] || null);
+  settleMarket(w, 'election', e.id, r.ranked[0] || null, r.ranked[0] ? [{ id: r.ranked[0], did: 'won it themselves' }] : []);
   if (e.kind === 'general') {
     w.seats = Array(w.config.seats).fill(null).map((_, i) => winners[i] || null);
     w.lastRanked = r.ranked;

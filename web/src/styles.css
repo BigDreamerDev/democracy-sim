@@ -722,3 +722,14 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .badge.on { border: 3px solid var(--teal); color: var(--teal); mix-blend-mode: var(--blend); transform: rotate(-1.5deg); }
 .badge.on.secret { border-color: var(--red); color: var(--red); transform: rotate(1.5deg); }
 @media (prefers-reduced-motion: reduce) { .redbox-a, .odds-bar i { transition: none; } }
+
+/* ---------- photos ---------- */
+.photo { margin: 8px 0; }
+.photo img { display: block; width: 100%; max-height: 420px; object-fit: cover; border: 1.5px solid var(--ink); border-radius: 3px; background: var(--soft); }
+.photo-pick { display: grid; gap: 6px; justify-items: start; }
+.photo-pick label { position: relative; cursor: pointer; }
+.photo-pick label:focus-within { outline: 3px solid var(--teal); outline-offset: 2px; }
+.file-in { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
+.fp-photo { margin: 10px 0; }
+.fp-photo img { filter: grayscale(.35) contrast(1.05); }
+.fp-photo figcaption, .photo figcaption { font-size: 13px; margin-top: 4px; font-style: italic; }

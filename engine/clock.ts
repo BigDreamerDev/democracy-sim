@@ -8,7 +8,7 @@ import { maybeOffers, answerAsk, resolveIntel, armyLoyalty } from './foreign';
 import { checkPlot, endMartialLaw } from './backroom';
 import { spawnCrisis, timeoutCrisis, fireQueued, rule, makeFrontPage } from './society';
 import { nationsTurn, settleUltimatum } from './foreign';
-import { expireContract, settleClaim, ghostBack, bountyDeadline, bountyDue, orderDeadline } from './streets';
+import { expireContract, settleClaim, ghostBack, bountyDeadline, bountyDue, orderDeadline, openHunt, startHunt, finishHunt } from './streets';
 import { marketDue, staleMarket } from './markets';
 import { rollDaily, takePoll, records, afterChange } from './glory';
 
@@ -57,6 +57,8 @@ function collect(w: W): D[] {
   Object.values(w.markets || {}).forEach((m: any) => add(marketDue(m), () => staleMarket(w, m)));
   (w.ultimatums || []).forEach((u: any) => u.status === 'sent' && add(u.dueAt, () => settleUltimatum(w, u, false)));
   if (w.daily) add(w.daily.endsAt, () => rollDaily(w));
+  if (w.hunt?.status === 'signup') add(w.hunt.startsAt, () => startHunt(w));
+  if (w.hunt?.status === 'running') add(w.hunt.endsAt, () => finishHunt(w));
   if (w.phase === 'running') {
     add(nextAt(w, 'payday', w.lastEvent.payday || w.now - 1), () => weeklyPayday(w));
     add(nextAt(w, 'pmqs', w.lastEvent.pmqs || w.now - 1), () => ((w.lastEvent.pmqs = w.now), closePMQs(w)));
@@ -72,6 +74,7 @@ function weeklyPayday(w: W) {
   newObjectives(w);
   maybeOffers(w);
   nationsTurn(w);
+  openHunt(w);
   takePoll(w);
   records(w);
   if (w.offices.army) {

@@ -38,6 +38,9 @@ export function needs(w: W, me: Id): Alert[] {
     if (k.status === 'claimed' && k.target === me) out.push({ key: 'claim:' + k.id + ':' + k.claimAt, href: '#/streets', label: 'The Streets', title: `${nm(w, k.by)} says they got you`, at: k.claimDue, urgent: true });
     if (k.by === me && k.status === 'live') out.push({ key: 'contract:' + k.id, href: '#/streets', label: 'Your contract', title: `${nm(w, k.target)}: ${k.weapon}`, at: k.dueAt });
   });
+  const h = w.hunt;
+  if (h?.status === 'signup' && w.citizens[me]?.streets?.in && !h.entrants.includes(me)) out.push({ key: `hunt:${h.n}:signup`, href: '#/hunt', label: 'The Hunt', title: `Round ${h.n} is taking sign-ups`, at: h.startsAt });
+  if (h?.status === 'running' && h.ring?.[me]) out.push({ key: `hunt:${h.n}:target:${h.ring[me]}`, href: '#/hunt', label: 'The Hunt', title: `You’re hunting ${nm(w, h.ring[me])}`, at: h.endsAt });
   // the market: bounties and orders waiting on you, wages to sign off
   Object.values(w.bounties || {}).forEach((b: any) => {
     if (b.status === 'done' && b.by === me) out.push({ key: 'bounty:' + b.id + ':' + b.doneAt, href: '#/market', label: 'Bounty done?', title: `${nm(w, b.taker)} says they did it: ${b.text}`, at: b.doneDue });

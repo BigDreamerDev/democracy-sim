@@ -9,7 +9,8 @@ import { apps, APPS_SCHEMA, Sender } from './apps';
 import { SECURITY_SCHEMA, passwordProblem, hash, dummyCompare, needsRehash, account, lockedFor, failed, succeeded, headers, limiter } from './security';
 import { providers, authorizeUrl, exchange, random } from './oauth';
 import { passkeys, PASSKEY_SCHEMA } from './passkeys';
-import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate, needs, adminDid } from '../engine/index';
+import { IMAGES_SCHEMA, imageGet, imageRoutes, photoProblem } from './images';
+import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate, needs, adminDid, nm } from '../engine/index';
 
 export type Options = { q: Q; secret: string; origins: string[]; now?: () => number; log?: (...a: any[]) => void; send?: Sender; site?: string; devOrigins?: boolean; env?: Record<string, string | undefined>; publicUrl?: string };
 
@@ -21,6 +22,7 @@ export async function makeApp(o: Options) {
   await q(APPS_SCHEMA);
   await q(SECURITY_SCHEMA);
   await q(PASSKEY_SCHEMA);
+  await q(IMAGES_SCHEMA);
   const env = o.env || process.env;
   const OAUTH = providers(env);
   const rate = limiter(now);
@@ -198,6 +200,7 @@ export async function makeApp(o: Options) {
   };
   app.get('/api/oauth/:provider/callback', oauthCallback);
   app.post('/api/oauth/:provider/callback', express.urlencoded({ extended: false, limit: '20kb' }), oauthCallback);
+  imageGet(app, q);
 
   // CORS that fails loudly: an unknown origin gets a clear 403 instead of a silent 200 with no header
   app.use((req, res, next) => {
@@ -367,6 +370,8 @@ export async function makeApp(o: Options) {
   app.post('/api/act', auth, async (req: any, res) => {
     const { cmd, args } = req.body || {};
     if (typeof cmd !== 'string' || cmd.startsWith('admin.reset')) return res.status(400).json({ error: 'Unknown action.' });
+    const bad = await photoProblem(q, req.user.id, args);
+    if (bad) return res.status(400).json({ error: bad });
     try {
       await serial(async () => {
         await catchUp();
@@ -440,6 +445,13 @@ export async function makeApp(o: Options) {
 
   // the Returning Officer's tools that sit outside the game
   const admin = (req: any, res: any, next: any) => (req.user?.is_admin ? next() : res.status(403).json({ error: 'Returning Officer only.' }));
+  imageRoutes(app, {
+    q, auth, admin, limited, audit,
+    announce: (cid, owner, reason) => serial(async () => {
+      adminDid(world, cid, `took down a photo posted by ${nm(world, owner)}: ${reason}`);
+      await save();
+    })
+  });
   // the export holds every secret in the game, so taking one is announced
   app.get('/api/admin/export', auth, admin, async (req: any, res) => {
     await serial(async () => {

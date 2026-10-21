@@ -29,6 +29,7 @@ export function migrate(w: W): W {
   w.dailyPast ??= [];
   w.polls ??= [];
   w.fame ??= { pms: [], seasons: [], records: {} };
+  w.hunt ??= null;
   Object.values(w.citizens || {}).forEach((c: any) => ((c.streets ??= { in: false }), (c.life ??= {}), (c.badges ??= {})));
   return w;
 }

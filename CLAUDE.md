@@ -72,7 +72,7 @@ web/src/     Preact + Vite. main.tsx (router, tabs), store.ts, ui.tsx (shared co
              Sidebar.tsx, DemoPanel.tsx (demo only), pages/*.tsx, styles.css
 server/      app.ts (first-party routes), public.ts (/api/v1 for players' own apps), db.ts (pg or PGlite + SCHEMA),
              security.ts (passwords, lockout, headers, rate limits), oauth.ts (Discord/Google/Microsoft/Apple),
-             passkeys.ts (WebAuthn: v2_passkeys, routes),
+             passkeys.ts (WebAuthn: v2_passkeys, routes), images.ts (photos: v2_images, JPEG-only, metadata stripped),
              server.ts (boot/env), test.ts
 SECURITY.md  threat model, every finding and fix, what's accepted, and how to set up each sign-in provider
 API.md       public API docs for players. examples/ holds starter kits (one-file client, WhatsApp/Discord
@@ -123,6 +123,9 @@ scripts/     smoke.ts
 | `GET /api/passkeys`, `POST /api/passkeys/register/begin` → `/finish` | user | `{flow, options}` → `{flow, response, name}`; max 10; needs an allowed `Origin` (it's the WebAuthn RP ID) |
 | `POST /api/passkeys/login/begin` → `/finish` | — | `{flow, options}` → `{flow, response}` → `{token, me}`; usernameless (discoverable keys) |
 | `POST /api/passkeys/rename`, `/remove` | user | `{id, name}` / `{id}`; remove refused if it's your last sign-in method |
+| `GET /api/images/:id` | — | the JPEG; mounted before CORS (an `<img>` sends no Origin) |
+| `POST /api/images` `{data}`, `GET /api/images`, `POST /api/images/delete` `{id}` | user | upload (base64 JPEG ≤140 KB, 25 per player) → `{id}`; an action with `args.photo` must name your own live photo |
+| `POST /api/admin/images/remove` | RO | `{id, reason}`; announced |
 | `GET /api/admin/export` | RO | full unredacted world |
 | `POST /api/admin/password` | RO | `{citizen}` → `{temp}`; announced in the Gazette |
 | `POST /api/admin/reset` | RO | `{confirm:'RESET THE REALM'}`; snapshots first |
@@ -180,7 +183,7 @@ Citizen id = `'u' + users.id`.
 4. **Rules change only through Parliament.** The RO's powers are exactly: approve sign-ups,
    toggle `requireApproval`/`openSignup`, move the calendar, start a crisis, force-enact a stuck
    bill, reset a password, remove or restore a player app, add or remove a Streets safe zone, take down a
-   bounty, export, reset the realm. The last two Streets powers exist for real-world safety only. Don't add RO
+   bounty or a photo, export, reset the realm. The safe-zone, bounty and photo powers exist for real-world safety only. Don't add RO
    powers over game rules. **Every one of them goes through `adminDid()`** (engine/core.ts), which
    writes the public admin log and the Gazette. A new admin power must too.
 5. **The RO is a full player** and can stand, vote and hold any office. **Check offices before

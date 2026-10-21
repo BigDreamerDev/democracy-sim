@@ -1,6 +1,6 @@
 // Glory: what keeps people coming back. Achievements, the daily Red Box (and its streak), the weekly opinion
 // poll, season awards and the Hall of Fame, which survives every reset.
-import { W, Id, DAY, fail, nm, gazette, earn, stamp, bal, ca, allCitizens, DAYNO, rand, ordinal } from './core';
+import { W, Id, DAY, fail, nm, gazette, earn, spend, stamp, bal, ca, allCitizens, DAYNO, rand, ordinal } from './core';
 
 // ---------- achievements ----------
 type Badge = { id: string; name: string; sub: string; hidden?: boolean; test: (c: any, w: W) => boolean };
@@ -28,6 +28,9 @@ export const BADGES: Badge[] = [
   { id: 'untouchable', name: 'Untouchable', sub: 'Saved by a bodyguard', hidden: true, test: (c) => L(c, 'foiled') >= 1 },
   { id: 'maverick', name: 'Maverick', sub: 'Never voted with the government line, five times over', hidden: true, test: (c) => (c.whip?.rebel || 0) >= 5 && !(c.whip?.loyal || 0) },
   { id: 'turncoat', name: 'Turncoat', sub: 'Joined 3 parties', hidden: true, test: (c) => L(c, 'parties') >= 3 },
+  { id: 'hunter', name: 'Hunter', sub: 'Five hits in the Hunt', test: (c) => L(c, 'huntKills') >= 5 },
+  { id: 'lastone', name: 'Last one standing', sub: 'Won the Hunt', test: (c) => L(c, 'huntWins') >= 1 },
+  { id: 'insider', name: 'Insider', sub: 'Made money betting on something you decided', hidden: true, test: (c) => L(c, 'insider') >= 1 },
   { id: 'exile', name: 'Came back', sub: 'Went into exile', hidden: true, test: (c) => L(c, 'exiled') >= 1 }
 ];
 export function checkBadges(w: W, id: Id) {
@@ -109,14 +112,33 @@ export function answerDaily(w: W, actor: Id, option: number) {
   if (!(Number.isInteger(option) && RED_BOX[d.qi].a[option] !== undefined)) fail('Pick an answer.');
   if (d.votes[actor] !== undefined) fail('You’ve opened today’s Red Box. Come back tomorrow.');
   d.votes[actor] = option;
-  const s = c.streak || { n: 0, last: -9, best: 0 };
-  s.n = s.last === d.day - 1 ? s.n + 1 : 1;
+  const s = c.streak || { n: 0, last: -9, best: 0, freezes: 0 };
+  // a streak freeze covers one missed day each; you need enough of them to cover the whole gap
+  const gap = d.day - s.last - 1;
+  let froze = 0;
+  if (gap > 0 && s.n > 0 && gap <= (s.freezes || 0)) {
+    s.freezes -= gap;
+    froze = gap;
+  }
+  s.n = gap === 0 || froze ? s.n + 1 : 1;
   s.last = d.day;
   s.best = Math.max(s.best || 0, s.n);
   c.streak = s;
-  earn(w, actor, s.n % 7 === 0 ? 5 : 1, s.n % 7 === 0 ? `Red Box streak: ${s.n} days` : 'Opened the Red Box');
+  earn(w, actor, s.n % 7 === 0 ? 5 : 1, s.n % 7 === 0 ? `Red Box streak: ${s.n} days` : froze ? `Opened the Red Box (a freeze saved your streak)` : 'Opened the Red Box');
 }
-export const streakNow = (w: W, c: any) => (c?.streak && c.streak.last >= w.daily.day - 1 ? c.streak.n : 0);
+export const MAX_FREEZES = 2;
+export const FREEZE_COST = 10;
+export function buyFreeze(w: W, actor: Id) {
+  const c = w.citizens[actor];
+  if (!c) fail('No such citizen.');
+  const s = c.streak || { n: 0, last: -9, best: 0, freezes: 0 };
+  if ((s.freezes || 0) >= MAX_FREEZES) fail(`You can hold ${MAX_FREEZES} streak freezes at most.`);
+  spend(w, actor, FREEZE_COST, 'Bought a Red Box streak freeze');
+  s.freezes = (s.freezes || 0) + 1;
+  c.streak = s;
+}
+// the streak still alive today: answered yesterday or today, or a gap the freezes held will cover
+export const streakNow = (w: W, c: any) => (c?.streak && c.streak.last >= w.daily.day - 1 - (c.streak.freezes || 0) ? c.streak.n : 0);
 
 // ---------- the weekly opinion poll ----------
 export function takePoll(w: W) {
@@ -182,6 +204,7 @@ export const RECORDS: { id: string; name: string; unit: string; score: (c: any) 
   { id: 'kills', name: 'Most contracts carried out', unit: 'hits', score: (c) => L(c, 'kills') },
   { id: 'deaths', name: 'Most assassinated', unit: 'times', score: (c) => L(c, 'deaths') },
   { id: 'infamy', name: 'Most infamous', unit: 'black marks', score: (c) => infamous(c) },
+  { id: 'hunts', name: 'Most Hunts won', unit: 'wins', score: (c) => L(c, 'huntWins') },
   { id: 'streak', name: 'Longest Red Box streak', unit: 'days', score: (c) => c.streak?.best || 0 },
   { id: 'meets', name: 'Most check-ins', unit: 'meet-ups', score: (c) => L(c, 'meets') },
   { id: 'bets', name: 'Best gambler', unit: 'bets won', score: (c) => L(c, 'betsWon') },

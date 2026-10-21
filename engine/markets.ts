@@ -1,7 +1,7 @@
 // The prediction market: bet crowns on bills, elections and crises. Pari-mutuel: everything staked on an
 // outcome is pooled, and whoever backed the right answer splits the pool in proportion to their stake.
 // Bets are private; the pools (and so the odds) are public. Insiders betting on what they know is allowed.
-import { W, Id, DAY, fail, newId, nm, gazette, transfer, ca, bump, mustBeFree } from './core';
+import { W, Id, DAY, fail, newId, nm, gazette, transfer, ca, bump, mustBeFree, addCard, allCitizens, pick } from './core';
 
 export const MAX_STAKE = 100;
 type Opt = { key: string; label: string };
@@ -36,7 +36,10 @@ export function bet(w: W, actor: Id, mid: Id, option: string, amount: number) {
 }
 
 // called by the system the market is about, once the answer is known
-export function settleMarket(w: W, kind: string, ref: Id, outcome: string | null) {
+// deciders: the people whose own choice settled it (MPs who voted that way, the PM who decided, the winning candidate).
+// One of them who bet on it and made money leaves a secret card behind: insider trading.
+export type Decider = { id: Id; did: string };
+export function settleMarket(w: W, kind: string, ref: Id, outcome: string | null, deciders: Decider[] = []) {
   const m = Object.values(w.markets || {}).find((x: any) => x.kind === kind && x.ref === ref && x.status === 'open') as any;
   if (!m) return;
   const total = Object.values(m.pools).reduce((s: number, v: any) => s + v, 0) as number;
@@ -59,6 +62,8 @@ export function settleMarket(w: W, kind: string, ref: Id, outcome: string | null
     }
     bump(w, id, 'betsWon');
     bump(w, id, 'betCrowns', Math.max(0, n - b[outcome!]));
+    const d = deciders.find((x) => x.id === id);
+    if (d && n > b[outcome!]) insider(w, m, id, b[outcome!], n - b[outcome!], d.did, label(w, m, outcome!));
   });
   if (total - paid > 0) transfer(w, 'market', 'treasury', total - paid, 'Betting pool rounding');
   m.payout = paid;
@@ -81,4 +86,14 @@ export function staleMarket(w: W, m: any) {
 export function odds(m: any) {
   const total = Object.values(m.pools).reduce((s: number, v: any) => s + v, 0) as number;
   return { total, share: (k: string) => (total ? (m.pools[k] || 0) / total : 0), pays: (k: string) => (m.pools[k] ? total / m.pools[k] : null) };
+}
+
+// who notices: the Security Service if there is one, and a rival punter (or, failing that, someone at random)
+function insider(w: W, m: any, id: Id, stake: number, profit: number, did: string, what: string) {
+  bump(w, id, 'insider');
+  const others = Object.keys(m.bets).filter((x) => x !== id && w.citizens[x] && !w.citizens[x].bot);
+  const pool = others.length ? others : allCitizens(w).filter((c: any) => c.id !== id && !c.bot).map((c: any) => c.id);
+  const viewers = [...(w.offices.security ? ['office:security'] : []), ...(pool.length ? ['cit:' + pick(w, pool)] : [])];
+  if (!viewers.length) return;
+  addCard(w, { title: `Insider trading: ${nm(w, id)} bet ${stake} crowns on “${what}” (${m.question}), then ${did}. They made ${profit} crowns.`, about: id, from: 'The betting pools', level: 'secret', viewers });
 }

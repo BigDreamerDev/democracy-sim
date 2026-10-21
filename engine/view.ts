@@ -70,6 +70,8 @@ export function viewFor(full: W, me: Id): W {
     if (w.streets.protect && w.streets.protect.by !== me && w.streets.protect.who !== me) w.streets.protect = null;
     w.streets.meets = w.streets.meets.filter((m: any) => m.a === me || m.b === me);
   }
+  // the Hunt: you know who you're hunting, not who's hunting you
+  if (w.hunt?.ring) w.hunt.ring = w.hunt.ring[me] ? { [me]: w.hunt.ring[me] } : {};
   // market orders are between buyer and seller; bets are private (the pools, and so the odds, are public)
   Object.keys(w.orders || {}).forEach((id) => {
     const o = w.orders[id];

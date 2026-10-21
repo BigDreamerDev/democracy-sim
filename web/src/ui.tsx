@@ -2,7 +2,7 @@
 import { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import qrcode from 'qrcode-generator';
-import { useStore } from './store';
+import { useStore, ONLINE, photoUrl, uploadPhoto, removePhoto, toast } from './store';
 import { fmtLeft, fmtTime, nm } from '../../engine/index';
 
 export function useRoute(): string[] {
@@ -470,6 +470,48 @@ export function Scanner({ onCode, onClose }: { onCode: (code: string) => void; o
       <video ref={ref} playsInline muted />
       {err && <p class="small bad">{err}</p>}
       <Btn small kind="plain" onClick={onClose}>Close the camera</Btn>
+    </div>
+  );
+}
+
+// a photo from the realm's store; hides itself if it was taken down
+export function Photo({ id, alt }: { id: string | null | undefined; alt: string }) {
+  const { world: w, me } = useStore();
+  const [gone, setGone] = useState(false);
+  const [why, setWhy] = useState('');
+  const [open, setOpen] = useState(false);
+  if (!id || gone) return null;
+  const admin = ONLINE && w?.citizens[me]?.admin;
+  return (
+    <figure class="photo">
+      <img src={photoUrl(id)} alt={alt} loading="lazy" decoding="async" onError={() => setGone(true)} />
+      {admin && (open ? (
+        <div class="grid2" style={{ marginTop: 6 }}><Field label="Reason (published)" value={why} onInput={setWhy} /><Btn small kind="danger ghost" style={{ alignSelf: 'end' }} onClick={() => removePhoto(id, why).then(() => (setGone(true), toast('Photo taken down. It is in the Gazette.'))).catch((e) => toast(e.message, true))}>Take down</Btn></div>
+      ) : <button type="button" class="btn plain small" onClick={() => setOpen(true)}>Take this photo down</button>)}
+    </figure>
+  );
+}
+// choose a photo: it is shrunk and uploaded straight away, and you get its id back
+export function PhotoPick({ value, onChange, label = 'Add a photo' }: { value: string | null; onChange: (id: string | null) => void; label?: string }) {
+  const [busy, setBusy] = useState(false);
+  const pick = async (e: any) => {
+    const f = e.currentTarget.files?.[0];
+    e.currentTarget.value = '';
+    if (!f) return;
+    setBusy(true);
+    try {
+      onChange(await uploadPhoto(f));
+    } catch (err: any) {
+      toast(err.message, true);
+    }
+    setBusy(false);
+  };
+  return (
+    <div class="photo-pick">
+      {value ? <><Photo id={value} alt="Your photo" /><Btn small kind="plain" onClick={() => onChange(null)}>Remove the photo</Btn></> : (
+        <label class="btn ghost small">{busy ? 'Shrinking and uploading…' : label}<input type="file" accept="image/*" onChange={pick} disabled={busy} class="file-in" /></label>
+      )}
+      <span class="small muted">No faces of anyone who hasn’t agreed, nothing that shows where someone lives. The Returning Officer takes down anything unsafe.</span>
     </div>
   );
 }

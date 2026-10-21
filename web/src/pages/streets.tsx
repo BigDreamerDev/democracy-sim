@@ -153,7 +153,7 @@ export function Streets() {
       <Rules />
       <Sec title={`In the Streets (${players.length})`}>
         <p class="small" style={{ margin: '0 0 12px' }}>{players.map((x: any) => x.name + (ghost(w, x.id) ? ' (ghost)' : '')).join(', ')}</p>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><Btn kind="plain" href="#/meet">Check in with someone</Btn><Btn kind="plain" href="#/market">The market</Btn><Btn kind="danger ghost" onClick={() => confirm('Leave the Streets? Live contracts on you and by you are refunded. You can rejoin after a week.') && act('streets.leave', {}, 'You’ve left. Nobody can target you now.')}>Leave the Streets</Btn></div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><Btn kind="plain" href="#/hunt">The Hunt</Btn><Btn kind="plain" href="#/meet">Check in with someone</Btn><Btn kind="plain" href="#/market">The market</Btn><Btn kind="danger ghost" onClick={() => confirm('Leave the Streets? Live contracts on you and by you are refunded. You can rejoin after a week.') && act('streets.leave', {}, 'You’ve left. Nobody can target you now.')}>Leave the Streets</Btn></div>
       </Sec>
     </Page>
   );
@@ -199,6 +199,50 @@ export function Meet({ code }: { code?: string }) {
         <ul class="list">{mineMeets.map((m: any) => <li class="row"><span>{nm(w, m.a === me ? m.b : m.a)}</span><span class="small muted">{fmtTime(w, m.at)}</span></li>)}</ul>
         {!mineMeets.length && <Empty>None yet.</Empty>}
       </Sec>
+    </Page>
+  );
+}
+
+// the weekly Hunt: a ring where everyone hunts the next person
+export function Hunt() {
+  const { world: w, me } = useStore();
+  const h = w.hunt;
+  const isIn = inStreets(w, me);
+  const target = h?.status === 'running' ? h.ring?.[me] : null;
+  const ranked = h ? Object.entries(h.kills || {}).sort((a: any, b: any) => b[1] - a[1]) : [];
+  return (
+    <Page back={['#/streets', 'The Streets']} kicker={h ? `Round ${h.n}` : 'Weekly'} title="The Hunt"
+      intro="Every payday a new round opens for 24 hours. Then everyone in it gets one target, the next person in a secret ring, and the round’s weapon. Tag your target and you take on theirs. Last one standing wins 20 Influence and a title; if 5 days pass first, the most hits wins. Safe zones and the rules of the Streets apply.">
+      {!h && <Sec><Empty>The first round opens on payday.</Empty></Sec>}
+      {h && (
+        <>
+          <Sec title={h.status === 'signup' ? 'Sign-ups are open' : h.status === 'running' ? 'The Hunt is on' : h.status === 'cancelled' ? 'Called off' : 'Finished'}>
+            <Card>
+              <div class="kicker" style={{ margin: 0 }}>This round’s weapon</div>
+              <p style={{ margin: '2px 0 8px', fontWeight: 700 }}>{h.weapon}</p>
+              {h.status === 'signup' && (
+                <>
+                  <p class="small" style={{ margin: '0 0 8px' }}>{h.entrants.length} signed up. It starts in <Left at={h.startsAt} /> if at least 3 are in.</p>
+                  {!isIn ? <Btn href="#/streets" kind="ghost">Join the Streets to take part</Btn> : h.entrants.includes(me) ? <Btn kind="plain" onClick={() => act('hunt.withdraw', {}, 'You’re out of this round.')}>Drop out</Btn> : <Btn onClick={() => act('hunt.enter', {}, 'You’re in. Your target arrives when it starts.')}>Sign up</Btn>}
+                </>
+              )}
+              {h.status === 'running' && (
+                target ? (
+                  <div class="contract">
+                    <div class="kicker" style={{ margin: 0 }}>You’re hunting</div>
+                    <div class="serif" style={{ fontSize: 30, lineHeight: 1.1 }}>{nm(w, target)}</div>
+                    <p class="small muted" style={{ margin: '4px 0 0' }}>Tag them with the weapon, then use their tag code on <a href="#/streets">the Streets page</a>, or ask them to own up there. <Left at={h.endsAt} /> left.</p>
+                  </div>
+                ) : <p class="small" style={{ margin: 0 }}>{h.alive.includes(me) ? '' : 'You’re not in this round.'} <Left at={h.endsAt} /> left.</p>
+              )}
+              {h.status === 'done' && <p style={{ margin: 0 }}>{h.winners.length ? <>Won by <b>{h.winners.map((x: string) => nm(w, x)).join(' and ')}</b>.</> : 'Nobody was caught.'}</p>}
+            </Card>
+          </Sec>
+          {h.status === 'running' && <Sec title={`Still standing (${h.alive.length})`}><p class="small" style={{ margin: 0 }}>{h.alive.map((x: string) => nm(w, x)).join(', ')}</p></Sec>}
+          {ranked.length > 0 && <Sec title="Hits"><ul class="list">{ranked.map(([id, n]: any) => <li class="row"><span>{nm(w, id)}</span><b class="tnum">{n}</b></li>)}</ul></Sec>}
+          {h.log.length > 0 && <Sec title="How it went"><ul class="list">{h.log.map((l: any) => <li class="row"><span>{nm(w, l.by)} got {nm(w, l.victim)}</span><span class="small muted">{fmtTime(w, l.at)}</span></li>)}</ul></Sec>}
+        </>
+      )}
     </Page>
   );
 }

@@ -205,7 +205,7 @@ export function closeVote(w: W, p: any) {
   }
   p.result = { ayes, noes, passed, note };
   trackWhip(w, p);
-  settleMarket(w, 'prop', p.id, passed ? 'yes' : 'no');
+  settleMarket(w, 'prop', p.id, passed ? 'yes' : 'no', Object.keys(p.votes).filter((k) => p.votes[k] === (passed ? 'aye' : 'no')).map((id) => ({ id, did: `voted ${passed ? 'for' : 'against'} it` })));
   if (passed && ayes - noes === 1) bump(w, p.by, 'squeakers');
   if (!passed && p.kind === 'no_confidence' && w.pm) bump(w, w.pm, 'survived');
   const sp = w.citizens[p.by];

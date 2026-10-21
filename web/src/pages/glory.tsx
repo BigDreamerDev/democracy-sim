@@ -2,7 +2,7 @@
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, Empty } from '../ui';
 import { nm, fmtDay, fmtTime, DAY } from '../../../engine/index';
-import { RED_BOX, BADGES, AWARDS, RECORDS, leaders, streakNow, pmLabel } from '../../../engine/glory';
+import { RED_BOX, BADGES, AWARDS, RECORDS, leaders, streakNow, pmLabel, MAX_FREEZES, FREEZE_COST } from '../../../engine/glory';
 
 // today's question, on the Today page
 export function RedBox() {
@@ -22,6 +22,7 @@ export function RedBox() {
       ) : (
         <p class="small" style={{ margin: 0 }}>You said <b>{q.a[mine]}</b>. {d.answered ? `${d.answered} answered so far.` : ''} Results tomorrow.</p>
       )}
+      <div class="row redbox-y" style={{ gap: 8 }}><span class="small">Streak freezes: <b>{w.citizens[me].streak?.freezes || 0}</b> of {MAX_FREEZES}. Each covers one missed day.</span>{(w.citizens[me].streak?.freezes || 0) < MAX_FREEZES && <button type="button" class="redbox-a small" style={{ minHeight: 34, padding: '4px 10px' }} onClick={() => act('daily.freeze', {}, 'Freeze bought. A missed day won’t break your streak.')}>Buy one ({FREEZE_COST} Influence)</button>}</div>
       {y && y.n > 0 && <p class="small redbox-y">Yesterday: “{RED_BOX[y.qi].q}” {RED_BOX[y.qi].a.map((a, i) => `${a} ${Math.round((y.counts[i] / y.n) * 100)}%`).join(' · ')}</p>}
     </div>
   );
