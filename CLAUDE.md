@@ -242,6 +242,9 @@ Citizen id = `'u' + users.id`.
   (`ghostUntil`) are gated in `run()` by `isGhostOk(cmd)`; a new command ghosts may use goes in `GHOST_OK`.
 - **Counters**: `tick()` also bumps `c.life` (all-time) and `c.stats` (this season, reset by `assignAmbitions`).
   Use `bump(w, id, key)` for anything an achievement, award or record should count.
+- **Forming a government**: `invitePM` (and the automatic invite in `autoInvite`) only accepts someone `commands()` says
+  has a majority: a party leader with one alone, or the lead side of a signed coalition/confidence-and-supply deal. A hung
+  parliament waits for a deal; after `FORM_DAYS` (5) without one, `autoInvite` dissolves Parliament into a snap election.
 - **Voting methods**: `config.voting` (single, ranked = STV/IRV, approval, borda) is copied onto each election
   as `e.method` when it opens. Ballots are an id (single) or a list (others). `config.billVoters` ('mps'|'all')
   and `config.passRule` ('cast'|'seats'|'twothirds') are copied onto each proposal (`voters`, `rule`);

@@ -675,6 +675,21 @@ export function supportFor(w: W, id: Id) {
   return sideSeats(w, side);
 }
 export const leaderOfSide = (w: W, side: string): Id | null => (side.startsWith('p:') ? w.parties[side.slice(2)]?.leader : side.slice(2));
+// who can be Prime Minister: the leader of a party with a majority on its own, or of the side that leads a signed
+// coalition (or confidence-and-supply deal) with one. Nobody else, so a hung parliament has to do a deal first.
+export const FORM_DAYS = 5;
+export function commands(w: W, id: Id) {
+  const side = sideOf(w, id);
+  if (leaderOfSide(w, side) !== id || supportFor(w, id) < majority(w)) return false;
+  const co = w.coalition;
+  return !(co?.status === 'signed' && co.sides.includes(side) && co.lead !== side);
+}
+export function contenders(w: W) {
+  const ids = new Set<Id>();
+  Object.values(w.parties).forEach((p: any) => p.status === 'active' && p.leader && ids.add(p.leader));
+  mps(w).forEach((m) => ids.add(m));
+  return [...ids].filter((l) => !exiled(w, l) && w.hos.holder !== l && w.citizens[l]?.active);
+}
 export function clearMinisters(w: W) {
   Object.values(w.offices).forEach((o: any) => o.fill === 'pm' && (o.holder = null));
 }
@@ -684,8 +699,10 @@ export function formGovernmentAfterElection(w: W) {
   w.confidence = null;
   clearMinisters(w);
   w.pmInviteDue = w.now + DAY;
+  w.formingSince = w.now;
+  w.hungNoted = false;
   if (w.config.hos === 'republic' && w.config.hosMethod !== 'citizens') startHosSelection(w);
-  gazette(w, 'government', `The ${hosTitle(w)} will now invite someone who can win votes in the House to be Prime Minister. Parties can agree coalitions first.`, '#/cabinet');
+  gazette(w, 'government', `The ${hosTitle(w)} will invite whoever commands a majority of ${majority(w)} seats to be Prime Minister. Without one, parties must agree a coalition first.`, '#/cabinet');
 }
 export function invitePM(w: W, actor: Id | null, target: Id) {
   if (actor && !isHOS(w, actor)) fail(`Only the ${hosTitle(w)} invites the Prime Minister.`);
@@ -693,7 +710,12 @@ export function invitePM(w: W, actor: Id | null, target: Id) {
   const t = cit(w, target);
   if (!t.active) fail('They are no longer a citizen.');
   if (exiled(w, target)) fail('They are in exile.');
+  if (!commands(w, target)) {
+    const s = supportFor(w, target);
+    fail(leaderOfSide(w, sideOf(w, target)) !== target ? `${t.name} doesn’t lead their side, so they can’t be invited.` : w.coalition?.status === 'signed' && w.coalition.sides.includes(sideOf(w, target)) && supportFor(w, target) >= majority(w) ? `The coalition is led by ${sideName(w, w.coalition.lead)}. Invite its leader.` : `${t.name} has ${s} of the ${majority(w)} seats needed. Nobody can be invited until a party or coalition commands a majority.`);
+  }
   w.pm = target;
+  w.formingSince = null;
   w.pmInviteDue = null;
   const s = supportFor(w, target);
   w.minority = s < majority(w);
@@ -702,13 +724,24 @@ export function invitePM(w: W, actor: Id | null, target: Id) {
   stamp(w, target, 'Prime Minister', actor ? `Invited by ${nm(w, actor)}` : 'Invited by convention', 'ink');
   gazette(w, 'government', `${t.name} becomes Prime Minister with ${s} of ${w.config.seats} seats${w.minority ? ', a minority government' : ''}.`, '#/cabinet');
 }
+// the head of state hasn't acted: invite whoever commands a majority. If nobody does, wait for a deal, a day at a
+// time; after FORM_DAYS of a hung parliament, dissolve it and let the voters try again.
 export function autoInvite(w: W) {
-  const leaders = new Set<Id>();
-  Object.values(w.parties).forEach((p: any) => p.status === 'active' && p.leader && leaders.add(p.leader));
-  mps(w).forEach((m) => leaders.add(m));
-  const best = [...leaders].filter((l) => !exiled(w, l) && w.hos.holder !== l).sort((a, b) => supportFor(w, b) - supportFor(w, a))[0];
-  if (best) invitePM(w, null, best);
-  else w.pmInviteDue = w.now + DAY;
+  w.formingSince ??= w.now - DAY;
+  const best = contenders(w).filter((l) => commands(w, l)).sort((a, b) => supportFor(w, b) - supportFor(w, a))[0];
+  if (best) return invitePM(w, null, best);
+  const electing = Object.values(w.elections).some((e: any) => e.kind === 'general' && e.status === 'open');
+  if (!electing && w.now - w.formingSince >= FORM_DAYS * DAY) {
+    gazette(w, 'hos', `No party or coalition could command a majority in ${FORM_DAYS} days. The ${hosTitle(w)} dissolves Parliament: a fresh general election closes in 2 days.`, '#/elections');
+    meter(w, 'stability', -3, 'A hung parliament');
+    w.formingSince = null;
+    w.pmInviteDue = null;
+    callGeneralElection(w, w.now + 2 * DAY);
+    return;
+  }
+  if (!w.hungNoted) gazette(w, 'government', `Hung parliament: nobody commands the ${majority(w)} seats needed. The ${hosTitle(w)} will invite a Prime Minister only once a party or coalition does. Leaders, start talking.`, '#/cabinet');
+  w.hungNoted = true;
+  w.pmInviteDue = w.now + DAY;
 }
 export function resignPM(w: W, actor: Id) {
   if (!isPM(w, actor)) fail('Only the Prime Minister can resign as PM.');

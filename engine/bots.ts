@@ -1,9 +1,9 @@
 // Bots: the other citizens take plausible turns so one person can play the whole game.
-import { W, Id, chance, pick, rand, allCitizens, exiled, isMP, mps, inGovernment, sideOf, intrigueOpen, canSeeCard, weekNo, ghost, holderOf } from './core';
+import { W, Id, chance, pick, rand, allCitizens, exiled, isMP, mps, inGovernment, sideOf, intrigueOpen, canSeeCard, weekNo, ghost, holderOf , sideName , DAY , majority } from './core';
 import { isGhostOk } from './streets';
 import { RED_BOX } from './glory';
 import { COMMANDS } from './index';
-import { canVote, checkObjectives, leaderOfSide, supportFor } from './politics';
+import { canVote, checkObjectives, leaderOfSide, supportFor , contenders, commands, sideSeats } from './politics';
 import { canVoteOn, KINDS } from './proposals';
 import { CRISES } from './society';
 import { MOODS } from './foreign';
@@ -119,8 +119,7 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
   const hos = w.hos.holder;
   if (hos && isBot(hos)) {
     if (!w.pm && p(0.5)) {
-      const leaders = [...new Set([...Object.values(w.parties).filter((x: any) => x.status === 'active').map((x: any) => x.leader), ...mps(w)])].filter((x) => x && !w.citizens[x]?.admin && x !== hos) as Id[];
-      const best = leaders.sort((a, b) => supportFor(w, b) - supportFor(w, a))[0];
+      const best = contenders(w).filter((x) => commands(w, x)).sort((a, b) => supportFor(w, b) - supportFor(w, a))[0];
       if (best) go(hos, 'gov.invite', { target: best });
     }
     const exiles = allCitizens(w).filter((c: any) => c.pardonAsked && exiled(w, c.id));
@@ -148,6 +147,22 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
 
   // coalitions and parties
   if (w.coalition?.status === 'draft') w.coalition.sides.forEach((s: string) => { const l = leaderOfSide(w, s); if (l && isBot(l) && p(0.5)) go(l, 'coalition.sign'); });
+  // a hung parliament: the biggest side led by a bot builds a majority with as few partners as it can
+  if (!w.pm && w.phase === 'running' && !contenders(w).some((x) => commands(w, x)) && (w.coalition?.status !== 'draft' || w.now - w.coalition.at > DAY) && p(0.4)) {
+    const sides = [...new Set(mps(w).map((m) => sideOf(w, m)))].sort((a, b) => sideSeats(w, b) - sideSeats(w, a));
+    for (const lead of sides) {
+      const l = leaderOfSide(w, lead);
+      if (!l || !isBot(l)) continue;
+      const pick: string[] = [];
+      let seats = sideSeats(w, lead);
+      for (const s2 of sides.filter((x) => x !== lead).sort((a, b) => sideSeats(w, b) - sideSeats(w, a))) {
+        if (seats >= majority(w) || pick.length >= 3) break;
+        pick.push(s2);
+        seats += sideSeats(w, s2);
+      }
+      if (seats >= majority(w) && pick.length) { go(l, 'coalition.propose', { partners: pick, kind: pick.length === 1 && rand(w) < 0.3 ? 'cs' : 'full', terms: [`${sideName(w, lead)} leads the government`] }); break; }
+    }
+  }
   Object.values(w.parties).forEach((pt: any) => {
     if (pt.status === 'forming') pt.invited.forEach((i: Id) => isBot(i) && p(0.6) && go(i, 'party.cosign', { party: pt.id }));
     pt.motions?.forEach((m: any) => m.status === 'open' && bots.forEach((b: any) => b.party === pt.id && !m.votes[b.id] && p(0.2) && go(b.id, 'party.motionVote', { motion: m.id, vote: chance(w, 0.6) ? 'for' : 'against' })));

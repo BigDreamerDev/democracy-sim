@@ -1,9 +1,9 @@
 // What needs one citizen right now: votes to cast, bills to sign, deals waiting. Shown on Today, counted in the
 // sidebar, and sent to personal webhooks (each alert's `key` is stable, so a hook fires once per new item).
 // Always call it on viewFor(world, me), never the full world, so it can only mention what that person may see.
-import { W, Id, nm, isHOS, isPM, isMP, intrigueOpen, hasPower, holderOf } from './core';
+import { W, Id, nm, isHOS, isPM, isMP, intrigueOpen, hasPower, holderOf , sideOf } from './core';
 import { RED_BOX } from './glory';
-import { canVote } from './politics';
+import { canVote , contenders, commands, leaderOfSide, FORM_DAYS } from './politics';
 import { canVoteOn, KINDS } from './proposals';
 
 export type Alert = { key: string; href: string; label: string; title: string; at?: number; urgent?: boolean };
@@ -23,7 +23,11 @@ export function needs(w: W, me: Id): Alert[] {
     if (p.stage === 'assent' && isHOS(w, me)) out.push({ key: `assent:${p.id}`, href: '#/p/' + p.id, label: w.config.hos === 'monarchy' ? 'Royal Assent' : 'Sign or veto', title: p.title, at: p.assentDueAt });
     if (p.stage === 'hos' && isHOS(w, me)) out.push({ key: `dissolve:${p.id}`, href: '#/p/' + p.id, label: 'Dissolution request', title: 'The PM asks for an election', at: p.hosDueAt, urgent: true });
   });
-  if (!w.pm && w.phase === 'running' && isHOS(w, me)) out.push({ key: 'nopm', href: '#/hos', label: 'No government', title: 'Invite a Prime Minister', at: w.pmInviteDue, urgent: true });
+  if (!w.pm && w.phase === 'running') {
+    const who = contenders(w).find((l) => commands(w, l));
+    if (isHOS(w, me) && who) out.push({ key: 'nopm:' + who, href: '#/hos', label: 'No government', title: `Invite ${nm(w, who)}, who commands a majority`, at: w.pmInviteDue, urgent: true });
+    else if (!who && contenders(w).includes(me) && leaderOfSide(w, sideOf(w, me)) === me) out.push({ key: 'hung:' + (w.formingSince || 0), href: '#/cabinet', label: 'Hung parliament', title: 'Nobody has a majority. Agree a coalition', at: (w.formingSince || w.now) + FORM_DAYS * 86400000 });
+  }
   Object.values(w.crises).forEach((c: any) => {
     if (c.status !== 'open') return;
     if (!c.house && isPM(w, me)) out.push({ key: 'crisis:' + c.id, href: '#/crisis/' + c.id, label: 'Crisis', title: 'You must decide', at: c.decideBy, urgent: true });

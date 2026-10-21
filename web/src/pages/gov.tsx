@@ -1,8 +1,8 @@
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
-import { Page, Sec, Card, Btn, Who, Left, Empty, LinkRow, Seg, Opt, Field, Pick, Icon, ThemeSwitch, Locked } from '../ui';
+import { Page, Sec, Card, Btn, Who, Left, Empty, LinkRow, Seg, Opt, Field, Pick, Icon, ThemeSwitch, Locked , When } from '../ui';
 import { nm, isPM, isHOS, mps, sideOf, sideName, majority, allCitizens, exiled, intrigueOpen, bal, ca, hosTitle, holderOf, officesOf } from '../../../engine/index';
-import { leaderOfOpposition, leaderOfSide, sideSeats, supportFor, members, HOS_METHODS } from '../../../engine/politics';
+import { leaderOfOpposition, leaderOfSide, sideSeats, supportFor, members, HOS_METHODS , commands, FORM_DAYS } from '../../../engine/politics';
 import { POWERS, TEMPLATES, FILL } from '../../../engine/offices';
 
 export function Offices() {
@@ -147,8 +147,9 @@ export function HOS() {
     <Page back={['#/realm', 'The realm']} kicker={mon ? 'The Crown' : 'The Presidency'} title={<>{hosTitle(w)} <Who id={w.hos.holder} /></>} intro={`${HOS_METHODS[w.config.hos].find((m) => m.id === w.config.hosMethod)?.label}. ${mon ? 'Reigns, does not rule: grants assent, invites the PM, honours, pardons.' : 'Signs or vetoes bills, invites the PM, honours, pardons.'}`}>
       {!mine && <Card kind="dashed" style={{ marginTop: 14 }}>Switch to {nm(w, w.hos.holder)} in the demo controls to act as head of state.</Card>}
       {!w.pm && w.phase === 'running' && (
-        <Sec title="Invite a Prime Minister" sub={w.pmInviteDue ? <>If nobody is invited within <Left at={w.pmInviteDue} />, the leader with most support is invited automatically.</> : undefined}>
-          <ul class="list">{leaders.map((l) => <li class="row"><span><Who id={l} /><div class="small muted">Can command {supportFor(w, l)} of {w.config.seats} seats</div></span>{mine && <Btn small onClick={() => act('gov.invite', { target: l }, 'Invited.')}>Invite</Btn>}</li>)}</ul>
+        <Sec title="Invite a Prime Minister" sub={<>A government needs {majority(w)} of {w.config.seats} seats. Only the leader of a party or signed coalition with that many can be invited.{w.pmInviteDue ? <> If you haven't acted within <Left at={w.pmInviteDue} />, whoever commands a majority is invited for you.</> : null} {w.formingSince ? <>With no majority, Parliament is dissolved <When at={w.formingSince + FORM_DAYS * 86400000} />.</> : null}</>}>
+          <ul class="list">{leaders.sort((a, b) => supportFor(w, b) - supportFor(w, a)).map((l) => { const ok = commands(w, l); return <li class="row"><span><Who id={l} /><div class="small muted">{supportFor(w, l)} of {w.config.seats} seats{ok ? ', a majority' : `, ${majority(w) - supportFor(w, l) > 0 ? `${majority(w) - supportFor(w, l)} short` : 'not the coalition leader'}`}</div></span>{mine && <Btn small disabled={!ok} onClick={() => act('gov.invite', { target: l }, 'Invited.')}>Invite</Btn>}</li>; })}</ul>
+          {!leaders.some((l) => commands(w, l)) && <p class="small" style={{ margin: '8px 0 0', fontWeight: 700 }}>Hung parliament: nobody commands a majority yet. Party leaders must agree a coalition in <a href="#/cabinet">Cabinet and coalition</a>.</p>}
         </Sec>
       )}
       <Sec title="Waiting for you"><ul class="list">{waiting.map((p) => <LinkRow href={'#/p/' + p.id} title={p.title} sub={p.stage === 'hos' ? 'Dissolution request' : <>Becomes law anyway in <Left at={p.assentDueAt} /></>} />)}</ul>{!waiting.length && <Empty>Nothing waiting.</Empty>}</Sec>
