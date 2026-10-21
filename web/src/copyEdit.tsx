@@ -7,10 +7,11 @@
 // those parts as wildcards; the preview puts the real values back into your new wording. Wording inside one of
 // those parts ("No government has been formed.") can be edited on its own too: the editor lists it.
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { lint, Text, split, spansOk, spanNames, area, KINDS, type Str } from './pages/copydesk';
+import { lint, Text, split, spansOk, spanNames, area, KINDS, WholeEditor, wholeStart, wholeOk, versionsOf, condLabel, type Str, type Whole } from './pages/copydesk';
+import { useStore, previewGovernment } from './store';
 
-type Doc = { edits: { id: string; text: string; original: string; file?: string; line?: number }[]; reviewed: string[] };
-type Hit = { s: Str[]; values: string[]; node?: Text; el?: Element; attr?: string };
+type Doc = { edits: { id: string; text: string; original: string; file?: string; line?: number; whole?: Whole }[]; reviewed: string[] };
+type Hit = { s: Str[]; values: string[]; branch?: 'yes' | 'no'; node?: Text; el?: Element; attr?: string };
 
 const ATTRS = ['placeholder', 'aria-label', 'title', 'alt'];
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -18,7 +19,7 @@ const matcher = (parts: string[]) => (parts.join('').replace(/\W/g, '').length <
 // a wording with the game's values put in: `values` are in the order of the original's spans
 function fill(s: Str, wording: string, values: string[]) {
   if (!s.spans?.length) return wording;
-  const sp = split(wording, s.spans);
+  const sp = split(wording, s.spans, true);
   if (!sp) return wording;
   return sp.parts.map((p, k) => p + (k < sp.order.length ? values[sp.order[k]] ?? '' : '')).join('');
 }
@@ -36,6 +37,8 @@ export function CopyOverlay() {
   const [pick, setPick] = useState<{ hit: Hit; choices: Str[]; i: number; x: number; y: number } | null>(null);
   const [draft, setDraft] = useState('');
   const [count, setCount] = useState({ here: 0, todo: 0 });
+  const [whole, setWhole] = useState<Whole | null>(null);
+  const { world } = useStore();
   const nodes = useRef(new WeakMap<Node, Hit>());
   const marked = useRef<Set<Element>>(new Set());
   const passRef = useRef<() => void>(() => {});
@@ -53,21 +56,26 @@ export function CopyOverlay() {
   }, [on]);
 
   // indexes: exact text → strings; templates → a matcher for the original and one for any edited wording
-  const index = useRef<{ exact: Map<string, Str[]>; tpl: [RegExp, Str, number[] | null][] } | null>(null);
+  const index = useRef<{ exact: Map<string, Str[]>; tpl: [RegExp, Str, number[] | null, ('yes' | 'no')?][] } | null>(null);
   useEffect(() => {
     if (!strings) return;
     const exact = new Map<string, Str[]>();
-    const tpl: [RegExp, Str, number[] | null][] = [];
-    const editOf = new Map(doc.edits.map((e) => [e.id, e.text]));
+    const tpl: [RegExp, Str, number[] | null, ('yes' | 'no')?][] = [];
+    const editOf = new Map(doc.edits.map((e) => [e.id, e]));
     strings.forEach((s) => {
       const e = editOf.get(s.id);
       if (s.spans?.length) {
         const m = matcher(s.parts!);
         if (m) tpl.push([m, s, null]);
-        const sp = e ? split(e, s.spans) : null;
-        const me = sp && matcher(sp.parts);
-        if (me) tpl.push([me, s, sp!.order]);
-      } else [s.text, e].forEach((t) => t && exact.set(t, [...(exact.get(t) || []), s]));
+        // edited wording (or both whole-sentence versions) must be found again once it's on the page
+        const versions: [string, ('yes' | 'no')?][] = e?.whole ? [[e.whole.yes, 'yes'], [e.whole.no, 'no']] : e ? [[e.text]] : [];
+        versions.forEach(([t, branch]) => {
+          const sp = split(t, s.spans!, !!branch);
+          const me = sp && matcher(sp.parts);
+          if (me) tpl.push([me, s, sp!.order, branch]);
+          else if (sp && !sp.order.length) exact.set(t, [...(exact.get(t) || []), s]);
+        });
+      } else [s.text, e?.text].forEach((t) => t && exact.set(t, [...(exact.get(t) || []), s]));
     });
     // longer static text first, so the most specific template wins
     tpl.sort((a, b) => b[0].source.length - a[0].source.length);
@@ -79,14 +87,14 @@ export function CopyOverlay() {
     if (!t || !index.current) return null;
     const ex = index.current.exact.get(t);
     if (ex) return { s: ex, values: [] };
-    for (const [re, s, order] of index.current.tpl) {
+    for (const [re, s, order, branch] of index.current.tpl) {
       const m = t.match(re);
       if (!m) continue;
       if (!order) return { s: [s], values: m.slice(1) };
       // matched the edited wording: put the values back in the original's order
       const values: string[] = [];
       order.forEach((spanIndex, k) => (values[spanIndex] = m[k + 1]));
-      return { s: [s], values };
+      return { s: [s], values, branch };
     }
     return null;
   };
@@ -111,6 +119,7 @@ export function CopyOverlay() {
       marked.current.forEach((el) => el.removeAttribute('data-cd'));
       marked.current.clear();
       const ed = new Map(docRef.current.edits.map((e) => [e.id, e.text]));
+      const wh = new Map(docRef.current.edits.filter((e) => e.whole).map((e) => [e.id, e.whole!]));
       const rv = new Set(docRef.current.reviewed);
       let here = 0, todo = 0;
       const state = (s: Str) => (ed.has(s.id) && ed.get(s.id) !== s.text ? 'edited' : rv.has(s.id) ? 'fine' : 'todo');
@@ -129,6 +138,13 @@ export function CopyOverlay() {
           const h = v && find(v);
           return h ? render(h) : v;
         });
+        const w = wh.get(s.id);
+        if (w && s.pieces?.length) {
+          // which version is showing: the one it matched, or what the word piece says (thing + s → the "yes" one)
+          const p = s.pieces.find((q) => q.cond === w.cond) || s.pieces[0];
+          const branch = hit.branch ?? (values[p.span] === p.yes ? 'yes' : 'no');
+          return fill(s, w[branch], values);
+        }
         return fill(s, ed.get(s.id) ?? s.text, values);
       };
       const root = document.getElementById('app')!;
@@ -184,7 +200,10 @@ export function CopyOverlay() {
       if (!hit) return;
       ev.preventDefault();
       ev.stopPropagation();
-      open(hit, [...hit.s, ...inner(hit)], 0, ev.clientX, ev.clientY);
+      const base = [...hit.s, ...inner(hit)];
+      // other versions of the same line (monarchy or republic, PM or not…) can be edited from here too
+      const alts = base.flatMap((s) => versionsOf(strings, s)).filter((s, i, a) => !base.includes(s) && a.indexOf(s) === i);
+      open(hit, [...base, ...alts], 0, ev.clientX, ev.clientY);
     };
     document.addEventListener('click', click, true);
     return () => {
@@ -202,6 +221,7 @@ export function CopyOverlay() {
     const s = choices[i];
     const e = docRef.current.edits.find((d) => d.id === s.id);
     setDraft(e ? e.text : s.text);
+    setWhole(e?.whole || null);
     setPick({ hit, choices, i, x: Math.min(x, innerWidth - 20), y });
   };
   const save = async (next: Doc) => {
@@ -210,9 +230,15 @@ export function CopyOverlay() {
   };
   const current = pick ? pick.choices[pick.i] : null;
   const commit = () => {
-    if (!current || !spansOk(current, draft)) return;
+    if (!current) return;
     const others = doc.edits.filter((e) => e.id !== current.id);
     const rv = new Set(doc.reviewed);
+    if (whole) {
+      if (!wholeOk(current, whole)) return;
+      save({ edits: [...others, { id: current.id, text: whole.yes, original: current.text, file: current.file, line: current.line, whole }], reviewed: [...rv] });
+      return setPick(null);
+    }
+    if (!spansOk(current, draft)) return;
     if (draft === current.text) {
       rv.add(current.id);
       save({ edits: others, reviewed: [...rv] });
@@ -230,7 +256,8 @@ export function CopyOverlay() {
     alert(r.error || `Applied ${r.applied}.${r.problems?.length ? '\n\nSkipped:\n' + r.problems.join('\n') : ''}\n\nRun npm run typecheck && npm run smoke before committing.`);
     location.reload();
   };
-  const ok = current ? spansOk(current, draft) : true;
+  const ok = !current ? true : whole ? wholeOk(current, whole) : spansOk(current, draft);
+  const gov = world?.config ? (world.config.hos === 'republic' ? 'president' : world.config.hosTitle === 'King' ? 'king' : 'queen') : null;
 
   return (
     <div data-cd-ui>
@@ -239,23 +266,31 @@ export function CopyOverlay() {
         {on && strings && <span class="small">{count.here} here · {count.todo} to do · {doc.edits.length} saved · Alt-click to use the app</span>}
         {on && doc.edits.length > 0 && <button type="button" class="btn small ghost" onClick={apply}>Apply {doc.edits.length}</button>}
         {on && <a class="small" href="#/copy">Desk</a>}
+        {on && gov && (
+          <span class="small cd-gov">See it as:
+            {(['queen', 'king', 'president'] as const).map((g) => <button type="button" class={'btn small ' + (gov === g ? '' : 'plain')} onClick={() => previewGovernment(g)}>{g === 'queen' ? 'Queen' : g === 'king' ? 'King' : 'Republic'}</button>)}
+          </span>
+        )}
       </div>
       {pick && current && (
         <div class="cd-pop" style={{ left: Math.max(8, Math.min(pick.x - 160, innerWidth - 348)), top: Math.max(8, Math.min(pick.y + 14, innerHeight - 340)) }} role="dialog" aria-label="Edit this line">
           {pick.choices.length > 1 && (
             <label class="small">Which part?
               <select class="input" value={pick.i} onChange={(e: any) => open(pick.hit, pick.choices, Number(e.currentTarget.value), pick.x, pick.y)}>
-                {pick.choices.map((s, i) => <option value={i}>{i < pick.hit.s.length ? (pick.hit.s.length > 1 ? `The whole line (${s.file.split('/').pop()}:${s.line})` : 'The whole line') : `Inside it: “${s.text.slice(0, 40)}${s.text.length > 40 ? '…' : ''}”`}</option>)}
+                {pick.choices.map((s, i) => <option value={i}>{i < pick.hit.s.length ? (pick.hit.s.length > 1 ? `The whole line (${s.file.split('/').pop()}:${s.line})` : 'The whole line') : inner(pick.hit).includes(s) ? `Inside it: “${s.text.slice(0, 40)}${s.text.length > 40 ? '…' : ''}”` : `Other version, ${condLabel(s.cond)}: “${s.text.slice(0, 30)}${s.text.length > 30 ? '…' : ''}”`}</option>)}
               </select>
             </label>
           )}
           <div class="small muted cd-meta"><span>{area(current.file)} · {KINDS[current.kind]}</span><span class="tnum">{current.file.split('/').pop()}:{current.line}</span></div>
           <div class="cd-orig" style={{ fontSize: 16 }}><Text t={current.text} spans={current.spans} /></div>
-          <textarea class="input cd-edit" rows={3} value={draft} autoFocus onInput={(e: any) => setDraft(e.currentTarget.value)} onKeyDown={(e: any) => (e.key === 'Enter' && (e.ctrlKey || e.metaKey) ? commit() : e.key === 'Escape' && setPick(null))} />
-          {!ok && <p class="small bad" style={{ margin: '4px 0 0' }}>Keep every grey chip, once each: {spanNames(current)}.</p>}
-          {lint(current, draft).length > 0 && <div class="cd-flags">{lint(current, draft).map((x) => <span class="cd-flag">{x}</span>)}</div>}
+          {current.cond && <div class="small cd-when">Shown {condLabel(current.cond)}. {versionsOf(strings || [], current).length ? 'The other versions are in “Which part?” above.' : ''}</div>}
+          {whole ? <WholeEditor s={current} value={whole} onChange={setWhole} /> : <textarea class="input cd-edit" rows={3} value={draft} autoFocus onInput={(e: any) => setDraft(e.currentTarget.value)} onKeyDown={(e: any) => (e.key === 'Enter' && (e.ctrlKey || e.metaKey) ? commit() : e.key === 'Escape' && setPick(null))} />}
+          {!ok && !whole && <p class="small bad" style={{ margin: '4px 0 0' }}>Keep every grey chip, once each: {spanNames(current)}.</p>}
+          {lint(current, draft, whole).length > 0 && <div class="cd-flags">{lint(current, draft, whole).map((x) => <span class="cd-flag">{x}</span>)}</div>}
+          {current.pieces?.length && !whole && <button type="button" class="btn small ghost" style={{ marginTop: 6 }} onClick={() => setWhole(wholeStart(current))}>Rewrite as whole sentences</button>}
+          {whole && <button type="button" class="btn small plain" style={{ marginTop: 6 }} onClick={() => setWhole(null)}>Back to one line</button>}
           <div class="row" style={{ gap: 6, marginTop: 8, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-            <button type="button" class="btn small" disabled={!ok} onClick={commit}>{draft === current.text ? 'Fine as it is' : 'Save'}</button>
+            <button type="button" class="btn small" disabled={!ok} onClick={commit}>{!whole && draft === current.text ? 'Fine as it is' : 'Save'}</button>
             {doc.edits.some((e) => e.id === current.id) && <button type="button" class="btn small plain" onClick={undo}>Undo my change</button>}
             <button type="button" class="btn small plain" onClick={() => setPick(null)}>Close</button>
           </div>

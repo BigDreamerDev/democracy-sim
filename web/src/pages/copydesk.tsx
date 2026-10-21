@@ -4,8 +4,11 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Page, Sec, Card, Btn, Empty, Field, Pick, Seg } from '../ui';
 import { toast } from '../store';
+// (Whole, WholeEditor, wholeStart, wholeOk, versionsOf, condLabel are defined below and shared with copyEdit.tsx)
 
-export type Str = { id: string; file: string; line: number; kind: string; where: string; text: string; template: boolean; ctx: string; spans?: string[]; parts?: string[] };
+export type Piece = { span: number; cond: string; yes: string; no: string };
+export type Whole = { cond: string; yes: string; no: string };
+export type Str = { id: string; file: string; line: number; kind: string; where: string; text: string; template: boolean; ctx: string; spans?: string[]; parts?: string[]; group?: string; cond?: string; pieces?: Piece[] };
 
 export const AREAS: Record<string, string> = {
   'web/src/pages/today.tsx': 'Today, Gazette, passport', 'web/src/pages/house.tsx': 'The House', 'web/src/pages/elections.tsx': 'Elections and Convention',
@@ -32,24 +35,30 @@ const RULES: [RegExp, string][] = [
   [/(^|[^\w$])'|'($|[^\w])|"/, 'Curly quotes: ’ “ ”'],
   [/  /, 'Double space']
 ];
-export function lint(s: Str, text: string) {
-  const sp = s.spans?.length ? split(text, s.spans) : null;
+export function lint(s: Str, text: string, whole?: Whole | null) {
+  if (whole) return [...new Set([...lint({ ...s, pieces: undefined }, whole.yes), ...lint({ ...s, pieces: undefined }, whole.no)])];
+  const sp = s.spans?.length ? split(text, s.spans, true) : null;
   const plain = sp ? sp.parts.join('X') : text;
   const out = RULES.filter(([re]) => re.test(plain)).map(([, why]) => why);
   if (plain.split(/\s+/).length > 26) out.push('Long: split it into two sentences');
   // short labels with three or more Capitalised Words are probably Title Case (proper nouns can trip this)
   if (s.kind === 'label' && plain.split(' ').length <= 5 && (plain.match(/\b[A-Z][a-z]+/g) || []).length >= 3) out.push('Sentence case, not Title Case');
+  if (s.pieces?.length) out.push('Built from word pieces (thing + s): rewrite it as whole sentences');
   return out;
 }
 // a template's ${…} parts can nest, so they come from the source (s.spans), not a regex.
 // split(): the wording between them and which span is where, or null if any span is missing.
-export function split(text: string, spans: string[]) {
+// With partial, spans that aren't there are simply left out (a whole-sentence version may drop some).
+export function split(text: string, spans: string[], partial = false) {
   const found: { i: number; at: number; len: number }[] = [];
   for (let i = 0; i < spans.length; i++) {
     let from = 0;
     let at = text.indexOf(spans[i], from);
     while (at >= 0 && found.some((f) => at < f.at + f.len && f.at < at + spans[i].length)) at = text.indexOf(spans[i], (from = at + 1));
-    if (at < 0) return null;
+    if (at < 0) {
+      if (partial) continue;
+      return null;
+    }
     found.push({ i, at, len: spans[i].length });
   }
   found.sort((a, b) => a.at - b.at);
@@ -65,6 +74,38 @@ export function spansOk(s: Str, text: string) {
   const sp = split(text, s.spans);
   return !!sp && !sp.parts.some((p) => p.includes('${'));
 }
+// the two versions of a line built from word pieces, with each piece filled in: "thing" / "things"
+export function wholeStart(s: Str): Whole {
+  const p = s.pieces![0];
+  const piece = (yes: boolean) => {
+    let t = s.text;
+    s.pieces!.forEach((q) => (t = t.replace(s.spans![q.span], yes === (q.cond === p.cond) ? q.yes : q.no)));
+    return t;
+  };
+  return { cond: p.cond, yes: piece(true), no: piece(false) };
+}
+// is a whole-sentence version safe? only the original's other ${…} parts, no new ones
+export function wholeOk(s: Str, w: Whole) {
+  const keep = (s.spans || []).filter((_, i) => !(s.pieces || []).some((p) => p.span === i));
+  return [w.yes, w.no].every((t) => {
+    let rest = t;
+    keep.forEach((x) => (rest = rest.split(x).join('')));
+    return !rest.includes('${');
+  });
+}
+// the other versions of a line: same a ? b : c in the code
+export const versionsOf = (all: Str[], s: Str) => (s.group ? all.filter((x) => x.group === s.group && x.id !== s.id) : []);
+export const condLabel = (c?: string) => (c || '').replace(/w\.config\.hos === 'monarchy'/g, 'a monarchy').replace(/w\.config\.hos === 'republic'/g, 'a republic').replace(/isPM\(w, me\)/g, 'you’re PM').replace(/isMP\(w, me\)/g, 'you’re an MP').replace(/\bme\b/g, 'you').slice(0, 90);
+// two boxes for a line rewritten as whole sentences
+export function WholeEditor({ s, value, onChange }: { s: Str; value: Whole; onChange: (w: Whole) => void }) {
+  return (
+    <div class="stack" style={{ gap: 6, marginTop: 8 }}>
+      <label class="small"><b>{condLabel('when ' + value.cond)}</b><textarea class="input cd-edit" rows={2} value={value.yes} onInput={(e: any) => onChange({ ...value, yes: e.currentTarget.value })} /></label>
+      <label class="small"><b>Otherwise</b><textarea class="input cd-edit" rows={2} value={value.no} onInput={(e: any) => onChange({ ...value, no: e.currentTarget.value })} /></label>
+      {!wholeOk(s, value) && <p class="small bad" style={{ margin: 0 }}>Only use the grey chips from the original: a new {'${…}'} would become code.</p>}
+    </div>
+  );
+}
 export const spanNames = (s: Str) => (s.spans || []).map((x) => chipLabel(x.slice(2, -1))).join(', ');
 const chipLabel = (src: string) => (/^[\w.$]+(\([^()]*\))?$/.test(src) ? src.replace(/\(.*\)$/, '').split('.').pop()! : 'auto');
 
@@ -78,6 +119,8 @@ export function Text({ t, spans }: { t: string; spans?: string[] }) {
 export function CopyDesk() {
   const [all, setAll] = useState<Str[] | null>(null);
   const [edits, setEdits] = useState<Record<string, string>>({});
+  // lines rewritten as whole sentences (instead of word pieces)
+  const [wholes, setWholes] = useState<Record<string, Whole>>({});
   const [reviewed, setReviewed] = useState<Set<string>>(new Set());
   const [f, setF] = useState({ area: '', kind: '', status: 'todo', q: '' });
   const [page, setPage] = useState(0);
@@ -91,6 +134,7 @@ export function CopyDesk() {
       const [s, e] = await Promise.all([fetch('/__copy/strings').then((r) => r.json()), fetch('/__copy/edits').then((r) => r.json())]);
       setAll(s.strings);
       setEdits(Object.fromEntries((e.edits || []).map((x: any) => [x.id, x.text])));
+      setWholes(Object.fromEntries((e.edits || []).filter((x: any) => x.whole).map((x: any) => [x.id, x.whole])));
       setReviewed(new Set(e.reviewed || []));
     } catch {
       setAll([]);
@@ -99,10 +143,14 @@ export function CopyDesk() {
   useEffect(() => void load(), []);
   const byId = useMemo(() => new Map((all || []).map((s) => [s.id, s])), [all]);
   // drafts save themselves to copy/edits.json
-  const persist = (ed: Record<string, string>, rv: Set<string>) => {
+  const persist = (ed: Record<string, string>, rv: Set<string>, wh = wholes) => {
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
-      const list = Object.entries(ed).filter(([id, t]) => byId.has(id) && t !== byId.get(id)!.text).map(([id, text]) => ({ id, text, original: byId.get(id)!.text, file: byId.get(id)!.file, line: byId.get(id)!.line }));
+      const ids = [...new Set([...Object.keys(ed), ...Object.keys(wh)])];
+      const list = ids.filter((id) => byId.has(id) && (wh[id] || (ed[id] !== undefined && ed[id] !== byId.get(id)!.text))).map((id) => {
+        const s = byId.get(id)!;
+        return { id, text: wh[id] ? wh[id].yes : ed[id], original: s.text, file: s.file, line: s.line, ...(wh[id] ? { whole: wh[id] } : {}) };
+      });
       fetch('/__copy/edits', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ edits: list, reviewed: [...rv] }) }).catch(() => toast('Couldn’t save the draft. Is npm run dev still running?', true));
     }, 500);
   };
@@ -122,13 +170,24 @@ export function CopyDesk() {
   const reset = (id: string) => {
     const next = { ...edits };
     delete next[id];
+    const wh = { ...wholes };
+    delete wh[id];
     setEdits(next);
-    persist(next, reviewed);
+    setWholes(wh);
+    persist(next, reviewed, wh);
+  };
+  const setWhole = (id: string, w: Whole | null) => {
+    hold(id);
+    const wh = { ...wholes };
+    if (w) wh[id] = w;
+    else delete wh[id];
+    setWholes(wh);
+    persist(edits, reviewed, wh);
   };
   if (!all) return <Page title="Copy desk"><Empty>Reading every string in the game…</Empty></Page>;
   if (!all.length) return <Page title="Copy desk" intro="The copy desk runs inside the development server. Start it with npm run dev and open this page from there."><Empty>No strings found.</Empty></Page>;
 
-  const status = (s: Str) => (edits[s.id] !== undefined && edits[s.id] !== s.text ? 'edited' : reviewed.has(s.id) ? 'fine' : 'todo');
+  const status = (s: Str) => (wholes[s.id] || (edits[s.id] !== undefined && edits[s.id] !== s.text) ? 'edited' : reviewed.has(s.id) ? 'fine' : 'todo');
   const shown = all.filter((s) => {
     if (held.has(s.id)) return true;
     if (f.area && area(s.file) !== f.area) return false;
@@ -137,7 +196,7 @@ export function CopyDesk() {
     if (f.status === 'todo' && st !== 'todo') return false;
     if (f.status === 'edited' && st !== 'edited') return false;
     if (f.status === 'fine' && st !== 'fine') return false;
-    if (f.status === 'flagged' && !lint(s, edits[s.id] ?? s.text).length) return false;
+    if (f.status === 'flagged' && !lint(s, edits[s.id] ?? s.text, wholes[s.id]).length) return false;
     if (f.q && !(s.text + ' ' + (edits[s.id] || '')).toLowerCase().includes(f.q.toLowerCase())) return false;
     return true;
   });
@@ -190,18 +249,22 @@ export function CopyDesk() {
           {shown.slice(at * per, at * per + per).map((s) => {
             const now = edits[s.id] ?? s.text;
             const st = status(s);
-            const flags = lint(s, now);
-            const broken = !spansOk(s, now);
+            const wh = wholes[s.id] || null;
+            const flags = lint(s, now, wh);
+            const broken = wh ? !wholeOk(s, wh) : !spansOk(s, now);
+            const others = versionsOf(all, s);
             return (
               <Card kind={st === 'edited' ? 'green' : undefined}>
                 <div class="small muted cd-meta"><span>{area(s.file)} · {KINDS[s.kind]}{s.where ? ` · ${s.where}` : ''}</span><span class="tnum">{s.file.split('/').pop()}:{s.line}</span></div>
                 <div class="cd-orig"><Text t={s.text} spans={s.spans} /></div>
+                {s.cond && <div class="small cd-when">Shown {condLabel(s.cond)}{others.length > 0 && <> · {others.length} other version{others.length > 1 ? 's' : ''}: {others.map((o) => <button type="button" class="btn plain small" style={{ padding: '0 6px', minHeight: 0 }} onClick={() => (setFilter({ q: o.text.slice(0, 30), status: 'all' }))}>“{o.text.slice(0, 32)}{o.text.length > 32 ? '…' : ''}”</button>)}</>}</div>}
                 <code class="cd-ctx">{s.ctx}</code>
-                <textarea class="input cd-edit" rows={Math.min(6, Math.ceil(now.length / 44) + 1)} value={now} aria-label="New wording" onInput={(e: any) => edit(s.id, e.currentTarget.value)} onKeyDown={(e: any) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && mark(s.id, true)} />
-                {broken && <p class="small bad" style={{ margin: '4px 0 0' }}>Keep every grey chip from the original, once each: {spanNames(s)}.</p>}
+                {wh ? <WholeEditor s={s} value={wh} onChange={(w) => setWhole(s.id, w)} /> : <textarea class="input cd-edit" rows={Math.min(6, Math.ceil(now.length / 44) + 1)} value={now} aria-label="New wording" onInput={(e: any) => edit(s.id, e.currentTarget.value)} onKeyDown={(e: any) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && mark(s.id, true)} />}
+                {broken && !wh && <p class="small bad" style={{ margin: '4px 0 0' }}>Keep every grey chip from the original, once each: {spanNames(s)}.</p>}
                 {flags.length > 0 && <div class="cd-flags">{flags.map((x) => <span class="cd-flag">{x}</span>)}</div>}
-                <div class="row" style={{ gap: 6, marginTop: 8, justifyContent: 'flex-start' }}>
+                <div class="row" style={{ gap: 6, marginTop: 8, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
                   {st !== 'edited' && <Btn small kind={st === 'fine' ? undefined : 'ghost'} onClick={() => mark(s.id, st !== 'fine')}>{st === 'fine' ? 'Marked fine' : 'Fine as it is'}</Btn>}
+                  {s.pieces?.length && !wh && <Btn small kind="ghost" onClick={() => setWhole(s.id, wholeStart(s))}>Rewrite as whole sentences</Btn>}
                   {st === 'edited' && <Btn small kind="plain" onClick={() => reset(s.id)}>Undo my change</Btn>}
                 </div>
               </Card>

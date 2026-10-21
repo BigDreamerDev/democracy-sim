@@ -16,14 +16,17 @@ import { existsSync as has } from 'node:fs';
 // the project root: where npm runs from (the dev server bundles this file elsewhere, so not import.meta.url)
 const ROOT = has(join(process.cwd(), 'web/src')) ? process.cwd() : new URL('..', import.meta.url).pathname;
 const DIRS = ['web/src', 'engine'];
-const SKIP_FILES = ['engine/catalog.ts', 'engine/bots.ts', 'web/src/DemoPanel.tsx'];
+const SKIP_FILES = ['engine/catalog.ts', 'engine/bots.ts', 'web/src/DemoPanel.tsx', 'web/src/copyEdit.tsx', 'web/src/pages/copydesk.tsx'];
 const PROPS = new Set(['title', 'intro', 'sub', 'label', 'placeholder', 'hint', 'kicker', 'alt', 'aria-label', 'empty', 'confirm', 'head', 'castLabel', 'foot', 'caption']);
 const KEYS = new Set(['text', 'title', 'label', 'what', 'blurb', 'q', 'a', 'sub', 'low', 'about', 'effects', 'give', 'get', 'wants', 'name', 'unit', 'hint', 'body', 'intro', 'reason', 'why', 'question', 'headline', 'tag', 'desc', 'description']);
 // calls whose arguments are read by players: name → which argument indexes
 const CALLS: Record<string, number[]> = { fail: [0], toast: [0], confirm: [0], gazette: [2], earn: [3], spend: [3], stamp: [2, 3], adminDid: [2], act: [2], Error: [0], setMsg: [], meter: [3], approve: [], moodShift: [2], armyLoyalty: [2], addCard: [] };
 
 // spans: the exact source of each ${…} in a template (they can nest); parts: the text between them, as shown
-export type Str = { id: string; file: string; line: number; kind: string; where: string; text: string; template: boolean; start: number; end: number; ctx: string; spans?: string[]; parts?: string[] };
+// group/cond: this line is one version of several, picked by a condition (monarchy or republic, one or many…);
+// pieces: ${…} parts that glue bits of words on (thing${n > 1 ? 's' : ''}), which can be rewritten as whole sentences
+export type Piece = { span: number; cond: string; yes: string; no: string };
+export type Str = { id: string; file: string; line: number; kind: string; where: string; text: string; template: boolean; start: number; end: number; ctx: string; spans?: string[]; parts?: string[]; group?: string; cond?: string; pieces?: Piece[] };
 
 const files = (dir: string): string[] =>
   readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? files(join(dir, d.name)) : /\.(tsx?|ts)$/.test(d.name) ? [join(dir, d.name)] : []));
@@ -41,6 +44,31 @@ function extractFile(file: string): Str[] {
       if (ts.isVariableDeclaration(p) && ts.isIdentifier(p.name) && p.parent.parent && ts.isVariableStatement(p.parent.parent)) return p.name.text;
     }
     return '';
+  };
+  const unwrap = (e: ts.Expression): ts.Expression => (ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e);
+  const lit = (e: ts.Expression) => (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e) ? e.text : null);
+  // ${n > 1 ? 's' : ''}: a span that only adds a few letters
+  const piecesOf = (n: ts.TemplateExpression): Piece[] =>
+    n.templateSpans.flatMap((sp, i) => {
+      const e = unwrap(sp.expression);
+      if (!ts.isConditionalExpression(e)) return [];
+      const yes = lit(unwrap(e.whenTrue)), no = lit(unwrap(e.whenFalse));
+      return yes !== null && no !== null && yes.length <= 4 && no.length <= 4 ? [{ span: i, cond: e.condition.getText(sf), yes, no }] : [];
+    });
+  // which version of a line is this? Climb to the nearest a ? b : c around it (not past a function)
+  const branchOf = (n: ts.Node): { group: string; cond: string } | null => {
+    let child: ts.Node = n;
+    for (let p = n.parent; p && !ts.isSourceFile(p); child = p, p = p.parent) {
+      if (ts.isFunctionLike(p) || ts.isBlock(p)) return null;
+      if (!ts.isConditionalExpression(p) || child === p.condition) continue;
+      // the whole a ? b : c ? d : e chain shares one group
+      let top: ts.ConditionalExpression = p;
+      while (ts.isParenthesizedExpression(top.parent) || (ts.isConditionalExpression(top.parent) && top.parent.whenFalse === top)) top = ts.isParenthesizedExpression(top.parent) ? (top.parent.parent as any) : top.parent;
+      if (!ts.isConditionalExpression(top)) top = p;
+      const c = p.condition.getText(sf).replace(/\s+/g, ' ');
+      return { group: `${file}:${top.getStart(sf)}`, cond: child === p.whenTrue ? `when ${c}` : `when not (${c})` };
+    }
+    return null;
   };
   const add = (n: ts.Node, kind: string) => {
     let text: string, start: number, end: number, template = false;
@@ -70,7 +98,9 @@ function extractFile(file: string): Str[] {
     seen.add(start);
     const line = sf.getLineAndCharacterOfPosition(start).line + 1;
     const ctx = src.split('\n')[line - 1].trim().slice(0, 240);
-    out.push({ id: '', file, line, kind, where: where(n), text, template, start, end, ctx, ...(spans ? { spans, parts } : {}) });
+    const alt = branchOf(n);
+    const pieces = ts.isTemplateExpression(n) ? piecesOf(n) : [];
+    out.push({ id: '', file, line, kind, where: where(n), text, template, start, end, ctx, ...(spans ? { spans, parts } : {}), ...(alt || {}), ...(pieces.length ? { pieces } : {}) });
   };
   const strings = (e: ts.Node | undefined, kind: string) => {
     if (!e) return;
@@ -112,7 +142,27 @@ export function extract(): Str[] {
 }
 
 // writing an edit back: escape for the kind of literal it lives in, and keep every ${…} of a template
-function encode(s: Str, text: string, src: string): string {
+// a line rewritten as whole sentences: ${cond ? `one wording` : `the other`}, replacing the word pieces
+function encodeWhole(s: Str, w: { cond: string; yes: string; no: string }) {
+  const piece = (s.pieces || []).find((p) => p.cond === w.cond);
+  if (!piece) throw new Error('that line no longer has the same word pieces');
+  const keep = (s.spans || []).filter((_, i) => !(s.pieces || []).some((p) => p.span === i));
+  const branch = (t: string) => {
+    let rest = t;
+    keep.forEach((x) => (rest = rest.split(x).join('')));
+    if (rest.includes('${')) throw new Error('a new ${…} would become code; remove it');
+    let out = '';
+    for (let i = 0; i < t.length; ) {
+      const sp = keep.find((x) => t.startsWith(x, i));
+      if (sp) (out += sp), (i += sp.length);
+      else (out += t[i] === '`' ? '\\`' : t[i]), i++;
+    }
+    return out;
+  };
+  return '${' + w.cond + ' ? `' + branch(w.yes) + '` : `' + branch(w.no) + '`}';
+}
+function encode(s: Str, text: string, src: string, whole?: { cond: string; yes: string; no: string }): string {
+  if (whole) return encodeWhole(s, whole);
   const quote = src[s.start - 1];
   if (s.kind === 'screen' && quote !== "'" && quote !== '"' && quote !== '`') {
     // JSX text: braces and angle brackets would become code
@@ -141,19 +191,19 @@ function encode(s: Str, text: string, src: string): string {
   return text.replace(/\\/g, '\\\\').replace(new RegExp(quote, 'g'), '\\' + quote).replace(/\n/g, '\\n');
 }
 
-export type Edit = { id: string; text: string; original?: string };
+export type Edit = { id: string; text: string; original?: string; whole?: { cond: string; yes: string; no: string } };
 export function applyEdits(edits: Edit[]) {
   const all = extract();
   const byId = new Map(all.map((s) => [s.id, s]));
-  const byFile: Record<string, { s: Str; text: string; id: string }[]> = {};
+  const byFile: Record<string, { s: Str; text: string; id: string; whole?: Edit['whole'] }[]> = {};
   const problems: string[] = [];
   const done: string[] = [];
   edits.forEach((e) => {
     const s = byId.get(e.id);
     if (!s) return problems.push(`Not found, the source changed since: “${e.original ?? e.id}”`);
     if (e.original !== undefined && e.original !== s.text) return problems.push(`${s.file}:${s.line}: the original changed in the source; skipped`);
-    if (e.text === s.text) return done.push(e.id);
-    (byFile[s.file] ||= []).push({ s, text: e.text, id: e.id });
+    if (e.text === s.text && !e.whole) return done.push(e.id);
+    (byFile[s.file] ||= []).push({ s, text: e.text, id: e.id, whole: e.whole });
   });
   Object.entries(byFile).forEach(([file, list]) => {
     let src = readFileSync(join(ROOT, file), 'utf8');
@@ -162,10 +212,10 @@ export function applyEdits(edits: Edit[]) {
     const todo = list.map((x) => ({ ...x, s: { ...x.s, spans: x.s.spans?.slice() } }));
     todo.sort((a, b) => a.s.end - a.s.start - (b.s.end - b.s.start));
     while (todo.length) {
-      const { s, text, id } = todo.shift()!;
+      const { s, text, id, whole } = todo.shift()!;
       let enc: string;
       try {
-        enc = encode(s, text, src);
+        enc = encode(s, text, src, whole);
       } catch (err: any) {
         problems.push(`${s.file}:${s.line}: ${err.message}. Skipped “${text}”`);
         continue;
@@ -180,6 +230,7 @@ export function applyEdits(edits: Edit[]) {
           o.s.end += delta;
           o.s.spans = o.s.spans?.map((sp) => sp.replace(old, enc));
           o.text = o.text.replace(old, enc);
+          if (o.whole) o.whole = { ...o.whole, yes: o.whole.yes.replace(old, enc), no: o.whole.no.replace(old, enc) };
         } else if (o.s.start >= s.end) {
           o.s.start += delta;
           o.s.end += delta;

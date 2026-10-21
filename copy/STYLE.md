@@ -44,6 +44,14 @@ form, a bank, or a robot. Read each line out loud. If you wouldn't say it to som
 - If the same words appear in several places in the code, the editor asks which one you mean.
 - **Apply** writes everything into the code and reloads. It all saves to the same `copy/edits.json` as the desk.
 
+- **Lines with versions.** Some lines change with the situation: monarchy or republic, whether you're PM, and
+  so on. The editor says when the one you clicked is shown, and lists the other versions under “Which part?”,
+  so you can reword them all from one place. **See it as: Queen · King · Republic** on the bar switches the
+  demo's government so you can check each version on the page.
+- **Lines built from word pieces** (“thing” + “s”) are flagged. Press **Rewrite as whole sentences** to write
+  the two versions in full (“3 things are waiting for you” / “One thing is waiting for you”). Apply turns them
+  into proper code.
+
 Text that only appears in certain situations (a crisis, an error) is easier to find in the desk.
 
 ## Using the desk

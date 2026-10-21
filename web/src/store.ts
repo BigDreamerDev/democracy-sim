@@ -464,3 +464,12 @@ export const setAllowance = (citizen: string, n: number) => api('/api/admin/invi
 export const adminNotes = () => api('/api/admin/notes');
 export const saveNote = (citizen: string, text: string) => api('/api/admin/notes', { citizen, text });
 export const adminDevices = () => api('/api/admin/devices');
+// development: see the realm as a monarchy (King or Queen) or a republic, to check wording that depends on it.
+// It changes only this browser's copy; online, the next refresh from the server puts it back.
+export function previewGovernment(kind: 'queen' | 'king' | 'president') {
+  const w = structuredClone(state.world);
+  w.config.hos = kind === 'president' ? 'republic' : 'monarchy';
+  if (kind !== 'president') w.config.hosTitle = kind === 'king' ? 'King' : 'Queen';
+  set({ world: w });
+  toast(kind === 'president' ? 'Showing the realm as a republic.' : `Showing the realm with a ${w.config.hosTitle}.`);
+}

@@ -753,3 +753,5 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 @media (min-width: 900px) { .cd-bar { bottom: 16px; left: auto; right: 16px; } }
 .cd-pop { position: fixed; z-index: 61; width: min(340px, calc(100vw - 16px)); background: var(--card); color: var(--ink); border: 1.5px solid var(--ink); border-radius: 3px; padding: 10px 12px; box-shadow: 4px 4px 0 var(--ink); }
 .cd-pop select { margin-top: 4px; width: 100%; }
+.cd-when { margin: 2px 0 4px; color: var(--brown); }
+.cd-gov { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
