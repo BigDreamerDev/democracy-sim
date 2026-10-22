@@ -98,7 +98,10 @@ The game clock can be paused by the Returning Officer. While it is, `serverNow` 
 `GET /api/health` and `world.clock.pausedAt` say so.
 
 New commands (see `GET /api/v1/commands`): `me.profile {name?, bio?}`, `prop.edit {prop, title?, summary?, clauses?}`
-(author, during debate), `prop.withdraw {prop}`, `office.resign {office}`.
+(author, during debate), `prop.withdraw {prop}`, `office.resign {office}`, `prop.whip {prop, line: 'aye'|'no'|'free'}` (party leader, or the
+Chief Whip for a governing party). A proposal's `whips` is `{ [partyId]: { line, by, at } }`; after the vote, `rebels` lists
+MPs who voted against their line. New personal alerts: `rebel:`, `rebels:`, `whipline:`, `tie:`, `order:`, `budget:`, `rate:`,
+`case:`, `defend:`, `shadow:`.
 
 ### Webhooks — any key lists them; adding, testing and deleting need an `act` key
 Rather than polling, have the realm POST to you. Two kinds:

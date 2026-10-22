@@ -35,6 +35,7 @@ export const CATALOG: Record<string, CmdInfo> = {
   'prop.speak': { about: 'Speak in a debate.', args: { prop: 'id', side: "'for' | 'against' | 'undecided' | 'order' (Speaker)", text: 'text' } },
   'prop.vote': { about: 'Vote on a proposal.', args: { prop: 'id', vote: "'aye' | 'no' | 'abstain'" } },
   'prop.edit': { about: 'Author only, while it is being debated: change the title, summary or clauses (same shapes as prop.new). Speeches so far are marked as on the earlier draft.', args: { prop: 'id', title: 'text (optional)', summary: 'text (optional)', clauses: 'list (optional)' } },
+  'prop.whip': { about: 'Party leader, or the Chief Whip for a governing party: set your party’s line on a House vote. Public.', args: { prop: 'id', line: "'aye' | 'no' | 'free'" } },
   'prop.withdraw': { about: 'Author only, before the vote closes: withdraw your proposal. Bets on it are refunded.', args: { prop: 'id' } },
   'prop.casting': { about: 'Speaker: casting vote on a tie.', args: { prop: 'id', vote: "'aye' | 'no'" } },
   'prop.assent': { about: 'Head of state: grant or refuse assent.', args: { prop: 'id', yes: 'bool' } },

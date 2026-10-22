@@ -3,7 +3,7 @@ import { useStore, act, getState } from '../store';
 import { go, Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Seg, Opt, Field, Pick, Stamp } from '../ui';
 import { nm, isMP, isPM, isHOS, inGovernment, mps, fmtTime, superMajority, majority, officeWithPower, hosTitle, nextAt } from '../../../engine/index';
 import { leaderOfOpposition, HOS_METHODS } from '../../../engine/politics';
-import { describe, KINDS, SETTABLE, canVoteOn, passCheck, PASS_RULES } from '../../../engine/proposals';
+import { describe, KINDS, SETTABLE, canVoteOn, passCheck, PASS_RULES, whipLine, canWhip, rebelsOn } from '../../../engine/proposals';
 import { TEMPLATES, POWERS, FILL } from '../../../engine/offices';
 
 const STAGE: Record<string, string> = { debate: 'Debate', vote: 'Voting', assent: 'Awaiting assent', override: 'Veto override', hos: 'With the head of state', enacted: 'Law', passed: 'Passed', failed: 'Defeated', vetoed: 'Vetoed', withheld: 'Assent refused', withdrawn: 'Withdrawn' };
@@ -144,6 +144,10 @@ export function Proposal({ id }: { id: string }) {
   const idx = p.kind === 'dissolution' ? (p.stage === 'hos' ? 1 : 2) : ({ debate: 0, vote: 1, assent: 2, override: 2, enacted: 3, passed: p.kind === 'bill' ? 3 : 2, failed: p.kind === 'bill' ? 1 : 2, vetoed: 2, withheld: 2, withdrawn: p.debateEndsAt && p.result?.at > p.debateEndsAt ? 1 : 0 } as any)[p.stage];
   const failed = ['failed', 'vetoed', 'withheld', 'withdrawn'].includes(p.stage);
   const author = p.by === me && ['debate', 'vote'].includes(p.stage);
+  const rebels: string[] = p.voters === 'mps' ? (p.stage === 'vote' ? rebelsOn(w, p) : p.rebels || []) : [];
+  const myLine = p.voters === 'mps' ? whipLine(w, p, me) : null;
+  const myParty = w.citizens[me]?.party;
+  const lines = Object.entries(p.whips || {}).filter(([k]) => w.parties[k]) as [string, any][];
   const need = p.constitutional ? superMajority(w) : p.rule === 'seats' ? majority(w) : null;
   const blocker = officeWithPower(w, me, 'block');
   return (
@@ -185,7 +189,7 @@ export function Proposal({ id }: { id: string }) {
             <div class="row"><h2 class="h" style={{ margin: 0 }}>{p.stage === 'override' ? 'Override vote' : p.voters === 'all' ? 'The referendum' : 'The vote'}</h2>{(p.stage === 'vote' || p.stage === 'override') && <b class="small" style={{ color: 'var(--red)' }}>Closes in <Left at={p.stage === 'override' ? p.overrideEndsAt : p.voteEndsAt} /></b>}</div>
             <p class="small muted" style={{ margin: '4px 0 12px' }}>{p.stage === 'override' ? `Needs ${superMajority(w)} of ${w.config.seats} MPs.` : <>Needs {passCheck(w, p, 0, 0).need}.{p.voters === 'all' ? ' Every citizen votes. Ballots are secret.' : (p.rule || 'cast') === 'cast' && !p.constitutional ? ' A tie goes to the Speaker.' : ''}</>}</p>
             {p.voters !== 'all' ? (
-              <div class="seats-row" role="img" aria-label={`${ayes} aye, ${noes} no`}>{mps(w).map((m: string) => <span title={nm(w, m)} class={'seat ' + (book[m] === 'aye' ? 'aye' : book[m] === 'no' ? 'no' : '')}>{nm(w, m).slice(0, 1)}</span>)}</div>
+              <div class="seats-row" role="img" aria-label={`${ayes} aye, ${noes} no`}>{mps(w).map((m: string) => { const reb = rebels.includes(m); return <span title={nm(w, m) + (reb ? ', against the whip' : '')} class={'seat ' + (book[m] === 'aye' ? 'aye' : book[m] === 'no' ? 'no' : '') + (reb ? ' rebel' : '')}>{nm(w, m).slice(0, 1)}</span>; })}</div>
             ) : (
               <div class="yesno"><i style={{ width: `${ayes + noes ? (ayes / (ayes + noes)) * 100 : 50}%` }} /></div>
             )}
@@ -198,6 +202,16 @@ export function Proposal({ id }: { id: string }) {
               </div>
             )}
             {(p.stage === 'vote' || p.stage === 'override') && p.voters !== 'all' && <p class="small" style={{ margin: '6px 0 10px', fontWeight: 700 }}>{passCheck(w, p, ayes, noes).passed ? 'On course to pass.' : need ? (noes > w.config.seats - need ? 'On course to fall.' : `${need - ayes} more aye${need - ayes === 1 ? '' : 's'} needed to pass.`) : ayes || noes ? 'Not passing yet.' : 'Nobody has voted yet.'}</p>}
+            {(lines.length > 0 || (p.voters === 'mps' && canWhip(w, me) && ['debate', 'vote'].includes(p.stage))) && (
+              <div class="whips">
+                {lines.map(([k, l]) => <span class={'chip ' + (l.line === 'aye' ? 'teal' : l.line === 'no' ? 'red' : '')}><i class="dot" style={{ background: w.parties[k].colour, marginRight: 4 }} />{w.parties[k].name}: {l.line === 'free' ? 'free vote' : l.line === 'aye' ? 'Aye' : 'No'}</span>)}
+                {p.voters === 'mps' && canWhip(w, me) && ['debate', 'vote'].includes(p.stage) && (
+                  <span class="whip-set"><span class="small muted">Your party's line</span><Seg value={p.whips?.[myParty]?.line || ''} onChange={(v) => act('prop.whip', { prop: p.id, line: v }, v === 'free' ? 'A free vote. It is in the Gazette.' : 'Line set. Your MPs can see it.')} options={[['aye', 'Aye'], ['no', 'No'], ['free', 'Free vote']]} /></span>
+                )}
+              </div>
+            )}
+            {myLine && (p.stage === 'vote') && <p class="small" style={{ margin: '0 0 8px', fontWeight: 700 }}>Your party whips you to vote {myLine === 'aye' ? 'Aye' : 'No'}.{mine && mine !== 'abstain' && mine !== myLine ? <span class="err-line"> You're voting against it.</span> : ''}</p>}
+            {rebels.length > 0 && <p class="small" style={{ margin: '0 0 8px' }}><b style={{ color: 'var(--red)' }}>Against the whip:</b> {rebels.map((r) => nm(w, r)).join(', ')}</p>}
             {(p.stage === 'vote' || p.stage === 'override') && canVoteOn(w, p, me) && !(p.voters === 'all' && mine) && (
               <div class="lobbies" role="group" aria-label="Your vote">
                 <button type="button" class={'lobby aye' + (mine === 'aye' ? ' on' : '')} aria-pressed={mine === 'aye' ? 'true' : 'false'} onClick={() => act('prop.vote', { prop: p.id, vote: 'aye' }, mine ? 'Vote changed.' : 'Vote cast. +2 Influence.')}><b>{p.voters === 'all' ? 'Yes' : 'Aye'}</b><small>{p.voters === 'all' ? 'I agree' : 'Content'}</small></button>

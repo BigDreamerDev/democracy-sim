@@ -4,7 +4,7 @@ import { isGhostOk } from './streets';
 import { RED_BOX } from './glory';
 import { COMMANDS } from './index';
 import { canVote, checkObjectives, leaderOfSide, supportFor , contenders, commands, sideSeats } from './politics';
-import { canVoteOn, KINDS } from './proposals';
+import { canVoteOn, KINDS, canWhip, whipLine } from './proposals';
 import { CRISES } from './society';
 import { MOODS } from './foreign';
 
@@ -82,6 +82,14 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
         }
       });
     }
+    // party whips: a leader (or the Chief Whip) sets the line, usually with their side, now and then a free vote
+    if ((pr.stage === 'debate' || pr.stage === 'vote') && pr.voters === 'mps' && pr.kind === 'bill') {
+      bots.forEach((b: any) => {
+        if (!canWhip(w, b.id) || pr.whips?.[b.party] || !p(0.3)) return;
+        const line = chance(w, 0.1) ? 'free' : inGovernment(w, pr.by) === inGovernment(w, b.id) ? 'aye' : 'no';
+        go(b.id, 'prop.whip', { prop: pr.id, line });
+      });
+    }
     if (pr.stage === 'vote' || pr.stage === 'override') {
       bots.forEach((b: any) => {
         if (!canVoteOn(w, pr, b.id) || !p(0.6)) return;
@@ -93,6 +101,8 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
         else if (pr.kind === 'confidence') v = inGovernment(w, b.id) ? 'aye' : 'no';
         else if (pr.kind === 'censure') v = inGovernment(w, pr.target) === inGovernment(w, b.id) ? 'no' : 'aye';
         else v = inGovernment(w, pr.by) === inGovernment(w, b.id) || pr.by === b.id ? 'aye' : chance(w, 0.25) ? 'aye' : 'no';
+        const line = pr.stage === 'vote' && pr.voters === 'mps' ? whipLine(w, pr, b.id) : null;
+        if (line && chance(w, 0.9)) v = line;
         if (chance(w, 0.08)) v = v === 'aye' ? 'no' : 'aye';
         go(b.id, 'prop.vote', { prop: pr.id, vote: v });
       });

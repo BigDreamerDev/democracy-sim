@@ -26,7 +26,7 @@ export const BADGES: Badge[] = [
   { id: 'firstblood', name: 'First blood', sub: 'Carried out a contract', hidden: true, test: (c) => L(c, 'kills') >= 1 },
   { id: 'cursed', name: 'Cursed', sub: 'Assassinated twice in one week', hidden: true, test: (c) => (c.deaths || []).length >= 2 && c.deaths[0] - c.deaths[1] <= 7 * DAY },
   { id: 'untouchable', name: 'Untouchable', sub: 'Saved by a bodyguard', hidden: true, test: (c) => L(c, 'foiled') >= 1 },
-  { id: 'maverick', name: 'Maverick', sub: 'Never voted with the government line, five times over', hidden: true, test: (c) => (c.whip?.rebel || 0) >= 5 && !(c.whip?.loyal || 0) },
+  { id: 'maverick', name: 'Maverick', sub: 'Never voted with the whip, five times over', hidden: true, test: (c) => (c.whip?.rebel || 0) >= 5 && !(c.whip?.loyal || 0) },
   { id: 'turncoat', name: 'Turncoat', sub: 'Joined 3 parties', hidden: true, test: (c) => L(c, 'parties') >= 3 },
   { id: 'hunter', name: 'Hunter', sub: 'Five hits in the Hunt', test: (c) => L(c, 'huntKills') >= 5 },
   { id: 'lastone', name: 'Last one standing', sub: 'Won the Hunt', test: (c) => L(c, 'huntWins') >= 1 },

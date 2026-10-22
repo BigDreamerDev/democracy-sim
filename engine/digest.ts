@@ -1,7 +1,8 @@
 // The state of the realm as plain text, ready to paste into the group chat. Reads public things only (who holds
 // which public office, what's open, the numbers), so it's the same from a player's view or the full world.
 // The site's Copy button and the server's /api/public/digest.txt both use this.
-import { W, nm, fmtTime, ordinal, hosTitle, majority } from './core';
+import { W, Id, DAY, nm, fmtTime, fmtDay, ordinal, hosTitle, majority } from './core';
+import { crisisById } from './crises';
 import { KINDS } from './proposals';
 import { SETTABLE } from './proposals';
 
@@ -50,5 +51,46 @@ export function digest(w: W): string {
   }
   L.push('');
   L.push(`${w.laws.filter((l: any) => !l.repealed).length} laws in force.`);
+  return L.join('\n');
+}
+
+// The week in one card: what passed, who rebelled, who's up. Public things only, so it reads the same from any view.
+export type Recap = {
+  from: number; to: number; laws: { ref: string; title: string }[]; defeated: number; tabled: number;
+  rebel: { id: Id; n: number } | null; loudest: { id: Id; n: number } | null; top: { id: Id; n: number } | null;
+  pm: { id: Id; approval: number } | null; meters: { key: string; now: number; d: number }[];
+  elections: { title: string; winners: Id[] }[]; crises: string[];
+};
+export function recap(w: W, to = w.now): Recap {
+  const from = to - 7 * DAY;
+  const inWeek = (t: any) => typeof t === 'number' && t > from && t <= to;
+  const props = Object.values(w.proposals) as any[];
+  const laws = w.laws.filter((l: any) => !l.classified && inWeek(l.at)).map((l: any) => ({ ref: l.ref, title: l.title }));
+  const closed = props.filter((p) => p.result && !p.result.withdrawn && inWeek(p.voteEndsAt));
+  const tally = (pairs: Id[]) => { const n: Record<string, number> = {}; pairs.forEach((id) => (n[id] = (n[id] || 0) + 1)); const best = Object.entries(n).sort((a, b) => b[1] - a[1])[0]; return best ? { id: best[0], n: best[1] } : null; };
+  const rebel = tally(closed.flatMap((p) => p.rebels || []));
+  const loudest = tally(props.flatMap((p) => (p.speeches || []).filter((s: any) => inWeek(s.at) && s.side !== 'order').map((s: any) => s.by)));
+  const people = (Object.values(w.citizens) as any[]).filter((c) => c.active && !c.bot);
+  const best = people.sort((a, b) => b.influence - a.influence)[0];
+  const meters = ['prosperity', 'stability'].map((key) => ({ key, now: w.meters[key], d: (w.meters.log || []).filter((l: any) => l.key === key && inWeek(l.at)).reduce((a: number, l: any) => a + l.d, 0) }));
+  const elections = (Object.values(w.elections) as any[]).filter((e) => e.status === 'closed' && inWeek(e.closedAt) && e.results).map((e) => ({ title: e.title, winners: e.results.winners }));
+  const crises = (Object.values(w.crises || {}) as any[]).filter((c) => c.status === 'decided' && inWeek(c.decidedAt)).map((c) => crisisById(c.type)?.title || 'A crisis');
+  return {
+    from, to, laws, defeated: closed.filter((p) => !p.result.passed).length, tabled: props.filter((p) => inWeek(p.at)).length,
+    rebel, loudest, top: best ? { id: best.id, n: best.influence } : null,
+    pm: w.pm && w.citizens[w.pm] ? { id: w.pm, approval: w.citizens[w.pm].approval } : null, meters, elections, crises
+  };
+}
+export function recapText(w: W, r = recap(w)): string {
+  const L: string[] = [`*${w.config.realmName}: the week to ${fmtDay(r.to)}*`, ''];
+  L.push(r.laws.length ? `📜 ${r.laws.length} new law${r.laws.length > 1 ? 's' : ''}: ${r.laws.map((l) => `${l.title} (${l.ref})`).join(', ')}.` : '📜 No new laws.');
+  L.push(`🗳 ${r.tabled} tabled, ${r.defeated} defeated.`);
+  r.elections.forEach((e) => L.push(`🏛 ${e.title}: ${e.winners.map((x) => nm(w, x)).join(', ') || 'no winner'}.`));
+  r.crises.forEach((c) => L.push(`⚠ Crisis handled: ${c}.`));
+  if (r.rebel) L.push(`😈 Biggest rebel: ${nm(w, r.rebel.id)} (${r.rebel.n} vote${r.rebel.n > 1 ? 's' : ''} against the whip).`);
+  if (r.loudest) L.push(`📣 Loudest in the House: ${nm(w, r.loudest.id)} (${r.loudest.n} speech${r.loudest.n > 1 ? 'es' : ''}).`);
+  if (r.top) L.push(`⭐ Most influential: ${nm(w, r.top.id)} (${r.top.n} Influence).`);
+  if (r.pm) L.push(`👔 PM ${nm(w, r.pm.id)}: ${r.pm.approval}% approval.`);
+  L.push(r.meters.map((m) => `${m.key === 'prosperity' ? 'Prosperity' : 'Stability'} ${m.now} (${m.d >= 0 ? '+' : ''}${m.d})`).join(' · '));
   return L.join('\n');
 }

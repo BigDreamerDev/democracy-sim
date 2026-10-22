@@ -17,7 +17,12 @@ export function rolesOf(w: any, me: string): Role[] {
   try {
     if (leaderOfOpposition(w) === me) R.push({ key: 'lo', title: 'Leader of the Opposition', tone: 'brown', href: '#/government', can: ['Name the shadow cabinet', 'Lead the questions at PMQs'] });
   } catch {}
-  officesOf(w, me).forEach((o: any) => R.push({ key: 'o:' + o.id, title: o.title, tone: 'ink', href: '#/office/' + o.id, can: o.powers.map((p: string) => POWERS[p]?.label).filter(Boolean) }));
+  Object.entries(w.shadow || {}).forEach(([post, who]) => {
+    if (who !== me) return;
+    const o = post === 'pm' ? { title: 'Prime Minister' } : w.offices[post];
+    if (o) R.push({ key: 'sh:' + post, title: `Shadow ${o.title}`, tone: 'brown', href: post === 'pm' ? '#/cabinet' : '#/office/' + post, can: [`Hold the ${o.title.toLowerCase()} to account`, 'Ready to take the post if the opposition wins'] });
+  });
+  officesOf(w, me).forEach((o: any) => R.push({ key: 'o:' + o.id, title: o.title, tone: 'ink', href: '#/office/' + o.id, can: [...(o.id === 'whip' ? ['Set the government’s line on every House vote'] : []), ...o.powers.map((p: string) => POWERS[p]?.label).filter(Boolean)] }));
   const party = c.party && w.parties[c.party];
   if (party?.status === 'active' && party.leader === me) R.push({ key: 'pl:' + party.id, title: `Leader, ${party.name}`, tone: 'brown', href: '#/party/' + party.id, can: ['Pick the party’s candidates and line', 'Lead coalition talks'] });
   (Object.values(w.elections) as any[]).filter((e) => e.status === 'open' && e.candidates?.[me]).forEach((e) => R.push({ key: 'cand:' + e.id, title: `Standing: ${e.title}`, tone: 'teal', href: '#/election/' + e.id, can: ['Campaign until the polls close'] }));

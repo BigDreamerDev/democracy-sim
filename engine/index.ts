@@ -58,6 +58,7 @@ export const COMMANDS: Record<string, Cmd> = {
   'prop.vote': (w, me, a) => L.vote(w, me, a.prop, a.vote),
   'prop.edit': (w, me, a) => L.editProposal(w, me, a.prop, a),
   'prop.withdraw': (w, me, a) => L.withdrawProposal(w, me, a.prop),
+  'prop.whip': (w, me, a) => L.setWhip(w, me, a.prop, a.line),
   'prop.casting': (w, me, a) => L.casting(w, me, a.prop, a.vote),
   'prop.assent': (w, me, a) => L.assent(w, me, a.prop, a.yes),
   'prop.dissolve': (w, me, a) => L.answerDissolution(w, me, a.prop, a.yes),
@@ -223,4 +224,4 @@ export function skip(world: W, ms: number): W {
   return w;
 }
 export const nameOf = nm;
-export { digest } from './digest';
+export { digest, recap, recapText } from './digest';

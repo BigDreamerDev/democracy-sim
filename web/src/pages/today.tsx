@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { shareText } from '../store';
-import { digest } from '../../../engine/index';
+import { digest, recap, recapText } from '../../../engine/index';
+import { shareRecap } from '../share';
 import { useStore, act, ONLINE, myInvites, sendInvite, inviteLink, signOut, changePassword, toast, securityInfo, unlinkProvider, beginOAuth, signOutEverywhere, passkeysWork, addPasskey, removePasskey, renamePasskey } from '../store';
 import { TUTORIAL } from '../../../engine/tutorial';
 import { Page, Sec, Card, Btn, Who, Left, When, Seal, Empty, LinkRow, Seg, Meter, Field, Pick, PasswordField, Photo, DiscordLogo, SectionNav, ThemeSwitch } from '../ui';
@@ -163,6 +164,7 @@ export function Today() {
           ))}
         </div>
         {w.phase === 'running' && <div style={{ order: 2 }}><YourDesk /></div>}
+        {w.phase === 'running' && [1, 2].includes(new Date(w.now).getUTCDay()) && <div class="o4"><WeekRecap /></div>}
         {w.phase === 'running' && <div class="o4" style={{ marginTop: 18 }}><YourCorner /><OrderPaper /></div>}
         <section class="sec o5">
           <h2 class="h">In the Gazette</h2>
@@ -189,6 +191,28 @@ export function Today() {
 export function ShareRealm() {
   const { world: w } = useStore();
   return <button type="button" class="btn ghost small share-realm" onClick={() => shareText(digest(w))}>Copy for the group chat</button>;
+}
+// the last seven days in one card, to screenshot or share as a picture (shown on Today on Mondays and Tuesdays)
+export function WeekRecap() {
+  const { world: w } = useStore();
+  const r = recap(w);
+  return (
+    <Card style={{ marginTop: 18 }}>
+      <div class="row"><h2 class="h" style={{ margin: 0, fontSize: 21 }}>The week</h2><span class="small muted">{fmtDay(r.from)} to {fmtDay(r.to)}</span></div>
+      <ul class="list small" style={{ marginTop: 6 }}>
+        <li class="row"><span>New laws</span><b>{r.laws.length ? r.laws.map((l) => l.ref).join(', ') : 'None'}</b></li>
+        <li class="row"><span>Bills tabled · defeated</span><b class="tnum">{r.tabled} · {r.defeated}</b></li>
+        <li class="row"><span>Biggest rebel</span><b>{r.rebel ? `${nm(w, r.rebel.id)} (${r.rebel.n})` : 'Nobody'}</b></li>
+        <li class="row"><span>Loudest in the House</span><b>{r.loudest ? `${nm(w, r.loudest.id)} (${r.loudest.n})` : 'Nobody'}</b></li>
+        <li class="row"><span>Most influential</span><b>{r.top ? nm(w, r.top.id) : '—'}</b></li>
+        {r.pm && <li class="row"><span>The PM's approval</span><b class="tnum">{r.pm.approval}%</b></li>}
+      </ul>
+      <div class="row" style={{ justifyContent: 'flex-start', gap: 8, marginTop: 10 }}>
+        <Btn small onClick={() => shareRecap(w)}>Share as a picture</Btn>
+        <Btn small kind="ghost" onClick={() => shareText(recapText(w, r))}>Copy as text</Btn>
+      </div>
+    </Card>
+  );
 }
 // one tap from Today for the simple answers: vote, sign, accept, join, open the Red Box
 function SlipActions({ k }: { k: string }) {
@@ -305,6 +329,7 @@ export function Gazette() {
   return (
     <Page title={`The ${w.config.realmName.split(' of ')[1] || 'Realm'} Gazette`} kicker="The official record" intro="The Gazette acts as the official record of what has happened in the nation, printing exactly what has happened">
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 16 }}>{kinds.map(([k, l]) => <Btn small kind={k === kind ? undefined : 'plain'} onClick={() => setKind(k)}>{l}</Btn>)}</div>
+      {w.phase === 'running' && <WeekRecap />}
       <Sec title="Front pages" sub="Every Friday, the week on one page.">
         <ul class="list">{w.frontpages.map((f: any) => <LinkRow href={'#/frontpage/' + f.id} title={f.lead ? f.lead.headline : 'A quiet week'} sub={fmtDay(f.at)} />)}</ul>
         {!w.frontpages.length && <Empty>The first front page comes out on Friday.</Empty>}

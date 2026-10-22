@@ -1,10 +1,11 @@
 // What needs one citizen right now: votes to cast, bills to sign, deals waiting. Shown on Today, counted in the
 // sidebar, and sent to personal webhooks (each alert's `key` is stable, so a hook fires once per new item).
 // Always call it on viewFor(world, me), never the full world, so it can only mention what that person may see.
-import { W, Id, nm, isHOS, isPM, isMP, intrigueOpen, hasPower, holderOf , sideOf } from './core';
+import { W, Id, nm, isHOS, isPM, isMP, intrigueOpen, hasPower, holderOf, sideOf, bal, nextAt, mps, DAY } from './core';
 import { RED_BOX } from './glory';
 import { canVote , contenders, commands, leaderOfSide, FORM_DAYS } from './politics';
-import { canVoteOn, KINDS } from './proposals';
+import { canVoteOn, KINDS, whipLine, canWhip, rebelsOn } from './proposals';
+import { leaderOfOpposition } from './politics';
 
 export type Alert = { key: string; href: string; label: string; title: string; at?: number; urgent?: boolean };
 
@@ -19,7 +20,26 @@ export function needs(w: W, me: Id): Alert[] {
   });
   Object.values(w.proposals).forEach((p: any) => {
     const book = p.stage === 'override' ? p.overrideVotes || {} : p.votes;
-    if ((p.stage === 'vote' || p.stage === 'override') && canVoteOn(w, p, me) && !book[me]) out.push({ key: `prop:${p.id}:${p.stage}`, href: '#/p/' + p.id, label: p.stage === 'override' ? 'Override the veto' : `${KINDS[p.kind].name}, your vote`, title: p.title, at: p.stage === 'override' ? p.overrideEndsAt : p.voteEndsAt, urgent: p.kind === 'no_confidence' });
+    const line = p.stage === 'vote' && p.voters === 'mps' ? whipLine(w, p, me) : null;
+    if ((p.stage === 'vote' || p.stage === 'override') && canVoteOn(w, p, me) && !book[me]) out.push({ key: `prop:${p.id}:${p.stage}`, href: '#/p/' + p.id, label: p.stage === 'override' ? 'Override the veto' : `${KINDS[p.kind].name}, your vote${line ? ` · whipped ${line === 'aye' ? 'Aye' : 'No'}` : ''}`, title: p.title, at: p.stage === 'override' ? p.overrideEndsAt : p.voteEndsAt, urgent: p.kind === 'no_confidence' });
+    // whips: you're voting against your line; or, as the whip, some of yours are; or there's no line yet
+    if (line && book[me] && book[me] !== 'abstain' && book[me] !== line) out.push({ key: `rebel:${p.id}:${book[me]}`, href: '#/p/' + p.id, label: 'Against the whip', title: `Your party says ${line === 'aye' ? 'Aye' : 'No'} on ${p.title}. You can change your vote until it closes`, at: p.voteEndsAt });
+    if (p.stage === 'vote' && p.voters === 'mps' && canWhip(w, me)) {
+      const party = w.citizens[me].party;
+      const mine = rebelsOn(w, p).filter((m) => w.citizens[m]?.party === party && m !== me);
+      if (mine.length) out.push({ key: `rebels:${p.id}:${mine.length}`, href: '#/p/' + p.id, label: 'Rebellion', title: `${mine.map((m) => nm(w, m)).join(', ')} ${mine.length === 1 ? 'is' : 'are'} voting against your line on ${p.title}`, at: p.voteEndsAt, urgent: mine.length >= 2 });
+      if (!p.whips?.[party] && mps(w).filter((m) => w.citizens[m]?.party === party).length >= 2) out.push({ key: `whipline:${p.id}`, href: '#/p/' + p.id, label: 'Set the line', title: `Tell your MPs how to vote on ${p.title}`, at: p.voteEndsAt });
+    }
+    // the Speaker: a dead heat needs a casting vote; a long debate may need order
+    if (w.speaker === me && p.stage === 'vote' && p.voters === 'mps' && !p.casting) {
+      const ayes = mps(w).filter((m) => p.votes[m] === 'aye').length;
+      const noes = mps(w).filter((m) => p.votes[m] === 'no').length;
+      if (ayes && ayes === noes) out.push({ key: `tie:${p.id}:${ayes}`, href: '#/p/' + p.id, label: 'A tie', title: `${p.title} stands at ${ayes} all. Set your casting vote, or it falls`, at: p.voteEndsAt, urgent: true });
+    }
+    if (w.speaker === me && p.stage === 'debate') {
+      const since = p.speeches.length - 1 - p.speeches.map((x: any) => x.side).lastIndexOf('order');
+      if (since >= 6) out.push({ key: `order:${p.id}:${Math.floor(since / 6)}`, href: '#/p/' + p.id, label: 'Hansard', title: `${since} speeches on ${p.title} since order was last called`, at: p.debateEndsAt });
+    }
     if (p.stage === 'assent' && isHOS(w, me)) out.push({ key: `assent:${p.id}`, href: '#/p/' + p.id, label: w.config.hos === 'monarchy' ? 'Royal Assent' : 'Sign or veto', title: p.title, at: p.assentDueAt });
     if (p.stage === 'hos' && isHOS(w, me)) out.push({ key: `dissolve:${p.id}`, href: '#/p/' + p.id, label: 'Dissolution request', title: 'The PM asks for an election', at: p.hosDueAt, urgent: true });
   });
@@ -54,6 +74,20 @@ export function needs(w: W, me: Id): Alert[] {
     if (o.status === 'paid' && o.seller === me) out.push({ key: 'order:' + o.id, href: '#/market', label: 'Someone bought from you', title: `${nm(w, o.buyer)}: ${o.title}`, at: o.dueAt });
     if (o.status === 'delivered' && o.buyer === me) out.push({ key: 'delivered:' + o.id, href: '#/market', label: 'Did it arrive?', title: o.title, at: o.dueAt });
   });
+  // jobs that come with an office: a budget about to be swept back, inflation to answer, cases to decide, a shadow cabinet
+  const payday = w.calendar?.payday ? nextAt(w, 'payday') : null;
+  (Object.values(w.offices) as any[]).forEach((o) => {
+    if (o.holder !== me || o.id === 'treasury' || !(o.budget > 0) || !o.powers.includes('grant')) return;
+    const left = bal(w, 'office:' + o.id);
+    if (payday && left >= o.budget && payday - w.now < 2 * DAY) out.push({ key: `budget:${o.id}:${payday}`, href: '#/office/' + o.id, label: o.title, title: `${left} crowns of the ${o.name} budget unspent. It goes back to the Treasury at payday`, at: payday });
+  });
+  if (hasPower(w, me, 'rate') && (w.economy?.lastInflation || 0) > 5) out.push({ key: `rate:${payday}`, href: '#/economy', label: 'The Reserve', title: `Inflation is ${w.economy.lastInflation}%. Consider raising the rate`, at: payday || undefined });
+  Object.values(w.cases || {}).forEach((k: any) => {
+    if (k.status !== 'open') return;
+    if ((w.offices.court?.members || []).includes(me) && !k.votes?.[me]) out.push({ key: 'case:' + k.id, href: '#/case/' + k.id, label: 'Supreme Court', title: k.question, at: k.dueAt });
+    if (isPM(w, me) && !k.args?.defence) out.push({ key: 'defend:' + k.id, href: '#/case/' + k.id, label: 'The government is being sued', title: k.question, at: k.dueAt });
+  });
+  if (w.phase === 'running' && leaderOfOpposition(w) === me && !Object.values(w.shadow || {}).some(Boolean)) out.push({ key: 'shadow:' + (w.season?.n || 0), href: '#/cabinet', label: 'Leader of the Opposition', title: 'Name your shadow cabinet' });
   const signer = holderOf(w, 'treasury') || w.pm;
   (w.jobClaims || []).forEach((c: any) => c.status === 'pending' && c.by !== me && (signer === me || (isPM(w, me) && holderOf(w, 'treasury') === c.by)) && out.push({ key: 'job:' + c.id, href: '#/market', label: 'Wage to sign off', title: `${nm(w, c.by)}: ${c.title}`, at: c.dueAt }));
   (w.ultimatums || []).forEach((u: any) => u.status === 'sent' && (isPM(w, me) || hasPower(w, me, 'envoy')) && out.push({ key: 'ultimatum:' + u.id, href: '#/foreign', label: 'Foreign demand', title: `${w.nations[u.nation]?.name} wants ${u.crowns} crowns`, at: u.dueAt, urgent: true }));

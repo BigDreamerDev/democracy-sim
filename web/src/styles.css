@@ -857,3 +857,8 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .status-banner { margin: 0 0 12px; padding: 10px 14px; border: 1.5px solid var(--ink); border-radius: 3px; background: var(--brown-tint); color: var(--ink); font-size: 15px; }
 .status-banner.martial { background: var(--red-tint); border-color: var(--red); }
 .share-realm { margin-top: 10px; }
+/* whips: each party's line on a House vote, and who's breaking it */
+.whips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 10px; }
+.whips .chip { text-transform: none; letter-spacing: 0; font-size: 12px; }
+.whip-set { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.seat.rebel { box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--red); }

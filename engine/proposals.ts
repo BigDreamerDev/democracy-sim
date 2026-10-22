@@ -347,13 +347,47 @@ export function closeVote(w: W, p: any) {
     meter(w, 'stability', 2, 'The people decided by referendum');
   }
 }
+// ================= Whips =================
+// A party's line on a House vote: set by its leader, or for a governing party by the Chief Whip. Public, like real
+// whipping. 'free' means a free vote. Without a line, government MPs are measured against the PM's own vote.
+export function whipLine(w: W, p: any, mp: Id): 'aye' | 'no' | null {
+  const party = w.citizens[mp]?.party;
+  const set = party && p.whips?.[party]?.line;
+  if (set === 'free') return null;
+  if (set) return set;
+  if (!w.pm || mp === w.pm || !inGovernment(w, mp)) return null;
+  return p.votes?.[w.pm] || (p.kind === 'no_confidence' || p.kind === 'censure' ? 'no' : null);
+}
+export function canWhip(w: W, actor: Id) {
+  const party = w.citizens[actor]?.party;
+  const pt = party && w.parties[party];
+  if (!pt || pt.status !== 'active') return false;
+  return pt.leader === actor || (w.offices.whip?.holder === actor && inGovernment(w, actor));
+}
+export function setWhip(w: W, actor: Id, pid: unknown, line: unknown) {
+  const p = own(w.proposals, pid);
+  if (!p) fail('No such proposal.');
+  if (p.voters !== 'mps') fail('Only votes in the House are whipped.');
+  if (!['debate', 'vote'].includes(p.stage)) fail('The vote is over.');
+  if (line !== 'aye' && line !== 'no' && line !== 'free') fail('Pick aye, no or a free vote.');
+  if (!canWhip(w, actor)) fail('Only your party leader or the Chief Whip sets the line.');
+  const party = w.citizens[actor].party;
+  p.whips ??= {};
+  if (p.whips[party]?.line === line) return;
+  p.whips[party] = { line, by: actor, at: w.now };
+  const pt = w.parties[party];
+  gazette(w, 'government', line === 'free' ? `${pt.name}: a free vote on ${p.title}.` : `${pt.name}: MPs whipped to vote ${line === 'aye' ? 'Aye' : 'No'} on ${p.title}.`, '#/p/' + p.id);
+}
+// MPs voting against their line right now, for the whip's alert and the seat map
+export function rebelsOn(w: W, p: any): Id[] {
+  return mps(w).filter((m) => { const l = whipLine(w, p, m); const v = p.votes?.[m]; return l && v && v !== 'abstain' && v !== l; });
+}
 function trackWhip(w: W, p: any) {
-  if (p.voters !== 'mps' || !w.pm) return;
-  const line = p.votes[w.pm] || (p.kind === 'no_confidence' || p.kind === 'censure' ? 'no' : null);
-  if (!line) return;
+  if (p.voters !== 'mps') return;
   const rebels: Id[] = [];
   mps(w).forEach((m) => {
-    if (!inGovernment(w, m) || m === w.pm) return;
+    const line = whipLine(w, p, m);
+    if (!line) return;
     const v = p.votes[m];
     const c = w.citizens[m];
     if (!v || v === 'abstain') return;
@@ -364,7 +398,8 @@ function trackWhip(w: W, p: any) {
       rebels.push(m);
     }
   });
-  if (rebels.length) gazette(w, 'government', `${rebels.map((r) => nm(w, r)).join(' and ')} defied the government whip.`, '#/p/' + p.id);
+  p.rebels = rebels;
+  if (rebels.length) gazette(w, 'government', `${rebels.map((r) => nm(w, r)).join(' and ')} defied the whip.`, '#/p/' + p.id);
 }
 export function assent(w: W, actor: Id, pid: Id, yes: boolean) {
   const p = own(w.proposals, pid);

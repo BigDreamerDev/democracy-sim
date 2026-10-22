@@ -64,6 +64,7 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   migrate.ts   migrate(world) — upgrades a saved world on server boot
   alerts.ts    needs(view, me) — what needs a player now; Today, the sidebar badge and personal webhooks
   digest.ts    digest(w) — the state of the realm as plain text for the group chat (Copy button, /api/public/digest.txt)
+               recap(w) / recapText(w) — the last 7 days (laws, rebels, loudest, PM approval) for Today's weekly card
   catalog.ts   CATALOG — public description of every player command and its args (served by /api/v1/commands)
   index.ts     COMMANDS table; run(world, actor, cmd, args) applies one to a structuredClone
   bots.ts      bot turns: botsAct (demo, smoke) and actBots(w, isBot) — the clock runs practice bots during induction
@@ -260,6 +261,9 @@ Citizen id = `'u' + users.id`.
   as `e.method` when it opens. Ballots are an id (single) or a list (others). `config.billVoters` ('mps'|'all')
   and `config.passRule` ('cast'|'seats'|'twothirds') are copied onto each proposal (`voters`, `rule`);
   `passCheck()` in proposals.ts is the one place that decides a pass. All are chosen at the Convention.
+- **Whips**: `p.whips[partyId] = {line}` (public), set by `prop.whip` (party leader, or the Chief Whip for a governing
+  party). `whipLine()` is the one place that says what line an MP is under: their party's, else the PM's vote for
+  government MPs, none on a free vote. `trackWhip` counts `c.whip.loyal/rebel` and stores `p.rebels` when the vote closes.
 
 ## Playbooks
 

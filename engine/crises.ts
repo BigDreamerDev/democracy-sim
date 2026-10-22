@@ -589,6 +589,7 @@ function settle(w: W, c: any, choice: number, how: 'pm' | 'house' | 'default', a
   const t = crisisById(c.type)!;
   const o = t.options[choice];
   c.status = 'decided';
+  c.decidedAt = w.now;
   c.choice = choice;
   settleMarket(w, 'crisis', c.id, String(choice), how === 'pm' && actor ? [{ id: actor, did: 'chose it as Prime Minister' }] : how === 'house' ? Object.keys(c.votes).filter((m) => c.votes[m] === choice).map((id) => ({ id, did: 'voted for it in the House' })) : []);
   c.by = actor || null;
