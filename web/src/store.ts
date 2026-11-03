@@ -490,6 +490,7 @@ async function adminRoute(path: string, cmd: string, body: any, done: string) {
   toast(done);
   return true;
 }
+export const resyncClock = () => adminRoute('/api/admin/clock', 'admin.clock', { on: 'sync' }, 'The clock is back on real time.');
 export const pauseClock = (on: boolean, reason = '') => adminRoute('/api/admin/clock', 'admin.clock', { on, reason }, on ? 'The realm is paused. Every deadline waits.' : 'The clock is running again.');
 export const suspendCitizen = (citizen: string, on: boolean, reason = '') => adminRoute('/api/admin/suspend', 'admin.suspend', { citizen, on, reason }, on ? 'Suspended. It is in the Gazette.' : 'Restored.');
 export const setRO = (citizen: string, on: boolean) => adminRoute('/api/admin/ro', 'admin.ro', { citizen, on }, on ? 'They can now run the game with you.' : 'No longer a Returning Officer.');

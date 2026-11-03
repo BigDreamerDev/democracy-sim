@@ -610,7 +610,7 @@ export async function makeApp(o: Options) {
     await q('UPDATE users SET is_admin = $2 WHERE id = $1', [id, req.body?.on === true]);
     userCache.delete(id);
   }));
-  app.post('/api/admin/clock', auth, admin, adminRun('admin.clock', (req) => ({ on: req.body?.on === true, real: now(), reason: req.body?.reason || '' })));
+  app.post('/api/admin/clock', auth, admin, adminRun('admin.clock', (req) => ({ on: req.body?.on === 'sync' ? 'sync' : req.body?.on === true, real: now(), reason: req.body?.reason || '' })));
   // the action log: every command anyone ran, ok or not, newest first (RO only: arguments can be private)
   app.get('/api/admin/log', auth, admin, async (req: any, res) => {
     const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 200));

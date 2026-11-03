@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { useEffect } from 'preact/hooks';
-import { useStore, act, ONLINE, resetRealm, downloadExport, resetPassword, adminApps, removeApp, restoreApp, toast, adminInvites, makeInvite, makeInvites, revokeInvite, inviteLink, removeDuplicate, adminNotes, saveNote, adminAllowances, setAllowance, adminDevices, pauseClock, suspendCitizen, setRO, actionLog, listSnapshots, restoreSnapshot } from '../store';
+import { useStore, act, ONLINE, resetRealm, downloadExport, resetPassword, adminApps, removeApp, restoreApp, toast, adminInvites, makeInvite, makeInvites, revokeInvite, inviteLink, removeDuplicate, adminNotes, saveNote, adminAllowances, setAllowance, adminDevices, pauseClock, resyncClock, suspendCitizen, setRO, actionLog, listSnapshots, restoreSnapshot } from '../store';
 import { Page, Sec, Card, Btn, Empty, LinkRow, Field, Pick, When, Seg } from '../ui';
 import { CRISES } from '../../../engine/crises';
 import { nm, ledgerTotal, fmtTime, acctLabel } from '../../../engine/index';
@@ -236,11 +236,14 @@ function PauseRealm() {
   const [why, setWhy] = useState('');
   const paused = w.clock?.pausedAt;
   return (
-    <Sec title="Pause the realm" sub="While paused, no deadline passes: votes, elections, payday and debates all wait, then carry on with the same time left. Announced in the Gazette.">
+    <Sec title="Pause the realm" sub="While paused, no deadline passes: votes, elections, payday and debates all wait, then carry on with the same time left, and the date stays on real time. Announced in the Gazette.">
       {paused ? (
         <Card kind="warn"><div class="row"><span><b>Paused</b> since <When at={paused} />{w.clock.reason ? `: ${w.clock.reason}` : ''}.</span><Btn small onClick={() => pauseClock(false).catch(err)}>Resume</Btn></div></Card>
       ) : (
+        <>
+        {w.clock?.offset > 0 && <Card kind="warn"><div class="row"><span>The game clock is <b>{Math.round(w.clock.offset / 3600000)} hours behind</b> real time from an earlier pause.</span><Btn small onClick={() => resyncClock().catch(err)}>Resync to real time</Btn></div></Card>}
         <div class="grid2"><Field label="Reason (public)" value={why} onInput={setWhy} placeholder="e.g. exam week" /><Btn kind="danger ghost" style={{ alignSelf: 'end' }} onClick={() => pauseClock(true, why).then(() => setWhy('')).catch(err)}>Pause</Btn></div>
+        </>
       )}
     </Sec>
   );

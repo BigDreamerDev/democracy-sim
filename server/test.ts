@@ -333,6 +333,8 @@ try {
   assert.equal((await call('/api/admin/ro', { citizen: 'u4', on: false }, C2)).status, 200);
   assert.equal((await call('/api/admin/log', undefined, C2)).status, 403);
   assert.equal((await call('/api/act', { cmd: 'admin.clock', args: { on: true, real: 0 } }, RI)).status, 400, 'pausing only through its own route');
+  const probeAt = getWorld().now + 86400_000;
+  getWorld().probe = { dueAt: probeAt, doneAt: getWorld().now - 3 * 3600_000 };
   assert.equal((await call('/api/admin/clock', { on: true, reason: 'exams' }, RI)).status, 200);
   const frozen = (await call('/api/state', undefined, RI)).body.serverNow;
   t += 3600_000;
@@ -340,7 +342,16 @@ try {
   assert.equal((await call('/api/health')).body.paused, true);
   assert.equal((await call('/api/admin/clock', { on: false }, RI)).status, 200);
   t += 1000;
-  assert.equal((await call('/api/state', undefined, RI)).body.serverNow, frozen + 1000, 'and resumes where it stopped');
+  assert.equal((await call('/api/state', undefined, RI)).body.serverNow, frozen + 3600_000 + 1000, 'and resumes on real time');
+  assert.equal(getWorld().clock.offset, 0, 'no lag left behind');
+  assert.equal(getWorld().probe.dueAt - probeAt, 3600_000, 'pending deadlines move back by the pause');
+  getWorld().clock.offset = 7200_000;
+  const p1 = getWorld().probe.dueAt, d1 = getWorld().probe.doneAt;
+  assert.equal((await call('/api/admin/clock', { on: 'sync' }, RI)).status, 200, 'resync an old lag');
+  assert.equal(getWorld().probe.dueAt, p1 + 7200_000);
+  assert.equal(getWorld().probe.doneAt, d1, 'history stays put');
+  delete getWorld().probe;
+  assert.equal((await call('/api/admin/clock', { on: 'sync' }, RI)).status, 400, 'nothing to resync');
   assert.ok((await call('/api/admin/log', undefined, RI)).body.some((r: any) => r.cmd === 'admin.clock'));
   assert.match(await (await fetch(base + '/api/public/digest.txt')).text(), /Parliament|Convention/);
   assert.equal((await call('/api/public/status.json')).status, 200);

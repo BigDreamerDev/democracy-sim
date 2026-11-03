@@ -981,14 +981,35 @@ export function setRO(w: W, actor: Id, target: unknown, on: unknown) {
     adminDid(w, actor, `${c.id === actor ? 'stepped down' : `took away ${c.name}'s role`} as Returning Officer`, '#/rolog');
   } else fail('Say whether to add or remove.');
 }
-// pause the realm (exam week, a holiday): game time stops; on resume every deadline is exactly as far away as it was.
+// pause the realm (exam week, a holiday): game time stops; on resume the clock jumps back to real time and every
+// pending deadline moves later by the same amount, so each has exactly as long left as it had when the pause began.
 // `real` is the server's clock, passed only by the server's own route (never by a player).
+// 'sync' does the same for any lag left by older pauses (when game time = real time - offset).
+const TIME_KEY = /(At|Until|Due|deadline|nextCheck)$|^(at|until)$/;
+// move every future timestamp in the world later by `ms` (history is in the past and stays put)
+function shiftFuture(w: W, from: number, ms: number) {
+  if (ms <= 0) return 0;
+  let n = 0;
+  const seen = new Set<any>();
+  const walk = (o: any) => {
+    if (!o || typeof o !== 'object' || seen.has(o) || o === w.clock) return;
+    seen.add(o);
+    for (const k of Object.keys(o)) {
+      const v = o[k];
+      if (typeof v === 'number' && TIME_KEY.test(k) && v > from && v < from + 3650 * DAY) ((o[k] = v + ms), n++);
+      else if (v && typeof v === 'object') walk(v);
+    }
+  };
+  walk(w);
+  return n;
+}
 export function pauseClock(w: W, actor: Id, on: unknown, real: unknown, reason: unknown) {
   if (!w.citizens[actor]?.admin) fail('Only the Returning Officer can pause the realm.');
   const t = Number(real);
   if (!Number.isFinite(t)) fail('The server clock is missing.');
   w.clock ??= { offset: 0, pausedAt: null };
   const why = text(reason, 0, 200, 'reason');
+  const off = w.clock.offset || 0;
   if (on === true) {
     if (w.clock.pausedAt) fail('The realm is already paused.');
     w.clock.pausedAt = t;
@@ -997,11 +1018,18 @@ export function pauseClock(w: W, actor: Id, on: unknown, real: unknown, reason: 
   } else if (on === false) {
     if (!w.clock.pausedAt) fail('The realm isn’t paused.');
     const gone = Math.max(0, t - w.clock.pausedAt);
-    w.clock.offset = (w.clock.offset || 0) + gone;
+    shiftFuture(w, w.clock.pausedAt - off, gone + off);
+    w.clock.offset = 0;
     w.clock.pausedAt = null;
     delete w.clock.reason;
-    adminDid(w, actor, `resumed the realm after ${Math.round(gone / 3600000)} hours. Every deadline moved back by the same`, '#/rolog');
-  } else fail('Say whether to pause or resume.');
+    adminDid(w, actor, `resumed the realm after ${Math.round(gone / 3600000)} hours. The date is back to real time and every deadline moved back by the same`, '#/rolog');
+  } else if (on === 'sync') {
+    if (w.clock.pausedAt) fail('Resume the realm first: resuming puts the clock back on real time.');
+    if (!off) fail('The clock is already on real time.');
+    shiftFuture(w, t - off, off);
+    w.clock.offset = 0;
+    adminDid(w, actor, `put the clock back on real time (it was ${Math.round(off / 3600000)} hours behind). Every deadline moved back by the same`, '#/rolog');
+  } else fail('Say whether to pause, resume or resync.');
 }
 
 // ================= Your own name and bio =================
