@@ -39,7 +39,7 @@ export function Election({ id }: { id: string }) {
   const standing = !!e.candidates[me];
   const cands = Object.values(e.candidates).sort((a: any, b: any) => w.citizens[b.id].approval - w.citizens[a.id].approval) as any[];
   return (
-    <Page back={['#/elections', 'Elections']} kicker={<>Closes in <Left at={e.closesAt} /></>} title={e.title} intro={<>{VOTING[e.method || 'single'].how} {e.kind === 'general' ? `The top ${e.winners} win seats; the rest stay in line for any seat that falls empty.` : e.voters === 'mps' ? 'Only MPs vote.' : 'Secret ballot. Final once cast.'}</>}>
+    <Page back={['#/elections', 'Elections']} kicker={<>Closes in <Left at={e.closesAt} /></>} title={e.title} intro={<>{VOTING[e.method || 'single'].how} {e.kind === 'general' ? `The top ${e.winners} win seats; the rest stay in line for any seat that falls empty.` : e.voters === 'mps' ? 'Only MPs vote.' : 'Secret ballot. You can change it until the polls close.'}</>}>
       <Sec>
         <Card kind={standing ? 'tint' : undefined}>
           {standing ? <div class="row"><b>You are standing.</b><Btn small kind="plain" onClick={() => act('election.withdraw', { election: e.id }, 'Withdrawn.')}>Withdraw</Btn></div> : <div class="row"><span>Put your name on the ballot.</span><Btn small onClick={() => act('election.stand', { election: e.id }, 'You are standing.')}>Stand</Btn></div>}
@@ -56,11 +56,11 @@ export function Election({ id }: { id: string }) {
             }));
             const done = mine && Array.isArray(mine) ? <>Your ballot: {mine.map((id: string, i: number) => <>{i ? ', ' : ''}{method === 'approval' ? '' : `${i + 1}. `}<b>{nm(w, id)}</b></>)}. Only you can see it.</> : mine ? <>You voted for <b>{nm(w, mine)}</b>. Only you can see that.</> : undefined;
             if (method === 'single')
-              return <BallotPaper head={mine ? 'Ballot cast · sealed until polls close' : 'Vote for one · secret and final'} options={opts} value={mine} locked={!!mine} confirm="Cast your ballot? It can't be changed." onPick={(id) => act('election.vote', { election: e.id, candidate: id }, 'Ballot cast. +2 Influence.')} empty="Nobody is standing yet. Be the first." foot={done} />;
+              return <BallotPaper head={mine ? 'Ballot cast · tap another name to change it' : 'Vote for one · secret'} options={opts} value={mine} confirm={mine ? 'Change your vote to this?' : 'Cast your ballot? You can change it until the polls close.'} onPick={(id) => act('election.vote', { election: e.id, candidate: id }, mine ? 'Vote changed.' : 'Ballot cast. +2 Influence.')} empty="Nobody is standing yet. Be the first." foot={done} />;
             return (
-              <MultiBallot mode={method === 'approval' ? 'approve' : 'rank'} final head={mine ? 'Ballot cast · sealed until polls close' : `${VOTING[method].short} · secret and final`}
-                options={opts} value={Array.isArray(mine) ? mine : null} locked={!!mine} empty="Nobody is standing yet. Be the first." foot={done}
-                onCast={(list) => act('election.vote', { election: e.id, [method === 'approval' ? 'approve' : 'ranking']: list }, 'Ballot cast. +2 Influence.')} />
+              <MultiBallot mode={method === 'approval' ? 'approve' : 'rank'} final castLabel={mine ? 'Save my changes' : undefined} head={mine ? 'Ballot cast · you can change it until the polls close' : `${VOTING[method].short} · secret`}
+                options={opts} value={Array.isArray(mine) ? mine : null} empty="Nobody is standing yet. Be the first." foot={done}
+                onCast={(list) => act('election.vote', { election: e.id, [method === 'approval' ? 'approve' : 'ranking']: list }, mine ? 'Ballot changed.' : 'Ballot cast. +2 Influence.')} />
             );
           })()
         )}

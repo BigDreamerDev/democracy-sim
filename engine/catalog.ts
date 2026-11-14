@@ -11,7 +11,7 @@ export const CATALOG: Record<string, CmdInfo> = {
   'convention.vote': { about: 'Vote on a Founding Convention clause.', args: { clause: 'id (convention.clauses[].id)', option: 'number (index into options)' } },
   'election.stand': { about: 'Stand in an open election.', args: { election: 'id' } },
   'election.withdraw': { about: 'Withdraw from an election, before anyone has voted for you.', args: { election: 'id' } },
-  'election.vote': { about: 'Cast your secret ballot. election.method says how: single (candidate), ranked or borda (ranking: ids best first), approval (approve: ids).', args: { election: 'id', candidate: 'id (single vote)', ranking: 'list of ids (ranked, borda)', approve: 'list of ids (approval)' } },
+  'election.vote': { about: 'Cast your secret ballot, or change it until the polls close. election.method says how: single (candidate), ranked or borda (ranking: ids best first), approval (approve: ids).', args: { election: 'id', candidate: 'id (single vote)', ranking: 'list of ids (ranked, borda)', approve: 'list of ids (approval)' } },
   'me.profile': { about: 'Change your display name (once a week, announced in the Gazette) and/or your bio (up to 280 characters).', args: { name: 'text (optional, 2–30)', bio: 'text (optional)' } },
   'office.resign': { about: 'Resign an office you hold. It falls vacant.', args: { office: 'id' } },
   'party.found': { about: 'Found a party (10 crowns). It is founded at once, with you as leader. (cofounders, if sent, is ignored.)', args: { name: 'text', colour: 'text (#rrggbb)' } },

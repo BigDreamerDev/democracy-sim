@@ -410,7 +410,9 @@ export const VOTING: Record<string, { label: string; short: string; how: string;
 export function castBallot(w: W, actor: Id, eid: Id, cand: Id, a: any = {}) {
   const e = own(w.elections, eid);
   if (!e || !canVote(w, e, actor)) fail('You cannot vote in this election.');
-  if (e.ballots[actor]) fail('Your ballot is cast. It cannot be changed.');
+  if (e.status !== 'open') fail('This election has closed.');
+  // a ballot can be changed until the polls close; only the first one earns Influence
+  const again = e.ballots[actor] !== undefined;
   const method = e.method || 'single';
   if (method === 'single') {
     if (!own(e.candidates, cand)) fail('That person is not standing.');
@@ -423,6 +425,7 @@ export function castBallot(w: W, actor: Id, eid: Id, cand: Id, a: any = {}) {
     if (list.some((c) => !own(e.candidates, c))) fail('Your ballot names someone who is not standing.');
     e.ballots[actor] = list.slice();
   }
+  if (again) return;
   earn(w, actor, 2, 'Voted in an election');
   tick(w, actor, 'votes');
 }
