@@ -862,3 +862,5 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .whips .chip { text-transform: none; letter-spacing: 0; font-size: 12px; }
 .whip-set { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .seat.rebel { box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--red); }
+.toast.update { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.update-go { font: inherit; font-weight: 700; padding: 6px 12px; border: 0; border-radius: 3px; background: var(--paper); color: var(--ink); cursor: pointer; }

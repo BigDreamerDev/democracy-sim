@@ -25,6 +25,7 @@ import { Market } from './pages/market';
 import { Polls } from './pages/glory';
 import { CopyDesk } from './pages/copydesk';
 import { CopyOverlay } from './copyEdit';
+import { watchForUpdates, UpdateBar } from './update';
 
 const ROOTS = ['', 'house', 'realm', 'laws', 'you', 'gazette'];
 function level(hash: string) {
@@ -120,6 +121,7 @@ function Game() {
       </div></nav>
       {toast && <div class={'toast' + (toast.err ? ' err' : '')} role="status">{toast.text}</div>}
       {offline && <div class="toast err" role="status">Can't reach the server. Retrying…</div>}
+      <UpdateBar />
       <Tour />
       {!ONLINE && <DemoPanel />}
       {!ONLINE && <DemoRail />}
@@ -140,12 +142,12 @@ function StatusBanner() {
   );
 }
 
-// the theme you picked last time, before the first paint; and the offline copy of the site, online only
+// the theme you picked last time, before the first paint; and the offline copy of the site, kept on the latest build
 {
   const t = getTheme();
   if (t !== 'auto') document.documentElement.setAttribute('data-theme', t);
   themeBar(t);
-  if (ONLINE && 'serviceWorker' in navigator && location.protocol === 'https:') addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  watchForUpdates();
 }
 
 render(<App />, document.getElementById('app')!);
