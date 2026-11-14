@@ -11,6 +11,8 @@ export const CATALOG: Record<string, CmdInfo> = {
   'convention.vote': { about: 'Vote on a Founding Convention clause.', args: { clause: 'id (convention.clauses[].id)', option: 'number (index into options)' } },
   'election.stand': { about: 'Stand in an open election.', args: { election: 'id' } },
   'election.withdraw': { about: 'Withdraw from an election, before anyone has voted for you.', args: { election: 'id' } },
+  'election.predict': { about: 'Pundit desk: call who will win an open election (exactly election.winners picks). Free; change it until an hour before close. Scored at close for Influence.', args: { election: 'id', picks: 'list of candidate ids' } },
+  'newsnight.comment': { about: 'Newspaper editors only: add one line of commentary to the latest Newsnight exit poll.', args: { election: 'id', text: 'up to 200 characters' } },
   'election.vote': { about: 'Cast your secret ballot, or change it until the polls close. election.method says how: single (candidate), ranked or borda (ranking: ids best first), approval (approve: ids).', args: { election: 'id', candidate: 'id (single vote)', ranking: 'list of ids (ranked, borda)', approve: 'list of ids (approval)' } },
   'me.profile': { about: 'Change your display name (once a week, announced in the Gazette) and/or your bio (up to 280 characters).', args: { name: 'text (optional, 2–30)', bio: 'text (optional)' } },
   'office.resign': { about: 'Resign an office you hold. It falls vacant.', args: { office: 'id' } },

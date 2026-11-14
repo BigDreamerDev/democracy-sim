@@ -69,6 +69,8 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
       if (m === 'single') go(b.id, 'election.vote', { election: e.id, candidate: order[0] });
       else if (m === 'approval') go(b.id, 'election.vote', { election: e.id, approve: [...order.slice(0, 2), ...rest.slice(0, 1)] });
       else go(b.id, 'election.vote', { election: e.id, ranking: [...order, ...rest].slice(0, 3 + Math.floor(rand(w) * 3)) });
+      // some bots try the pundit desk too, calling the most popular candidates
+      if (!e.predictions?.[b.id] && p(0.4)) go(b.id, 'election.predict', { election: e.id, picks: cands.slice().sort((x, y) => w.citizens[y].approval - w.citizens[x].approval).slice(0, Math.min(e.winners, cands.length)) });
     });
   });
 

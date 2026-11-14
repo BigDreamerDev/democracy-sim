@@ -3,7 +3,7 @@ import { useStore, act, ONLINE } from '../store';
 import { shareResult } from '../share';
 import { Page, Sec, Card, Btn, Who, Left, Empty, LinkRow, Meter, Stamp, Seg, Field, Pick, BallotPaper, MultiBallot } from '../ui';
 import { nm, allCitizens, fmtDay } from '../../../engine/index';
-import { canVote, conventionNeed, conventionSpec, SETTABLE_START, DOW, VOTING, NEWSNIGHT_MOVES, newsnightDue } from '../../../engine/politics';
+import { canVote, conventionNeed, conventionSpec, SETTABLE_START, DOW, VOTING, NEWSNIGHT_MOVES, newsnightDue, PUNDIT_LOCK } from '../../../engine/politics';
 
 export function Elections() {
   const { world: w } = useStore();
@@ -25,6 +25,7 @@ export function Elections() {
           })}</ul>
         </Sec>
       )}
+      <Pundits />
       {refs.length > 0 && <Sec title="Referendums"><ul class="list">{refs.map((r) => <LinkRow href={'#/p/' + r.id} title={r.title} sub={r.stage} />)}</ul></Sec>}
       <Sec title="Results"><ul class="list">{all.filter((e) => e.status === 'closed').map((e) => <LinkRow href={'#/election/' + e.id} title={e.title} sub={`Closed ${fmtDay(e.closedAt || e.closesAt)}`} />)}</ul></Sec>
     </Page>
@@ -34,13 +35,25 @@ export function Elections() {
 export function Election({ id }: { id: string }) {
   const { world: w, me } = useStore();
   const e = w.elections[id];
-  const [night, setNight] = useState(false);
+  const fresh = !!e && e.status === 'closed' && !!e.results && w.now - (e.closedAt || e.closesAt) < 2 * 86400000;
+  const seenKey = 'realm.declared.' + id;
+  const [night, setNight] = useState(() => {
+    if (!fresh) return false;
+    try {
+      if (localStorage.getItem(seenKey)) return false;
+      localStorage.setItem(seenKey, '1');
+      return true;
+    } catch {
+      return false;
+    }
+  });
   if (!e) return <Page title="No such election" back={['#/elections', 'Elections']} />;
   if (e.status !== 'open') {
     return (
       <Page back={['#/elections', 'Elections']} kicker={`Closed ${fmtDay(e.closedAt || e.closesAt)}${e.results ? `, turnout ${e.results.turnout}` : ''}`} title={e.title}>
         {e.results && <div class="row" style={{ marginTop: 14, justifyContent: 'flex-start', gap: 8 }}><Btn kind="ghost" small onClick={() => setNight(!night)}>{night ? 'Show the full count' : 'Replay election night'}</Btn><Btn kind="plain" small onClick={() => shareResult(w, e)}>Share as a picture</Btn></div>}
         {night ? <Night e={e} /> : <Count e={e} />}
+        {e.results && <PunditResults e={e} />}
         {e.results && e.polls?.length > 0 && (() => {
           const last = e.polls[0];
           const right = last.projected.filter((c: string) => e.results.winners.includes(c)).length;
@@ -80,6 +93,7 @@ export function Election({ id }: { id: string }) {
         )}
       </Sec>
       <Newsnight e={e} />
+      <PunditDesk e={e} />
       <Sec title="Turnout so far"><Meter value={Object.keys(e.ballots).length} max={allCitizens(w).length} /><p class="small muted">{Object.keys(e.ballots).length} of {allCitizens(w).length} have voted.</p></Sec>
     </Page>
   );
@@ -123,11 +137,108 @@ function Newsnight({ e }: { e: any }) {
                 </>
               );
             })}
+            {e.kind === 'general' && <Swing projected={p.projected} />}
+            <Anchors e={e} p={p} />
             <p class="small muted" style={{ margin: 0 }}>Numbers are {unit}{e.method === 'ranked' ? ', with the projection after transfers' : ''}. Brackets show the change since the last poll. Ballots can still change before the polls close.</p>
           </div>
         )}
         {next && next < e.closesAt && <p class="small muted" style={{ margin: p ? '10px 0 0' : '8px 0 0' }}>Next exit poll in <Left at={next} />.</p>}
       </Card>
+    </Sec>
+  );
+}
+
+// seats by party: the Parliament now against the exit poll's projection
+function Swing({ projected }: { projected: string[] }) {
+  const { world: w } = useStore();
+  const party = (id: string | null) => (id && w.citizens[id]?.party) || '';
+  const now: Record<string, number> = {};
+  const then: Record<string, number> = {};
+  w.seats.forEach((id: string | null) => id && (now[party(id)] = (now[party(id)] || 0) + 1));
+  projected.forEach((id) => (then[party(id)] = (then[party(id)] || 0) + 1));
+  const keys = [...new Set([...Object.keys(now), ...Object.keys(then)])].sort((a, b) => (then[b] || 0) - (then[a] || 0) || (now[b] || 0) - (now[a] || 0));
+  if (!keys.length) return null;
+  return (
+    <div class="stack" style={{ marginTop: 6 }}>
+      <b class="small">Swingometer: seats now → projected</b>
+      {keys.map((k) => {
+        const d = (then[k] || 0) - (now[k] || 0);
+        return (
+          <div class="row small">
+            <span>{k && <span class="party-dot" style={{ background: w.parties[k]?.colour }} aria-hidden="true" />}{k ? w.parties[k]?.name || 'Party' : 'Independents'}</span>
+            <span class="tnum"><b>{now[k] || 0} → {then[k] || 0}</b> <span style={{ color: d > 0 ? 'var(--teal)' : d < 0 ? 'var(--red)' : undefined }}>{d > 0 ? `+${d}` : d < 0 ? d : 'no change'}</span></span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// the anchor desk: newspaper editors add a line under the latest exit poll
+function Anchors({ e, p }: { e: any; p: any }) {
+  const { world: w, me } = useStore();
+  const [line, setLine] = useState('');
+  const editor = Object.values(w.papers || {}).some((x: any) => x.editor === me);
+  const said = (p.comments || []).some((c: any) => c.by === me);
+  return (
+    <>
+      {(p.comments || []).map((c: any) => <p class="small" style={{ margin: 0 }}><b>{nm(w, c.by)}</b> <span class="muted">({c.paper})</span>: “{c.text}”</p>)}
+      {editor && !said && (p.comments || []).length < 5 && (
+        <div class="grid2">
+          <Field label="Anchor this poll" value={line} onInput={setLine} placeholder="One line on what it means" />
+          <Btn small style={{ alignSelf: 'end' }} disabled={line.trim().length < 3} onClick={() => act('newsnight.comment', { election: e.id, text: line }, 'You’re on air.') && setLine('')}>Go on air</Btn>
+        </div>
+      )}
+    </>
+  );
+}
+
+function PunditDesk({ e }: { e: any }) {
+  const { world: w, me } = useStore();
+  const mine = e.predictions?.[me];
+  const n = Math.min(e.winners, Object.keys(e.candidates).length);
+  const [picks, setPicks] = useState<string[]>(mine && mine !== '•' ? mine.picks : []);
+  const locked = w.now >= e.closesAt - PUNDIT_LOCK;
+  const calls = Object.keys(e.predictions || {}).length;
+  if (!n) return null;
+  const toggle = (id: string) => setPicks(picks.includes(id) ? picks.filter((x) => x !== id) : n === 1 ? [id] : picks.length < n ? [...picks, id] : picks);
+  return (
+    <Sec title="Pundit desk">
+      <Card>
+        <p class="small muted" style={{ marginTop: 0 }}>Call {n === 1 ? 'the winner' : `the ${n} winners`}. It’s free and sealed until the polls close. 1 Influence for each one you get right, 2 more if you get them all. {calls} {calls === 1 ? 'call' : 'calls'} so far.</p>
+        <div class="row" style={{ flexWrap: 'wrap', gap: 6, justifyContent: 'flex-start' }}>
+          {Object.keys(e.candidates).map((id) => <Btn small kind={picks.includes(id) ? undefined : 'ghost'} disabled={locked} onClick={() => toggle(id)}>{nm(w, id)}</Btn>)}
+        </div>
+        {locked ? <p class="small muted" style={{ margin: '8px 0 0' }}>The desk closed an hour before the polls.{mine && mine !== '•' ? <> Your call: {mine.picks.map((c: string) => nm(w, c)).join(', ')}.</> : ''}</p> : (
+          <div class="row" style={{ marginTop: 8 }}>
+            <span class="small muted">{picks.length} of {n} picked{mine && mine !== '•' ? '. You can change your call until the last hour.' : ''}</span>
+            <Btn small disabled={picks.length !== n || JSON.stringify(picks) === JSON.stringify(mine?.picks || [])} onClick={() => act('election.predict', { election: e.id, picks }, mine ? 'Call changed.' : 'Your call is in.')}>{mine ? 'Change my call' : 'Make my call'}</Btn>
+          </div>
+        )}
+      </Card>
+    </Sec>
+  );
+}
+
+function PunditResults({ e }: { e: any }) {
+  const { world: w } = useStore();
+  const preds = Object.entries(e.predictions || {}).filter(([, p]: any) => p && p !== '•') as [string, any][];
+  if (!preds.length) return null;
+  preds.sort((a, b) => (b[1].hits || 0) - (a[1].hits || 0) || a[1].at - b[1].at);
+  return (
+    <Sec title="Pundit desk">
+      <ul class="list">{preds.map(([id, p]) => <li class="row small"><span><Who id={id} /> <span class="muted">{p.picks.map((c: string) => nm(w, c)).join(', ')}</span></span><b class="tnum">{p.hits || 0}/{e.winners}</b></li>)}</ul>
+    </Sec>
+  );
+}
+
+function Pundits() {
+  const { world: w } = useStore();
+  const board = (Object.values(w.citizens) as any[]).filter((c) => c.life?.punditCalls).sort((a, b) => (b.life.punditHits || 0) - (a.life.punditHits || 0) || (b.life.punditPerfect || 0) - (a.life.punditPerfect || 0)).slice(0, 10);
+  if (!board.length) return null;
+  return (
+    <Sec title="Best pundits">
+      <ul class="list">{board.map((c, i) => <li class="row small"><span><b class="tnum">{i + 1}</b> <Who id={c.id} /></span><span class="tnum">{c.life.punditHits || 0} right · {c.life.punditPerfect || 0} perfect · {c.life.punditCalls} calls</span></li>)}</ul>
     </Sec>
   );
 }

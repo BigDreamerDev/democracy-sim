@@ -6,6 +6,7 @@ import { W, Id, DAY, fail, nm, gazette, earn, spend, stamp, bal, ca, allCitizens
 type Badge = { id: string; name: string; sub: string; hidden?: boolean; test: (c: any, w: W) => boolean };
 const L = (c: any, k: string) => c.life?.[k] || 0;
 export const BADGES: Badge[] = [
+  { id: 'oracle', name: 'Oracle', sub: 'Called an election perfectly on the pundit desk', test: (c) => L(c, 'punditPerfect') >= 1 },
   { id: 'voter', name: 'Ballot box', sub: 'Voted 25 times', test: (c) => L(c, 'votes') >= 25 },
   { id: 'orator', name: 'Orator', sub: 'Spoke in 10 debates', test: (c) => L(c, 'speeches') >= 10 },
   { id: 'lawmaker', name: 'Lawmaker', sub: 'Wrote a law', test: (c) => L(c, 'laws') >= 1 },

@@ -58,7 +58,7 @@ export function createOffice(w: W, spec: any, law: string) {
   }
   if (o.fill === 'house' || o.fill === 'citizens') {
     const eid = newId(w, 'e');
-    w.elections[eid] = { id: eid, kind: 'office', office: id, title: `Election: ${o.name}`, status: 'open', voters: o.fill === 'house' ? 'mps' : 'all', stand: 'all', winners: 1, candidates: {}, ballots: {}, polls: [], opensAt: w.now, closesAt: w.now + 86400000, results: null };
+    w.elections[eid] = { id: eid, kind: 'office', office: id, title: `Election: ${o.name}`, status: 'open', voters: o.fill === 'house' ? 'mps' : 'all', stand: 'all', winners: 1, candidates: {}, ballots: {}, polls: [], predictions: {}, opensAt: w.now, closesAt: w.now + 86400000, results: null };
   }
   gazette(w, 'law', `The ${o.name} is created. ${FILL[o.fill]} its ${String(o.title).toLowerCase()}.`, '#/offices');
   return o;

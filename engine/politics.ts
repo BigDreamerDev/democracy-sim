@@ -359,7 +359,7 @@ export const inInduction = (w: W) => !!w.induction && !w.induction.done && w.now
 // stand: who may stand ('all' or 'party:<id>'); voters: 'all', 'mps' or 'party:<id>'; winners: how many win
 export function newElection(w: W, e: any) {
   const id = newId(w, 'e');
-  w.elections[id] = { id, status: 'open', candidates: {}, ballots: {}, polls: [], opensAt: w.now, results: null, stand: 'all', voters: 'all', winners: 1, method: w.config.voting || 'single', ...e };
+  w.elections[id] = { id, status: 'open', candidates: {}, ballots: {}, polls: [], predictions: {}, opensAt: w.now, results: null, stand: 'all', voters: 'all', winners: 1, method: w.config.voting || 'single', ...e };
   const el = w.elections[id];
   if (el.closesAt && w.phase === 'running') openMarket(w, 'election', id, el.kind === 'general' ? `Who tops the poll in the ${el.title.replace(/^General election for the /, '').replace(/^./, (x: string) => x.toLowerCase())} election?` : `Who wins the ${el.title.replace(/^./, (x: string) => x.toLowerCase())}?`, null, el.closesAt);
   return el;
@@ -453,6 +453,51 @@ export function newsnight(w: W, e: any) {
   const call = r.draw ? 'too close to call at the line' : e.winners === 1 ? `${nm(w, projected[0])} on course to win` : `projected to win: ${projected.map((c: Id) => nm(w, c)).join(', ')}`;
   gazette(w, 'newsnight', `Newsnight exit poll, ${e.title.replace(/^./, (x: string) => x.toLowerCase())}: ${call}. ${turnout} ballot${turnout === 1 ? '' : 's'} in.${gains.length ? ` New in the frame: ${gains.map((c: Id) => nm(w, c)).join(', ')}.` : ''}`, '#/election/' + e.id);
 }
+// ---------- the pundit desk: call the winners before the last hour, free; scored when the polls close ----------
+export const PUNDIT_LOCK = HOUR;
+export function predict(w: W, actor: Id, eid: Id, picks: unknown) {
+  const e = own(w.elections, eid);
+  if (!e || e.status !== 'open') fail('That election is not open.');
+  if (!cit(w, actor)) fail('Only citizens can make a call.');
+  if (w.now >= e.closesAt - PUNDIT_LOCK) fail('The pundit desk closes an hour before the polls do.');
+  const n = Math.min(e.winners, Object.keys(e.candidates).length);
+  if (!Array.isArray(picks) || picks.length !== n || picks.some((c) => typeof c !== 'string')) fail(n === 1 ? 'Pick one winner.' : `Pick exactly ${n} winners.`);
+  if (new Set(picks).size !== picks.length) fail('Pick each candidate only once.');
+  if ((picks as Id[]).some((c) => !own(e.candidates, c))) fail('You picked someone who is not standing.');
+  e.predictions ??= {};
+  const first = !e.predictions[actor];
+  e.predictions[actor] = { picks: (picks as Id[]).slice(), at: w.now };
+  if (first) bump(w, actor, 'punditCalls');
+}
+function scorePundits(w: W, e: any, winners: Id[]) {
+  const preds = Object.entries(e.predictions || {}) as [Id, any][];
+  if (!preds.length || !winners.length) return;
+  const perfect: Id[] = [];
+  preds.forEach(([id, p]) => {
+    if (!w.citizens[id]) return;
+    const hits = p.picks.filter((c: Id) => winners.includes(c)).length;
+    p.hits = hits;
+    if (!hits) return;
+    const all = hits === winners.length;
+    earn(w, id, hits + (all ? 2 : 0), all ? 'Called the election perfectly' : 'Called part of the election');
+    bump(w, id, 'punditHits', hits);
+    if (all) (bump(w, id, 'punditPerfect'), perfect.push(id));
+  });
+  gazette(w, 'newsnight', `Pundit desk, ${e.title.replace(/^./, (x: string) => x.toLowerCase())}: ${!perfect.length ? 'nobody called it perfectly' : perfect.length > 4 ? `${perfect.length} pundits called it perfectly` : `${perfect.map((id) => nm(w, id)).join(', ')} called it perfectly`}. ${preds.length} made a call.`, '#/election/' + e.id);
+}
+// ---------- the Newsnight anchor desk: newspaper editors add a line to the latest exit poll ----------
+export function anchor(w: W, actor: Id, eid: Id, line: unknown) {
+  const e = own(w.elections, eid);
+  if (!e || e.status !== 'open') fail('That election is not open.');
+  const paper = Object.values(w.papers || {}).find((p: any) => p.editor === actor) as any;
+  if (!paper) fail('Only a newspaper editor can anchor Newsnight. Found a paper first.');
+  const poll = e.polls?.[0];
+  if (!poll) fail('There is no exit poll to comment on yet.');
+  poll.comments ??= [];
+  if (poll.comments.some((c: any) => c.by === actor)) fail('You have already had your say on this poll.');
+  if (poll.comments.length >= 5) fail('The panel is full for this poll. Wait for the next one.');
+  poll.comments.push({ by: actor, paper: paper.name, text: text(line, 3, 200, 'comment'), at: w.now });
+}
 // every method returns the same shape: a score per candidate for display, the full order (winners first, then
 // the countback list), and for ranked choice the rounds of the count
 function countElection(w: W, e: any) {
@@ -525,6 +570,7 @@ export function closeElection(w: W, e: any) {
   const r: any = countElection(w, e);
   const winners = r.ranked.slice(0, e.winners);
   e.results = { counts: r.counts, ranked: r.ranked, winners, draw: r.draw, turnout: Object.keys(e.ballots).length, method: e.method || 'single', rounds: r.rounds || null, quota: r.quota || null };
+  scorePundits(w, e, winners);
   settleMarket(w, 'election', e.id, r.ranked[0] || null, r.ranked[0] ? [{ id: r.ranked[0], did: 'won it themselves' }] : []);
   if (e.kind === 'general') {
     w.seats = Array(w.config.seats).fill(null).map((_, i) => winners[i] || null);

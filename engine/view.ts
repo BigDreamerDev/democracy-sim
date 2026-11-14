@@ -19,6 +19,8 @@ export function viewFor(full: W, me: Id): W {
     // how many ballots were cast or changed: with turnout, it would show when someone changed their vote
     delete e.moves;
     delete e.movesAtPoll;
+    // pundit calls are sealed until the polls close, so nobody can copy the best forecasters
+    if (e.status === 'open') Object.keys(e.predictions || {}).forEach((v) => !mine(v) && (e.predictions[v] = '•'));
   });
   Object.values(w.proposals).forEach((p: any) => {
     if (p.voters === 'all') Object.keys(p.votes).forEach((v) => !mine(v) && (p.votes[v] = '•'));

@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 8, text: 'The pundit desk is open: call the winners of any election for free and earn Influence for each one you get right. Newsnight now has a swingometer, and newspaper editors can go on air under each exit poll. Fresh results play out as a live count the first time you open them.' },
   { n: 7, text: 'Newsnight is on air. Every open election gets a public exit poll every 10 minutes, with the vote counts and who’s projected to win. Your own ballot stays secret.' },
   { n: 6, text: 'Voted for the wrong person? You can now change your election ballot until the polls close. Only your first ballot earns Influence.' },
   { n: 5, text: 'Parties can now split: plan a breakaway in private and leave with your MPs, seats and all. Challenge your leader with enough signatures, or stand down for a contest. MPs can pledge to back each other’s amendments, and amendment votes count towards your rebel record.' },
