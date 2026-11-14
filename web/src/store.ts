@@ -246,6 +246,22 @@ function actOnline(cmd: string, args: any, done?: string): boolean {
     .finally(() => pending--);
   return ok;
 }
+// a command with no toast and no instant local result, for background work (saving drafts); true if it went through
+export function actQuiet(cmd: string, args: any): Promise<boolean> {
+  if (!ONLINE) {
+    try {
+      set({ world: run(state.world, state.me, cmd, args) });
+      return Promise.resolve(true);
+    } catch {
+      return Promise.resolve(false);
+    }
+  }
+  pending++;
+  return api('/api/act', { cmd, args })
+    .then((d) => (receive(d), true))
+    .catch(() => false)
+    .finally(() => pending--);
+}
 export async function signIn(username: string, password: string) {
   const d = await api('/api/login', { username, password });
   setToken(d.token);

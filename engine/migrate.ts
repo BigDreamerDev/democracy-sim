@@ -34,6 +34,8 @@ export function migrate(w: W): W {
   w.hunt ??= null;
   Object.values(w.citizens || {}).forEach((c: any) => ((c.streets ??= { in: false }), (c.life ??= {}), (c.badges ??= {})));
   w.clockErrors ??= [];
+  w.drafts ??= {};
+  Object.values(w.proposals || {}).forEach((p: any) => ((p.sponsors ??= []), (p.amendments ??= [])));
   // the world saved at the start of induction week comes back when it ends, so it must be upgraded too
   if (w.induction?.snapshot && !w.induction.snapshot.induction) migrate(w.induction.snapshot);
   return w;

@@ -24,7 +24,7 @@ function blank(seed: number, now: number): W {
     citizens: {}, pending: [], seats: [], lastRanked: [], speaker: null, hos: { holder: null, since: now, until: null },
     clock: { offset: 0, pausedAt: null }, pm: null, pmInviteDue: null, minority: false, coalition: null, shadow: {}, confidence: null,
     convention: { clauses: conventionClauses(), closesAt: now + 3 * DAY }, parties: {}, elections: {}, nextGeneralAt: null,
-    proposals: {}, propCount: 0, laws: [], questions: [], lobbying: [],
+    proposals: {}, drafts: {}, propCount: 0, laws: [], questions: [], lobbying: [],
     offices: {}, accounts: { reserve: 0, treasury: 0 }, ledger: [],
     economy: { lent: 0, rate: 2, prices: [2], lentThisWeek: 0, lastInflation: 0 },
     banks: {}, ventures: [], nations: {}, offers: {}, treaties: {}, asks: [], intel: [],

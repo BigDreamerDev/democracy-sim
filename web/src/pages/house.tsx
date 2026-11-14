@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { drafts, getDraft, newDraftId, hasContent, saveDraft, deleteDraft } from '../drafts';
-import { useStore, act, getState } from '../store';
+import { drafts, getDraft, newDraftId, hasContent, saveDraft, deleteDraft, flushDraft, forgetDraft } from '../drafts';
+import { useStore, act, getState, toast as say } from '../store';
 import { go, Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Seg, Opt, Field, Pick, Stamp } from '../ui';
 import { nm, isMP, isPM, isHOS, inGovernment, mps, fmtTime, superMajority, majority, officeWithPower, hosTitle, nextAt } from '../../../engine/index';
 import { leaderOfOpposition, HOS_METHODS } from '../../../engine/politics';
@@ -153,7 +153,7 @@ export function Proposal({ id }: { id: string }) {
   const need = p.constitutional ? superMajority(w) : p.rule === 'seats' ? majority(w) : null;
   const blocker = officeWithPower(w, me, 'block');
   return (
-    <Page back={['#/house', 'The House']} kicker={<>{KINDS[p.kind].name}{p.kind === 'bill' ? ` ${p.n}` : ''}, by <Who id={p.by} />{p.constitutional ? ', constitutional' : ''}{p.fast ? ', fast-tracked' : ''}</>} title={p.title}>
+    <Page back={['#/house', 'The House']} kicker={<>{KINDS[p.kind].name}{p.kind === 'bill' ? ` ${p.n}` : ''}, by <Who id={p.by} />{p.sponsors?.length ? <>, with {p.sponsors.map((x: string, i: number) => <>{i ? ', ' : ''}<Who id={x} /></>)}</> : ''}{p.constitutional ? ', constitutional' : ''}{p.fast ? ', fast-tracked' : ''}</>} title={p.title}>
       {['enacted', 'passed', 'failed', 'vetoed', 'withdrawn'].includes(p.stage) && <Stamp label={['enacted', 'passed'].includes(p.stage) ? 'Passed' : p.stage === 'vetoed' ? 'Vetoed' : p.stage === 'withdrawn' ? 'Withdrawn' : 'Defeated'} sub={p.lawRef || (p.result ? `${p.result.ayes} to ${p.result.noes}` : '')} red={failed} style={{ top: 70, right: 16, transformOrigin: '100% 0' }} />}
       {p.summary && <p class="intro">{p.summary}</p>}
       {p.editedAt && <p class="small muted" style={{ margin: '4px 0 0' }}>Amended by its author {p.edits > 1 ? `${p.edits} times, last ` : ''}{fmtTime(w, p.editedAt)}.</p>}
@@ -184,6 +184,7 @@ export function Proposal({ id }: { id: string }) {
         </Sec>
       )}
       {p.kind !== 'bill' && p.kind !== 'referendum' && <p class="small muted" style={{ marginTop: 14 }}>{KINDS[p.kind].blurb}</p>}
+      {(p.kind === 'bill' || p.kind === 'referendum') && <Amendments p={p} />}
 
       {(p.stage === 'vote' || p.stage === 'override' || p.result) && p.stage !== 'withdrawn' && p.kind !== 'dissolution' && (
         <Sec>
@@ -303,15 +304,21 @@ export function NewProposal({ query }: { query: URLSearchParams }) {
     if (query.get('treaty')) return [{ t: 'treaty', offer: query.get('treaty') }];
     if (query.get('banks')) return [{ t: 'permit', what: 'banks' }];
     if (query.get('custom')) return [{ t: 'office', office: { name: '', fill: 'pm', powers: [], secrecy: 'public', budget: 0 } }];
+    // a new version of a law: its clauses to rework, and the old Act repealed so the two don't both stand
+    if (law) {
+      const from = law.propId && w.proposals[law.propId]?.clauses?.length ? structuredClone(w.proposals[law.propId].clauses) : law.text.map((t: string) => ({ t: 'text', text: t }));
+      return law.repealed || law.ref === 'L001' ? from : [{ t: 'repeal', ref: law.ref }, ...from];
+    }
     return [{ t: 'text', text: '' }];
   };
+  const law = query.get('from') ? w.laws.find((l: any) => l.ref === query.get('from') && !l.classified) : null;
   const [draftId] = useState(() => (query.get('draft') && getDraft(me, query.get('draft')!) ? query.get('draft')! : newDraftId()));
   const saved = getDraft(me, draftId);
   const [kind, setKind] = useState(saved?.kind || query.get('kind') || 'bill');
   const [clauses, setClauses] = useState<any[]>(() => saved?.clauses || init());
   const tpl = query.get('office') && TEMPLATES[query.get('office')!];
-  const [title, setTitle] = useState(saved ? saved.title : tpl ? tpl.act.replace(/Act|Amendment/, 'Bill') : query.get('repeal') ? `Repeal of ${query.get('repeal')} Bill` : query.get('treaty') ? `${w.offers[query.get('treaty')!]?.title ?? 'Treaty'} Bill` : query.get('banks') ? 'Banking Bill' : '');
-  const [summary, setSummary] = useState(saved?.summary || '');
+  const [title, setTitle] = useState(saved ? saved.title : tpl ? tpl.act.replace(/Act|Amendment/, 'Bill') : query.get('repeal') ? `Repeal of ${query.get('repeal')} Bill` : query.get('treaty') ? `${w.offers[query.get('treaty')!]?.title ?? 'Treaty'} Bill` : query.get('banks') ? 'Banking Bill' : law ? `${law.title.replace(/ Act$/i, '')} (Amendment) Bill` : '');
+  const [summary, setSummary] = useState(saved ? saved.summary : law?.summary || '');
   const [target, setTarget] = useState(saved?.target || '');
   const [fast, setFast] = useState(!!saved?.fast);
   const [savedAt, setSavedAt] = useState(saved?.savedAt || 0);
@@ -322,9 +329,7 @@ export function NewProposal({ query }: { query: URLSearchParams }) {
     const d = { kind, title, summary, clauses, target, fast };
     if (!hasContent(d)) return void (deleteDraft(me, draftId), setSavedAt(0));
     const t = setTimeout(() => {
-      const at = Date.now();
-      saveDraft(me, { id: draftId, ...d, savedAt: at });
-      setSavedAt(at);
+      setSavedAt(saveDraft(me, { id: draftId, ...d }).savedAt);
       // a reload (or a new version of the site) reopens this draft
       if (!location.hash.includes('draft=')) history.replaceState(null, '', '#/new?draft=' + draftId);
     }, 400);
@@ -334,9 +339,17 @@ export function NewProposal({ query }: { query: URLSearchParams }) {
   const open = Object.values(w.proposals).filter((p: any) => p.by === me && ['debate', 'vote'].includes(p.stage)).length;
   const cost = (kind === 'referendum' ? 20 : 0) + (open >= 2 ? 10 : 0) + (fast ? 15 : 0);
   const constitutional = clauses.some((e) => ['constitution', 'removeHos'].includes(e.t) || (e.t === 'office' && TEMPLATES[e.template]?.constitutional));
-  const submit = () => {
-    if (act('prop.new', { kind, title, summary, clauses, target, fast }, 'Put before the House.')) {
-      deleteDraft(me, draftId);
+  // the draft on your account must match what's tabled, or the co-sponsors' signatures don't count
+  const keep = async () => {
+    const d = { kind, title, summary, clauses, target, fast };
+    if (!hasContent(d)) return false;
+    setSavedAt(saveDraft(me, { id: draftId, ...d }).savedAt);
+    return flushDraft(me, draftId);
+  };
+  const submit = async () => {
+    const synced = w.drafts?.[draftId] ? await keep() : false;
+    if (act('prop.new', { kind, title, summary, clauses, target, fast, ...(synced ? { draft: draftId } : {}) }, 'Put before the House.')) {
+      forgetDraft(me, draftId);
       const latest = Object.values(getState().world.proposals).sort((a: any, b: any) => b.n - a.n)[0] as any;
       go('p/' + latest.id);
     }
@@ -366,11 +379,70 @@ export function NewProposal({ query }: { query: URLSearchParams }) {
           {(kind === 'bill' || kind === 'referendum') && clauses.length > 0 && <ol style={{ margin: '0 0 10px', paddingLeft: 20 }}>{clauses.map((e) => <li>{safe(w, e)}</li>)}</ol>}
           {kind !== 'dissolution' && <Opt on={fast} onClick={() => setFast(!fast)} title="Fast-track: 12-hour debate" hint="Costs 15 Influence." />}
           <p class="small" style={{ fontWeight: 700, margin: '10px 0' }}>{constitutional ? `Constitutional: needs ${superMajority(w)} of ${w.config.seats} MPs. ` : ''}{cost ? `Costs ${cost} Influence.` : 'Free.'} {kind === 'dissolution' ? 'Goes straight to the head of state.' : `Debate ${fast ? 12 : w.config.debateHours}h, then ${w.config.voteHours}h to vote.`}</p>
+          {kind !== 'dissolution' && kind !== 'confidence' && <Sponsors draftId={draftId} keep={keep} />}
           <Btn full onClick={submit}>Put it to the House</Btn>
-          <p class="small muted" style={{ margin: '8px 0 0' }}>{savedAt ? `Draft saved on this device, ${when(savedAt)}. ` : 'Drafts save on this device as you type. '}<a href={'#/new?fresh=' + draftId}>Start another</a></p>
+          <p class="small muted" style={{ margin: '8px 0 0' }}>{savedAt ? `Draft saved ${when(savedAt)}. ` : 'Drafts save as you type. '}<a href={'#/new?fresh=' + draftId}>Start another</a></p>
         </Card>
       </Sec>
     </Page>
+  );
+}
+// MPs you've asked to put their names to it; a signature counts only for the wording they saw
+const SPONSOR_STATE: Record<string, [string, string]> = { yes: ['Signed', 'teal'], invited: ['Asked', ''], no: ['Declined', 'red'] };
+function Sponsors({ draftId, keep }: { draftId: string; keep: () => Promise<boolean> }) {
+  const { world: w, me } = useStore();
+  const [who, setWho] = useState('');
+  const d = w.drafts?.[draftId];
+  const list = Object.entries(d?.sponsors || {}) as [string, any][];
+  const choices = mps(w).filter((m: string) => m !== me && !d?.sponsors?.[m]);
+  const invite = async () => {
+    if (!who) return;
+    if (!(await keep())) return void say('Write something first, then ask people to back it.', true);
+    act('draft.invite', { draft: draftId, who }, `Asked ${nm(w, who)}.`) && setWho('');
+  };
+  return (
+    <div class="stack" style={{ margin: '0 0 12px' }}>
+      <b class="small">Co-sponsors</b>
+      {list.length > 0 && <ul class="list small">{list.map(([k, x]) => <li class="row"><span>{nm(w, k)} <span class={'chip ' + SPONSOR_STATE[x.status][1]}>{SPONSOR_STATE[x.status][0]}</span></span><Btn small kind="plain" onClick={() => act('draft.uninvite', { draft: draftId, who: k })}>Remove</Btn></li>)}</ul>}
+      {choices.length > 0 && list.length < 6 && <div class="row" style={{ gap: 8 }}><Pick value={who} onChange={setWho} empty="Ask an MP to co-sponsor" options={choices.map((m: string) => [m, nm(w, m)])} /><Btn small kind="ghost" onClick={invite}>Ask</Btn></div>}
+      <span class="small muted">They see the draft and can sign it. If you change the wording, they're asked again. Up to 6.</span>
+    </div>
+  );
+}
+// amendments: any other MP proposes changing one clause during the debate; the author takes it or leaves it
+const AM_STATE: Record<string, string> = { pending: 'Waiting', accepted: 'Accepted', rejected: 'Turned down', lapsed: 'Lapsed' };
+function Amendments({ p }: { p: any }) {
+  const { world: w, me } = useStore();
+  const [draft, setDraft] = useState<any>(null);
+  const list = (p.amendments || []) as any[];
+  const canAmend = p.stage === 'debate' && p.by !== me && isMP(w, me);
+  if (!list.length && !canAmend) return null;
+  const what = (m: any) => (m.op === 'remove' ? `Remove clause ${m.index + 1}` : m.op === 'add' ? `Add: ${safe(w, m.clause)}` : `Clause ${m.index + 1} to read: ${safe(w, m.clause)}`);
+  const pickOp = (op: string) => setDraft({ ...draft, op, clause: op === 'change' ? structuredClone(p.clauses[draft.index] || { t: 'text', text: '' }) : op === 'add' ? { t: 'text', text: '' } : null });
+  const send = () => act('prop.amend', { prop: p.id, op: draft.op, index: draft.index, clause: draft.clause, why: draft.why }, 'Amendment put. The author decides.') && setDraft(null);
+  return (
+    <Sec title="Amendments" sub={p.stage === 'debate' ? 'Any MP can propose one while it’s debated. The author takes it or leaves it; any still waiting lapse when voting opens.' : undefined}>
+      <div class="stack">
+        {list.map((m) => (
+          <Card kind={m.status === 'pending' ? 'tint' : undefined}>
+            <div class="row"><span class="small muted"><Who id={m.by} />, {fmtTime(w, m.at)}</span><span class={'chip' + (m.status === 'accepted' ? ' teal' : m.status === 'rejected' ? ' red' : '')}>{AM_STATE[m.status]}</span></div>
+            <p style={{ margin: '6px 0 0' }}>{what(m)}</p>
+            {m.why && <p class="small muted" style={{ margin: '4px 0 0' }}>“{m.why}”</p>}
+            {m.status === 'pending' && p.by === me && p.stage === 'debate' && <div class="row" style={{ justifyContent: 'flex-start', gap: 8, marginTop: 8 }}><Btn small onClick={() => act('prop.amendment', { prop: p.id, amendment: m.id, accept: true }, 'Accepted. The bill is amended.')}>Accept</Btn><Btn small kind="plain" onClick={() => act('prop.amendment', { prop: p.id, amendment: m.id, accept: false }, 'Turned down.')}>Turn down</Btn></div>}
+          </Card>
+        ))}
+        {canAmend && !draft && <Btn kind="ghost" small onClick={() => setDraft({ op: 'change', index: 0, clause: structuredClone(p.clauses[0] || { t: 'text', text: '' }), why: '' })}>Propose an amendment</Btn>}
+        {canAmend && draft && (
+          <Card><div class="stack">
+            <Seg value={draft.op} onChange={pickOp} options={[['change', 'Change a clause'], ['add', 'Add a clause'], ['remove', 'Remove a clause']]} />
+            {draft.op !== 'add' && p.clauses.length > 0 && <Pick label="Which clause" value={String(draft.index)} onChange={(v) => setDraft({ ...draft, index: Number(v), clause: draft.op === 'change' ? structuredClone(p.clauses[Number(v)]) : null })} options={p.clauses.map((e: any, i: number) => [String(i), `${i + 1}. ${safe(w, e)}`.slice(0, 80)])} />}
+            {draft.op !== 'remove' && <ClauseEditor e={draft.clause} n={draft.op === 'add' ? p.clauses.length + 1 : draft.index + 1} onChange={(x) => setDraft({ ...draft, clause: x })} />}
+            <Field label="Why (optional)" value={draft.why} onInput={(v) => setDraft({ ...draft, why: v })} />
+            <div class="row" style={{ justifyContent: 'flex-start', gap: 8 }}><Btn small onClick={send}>Put the amendment</Btn><Btn small kind="plain" onClick={() => setDraft(null)}>Cancel</Btn></div>
+          </div></Card>
+        )}
+      </div>
+    </Sec>
   );
 }
 const when = (t: number) => new Date(t).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -378,10 +450,18 @@ const when = (t: number) => new Date(t).toLocaleString('en-GB', { day: 'numeric'
 function Drafts({ current }: { current?: string }) {
   const { me } = useStore();
   const [, redraw] = useState(0);
+  const { world: w } = useStore();
   const list = drafts(me).filter((d) => d.id !== current);
-  if (!list.length) return null;
+  const asked = Object.values(w.drafts || {}).filter((d: any) => d.by !== me && d.sponsors?.[me]) as any[];
+  if (!list.length && !asked.length) return null;
   return (
-    <Sec title="Your drafts" sub="Saved on this device. Only you can see them until you put one to the House.">
+    <>
+    {asked.length > 0 && (
+      <Sec title="Asked to co-sponsor">
+        <ul class="list">{asked.map((d) => <LinkRow href={'#/draft/' + d.id} title={d.title || 'Untitled draft'} sub={`${nm(w, d.by)}’s ${(KINDS[d.kind]?.name || 'bill').toLowerCase()}. ${SPONSOR_STATE[d.sponsors[me].status][0]}.`} />)}</ul>
+      </Sec>
+    )}
+    {list.length > 0 && <Sec title="Your drafts" sub="Saved as you type, on this device and your account. Only you and anyone you ask to co-sponsor can see them.">
       <ul class="list">
         {list.map((d) => (
           <li class="row">
@@ -390,7 +470,31 @@ function Drafts({ current }: { current?: string }) {
           </li>
         ))}
       </ul>
-    </Sec>
+    </Sec>}
+    </>
+  );
+}
+// a draft you've been asked to co-sponsor: read it, then sign or decline
+export function DraftPage({ id }: { id: string }) {
+  const { world: w, me } = useStore();
+  const d = w.drafts?.[id];
+  useEffect(() => void (d?.by === me && go('new?draft=' + id)), [id]);
+  if (!d || !d.sponsors?.[me]) return <Page back={['#/proposals', 'Proposals']} title="No such draft" intro="It may have been tabled, deleted, or you're no longer asked to co-sponsor it." />;
+  const mine = d.sponsors[me];
+  const others = Object.entries(d.sponsors).filter(([k, x]: any) => k !== me && x.status === 'yes').map(([k]) => nm(w, k));
+  return (
+    <Page back={['#/proposals', 'Proposals']} kicker={<>A draft {(KINDS[d.kind]?.name || 'bill').toLowerCase()} by <Who id={d.by} /></>} title={d.title || 'Untitled draft'} intro={d.summary}>
+      {d.clauses.length > 0 && <Sec title="What it would do"><ol class="stack" style={{ paddingLeft: 22, margin: 0 }}>{d.clauses.map((e: any) => <li>{safe(w, e) || 'An unfinished clause.'}</li>)}</ol></Sec>}
+      <Sec title="Co-sponsor it?" sub={others.length ? `Signed so far: ${others.join(', ')}.` : 'Nobody has signed yet.'}>
+        <Card>
+          <p style={{ marginTop: 0 }}>{mine.status === 'yes' ? 'You’ve signed this wording. If it changes, you’ll be asked again.' : mine.status === 'no' ? 'You declined. You can still sign.' : `Your name goes on it when ${nm(w, d.by)} puts it to the House. Only this wording counts: if it changes, you’re asked again.`}</p>
+          <div class="row" style={{ justifyContent: 'flex-start', gap: 8 }}>
+            {mine.status !== 'yes' && <Btn onClick={() => act('draft.sponsor', { draft: id, yes: true }, 'Signed.')}>Sign it</Btn>}
+            {mine.status !== 'no' && <Btn kind="ghost" onClick={() => act('draft.sponsor', { draft: id, yes: false }, mine.status === 'yes' ? 'Signature taken back.' : 'Declined.')}>{mine.status === 'yes' ? 'Take my name off' : 'Decline'}</Btn>}
+          </div>
+        </Card>
+      </Sec>
+    </Page>
   );
 }
 function safe(w: any, e: any) {

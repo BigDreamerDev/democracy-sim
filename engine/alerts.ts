@@ -40,9 +40,11 @@ export function needs(w: W, me: Id): Alert[] {
       const since = p.speeches.length - 1 - p.speeches.map((x: any) => x.side).lastIndexOf('order');
       if (since >= 6) out.push({ key: `order:${p.id}:${Math.floor(since / 6)}`, href: '#/p/' + p.id, label: 'Hansard', title: `${since} speeches on ${p.title} since order was last called`, at: p.debateEndsAt });
     }
+    if (p.by === me && p.stage === 'debate') (p.amendments || []).forEach((m: any) => m.status === 'pending' && out.push({ key: 'amend:' + m.id, href: '#/p/' + p.id, label: 'Amendment', title: `${nm(w, m.by)} wants to amend ${p.title}`, at: p.debateEndsAt }));
     if (p.stage === 'assent' && isHOS(w, me)) out.push({ key: `assent:${p.id}`, href: '#/p/' + p.id, label: w.config.hos === 'monarchy' ? 'Royal Assent' : 'Sign or veto', title: p.title, at: p.assentDueAt });
     if (p.stage === 'hos' && isHOS(w, me)) out.push({ key: `dissolve:${p.id}`, href: '#/p/' + p.id, label: 'Dissolution request', title: 'The PM asks for an election', at: p.hosDueAt, urgent: true });
   });
+  Object.values(w.drafts || {}).forEach((d: any) => d.by !== me && d.sponsors[me]?.status === 'invited' && out.push({ key: `sponsor:${d.id}:${d.crev}`, href: '#/draft/' + d.id, label: 'Co-sponsor', title: `${nm(w, d.by)} asks you to co-sponsor ${d.title || 'a draft'}${d.crev ? ' (reworded)' : ''}` }));
   if (!w.pm && w.phase === 'running') {
     const who = contenders(w).find((l) => commands(w, l));
     if (isHOS(w, me) && who) out.push({ key: 'nopm:' + who, href: '#/hos', label: 'No government', title: `Invite ${nm(w, who)}, who commands a majority`, at: w.pmInviteDue, urgent: true });

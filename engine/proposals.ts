@@ -7,6 +7,7 @@ import { TEMPLATES, POWERS, FILL, createOffice } from './offices';
 import { startHosSelection, callGeneralElection, governmentFalls, vacateSeat, HOS_METHODS, countback } from './politics';
 import { addJob, addZone } from './streets';
 import { openMarket, settleMarket, voidMarket } from './markets';
+import { takeDraft } from './drafts';
 
 export const KINDS: Record<string, { name: string; who: string; blurb: string }> = {
   bill: { name: 'Bill', who: 'MPs', blurb: 'Changes the law. Each clause is a rule in words or something the game carries out.' },
@@ -26,6 +27,7 @@ export const SETTABLE: Record<string, { label: string; unit: string; min: number
   voteHours: { label: 'Voting length', unit: ' hours', min: 12, max: 48 }
 };
 export const CONSTITUTIONAL = ['constitution', 'removeHos'];
+export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone'];
 
 export function describe(w: W, e: any): string {
   switch (e.t) {
@@ -142,7 +144,7 @@ function checkClauses(w: W, kind: string, clauses: any) {
   if (kind === 'bill' && !clauses.length) fail('Add at least one clause.');
   if (clauses.length > 20) fail('A bill can have 20 clauses at most.');
   for (const e of clauses) {
-    if (!['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone'].includes(e?.t)) fail('Unknown kind of clause.');
+    if (!CLAUSE_TYPES.includes(e?.t)) fail('Unknown kind of clause.');
     checkClause(w, e);
     if (e.t === 'treaty' && !own(w.offers, e.offer)) fail('That treaty offer has expired.');
     if ((e.t === 'war' || e.t === 'peace') && !w.offices.army) fail('War and peace need an Army: pass the Defence Act first.');
@@ -179,15 +181,19 @@ export function propose(w: W, actor: Id, a: any) {
     censure: `That this House censures ${nm(w, a.target)}`,
     dissolution: 'That Parliament be dissolved and a general election held'
   };
+  // tabled from a saved draft: it's used up, and the MPs who signed this exact wording become co-sponsors
+  const fromDraft = own(w.drafts, a.draft)?.by === actor ? (a.draft as string) : null;
+  const sponsors = fromDraft ? takeDraft(w, actor, a.draft, { kind, title, summary, clauses: a.clauses ?? [], target: a.target || '' }) : [];
   const debateH = a.fast ? 12 : kind === 'no_confidence' || kind === 'confidence' || kind === 'censure' ? 12 : w.config.debateHours;
   w.proposals[id] = {
     id, n: w.propCount, kind, title: own(titles, kind) || title, summary, by: actor, clauses, target: a.target || null,
     constitutional, voters: kind === 'referendum' || (kind === 'bill' && w.config.billVoters === 'all') ? 'all' : 'mps', rule: w.config.passRule || 'cast', stage: kind === 'dissolution' ? 'hos' : 'debate', at: w.now,
     debateEndsAt: w.now + debateH * HOUR, voteEndsAt: null, assentDueAt: null, hosDueAt: kind === 'dissolution' ? w.now + DAY : null,
-    speeches: [], votes: {}, casting: null, lobby: 0, result: null, lawRef: null, fast: !!a.fast
+    speeches: [], votes: {}, casting: null, lobby: 0, result: null, lawRef: null, fast: !!a.fast,
+    sponsors, amendments: [], draft: fromDraft
   };
   tick(w, actor, 'proposals');
-  gazette(w, 'proposal', `${nm(w, actor)} puts a ${KINDS[kind].name.toLowerCase()} to the House: ${w.proposals[id].title}${constitutional ? ' (constitutional: needs ' + superMajority(w) + ' of ' + w.config.seats + ')' : ''}.`, '#/p/' + id);
+  gazette(w, 'proposal', `${nm(w, actor)} puts a ${KINDS[kind].name.toLowerCase()} to the House${sponsors.length ? `, co-sponsored by ${sponsors.map((s) => nm(w, s)).join(', ')}` : ''}: ${w.proposals[id].title}${constitutional ? ' (constitutional: needs ' + superMajority(w) + ' of ' + w.config.seats + ')' : ''}.`, '#/p/' + id);
   return id;
 }
 
@@ -211,12 +217,76 @@ export function editProposal(w: W, actor: Id, pid: unknown, a: any) {
   p.edits = (p.edits || 0) + 1;
   gazette(w, 'proposal', `${nm(w, actor)} amends their ${KINDS[p.kind].name.toLowerCase()}: ${p.title}.`, '#/p/' + p.id);
 }
+// Amendments: during the debate any MP but the author can propose changing, adding or removing one clause. Public.
+// The author takes it or leaves it; whatever is still waiting when the vote opens lapses.
+const AMEND_OPS = ['change', 'add', 'remove'];
+export function lapseAmendments(p: any) {
+  const open = (p.amendments || []).filter((m: any) => m.status === 'pending');
+  open.forEach((m: any) => (m.status = 'lapsed'));
+  return open.length;
+}
+export function proposeAmendment(w: W, actor: Id, pid: unknown, a: any) {
+  mustBeFree(w, actor);
+  const p = own(w.proposals, pid);
+  if (!p) fail('No such proposal.');
+  if (p.kind !== 'bill' && p.kind !== 'referendum') fail('Only bills and referendums can be amended.');
+  if (p.stage !== 'debate') fail('Amendments can only be put while it’s being debated.');
+  if (p.by === actor) fail('It’s yours: edit it instead.');
+  if (!isMP(w, actor)) fail('Only MPs can propose amendments.');
+  const op = a?.op;
+  if (!AMEND_OPS.includes(op)) fail('Change, add or remove a clause.');
+  p.amendments ??= [];
+  if (p.amendments.filter((m: any) => m.by === actor && m.status === 'pending').length >= 3) fail('You have 3 amendments waiting on this already.');
+  const why = text(a.why, 0, 300, 'reason');
+  const index = op === 'add' ? p.clauses.length : int(a.index, 0, p.clauses.length - 1, 'clause number');
+  let clause = null;
+  if (op !== 'remove') {
+    clause = structuredClone(a.clause);
+    checkClauses(w, p.kind, [clause]);
+  } else if (p.kind === 'bill' && p.clauses.length < 2) fail('A bill needs at least one clause.');
+  if (op === 'add' && p.clauses.length >= 20) fail('A bill can have 20 clauses at most.');
+  const m = { id: newId(w, 'am'), by: actor, op, index, clause, was: op === 'add' ? null : JSON.stringify(p.clauses[index]), why, status: 'pending', at: w.now };
+  p.amendments.push(m);
+  const what = op === 'remove' ? `removing clause ${index + 1}` : op === 'add' ? `a new clause: ${describe(w, clause)}` : `clause ${index + 1} to read: ${describe(w, clause)}`;
+  gazette(w, 'proposal', `${nm(w, actor)} proposes an amendment to ${p.title}, ${what}.`, '#/p/' + p.id);
+  return m.id;
+}
+export function answerAmendment(w: W, actor: Id, pid: unknown, mid: unknown, accept: unknown) {
+  const p = own(w.proposals, pid);
+  if (!p || p.by !== actor) fail('Only the author can take or leave an amendment.');
+  const m = (p.amendments || []).find((x: any) => x.id === mid);
+  if (!m || m.status !== 'pending') fail('That amendment isn’t waiting.');
+  if (p.stage !== 'debate') fail('The debate is over.');
+  if (!accept) {
+    m.status = 'rejected';
+    m.answeredAt = w.now;
+    gazette(w, 'proposal', `${nm(w, actor)} turns down ${nm(w, m.by)}’s amendment to ${p.title}.`, '#/p/' + p.id);
+    return;
+  }
+  if (m.op !== 'add' && JSON.stringify(p.clauses[m.index]) !== m.was) fail('That clause has changed since. Ask for the amendment to be put again.');
+  const clauses = structuredClone(p.clauses);
+  if (m.op === 'add') clauses.push(structuredClone(m.clause));
+  else if (m.op === 'change') clauses[m.index] = structuredClone(m.clause);
+  else clauses.splice(m.index, 1);
+  checkClauses(w, p.kind, clauses);
+  // clause numbers after a removal move up one, so amendments aimed at them no longer fit
+  if (m.op === 'remove') p.amendments.forEach((x: any) => x.status === 'pending' && x.op !== 'add' && x.index > m.index && (x.status = 'lapsed'));
+  p.clauses = clauses;
+  p.constitutional = clauses.some((e: any) => CONSTITUTIONAL.includes(e.t) || (e.t === 'office' && own(TEMPLATES, e.template)?.constitutional));
+  p.editedAt = w.now;
+  p.edits = (p.edits || 0) + 1;
+  m.status = 'accepted';
+  m.answeredAt = w.now;
+  earn(w, m.by, 3, 'Your amendment was accepted');
+  gazette(w, 'proposal', `${nm(w, actor)} accepts ${nm(w, m.by)}’s amendment to ${p.title}.`, '#/p/' + p.id);
+}
 export function withdrawProposal(w: W, actor: Id, pid: unknown) {
   const p = own(w.proposals, pid);
   if (!p || p.by !== actor) fail('Only the author can withdraw a proposal.');
   if (!['debate', 'vote'].includes(p.stage)) fail('It’s too late to withdraw it.');
   if (['no_confidence', 'confidence'].includes(p.kind) && p.stage === 'vote') fail('A confidence vote can’t be withdrawn once voting has started.');
   p.stage = 'withdrawn';
+  lapseAmendments(p);
   p.result = { withdrawn: true, at: w.now };
   Object.values(w.markets || {}).forEach((m: any) => m.kind === 'prop' && m.ref === p.id && m.status === 'open' && voidMarket(w, m, 'The proposal was withdrawn.'));
   gazette(w, 'proposal', `${nm(w, actor)} withdraws ${p.title}.`, '#/p/' + p.id);
@@ -268,6 +338,7 @@ export function casting(w: W, actor: Id, pid: Id, v: 'aye' | 'no') {
 
 export function openVote(w: W, p: any) {
   p.stage = 'vote';
+  if (lapseAmendments(p)) gazette(w, 'proposal', `Amendments not taken up on ${p.title} lapse as voting opens.`, '#/p/' + p.id);
   p.voteEndsAt = w.now + (p.fast || ['no_confidence', 'confidence', 'censure'].includes(p.kind) ? 12 : w.config.voteHours) * HOUR;
   gazette(w, 'proposal', `Voting opens: ${p.title}. ${p.voters === 'all' ? 'Every citizen votes.' : 'MPs vote.'}`, '#/p/' + p.id);
   openMarket(w, 'prop', p.id, `Will “${p.title}” pass the vote?`, [{ key: 'yes', label: 'Passes' }, { key: 'no', label: 'Fails' }], p.voteEndsAt);

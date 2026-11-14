@@ -70,6 +70,14 @@ export function viewFor(full: W, me: Id): W {
     else if (!p.members.includes(me)) p.invited = { [me]: p.invited[me] };
   });
   if (!canSeeIntel(full, me)) w.intel = [];
+  // drafts: the author's own, and ones you're invited to co-sponsor (without who else turned it down)
+  Object.keys(w.drafts || {}).forEach((id) => {
+    const d = w.drafts[id];
+    if (d.by === me) return;
+    if (!d.sponsors[me]) return void delete w.drafts[id];
+    d.rev = 0;
+    Object.keys(d.sponsors).forEach((k) => k !== me && d.sponsors[k].status === 'no' && delete d.sponsors[k]);
+  });
   // the Streets: a contract is known only to whoever took it out, until it's claimed (then the target sees it)
   // or it's over and in the Gazette. Who the bodyguard covers is known to the two of them. Check-ins: your own.
   if (w.streets) {

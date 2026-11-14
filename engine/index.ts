@@ -12,6 +12,7 @@ import * as T from './tutorial';
 import * as R from './streets';
 import * as M from './markets';
 import * as G from './glory';
+import * as D from './drafts';
 
 export * from './core';
 export { createWorld, createLiveWorld, NAMES } from './world';
@@ -64,6 +65,13 @@ export const COMMANDS: Record<string, Cmd> = {
   'prop.dissolve': (w, me, a) => L.answerDissolution(w, me, a.prop, a.yes),
   'prop.block': (w, me, a) => L.block(w, me, a.prop),
   'prop.lobby': (w, me, a) => L.lobby(w, me, a.prop, a.mp, a.amount),
+  'prop.amend': (w, me, a) => L.proposeAmendment(w, me, a.prop, a),
+  'prop.amendment': (w, me, a) => L.answerAmendment(w, me, a.prop, a.amendment, a.accept),
+  'draft.save': (w, me, a) => D.saveDraft(w, me, a),
+  'draft.delete': (w, me, a) => D.deleteDraft(w, me, a.draft),
+  'draft.invite': (w, me, a) => D.inviteSponsor(w, me, a.draft, a.who),
+  'draft.uninvite': (w, me, a) => D.uninviteSponsor(w, me, a.draft, a.who),
+  'draft.sponsor': (w, me, a) => D.answerSponsor(w, me, a.draft, a.yes),
   'q.ask': (w, me, a) => L.ask(w, me, a.text, a.to),
   'q.back': (w, me, a) => L.back(w, me, a.id),
   'q.answer': (w, me, a) => L.answer(w, me, a.id, a.text),

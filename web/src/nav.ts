@@ -17,7 +17,7 @@ export const TABS: Tab[] = [
   ] },
   { id: 'house', label: 'Parliament', icon: 'house', href: '#/house', sections: [
     { id: 'house', label: 'Chamber', href: '#/house', routes: ['house'] },
-    { id: 'bills', label: 'Bills', href: '#/proposals', routes: ['proposals', 'p', 'new'], count: openProps },
+    { id: 'bills', label: 'Bills', href: '#/proposals', routes: ['proposals', 'p', 'new', 'draft'], count: openProps },
     { id: 'questions', label: 'Questions', href: '#/questions', routes: ['questions'] },
     { id: 'government', label: 'Government', href: '#/government', routes: ['government', 'cabinet', 'offices', 'office', 'hos'] },
     { id: 'laws', label: 'Laws', href: '#/laws', routes: ['laws', 'law'] }

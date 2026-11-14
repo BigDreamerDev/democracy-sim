@@ -288,7 +288,7 @@ export function endInduction(w: W) {
   const ind = w.induction;
   if (!ind || ind.done) return;
   const snap = ind.snapshot;
-  const keep = { citizens: w.citizens, pending: w.pending, adminLog: w.adminLog, rng: w.rng, nextId: w.nextId, flags: w.flags, now: w.now, gazette: w.gazette, daily: w.daily, dailyPast: w.dailyPast, zones: w.streets?.zones };
+  const keep = { citizens: w.citizens, drafts: w.drafts, pending: w.pending, adminLog: w.adminLog, rng: w.rng, nextId: w.nextId, flags: w.flags, now: w.now, gazette: w.gazette, daily: w.daily, dailyPast: w.dailyPast, zones: w.streets?.zones };
   Object.keys(w).forEach((k) => delete w[k]);
   Object.assign(w, structuredClone(snap));
   w.now = keep.now;
@@ -301,6 +301,9 @@ export function endInduction(w: W) {
   if (keep.daily) w.daily = keep.daily;
   if (keep.dailyPast) w.dailyPast = keep.dailyPast;
   if (keep.zones && w.streets) w.streets.zones = keep.zones;
+  // drafts are writing, not practice: they carry on, without the practice bots
+  w.drafts = Object.fromEntries(Object.entries(keep.drafts || {}).filter(([, d]: any) => !keep.citizens[d.by]?.bot));
+  Object.values(w.drafts).forEach((d: any) => Object.keys(d.sponsors).forEach((k) => keep.citizens[k]?.bot && delete d.sponsors[k]));
   // the Gazette keeps everything from before induction, then a line for the week of practice
   const before = new Set(snap.gazette.map((g: any) => g.id));
   const practised = keep.gazette.filter((g: any) => !before.has(g.id)).length;

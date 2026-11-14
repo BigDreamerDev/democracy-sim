@@ -65,6 +65,7 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   alerts.ts    needs(view, me) — what needs a player now; Today, the sidebar badge and personal webhooks
   digest.ts    digest(w) — the state of the realm as plain text for the group chat (Copy button, /api/public/digest.txt)
                recap(w) / recapText(w) — the last 7 days (laws, rebels, loudest, PM approval) for Today's weekly card
+  drafts.ts    draft proposals (private: author + invited co-sponsors), takeDraft() for prop.new; amendments are in proposals.ts
   catalog.ts   CATALOG — public description of every player command and its args (served by /api/v1/commands)
   index.ts     COMMANDS table; run(world, actor, cmd, args) applies one to a structuredClone
   bots.ts      bot turns: botsAct (demo, smoke) and actBots(w, isBot) — the clock runs practice bots during induction
@@ -306,7 +307,8 @@ only; never alter or drop v1's `users`. Tell Uzair to **snapshot Neon before dep
 - **Player-visible change → add a line to `web/src/changes.ts`** (next `n`, newest first). Each browser shows it once
   after it moves to the new build. Open tabs move on their own (`web/src/update.tsx`: focus, reconnect, every 3 min;
   asks first if you're typing); `docs/sw.js` serves pages and `config.js` past the HTTP cache, hashed assets cache-first.
-- Draft proposals live in localStorage per player (`web/src/drafts.ts`), never on the server.
+- Draft proposals: `web/src/drafts.ts` keeps them in localStorage at once and sends `draft.save` 3 s later (higher `rev`
+  wins); `prop.new {draft}` credits co-sponsors who signed that exact wording (`crev`). Amendments: `p.amendments`, public.
 - Commit the rebuilt `docs/assets` and `docs/index.html` with any web/engine change —
   Pages serves `docs/` straight from the branch, there is no CI build.
 - Merging to `main` deploys both: Render redeploys the API, Pages republishes `docs/`.
