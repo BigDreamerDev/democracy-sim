@@ -74,7 +74,7 @@ function route(hash: string) {
   const q = new URLSearchParams(qs || '');
   const pages: Record<string, () => any> = {
     '': () => <Today />, gazette: () => <Gazette />, frontpage: () => <FrontPage id={b} />, passport: () => <Passport id={b} />, you: () => <Passport />, laws: () => <Laws />, law: () => <Law refId={b} />, calendar: () => <Calendar />,
-    house: () => <House />, proposals: () => <Proposals />, p: () => <Proposal id={b} />, new: () => <NewProposal query={q} />, questions: () => <Questions />,
+    house: () => <House />, proposals: () => <Proposals />, p: () => <Proposal id={b} />, new: () => <NewProposal key={qs || ''} query={q} />, questions: () => <Questions />,
     elections: () => <Elections />, election: () => <Election id={b} />, convention: () => <Convention />,
     // combined sections: the old addresses open the part they name
     search: () => <Search />, map: () => <Search />, people: () => <People />, redbox: () => <Honours focus="redbox" />, government: () => <Government />, cabinet: () => <Government focus="cabinet" />, offices: () => <Government focus="offices" />, hos: () => <Government focus="hos" />, office: () => <Office id={b} />,

@@ -3,6 +3,7 @@ import { useEffect } from 'preact/hooks';
 import { useStore, act, ONLINE, resetRealm, downloadExport, resetPassword, adminApps, removeApp, restoreApp, toast, adminInvites, makeInvite, makeInvites, revokeInvite, inviteLink, removeDuplicate, adminNotes, saveNote, adminAllowances, setAllowance, adminDevices, pauseClock, resyncClock, suspendCitizen, setRO, actionLog, listSnapshots, restoreSnapshot } from '../store';
 import { Page, Sec, Card, Btn, Empty, LinkRow, Field, Pick, When, Seg } from '../ui';
 import { CRISES } from '../../../engine/crises';
+import { BUILD, BUILT, checkNow } from '../update';
 import { nm, ledgerTotal, fmtTime, acctLabel } from '../../../engine/index';
 
 export function Admin() {
@@ -29,6 +30,7 @@ export function Admin() {
         <Btn href="#/calendar" kind="ghost" small style={{ marginTop: 10 }}>Change the calendar</Btn>
         <p class="small muted">Game rules change only through Parliament.</p>
       </Sec>
+      <SiteBuild />
       <PauseRealm />
       <Suspensions />
       <ReturningOfficers />
@@ -329,6 +331,16 @@ function Snapshots() {
           ))}
         </ul>
       ) : <Empty>No snapshots yet. The first is taken within a day.</Empty>}
+    </Sec>
+  );
+}
+
+// which build of the site this device is running, and a way to make sure it's the newest
+function SiteBuild() {
+  const built = new Date(BUILT).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return (
+    <Sec title="Site version" sub="Every open copy of the site checks for a new version every few minutes and moves to it on its own.">
+      <Card><div class="row"><span>This device is on build <b class="tnum">{BUILD}</b>, published {built}.</span>{ONLINE && <Btn small kind="ghost" onClick={() => checkNow(true).then((n) => !n && toast('This is the newest version.'))}>Check now</Btn>}</div></Card>
     </Sec>
   );
 }

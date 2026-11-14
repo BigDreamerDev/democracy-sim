@@ -70,6 +70,8 @@ export default defineConfig(({ mode }) => {
   if (site) rmSync('docs/assets', { recursive: true, force: true });
   return {
     root: 'web',
+    // when this build was made, shown on the admin page next to the build id
+    define: { __BUILT__: JSON.stringify(new Date().toISOString()) },
     base: './',
     publicDir: false,
     plugins: [

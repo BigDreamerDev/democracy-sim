@@ -303,6 +303,10 @@ only; never alter or drop v1's `users`. Tell Uzair to **snapshot Neon before dep
 - **Never overwrite `docs/config.js`.** It holds the real `API_BASE`
   (`https://democracy-sim-1.onrender.com`). `npm run build` leaves it alone; check
   `git diff --cached --name-only` doesn't list it before committing.
+- **Player-visible change → add a line to `web/src/changes.ts`** (next `n`, newest first). Each browser shows it once
+  after it moves to the new build. Open tabs move on their own (`web/src/update.tsx`: focus, reconnect, every 3 min;
+  asks first if you're typing); `docs/sw.js` serves pages and `config.js` past the HTTP cache, hashed assets cache-first.
+- Draft proposals live in localStorage per player (`web/src/drafts.ts`), never on the server.
 - Commit the rebuilt `docs/assets` and `docs/index.html` with any web/engine change —
   Pages serves `docs/` straight from the branch, there is no CI build.
 - Merging to `main` deploys both: Render redeploys the API, Pages republishes `docs/`.
