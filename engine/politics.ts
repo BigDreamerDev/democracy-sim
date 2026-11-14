@@ -525,6 +525,7 @@ export function closeElection(w: W, e: any) {
     if (winners[0]) setHos(w, winners[0], w.config.hos === 'monarchy' ? null : w.now + w.config.termDays * DAY);
   } else if (e.kind === 'leadership') {
     const p = w.parties[e.party];
+    if (p?.challenge?.status === 'contest') p.challenge.status = 'done';
     if (p && winners[0]) {
       p.leader = winners[0];
       gazette(w, 'party', `${nm(w, winners[0])} wins the ${p.name} leadership.`, '#/party/' + p.id);
@@ -662,16 +663,114 @@ export function partyMotionVote(w: W, actor: Id, mid: Id, v: 'for' | 'against') 
     gazette(w, 'party', `The ${p.name} conference adopts: "${m.text}".`, '#/party/' + p.id);
   } else if (a >= n / 2) m.status = 'failed';
 }
-export function challengeLeader(w: W, actor: Id, backers: Id[]) {
+// Leadership: a member starts a challenge; once enough members sign it (CHALLENGE_NEED: 3, or a quarter of the party if
+// that's more) a contest opens. The leader stands automatically, any member can stand, members vote. A leader can also
+// stand down, which opens a contest without them (they lead until it closes). A challenge not signed in 2 days lapses.
+export const challengeNeed = (w: W, pid: Id) => Math.max(3, Math.ceil(members(w, pid).length / 4));
+const contestOpen = (w: W, pid: Id) => Object.values(w.elections).some((e: any) => e.kind === 'leadership' && e.party === pid && e.status === 'open');
+function openContest(w: W, p: any, incumbent: boolean) {
+  const e = newElection(w, { kind: 'leadership', party: p.id, title: `${p.name} leadership contest`, stand: 'party:' + p.id, voters: 'party:' + p.id, closesAt: w.now + 2 * DAY });
+  if (incumbent && p.leader) e.candidates[p.leader] = { id: p.leader, party: p.id, at: w.now };
+  return e;
+}
+export function challengeLeader(w: W, actor: Id) {
+  mustBeFree(w, actor);
   const c = cit(w, actor);
   const p = c.party && w.parties[c.party];
-  if (!p) fail('Join a party first.');
+  if (!p || p.status !== 'active') fail('Join a party first.');
   if (p.leader === actor) fail('You already lead it.');
-  if (!Array.isArray(backers) || backers.filter((b) => own(w.citizens, b)?.party === p.id && b !== actor).length < 2) fail('You need 2 members backing you.');
-  const e = newElection(w, { kind: 'leadership', party: p.id, title: `${p.name} leadership contest`, stand: 'party:' + p.id, voters: 'party:' + p.id, closesAt: w.now + 2 * DAY });
-  e.candidates[p.leader] = { id: p.leader, party: p.id };
-  e.candidates[actor] = { id: actor, party: p.id };
-  gazette(w, 'party', `${c.name} challenges ${nm(w, p.leader)} for the ${p.name} leadership.`, '#/election/' + e.id);
+  if (contestOpen(w, p.id)) fail('A leadership contest is already running.');
+  if (p.challenge?.status === 'open') fail('A challenge is already gathering names. Sign it instead.');
+  p.challenge = { by: actor, signed: [actor], status: 'open', at: w.now, dueAt: w.now + 2 * DAY };
+  gazette(w, 'party', `${c.name} launches a challenge to ${nm(w, p.leader)}’s leadership of the ${p.name}. It needs ${challengeNeed(w, p.id)} members to sign.`, '#/party/' + p.id);
+  signChallenge(w, actor, p.id);
+}
+export function signChallenge(w: W, actor: Id, pid: unknown) {
+  const p = own(w.parties, pid);
+  const ch = p?.challenge;
+  if (!ch || ch.status !== 'open') fail('There’s no challenge to sign.');
+  if (w.citizens[actor]?.party !== p.id) fail('Only members can sign.');
+  if (p.leader === actor) fail('You can’t sign a challenge to yourself.');
+  if (!ch.signed.includes(actor)) ch.signed.push(actor);
+  const live = ch.signed.filter((x: Id) => w.citizens[x]?.party === p.id);
+  if (live.length < challengeNeed(w, p.id)) return;
+  ch.status = 'contest';
+  const e = openContest(w, p, true);
+  if (w.citizens[ch.by]?.party === p.id) e.candidates[ch.by] = { id: ch.by, party: p.id, at: w.now };
+  gazette(w, 'party', `${live.length} members sign: the ${p.name} holds a leadership contest. Any member can stand.`, '#/election/' + e.id);
+}
+export function lapseChallenge(w: W, p: any) {
+  if (p.challenge?.status !== 'open') return;
+  p.challenge.status = 'lapsed';
+  gazette(w, 'party', `The challenge to ${nm(w, p.leader)}’s leadership of the ${p.name} runs out of names.`, '#/party/' + p.id);
+}
+export function standDown(w: W, actor: Id) {
+  const c = cit(w, actor);
+  const p = c.party && w.parties[c.party];
+  if (!p || p.leader !== actor) fail('You don’t lead a party.');
+  if (contestOpen(w, p.id)) fail('A leadership contest is already running.');
+  if (members(w, p.id).length < 2) fail('You’re its only member. Leave it instead.');
+  if (p.challenge?.status === 'open') p.challenge.status = 'lapsed';
+  const e = openContest(w, p, false);
+  gazette(w, 'party', `${c.name} stands down as leader of the ${p.name}. They lead until a successor is chosen.`, '#/election/' + e.id);
+}
+
+// Breakaways: members plot in private to split from their party. When at least 2 MPs have signed, the founder launches
+// it: a new party with everyone who signed, seats and all. Costs the founder 10 crowns. Unlaunched after 2 days, it's off.
+export const BREAKAWAY_MPS = 2;
+export function planBreakaway(w: W, actor: Id, a: any) {
+  mustBeFree(w, actor);
+  const c = cit(w, actor);
+  const from = c.party && w.parties[c.party];
+  if (!from || from.status !== 'active') fail('You can only break away from a party you’re in.');
+  const name = text(a?.name, 3, 40, 'party name');
+  if (typeof a?.colour !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(a.colour)) fail('Pick a colour.');
+  if (Object.values(w.parties).some((p: any) => p.name.toLowerCase() === name.toLowerCase() && p.status !== 'lapsed')) fail('That name is taken.');
+  const invite = a?.invite ?? [];
+  if (!Array.isArray(invite) || invite.length > 15) fail('Invite up to 15 members.');
+  const invited = [...new Set(invite)].filter((x: any) => typeof x === 'string' && x !== actor) as Id[];
+  if (invited.some((x) => w.citizens[x]?.party !== from.id)) fail(`Only members of the ${from.name} can be asked.`);
+  if (Object.values(w.breakaways || {}).filter((b: any) => b.by === actor && b.status === 'plotting').length) fail('You’re already planning one.');
+  const id = newId(w, 'bk');
+  (w.breakaways ??= {})[id] = { id, from: from.id, by: actor, name, colour: a.colour, invited, signed: [actor], declined: [], status: 'plotting', at: w.now, dueAt: w.now + 2 * DAY };
+  return id;
+}
+export function signBreakaway(w: W, actor: Id, bid: unknown, yes: unknown) {
+  const b = own(w.breakaways, bid);
+  if (!b || b.status !== 'plotting' || !b.invited.includes(actor)) fail('You haven’t been asked to join that.');
+  if (w.citizens[actor]?.party !== b.from) fail('You’ve left that party already.');
+  b.signed = b.signed.filter((x: Id) => x !== actor);
+  b.declined = b.declined.filter((x: Id) => x !== actor);
+  (yes ? b.signed : b.declined).push(actor);
+}
+export function launchBreakaway(w: W, actor: Id, bid: unknown) {
+  mustBeFree(w, actor);
+  const b = own(w.breakaways, bid);
+  if (!b || b.by !== actor || b.status !== 'plotting') fail('That isn’t yours to launch.');
+  const from = w.parties[b.from];
+  const going = b.signed.filter((x: Id) => w.citizens[x]?.party === b.from && w.citizens[x].active);
+  const mpsGoing = going.filter((x: Id) => isMP(w, x));
+  if (mpsGoing.length < BREAKAWAY_MPS) fail(`A breakaway needs at least ${BREAKAWAY_MPS} MPs. ${mpsGoing.length} ha${mpsGoing.length === 1 ? 's' : 've'} signed.`);
+  if (Object.values(w.parties).some((p: any) => p.name.toLowerCase() === b.name.toLowerCase() && p.status !== 'lapsed')) fail('That name has been taken since. Plan it again under another.');
+  transfer(w, ca(actor), 'treasury', 10, `Registered ${b.name}`);
+  const id = newId(w, 'p');
+  const p = (w.parties[id] = { id, name: b.name, colour: b.colour, leader: actor, status: 'active', invited: [], signed: [], founded: w.now, formingUntil: null, manifesto: [], motions: [], splitFrom: from.id });
+  going.forEach((x: Id) => (w.citizens[x].party = id));
+  w.citizens[actor].stats.foundedParty = true;
+  stamp(w, actor, 'Led a breakaway', b.name);
+  b.status = 'launched';
+  b.party = id;
+  b.signed = going;
+  // what's left behind: a new leader if theirs walked out, or nothing at all
+  const rest = members(w, from.id);
+  if (going.includes(from.leader)) from.leader = rest[0] || null;
+  if (!rest.length) from.status = 'dissolved';
+  gazette(w, 'party', `Split in the ${from.name}: ${going.map((x: Id) => nm(w, x)).join(', ').replace(/, ([^,]*)$/, ' and $1')} walk out to found the ${b.name}, taking ${mpsGoing.length} seats with them.`, '#/party/' + id);
+  meter(w, 'stability', -2, `The ${from.name} split`);
+  return id;
+}
+export function lapseBreakaway(w: W, b: any) {
+  if (b.status === 'plotting') b.status = 'lapsed';
 }
 
 // ================= Forming a government =================

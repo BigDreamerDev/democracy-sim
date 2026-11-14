@@ -70,6 +70,17 @@ export function viewFor(full: W, me: Id): W {
     else if (!p.members.includes(me)) p.invited = { [me]: p.invited[me] };
   });
   if (!canSeeIntel(full, me)) w.intel = [];
+  // a breakaway being plotted is known only to its founder and whoever they asked
+  Object.keys(w.breakaways || {}).forEach((id) => {
+    const b = w.breakaways[id];
+    if (b.status === 'launched' || b.by === me || b.invited.includes(me)) return;
+    delete w.breakaways[id];
+  });
+  // a pledge on offer (or turned down) is between the two of them; agreed, it's public
+  Object.keys(w.pledges || {}).forEach((id) => {
+    const pl = w.pledges[id];
+    if (['offered', 'declined'].includes(pl.status) && pl.a !== me && pl.b !== me) delete w.pledges[id];
+  });
   // drafts: the author's own, and ones you're invited to co-sponsor (without who else turned it down)
   Object.keys(w.drafts || {}).forEach((id) => {
     const d = w.drafts[id];

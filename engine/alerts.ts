@@ -49,6 +49,9 @@ export function needs(w: W, me: Id): Alert[] {
     if (p.stage === 'assent' && isHOS(w, me)) out.push({ key: `assent:${p.id}`, href: '#/p/' + p.id, label: w.config.hos === 'monarchy' ? 'Royal Assent' : 'Sign or veto', title: p.title, at: p.assentDueAt });
     if (p.stage === 'hos' && isHOS(w, me)) out.push({ key: `dissolve:${p.id}`, href: '#/p/' + p.id, label: 'Dissolution request', title: 'The PM asks for an election', at: p.hosDueAt, urgent: true });
   });
+  Object.values(w.pledges || {}).forEach((pl: any) => pl.status === 'offered' && pl.b === me && out.push({ key: 'pledge:' + pl.id, href: '#/p/' + pl.aProp, label: 'A pledge', title: `${nm(w, pl.a)} will back your amendment if you back theirs` }));
+  Object.values(w.breakaways || {}).forEach((b: any) => b.status === 'plotting' && b.invited.includes(me) && !b.signed.includes(me) && !b.declined.includes(me) && out.push({ key: 'breakaway:' + b.id, href: '#/party/' + b.from, label: 'Private', title: `${nm(w, b.by)} asks you to break away and found the ${b.name}`, at: b.dueAt }));
+  Object.values(w.parties).forEach((p: any) => p.challenge?.status === 'open' && w.citizens[me]?.party === p.id && p.leader !== me && !p.challenge.signed.includes(me) && out.push({ key: 'challenge:' + p.id + ':' + p.challenge.at, href: '#/party/' + p.id, label: 'Leadership', title: `${nm(w, p.challenge.by)} is challenging ${nm(w, p.leader)}. Sign if you agree`, at: p.challenge.dueAt }));
   Object.values(w.drafts || {}).forEach((d: any) => d.by !== me && d.sponsors[me]?.status === 'invited' && out.push({ key: `sponsor:${d.id}:${d.crev}`, href: '#/draft/' + d.id, label: 'Co-sponsor', title: `${nm(w, d.by)} asks you to co-sponsor ${d.title || 'a draft'}${d.crev ? ' (reworded)' : ''}` }));
   if (!w.pm && w.phase === 'running') {
     const who = contenders(w).find((l) => commands(w, l));

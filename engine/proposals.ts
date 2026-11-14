@@ -273,7 +273,7 @@ export function answerAmendment(w: W, actor: Id, pid: unknown, mid: unknown, acc
     if (backing(w, m).length >= HOSTILE_BACKERS) return openDivision(w, p, m);
     m.status = 'rejected';
     gazette(w, 'proposal', `${nm(w, actor)} turns down ${nm(w, m.by)}’s amendment to ${p.title}.`, '#/p/' + p.id);
-    return;
+    return judgePledges(w);
   }
   if (!fits(p, m)) fail('That clause has changed since. Ask for the amendment to be put again.');
   applyAmendment(w, p, m);
@@ -281,6 +281,7 @@ export function answerAmendment(w: W, actor: Id, pid: unknown, mid: unknown, acc
   m.answeredAt = w.now;
   earn(w, m.by, 3, 'Your amendment was accepted');
   gazette(w, 'proposal', `${nm(w, actor)} accepts ${nm(w, m.by)}’s amendment to ${p.title}.`, '#/p/' + p.id);
+  judgePledges(w);
 }
 // Hostile amendments: MPs back one (the proposer counts). If the author turns it down with HOSTILE_BACKERS behind it,
 // MPs vote on it before the main vote opens (the debate runs at least DIVISION_HOURS more so there's time).
@@ -355,6 +356,7 @@ function settleDivisions(w: W, p: any) {
     const ayes = Object.entries(m.votes).filter(([k, v]) => v === 'aye' && isMP(w, k)).length;
     const noes = Object.entries(m.votes).filter(([k, v]) => v === 'no' && isMP(w, k)).length;
     m.result = { ayes, noes };
+    trackAmendmentWhip(w, p, m);
     if (ayes <= noes) {
       m.status = 'defeated';
       gazette(w, 'proposal', `The House rejects ${nm(w, m.by)}’s amendment to ${p.title}, ${ayes} to ${noes}.`, '#/p/' + p.id);
@@ -372,6 +374,96 @@ function settleDivisions(w: W, p: any) {
     gazette(w, 'proposal', `The House carries ${nm(w, m.by)}’s amendment to ${p.title} against its author, ${ayes} to ${noes}.`, '#/p/' + p.id);
   });
 }
+// whipped amendment votes count towards each MP's record, like bills
+function trackAmendmentWhip(w: W, p: any, m: any) {
+  const rebels: Id[] = [];
+  mps(w).forEach((id) => {
+    const line = amendmentLine(w, m, id);
+    const v = m.votes[id];
+    if (!line || !v || v === 'abstain') return;
+    const c = w.citizens[id];
+    c.whip ??= { loyal: 0, rebel: 0 };
+    if (v === line) c.whip.loyal++;
+    else {
+      c.whip.rebel++;
+      c.whip.last = `an amendment to ${p.title}`;
+      rebels.push(id);
+    }
+  });
+  m.rebels = rebels;
+  if (rebels.length) gazette(w, 'government', `${rebels.map((r) => nm(w, r)).join(' and ')} defied the whip on ${nm(w, m.by)}’s amendment to ${p.title}.`, '#/p/' + p.id);
+}
+
+// Pledges: two MPs agree to back each other's amendments. On offer it's private; agreed, it's public. Each side is
+// judged when the amendment they promised to back is settled: kept if it went in, or they backed it (and voted Aye if
+// the House divided). Lapsed for other reasons (the bill withdrawn, the vote opening first) is nobody's fault.
+const findAmendment = (w: W, mid: unknown) => {
+  for (const p of Object.values(w.proposals) as any[]) {
+    const m = (p.amendments || []).find((x: any) => x.id === mid);
+    if (m) return { p, m };
+  }
+  return null;
+};
+export function offerPledge(w: W, actor: Id, mine: unknown, theirs: unknown) {
+  mustBeFree(w, actor);
+  const a = findAmendment(w, mine);
+  const b = findAmendment(w, theirs);
+  if (!a || a.m.by !== actor) fail('Pick one of your own amendments.');
+  if (!b || b.m.by === actor) fail('Pick someone else’s amendment.');
+  for (const x of [a, b]) if (x.p.stage !== 'debate' || !['pending', 'division'].includes(x.m.status)) fail('Both amendments must still be open.');
+  if (!isMP(w, actor) || !isMP(w, b.m.by)) fail('Only MPs make pledges.');
+  if (Object.values(w.pledges || {}).some((pl: any) => ['offered', 'agreed'].includes(pl.status) && ((pl.a === actor && pl.aBacks === b.m.id) || (pl.b === actor && pl.bBacks === b.m.id)))) fail('You’ve already pledged on that one.');
+  const id = newId(w, 'pl');
+  (w.pledges ??= {})[id] = { id, a: actor, b: b.m.by, aBacks: b.m.id, bBacks: a.m.id, aProp: b.p.id, bProp: a.p.id, status: 'offered', kept: {}, at: w.now };
+  return id;
+}
+export function answerPledge(w: W, actor: Id, pid: unknown, yes: unknown) {
+  const pl = own(w.pledges, pid);
+  if (!pl || pl.b !== actor || pl.status !== 'offered') fail('There’s no pledge waiting for you.');
+  const x = findAmendment(w, pl.aBacks);
+  const y = findAmendment(w, pl.bBacks);
+  if (!yes) return void (pl.status = 'declined');
+  if (!x || !y || [x, y].some((v) => v.p.stage !== 'debate' || !['pending', 'division'].includes(v.m.status))) {
+    pl.status = 'void';
+    fail('One of the amendments has been settled already.');
+  }
+  pl.status = 'agreed';
+  pl.agreedAt = w.now;
+  gazette(w, 'proposal', `${nm(w, pl.a)} and ${nm(w, pl.b)} pledge to back each other’s amendments, to ${x!.p.title}${x!.p.id === y!.p.id ? '' : ` and ${y!.p.title}`}.`, '#/p/' + x!.p.id);
+}
+export function judgePledges(w: W) {
+  Object.values(w.pledges || {}).forEach((pl: any) => {
+    if (pl.status === 'offered') {
+      const ms = [pl.aBacks, pl.bBacks].map((id) => findAmendment(w, id)?.m);
+      if (ms.some((m) => !m || !['pending', 'division'].includes(m.status))) pl.status = 'void';
+      return;
+    }
+    if (pl.status !== 'agreed') return;
+    for (const [who, mid] of [[pl.a, pl.aBacks], [pl.b, pl.bBacks]] as [Id, Id][]) {
+      if (pl.kept[who] !== undefined) continue;
+      const f = findAmendment(w, mid);
+      if (!f || ['pending', 'division'].includes(f.m.status)) continue;
+      const m = f.m;
+      const backed = m.votes ? m.votes[who] === 'aye' : (m.backers || []).includes(who);
+      const kept = ['accepted', 'carried'].includes(m.status) || backed;
+      pl.kept[who] = kept ? true : m.status === 'lapsed' ? null : false;
+      if (pl.kept[who] === false) {
+        const other = who === pl.a ? pl.b : pl.a;
+        pl.status = 'broken';
+        pl.brokenBy = who;
+        bump(w, who, 'pledgesBroken');
+        approve(w, who, -2);
+        gazette(w, 'proposal', `${nm(w, who)} broke their pledge to back ${nm(w, other)}’s amendment to ${f.p.title}.`, '#/p/' + f.p.id);
+        return;
+      }
+    }
+    if (pl.kept[pl.a] !== undefined && pl.kept[pl.b] !== undefined) {
+      pl.status = 'kept';
+      [pl.a, pl.b].forEach((x: Id) => pl.kept[x] && bump(w, x, 'pledgesKept'));
+    }
+  });
+}
+
 // the bill's history: every wording it has had, and why it changed. Capped so a much-edited bill stays small.
 const HISTORY_MAX = 25;
 export function history(w: W, p: any, by: Id, why: string) {
@@ -386,6 +478,7 @@ export function withdrawProposal(w: W, actor: Id, pid: unknown) {
   if (['no_confidence', 'confidence'].includes(p.kind) && p.stage === 'vote') fail('A confidence vote can’t be withdrawn once voting has started.');
   p.stage = 'withdrawn';
   lapseAmendments(p);
+  judgePledges(w);
   p.result = { withdrawn: true, at: w.now };
   Object.values(w.markets || {}).forEach((m: any) => m.kind === 'prop' && m.ref === p.id && m.status === 'open' && voidMarket(w, m, 'The proposal was withdrawn.'));
   gazette(w, 'proposal', `${nm(w, actor)} withdraws ${p.title}.`, '#/p/' + p.id);
@@ -439,6 +532,7 @@ export function openVote(w: W, p: any) {
   settleDivisions(w, p);
   p.stage = 'vote';
   if (lapseAmendments(p)) gazette(w, 'proposal', `Amendments not taken up on ${p.title} lapse as voting opens.`, '#/p/' + p.id);
+  judgePledges(w);
   p.voteEndsAt = w.now + (p.fast || ['no_confidence', 'confidence', 'censure'].includes(p.kind) ? 12 : w.config.voteHours) * HOUR;
   gazette(w, 'proposal', `Voting opens: ${p.title}. ${p.voters === 'all' ? 'Every citizen votes.' : 'MPs vote.'}`, '#/p/' + p.id);
   openMarket(w, 'prop', p.id, `Will “${p.title}” pass the vote?`, [{ key: 'yes', label: 'Passes' }, { key: 'no', label: 'Fails' }], p.voteEndsAt);

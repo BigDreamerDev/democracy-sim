@@ -264,6 +264,12 @@ Citizen id = `'u' + users.id`.
   `passCheck()` in proposals.ts is the one place that decides a pass. All are chosen at the Convention.
 - **Parties** are founded at once by `party.found` (no co-founders; `cofounders` is ignored, `party.cosign` stays for old
   clients). `activateParty()` founds one; migrate founds any left `forming`.
+- **Party leadership**: `party.challenge` starts a public petition (`p.challenge`); at `challengeNeed()` (3 or a quarter) signatures
+  (`party.challengeSign`) a leadership contest opens; `party.standDown` opens one without the leader. **Breakaways**
+  (`w.breakaways`, private to founder + invited until launched): `party.breakaway` → `party.breakawaySign` →
+  `party.breakawayLaunch` with ≥ `BREAKAWAY_MPS` (2) MPs signed; lapse after 2 days.
+- **Pledges** (`w.pledges`): `pledge.offer` (private) → `pledge.answer` (public). `judgePledges()` runs whenever amendments settle;
+  broken → Gazette, −2 approval, `bump('pledgesBroken')`. Whipped amendment divisions count in `c.whip` (`trackAmendmentWhip`).
 - **Amendments** (`p.amendments`, public): `prop.amend` → author `prop.amendment`. Turned down with `HOSTILE_BACKERS` (3) MPs
   behind it (`prop.amendBack`; the proposer counts) it goes to a `division` (`prop.amendVote`, whipped by `prop.amendWhip`),
   settled in `openVote` before the main vote; the debate runs at least 6 h more. `history()` records every wording

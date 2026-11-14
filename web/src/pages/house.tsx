@@ -468,8 +468,47 @@ function AmendmentHouse({ p, m }: { p: any; m: any }) {
           {isMP(w, me) && <div class="row" style={{ justifyContent: 'flex-start', gap: 8, marginTop: 8 }}>{(['aye', 'no', 'abstain'] as const).map((v) => <Btn small kind={m.votes?.[me] === v ? undefined : 'ghost'} onClick={() => act('prop.amendVote', { prop: p.id, amendment: m.id, vote: v }, 'Vote recorded.')}>{v === 'aye' ? 'Aye' : v === 'no' ? 'No' : 'Abstain'}</Btn>)}{myLine && <span class="small muted">Your party says {myLine === 'aye' ? 'Aye' : 'No'}.</span>}</div>}
         </Card>
       )}
-      {m.result && <span class="small muted tnum">The House voted {m.result.ayes} to {m.result.noes}.</span>}
+      {m.result && <span class="small muted tnum">The House voted {m.result.ayes} to {m.result.noes}.{m.rebels?.length ? ` Defied the whip: ${m.rebels.map((x: string) => nm(w, x)).join(', ')}.` : ''}</span>}
+      <Pledges p={p} m={m} />
       {open && canWhip(w, me) && myParty && <div class="row" style={{ justifyContent: 'flex-start', gap: 8 }}><span class="small">Your party’s line:</span><Seg value={m.whips?.[myParty]?.line || ''} onChange={(v) => act('prop.amendWhip', { prop: p.id, amendment: m.id, line: v }, 'Line set. It’s public.')} options={[['aye', 'Back'], ['no', 'Oppose'], ['free', 'Free']]} /></div>}
+    </div>
+  );
+}
+// pledges on one amendment: offers to answer, deals made, and a way to offer one
+const PLEDGE_STATE: Record<string, string> = { agreed: 'Pledged', kept: 'Kept', broken: 'Broken' };
+function Pledges({ p, m }: { p: any; m: any }) {
+  const { world: w, me } = useStore();
+  const [mine, setMine] = useState('');
+  const all = Object.values(w.pledges || {}) as any[];
+  const amend = (id: string) => {
+    for (const q of Object.values(w.proposals) as any[]) {
+      const x = (q.amendments || []).find((y: any) => y.id === id);
+      if (x) return { q, x };
+    }
+    return null;
+  };
+  const offers = all.filter((pl) => pl.status === 'offered' && pl.b === me && pl.aBacks === m.id);
+  const deals = all.filter((pl) => ['agreed', 'kept', 'broken'].includes(pl.status) && (pl.aBacks === m.id || pl.bBacks === m.id));
+  const open = p.stage === 'debate' && ['pending', 'division'].includes(m.status);
+  const myOpen = open && isMP(w, me) && m.by !== me ? (Object.values(w.proposals) as any[]).filter((q) => q.stage === 'debate').flatMap((q) => (q.amendments || []).filter((x: any) => x.by === me && ['pending', 'division'].includes(x.status)).map((x: any) => [x.id, `${q.title}: ${x.op === 'remove' ? `remove clause ${x.index + 1}` : safe(w, x.clause)}`.slice(0, 80)] as [string, string])) : [];
+  if (!offers.length && !deals.length && !myOpen.length) return null;
+  return (
+    <div class="stack" style={{ gap: 6 }}>
+      {deals.map((pl) => {
+        const backer = pl.aBacks === m.id ? pl.a : pl.b;
+        const other = amend(pl.aBacks === m.id ? pl.bBacks : pl.aBacks);
+        return <span class="small"><span class={'chip' + (pl.status === 'broken' ? ' red' : pl.status === 'kept' ? ' teal' : '')}>{PLEDGE_STATE[pl.status]}</span> {nm(w, backer)} backs this, in return for {nm(w, m.by)} backing their amendment{other ? <> to <a href={'#/p/' + other.q.id}>{other.q.title}</a></> : ''}.{pl.status === 'broken' ? ` ${nm(w, pl.brokenBy)} broke it.` : ''}</span>;
+      })}
+      {offers.map((pl) => {
+        const theirs = amend(pl.bBacks);
+        return (
+          <Card kind="tint">
+            <span class="small"><b>{nm(w, pl.a)} offers a pledge:</b> they back this if you back their amendment{theirs ? <> to <a href={'#/p/' + theirs.q.id}>{theirs.q.title}</a>: {theirs.x.op === 'remove' ? `remove clause ${theirs.x.index + 1}` : safe(w, theirs.x.clause)}</> : ''}. Agreed, it’s public, and breaking it is news.</span>
+            <div class="row" style={{ justifyContent: 'flex-start', gap: 8, marginTop: 6 }}><Btn small onClick={() => act('pledge.answer', { pledge: pl.id, yes: true }, 'Agreed. It’s in the Gazette.')}>Agree</Btn><Btn small kind="plain" onClick={() => act('pledge.answer', { pledge: pl.id, yes: false }, 'Turned down.')}>No</Btn></div>
+          </Card>
+        );
+      })}
+      {myOpen.length > 0 && <div class="row" style={{ gap: 8 }}><Pick value={mine} onChange={setMine} empty="Pledge: back this for theirs on…" options={myOpen} /><Btn small kind="ghost" onClick={() => mine && act('pledge.offer', { mine, theirs: m.id }, `Offered. ${nm(w, m.by)} decides.`) && setMine('')}>Offer</Btn></div>}
     </div>
   );
 }

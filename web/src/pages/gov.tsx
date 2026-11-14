@@ -1,8 +1,8 @@
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, Empty, LinkRow, Seg, Opt, Field, Pick, Icon, ThemeSwitch, Locked , When } from '../ui';
-import { nm, isPM, isHOS, mps, sideOf, sideName, majority, allCitizens, exiled, intrigueOpen, bal, ca, hosTitle, holderOf, officesOf } from '../../../engine/index';
-import { leaderOfOpposition, leaderOfSide, sideSeats, supportFor, members, HOS_METHODS , commands, FORM_DAYS } from '../../../engine/politics';
+import { nm, isMP, isPM, isHOS, mps, sideOf, sideName, majority, allCitizens, exiled, intrigueOpen, bal, ca, hosTitle, holderOf, officesOf } from '../../../engine/index';
+import { leaderOfOpposition, leaderOfSide, sideSeats, supportFor, members, HOS_METHODS , commands, FORM_DAYS, challengeNeed, BREAKAWAY_MPS } from '../../../engine/politics';
 import { POWERS, TEMPLATES, FILL } from '../../../engine/offices';
 import { RoleChips } from '../Roles';
 
@@ -223,7 +223,6 @@ export function Party({ id }: { id: string }) {
   const { world: w, me } = useStore();
   const p = w.parties[id];
   const [m, setM] = useState('');
-  const [backers, setBackers] = useState<string[]>([]);
   if (!p) return <Page title="No such party" back={['#/parties', 'Parties']} />;
   const ms = members(w, id);
   const isMember = w.citizens[me].party === id;
@@ -241,13 +240,64 @@ export function Party({ id }: { id: string }) {
               <Field label="New motion" value={m} onInput={setM} /><Btn small onClick={() => act('party.motion', { text: m }, 'Put to conference.') && setM('')}>Put to conference</Btn>
             </div>
           </Sec>
-          {p.leader !== me && (
-            <Sec title="Challenge the leader" sub="Two members must back you.">
-              <div class="stack">{ms.filter((x) => x !== me && x !== p.leader).map((x) => <Opt on={backers.includes(x)} onClick={() => setBackers(backers.includes(x) ? backers.filter((y) => y !== x) : [...backers, x])} title={nm(w, x)} />)}<Btn kind="danger ghost" onClick={() => act('party.challenge', { backers }, 'Leadership contest called.')}>Challenge</Btn></div>
-            </Sec>
-          )}
+          <Leadership p={p} />
+          <Breakaways p={p} />
         </>
       )}
     </Page>
+  );
+}
+
+// the leadership: a challenge gathering names, a contest, or standing down
+function Leadership({ p }: { p: any }) {
+  const { world: w, me } = useStore();
+  const contest = Object.values(w.elections).find((e: any) => e.kind === 'leadership' && e.party === p.id && e.status === 'open') as any;
+  const ch = p.challenge?.status === 'open' ? p.challenge : null;
+  const need = challengeNeed(w, p.id);
+  const signed = ch ? ch.signed.filter((x: string) => w.citizens[x]?.party === p.id) : [];
+  return (
+    <Sec title="Leadership" sub={`A challenge needs ${need} members to sign within 2 days. Then any member can stand, and members vote.`}>
+      {contest && <Card kind="tint"><div class="row"><span><b>A leadership contest is on.</b> Closes <When at={contest.closesAt} />.</span><Btn small href={'#/election/' + contest.id}>Stand or vote</Btn></div></Card>}
+      {!contest && ch && (
+        <Card kind="tint">
+          <b>{nm(w, ch.by)} is challenging {nm(w, p.leader)}.</b>
+          <p class="small" style={{ margin: '4px 0 8px' }}>{signed.length} of {need} signed: {signed.map((x: string) => nm(w, x)).join(', ')}. Runs out <When at={ch.dueAt} />.</p>
+          {p.leader !== me && !ch.signed.includes(me) && <Btn small kind="danger ghost" onClick={() => act('party.challengeSign', { party: p.id }, 'Signed.')}>Sign the challenge</Btn>}
+        </Card>
+      )}
+      {!contest && !ch && (p.leader === me ? <Btn small kind="ghost" onClick={() => confirm('Stand down? A contest opens, and you lead until it closes. You can stand in it.') && act('party.standDown', {}, 'You’ve stood down. The contest is open.')}>Stand down</Btn> : <Btn small kind="danger ghost" onClick={() => act('party.challenge', {}, 'Challenge launched. Members can sign it.')}>Challenge the leader</Btn>)}
+    </Sec>
+  );
+}
+// breakaways: plotted in private, launched with 2 MPs
+function Breakaways({ p }: { p: any }) {
+  const { world: w, me } = useStore();
+  const [f, setF] = useState<{ name: string; colour: string; invite: string[] } | null>(null);
+  const mine = (Object.values(w.breakaways || {}) as any[]).filter((b) => b.from === p.id && b.status === 'plotting' && (b.by === me || b.invited.includes(me)));
+  const others = members(w, p.id).filter((x) => x !== me);
+  const mpCount = (b: any) => b.signed.filter((x: string) => isMP(w, x) && w.citizens[x]?.party === p.id).length;
+  return (
+    <Sec title="Break away" sub={`In private, ask members to leave with you and found a new party. Once ${BREAKAWAY_MPS} MPs have signed, you can launch it: everyone who signed goes, seats and all. Unlaunched after 2 days, it’s off.`}>
+      <div class="stack">
+        {mine.map((b) => (
+          <Card kind="tint">
+            <div class="row"><b><i class="dot" style={{ background: b.colour, marginRight: 6 }} />{b.name}</b><span class="chip red">Private</span></div>
+            <p class="small" style={{ margin: '4px 0' }}>Planned by {nm(w, b.by)}. Signed: {b.signed.map((x: string) => nm(w, x)).join(', ')}{b.declined.length ? `. Said no: ${b.declined.map((x: string) => nm(w, x)).join(', ')}` : ''}. {mpCount(b)} of {BREAKAWAY_MPS} MPs. Off <When at={b.dueAt} />.</p>
+            {b.by === me ? <Btn small kind="danger" disabled={mpCount(b) < BREAKAWAY_MPS} onClick={() => confirm(`Launch the ${b.name}? Everyone who signed leaves the ${p.name} with you. Costs 10 crowns.`) && act('party.breakawayLaunch', { breakaway: b.id }, 'You’ve split the party.')}>Launch it (10 crowns)</Btn>
+              : <div class="row" style={{ justifyContent: 'flex-start', gap: 8 }}>{!b.signed.includes(me) && <Btn small onClick={() => act('party.breakawaySign', { breakaway: b.id, yes: true }, 'You’re in.')}>I’m in</Btn>}{!b.declined.includes(me) && <Btn small kind="plain" onClick={() => act('party.breakawaySign', { breakaway: b.id, yes: false }, 'You said no.')}>{b.signed.includes(me) ? 'Pull out' : 'No'}</Btn>}</div>}
+          </Card>
+        ))}
+        {!mine.some((b) => b.by === me) && !f && <Btn small kind="ghost" onClick={() => setF({ name: '', colour: '#8C3B3B', invite: [] })}>Plan a breakaway</Btn>}
+        {f && (
+          <Card><div class="stack">
+            <Field label="New party's name" value={f.name} onInput={(v) => setF({ ...f, name: v })} />
+            <label class="f">Colour<input type="color" value={f.colour} onInput={(e: any) => setF({ ...f, colour: e.target.value })} style={{ width: 60, height: 40 }} /></label>
+            <div class="small" style={{ fontWeight: 700 }}>Who to ask (only they will know)</div>
+            <div class="stack" style={{ gap: 6 }}>{others.map((x) => <Opt on={f.invite.includes(x)} onClick={() => setF({ ...f, invite: f.invite.includes(x) ? f.invite.filter((y) => y !== x) : [...f.invite, x] })} title={nm(w, x)} right={isMP(w, x) ? <span class="chip">MP</span> : undefined} />)}</div>
+            <div class="row" style={{ justifyContent: 'flex-start', gap: 8 }}><Btn small onClick={() => act('party.breakaway', f, 'Planned. Only the people you asked know.') && setF(null)}>Ask them</Btn><Btn small kind="plain" onClick={() => setF(null)}>Cancel</Btn></div>
+          </div></Card>
+        )}
+      </div>
+    </Sec>
   );
 }
