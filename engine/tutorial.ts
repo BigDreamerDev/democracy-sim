@@ -13,7 +13,7 @@ export const TUTORIAL: Mission[] = [
   { id: 'law', system: 'Basics', title: 'Read the Founding Act', text: 'The rules everyone agreed. Every later law sits on top of it.', href: '#/law/L001', visit: true },
   { id: 'stand', system: 'Elections', title: 'Stand for election', text: 'Put your name on a ballot. Anyone can.', href: '#/elections', cmds: ['election.stand'] },
   { id: 'ballot', system: 'Elections', title: 'Cast a ballot', text: 'Secret and final. The top candidates nationwide take the seats.', href: '#/elections', cmds: ['election.vote'] },
-  { id: 'party', system: 'Parties', title: 'Join or found a party', text: 'Parties win seats together. Founding one takes two co-founders.', href: '#/parties', cmds: ['party.found', 'party.cosign', 'party.join'] },
+  { id: 'party', system: 'Parties', title: 'Join or found a party', text: 'Parties win seats together. Founding one costs 10 crowns, and it’s yours at once.', href: '#/parties', cmds: ['party.found', 'party.cosign', 'party.join'] },
   { id: 'debate', system: 'Parliament', title: 'Speak in a debate', text: 'On a bill or a crisis. Anyone can speak; only MPs vote on most things.', href: '#/proposals', cmds: ['prop.speak', 'crisis.speak'] },
   { id: 'vote', system: 'Parliament', title: 'Vote in the House', text: 'On a proposal, a referendum or a crisis.', href: '#/proposals', cmds: ['prop.vote', 'crisis.vote', 'crisis.decide'] },
   { id: 'question', system: 'Parliament', title: 'Hold the government to account', text: "Ask or back a question for PM's Questions.", href: '#/questions', cmds: ['q.ask', 'q.back'] },

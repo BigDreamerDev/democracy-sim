@@ -57,13 +57,16 @@ try {
   assert.equal(sum, 0, 'ledger balanced');
   assert.equal((await call('/api/state', undefined, B)).body.world.accounts['c:u3'], 115);
 
-  // the clock runs while nobody is looking: a party nobody co-signs lapses by the next read after its deadline
+  // a party is founded at once, no co-founders needed (an old client's cofounders are ignored)
   const f = await call('/api/act', { cmd: 'party.found', args: { name: 'Test Party', colour: '#336699', cofounders: ['u3', 'u4'] } }, A);
   assert.equal(f.status, 200, JSON.stringify(f.body));
+  assert.equal((Object.values(getWorld().parties)[0] as any).status, 'active', 'founded straight away');
+  assert.equal(getWorld().citizens.u2.party, (Object.values(getWorld().parties)[0] as any).id);
+  // the clock runs while nobody is looking: the Convention closes by the next read after its deadline
   t += 3 * 86400_000;
   const later = await call('/api/state', undefined, B);
   assert.equal(later.body.world.now, t);
-  assert.equal((Object.values(getWorld().parties)[0] as any).status, 'lapsed', 'deadlines caught up after sleep');
+  assert.notEqual(getWorld().phase, 'convention', 'deadlines caught up after sleep');
 
   // the world survives a restart
   const again = await makeApp({ q, secret: 's', origins: [], now: () => t, log: () => {} });
@@ -134,21 +137,21 @@ try {
   assert.equal(g.body.entries.at(-1).via, 'Realm Bot');
   const { createHmac } = await import('node:crypto');
   assert.equal(g.headers['X-Realm-Signature'], 'sha256=' + createHmac('sha256', hook.secret).update(JSON.stringify(g.body)).digest('hex'), 'signed');
-  // personal alerts: Bilal is named co-founder of Amara's new party, and only Bilal's hook hears of it
+  // personal alerts: Amara offers Bilal a private deal, and only Bilal's hook hears of it
   const mineHook = (await call('/api/hooks', { url: 'https://bilal.test/alerts', kind: 'personal' }, T)).body;
   assert.equal(mineHook.kind, 'personal');
   const before = deliveries.length;
-  assert.equal((await call('/api/act', { cmd: 'party.found', args: { name: 'Amara Party', colour: '#225588', cofounders: ['u3', 'u4'] } }, A2())).status, 200);
+  const offer = await call('/api/act', { cmd: 'deal.offer', args: { to: 'u3', text: 'Back my bill and I back yours.' } }, A2());
+  assert.equal(offer.status, 200, JSON.stringify(offer.body));
   await new Promise((r) => setTimeout(r, 100));
   const alerts = deliveries.slice(before).filter((d) => d.body.event === 'alert');
   assert.equal(alerts.length, 1, 'one personal alert');
   assert.equal(alerts[0].url, 'https://bilal.test/alerts');
-  assert.ok(alerts[0].body.alerts[0].key.startsWith('cofound:'));
-  assert.ok(alerts[0].body.alerts[0].url.includes('#/parties'));
+  assert.ok(alerts[0].body.alerts.some((x: any) => x.key.startsWith('deal:') && x.url.includes('#/backroom')));
   await call('/api/state', undefined, T);
   await new Promise((r) => setTimeout(r, 50));
   assert.equal(deliveries.slice(before).filter((d) => d.body.event === 'alert').length, 1, 'not sent twice');
-  assert.ok((await call('/api/v1/alerts', undefined, appKey)).body.some((x: any) => x.key.startsWith('cofound:')));
+  assert.ok((await call('/api/v1/alerts', undefined, appKey)).body.some((x: any) => x.key.startsWith('deal:')));
 
   // reviews and the RO's take-down
   assert.equal((await call('/api/apps/review', { app: made.client_id, stars: 5 }, A2())).status, 400, 'no reviewing your own app');

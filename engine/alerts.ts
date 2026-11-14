@@ -4,7 +4,7 @@
 import { W, Id, nm, isHOS, isPM, isMP, intrigueOpen, hasPower, holderOf, sideOf, bal, nextAt, mps, DAY } from './core';
 import { RED_BOX } from './glory';
 import { canVote , contenders, commands, leaderOfSide, FORM_DAYS } from './politics';
-import { canVoteOn, KINDS, whipLine, canWhip, rebelsOn } from './proposals';
+import { canVoteOn, KINDS, whipLine, canWhip, rebelsOn, amendmentLine } from './proposals';
 import { leaderOfOpposition } from './politics';
 
 export type Alert = { key: string; href: string; label: string; title: string; at?: number; urgent?: boolean };
@@ -40,6 +40,11 @@ export function needs(w: W, me: Id): Alert[] {
       const since = p.speeches.length - 1 - p.speeches.map((x: any) => x.side).lastIndexOf('order');
       if (since >= 6) out.push({ key: `order:${p.id}:${Math.floor(since / 6)}`, href: '#/p/' + p.id, label: 'Hansard', title: `${since} speeches on ${p.title} since order was last called`, at: p.debateEndsAt });
     }
+    if (p.stage === 'debate' && isMP(w, me)) (p.amendments || []).forEach((m: any) => {
+      if (m.status !== 'division' || m.votes?.[me]) return;
+      const line = amendmentLine(w, m, me);
+      out.push({ key: 'amendvote:' + m.id, href: '#/p/' + p.id, label: `Amendment vote${line ? ` · whipped ${line === 'aye' ? 'Aye' : 'No'}` : ''}`, title: `${nm(w, m.by)}’s amendment to ${p.title}`, at: p.debateEndsAt });
+    });
     if (p.by === me && p.stage === 'debate') (p.amendments || []).forEach((m: any) => m.status === 'pending' && out.push({ key: 'amend:' + m.id, href: '#/p/' + p.id, label: 'Amendment', title: `${nm(w, m.by)} wants to amend ${p.title}`, at: p.debateEndsAt }));
     if (p.stage === 'assent' && isHOS(w, me)) out.push({ key: `assent:${p.id}`, href: '#/p/' + p.id, label: w.config.hos === 'monarchy' ? 'Royal Assent' : 'Sign or veto', title: p.title, at: p.assentDueAt });
     if (p.stage === 'hos' && isHOS(w, me)) out.push({ key: `dissolve:${p.id}`, href: '#/p/' + p.id, label: 'Dissolution request', title: 'The PM asks for an election', at: p.hosDueAt, urgent: true });
@@ -57,7 +62,6 @@ export function needs(w: W, me: Id): Alert[] {
   });
   w.questions.forEach((q: any) => q.status === 'open' && ((q.to === 'pm' && isPM(w, me) && q.backers.length >= 3) || q.to === me) && out.push({ key: 'question:' + q.id, href: '#/questions', label: q.formal ? 'Formal question' : 'PMQ to answer', title: q.text, at: q.dueAt }));
   if (w.confidence && isPM(w, me)) out.push({ key: 'confidence:' + w.confidence.deadline, href: '#/new?kind=confidence', label: 'Confidence lost', title: 'Win a confidence vote or fall', at: w.confidence.deadline, urgent: true });
-  Object.values(w.parties).forEach((p: any) => p.status === 'forming' && p.invited.includes(me) && !p.signed.includes(me) && out.push({ key: 'cofound:' + p.id, href: '#/parties', label: 'Co-found', title: `Sign to found the ${p.name}`, at: p.formingUntil }));
   if (w.coalition?.status === 'draft' && w.coalition.sides.some((s: string) => (s.startsWith('p:') ? w.parties[s.slice(2)]?.leader : s.slice(2)) === me && !w.coalition.signed[s])) out.push({ key: 'coalition:' + w.coalition.id, href: '#/cabinet', label: 'Coalition', title: 'A deal waits for your signature' });
   // the Streets: a claim to answer, your live contract
   Object.values(w.streets?.contracts || {}).forEach((k: any) => {

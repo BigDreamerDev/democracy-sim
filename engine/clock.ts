@@ -54,7 +54,6 @@ function collect(w: W): D[] {
   w.asks.forEach((a: any) => a.status === 'sent' && add(a.decideAt, () => answerAsk(w, a), a.id));
   w.questions.forEach((q: any) => q.formal && q.status === 'open' && add(q.dueAt, () => missFormal(w, q), q.id));
   Object.values(w.cases).forEach((k: any) => k.status === 'open' && add(k.dueAt, () => rule(w, k, Object.values(k.votes).filter((v) => v === 'plaintiff').length > Object.values(k.votes).filter((v) => v === 'defence').length), k.id));
-  Object.values(w.parties).forEach((p: any) => p.status === 'forming' && add(p.formingUntil, () => ((p.status = 'lapsed'), gazette(w, 'party', `The ${p.name} failed to find two co-founders.`)), p.id));
   if (w.martial) add(w.martial.until, () => endMartialLaw(w));
   allCitizens(w).forEach((c: any) => c.exiledUntil && !c.exileNoted && add(c.exiledUntil, () => ((c.exileNoted = true), gazette(w, 'quiet', `${c.name}'s exile is over.`)), c.id));
   w.ventures.forEach((v: any) => v.status === 'out' && add(v.dueAt, () => settleVenture(w, v), v.id));

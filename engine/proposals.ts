@@ -193,7 +193,16 @@ export function propose(w: W, actor: Id, a: any) {
     sponsors, amendments: [], draft: fromDraft
   };
   tick(w, actor, 'proposals');
-  gazette(w, 'proposal', `${nm(w, actor)} puts a ${KINDS[kind].name.toLowerCase()} to the House${sponsors.length ? `, co-sponsored by ${sponsors.map((s) => nm(w, s)).join(', ')}` : ''}: ${w.proposals[id].title}${constitutional ? ' (constitutional: needs ' + superMajority(w) + ' of ' + w.config.seats + ')' : ''}.`, '#/p/' + id);
+  if (kind === 'bill' || kind === 'referendum') history(w, w.proposals[id], actor, 'Tabled');
+  // co-sponsors from another party (or none) than the author's: a cross-party bill, and the public likes it
+  const party = (x: Id) => w.citizens[x]?.party || null;
+  const across = sponsors.filter((s) => party(s) !== party(actor));
+  if (across.length) {
+    w.proposals[id].crossParty = true;
+    approve(w, actor, 2);
+    across.forEach((s) => approve(w, s, 1));
+  }
+  gazette(w, 'proposal', `${nm(w, actor)} puts a ${across.length ? 'cross-party ' : ''}${KINDS[kind].name.toLowerCase()} to the House${sponsors.length ? `, co-sponsored by ${sponsors.map((s) => nm(w, s)).join(', ')}` : ''}: ${w.proposals[id].title}${constitutional ? ' (constitutional: needs ' + superMajority(w) + ' of ' + w.config.seats + ')' : ''}.`, '#/p/' + id);
   return id;
 }
 
@@ -215,13 +224,14 @@ export function editProposal(w: W, actor: Id, pid: unknown, a: any) {
   p.constitutional = clauses.some((e: any) => CONSTITUTIONAL.includes(e.t) || (e.t === 'office' && own(TEMPLATES, e.template)?.constitutional));
   p.editedAt = w.now;
   p.edits = (p.edits || 0) + 1;
+  history(w, p, actor, 'Reworded by its author');
   gazette(w, 'proposal', `${nm(w, actor)} amends their ${KINDS[p.kind].name.toLowerCase()}: ${p.title}.`, '#/p/' + p.id);
 }
 // Amendments: during the debate any MP but the author can propose changing, adding or removing one clause. Public.
 // The author takes it or leaves it; whatever is still waiting when the vote opens lapses.
 const AMEND_OPS = ['change', 'add', 'remove'];
 export function lapseAmendments(p: any) {
-  const open = (p.amendments || []).filter((m: any) => m.status === 'pending');
+  const open = (p.amendments || []).filter((m: any) => m.status === 'pending' || m.status === 'division');
   open.forEach((m: any) => (m.status = 'lapsed'));
   return open.length;
 }
@@ -245,7 +255,7 @@ export function proposeAmendment(w: W, actor: Id, pid: unknown, a: any) {
     checkClauses(w, p.kind, [clause]);
   } else if (p.kind === 'bill' && p.clauses.length < 2) fail('A bill needs at least one clause.');
   if (op === 'add' && p.clauses.length >= 20) fail('A bill can have 20 clauses at most.');
-  const m = { id: newId(w, 'am'), by: actor, op, index, clause, was: op === 'add' ? null : JSON.stringify(p.clauses[index]), why, status: 'pending', at: w.now };
+  const m = { id: newId(w, 'am'), by: actor, op, index, clause, was: op === 'add' ? null : JSON.stringify(p.clauses[index]), why, status: 'pending', at: w.now, backers: [], whips: {} };
   p.amendments.push(m);
   const what = op === 'remove' ? `removing clause ${index + 1}` : op === 'add' ? `a new clause: ${describe(w, clause)}` : `clause ${index + 1} to read: ${describe(w, clause)}`;
   gazette(w, 'proposal', `${nm(w, actor)} proposes an amendment to ${p.title}, ${what}.`, '#/p/' + p.id);
@@ -258,27 +268,116 @@ export function answerAmendment(w: W, actor: Id, pid: unknown, mid: unknown, acc
   if (!m || m.status !== 'pending') fail('That amendment isn’t waiting.');
   if (p.stage !== 'debate') fail('The debate is over.');
   if (!accept) {
-    m.status = 'rejected';
     m.answeredAt = w.now;
+    // turned down, but enough MPs back it: the House decides instead
+    if (backing(w, m).length >= HOSTILE_BACKERS) return openDivision(w, p, m);
+    m.status = 'rejected';
     gazette(w, 'proposal', `${nm(w, actor)} turns down ${nm(w, m.by)}’s amendment to ${p.title}.`, '#/p/' + p.id);
     return;
   }
-  if (m.op !== 'add' && JSON.stringify(p.clauses[m.index]) !== m.was) fail('That clause has changed since. Ask for the amendment to be put again.');
+  if (!fits(p, m)) fail('That clause has changed since. Ask for the amendment to be put again.');
+  applyAmendment(w, p, m);
+  m.status = 'accepted';
+  m.answeredAt = w.now;
+  earn(w, m.by, 3, 'Your amendment was accepted');
+  gazette(w, 'proposal', `${nm(w, actor)} accepts ${nm(w, m.by)}’s amendment to ${p.title}.`, '#/p/' + p.id);
+}
+// Hostile amendments: MPs back one (the proposer counts). If the author turns it down with HOSTILE_BACKERS behind it,
+// MPs vote on it before the main vote opens (the debate runs at least DIVISION_HOURS more so there's time).
+// More ayes than noes and it goes in anyway. Party leaders and the Chief Whip can whip amendments like bills.
+export const HOSTILE_BACKERS = 3;
+const DIVISION_HOURS = 6;
+const backing = (w: W, m: any) => [m.by, ...(m.backers || [])].filter((id: Id, i: number, a: Id[]) => a.indexOf(id) === i && isMP(w, id));
+const fits = (p: any, m: any) => m.op === 'add' || JSON.stringify(p.clauses[m.index]) === m.was;
+function applyAmendment(w: W, p: any, m: any) {
   const clauses = structuredClone(p.clauses);
   if (m.op === 'add') clauses.push(structuredClone(m.clause));
   else if (m.op === 'change') clauses[m.index] = structuredClone(m.clause);
   else clauses.splice(m.index, 1);
   checkClauses(w, p.kind, clauses);
   // clause numbers after a removal move up one, so amendments aimed at them no longer fit
-  if (m.op === 'remove') p.amendments.forEach((x: any) => x.status === 'pending' && x.op !== 'add' && x.index > m.index && (x.status = 'lapsed'));
+  if (m.op === 'remove') p.amendments.forEach((x: any) => ['pending', 'division'].includes(x.status) && x !== m && x.op !== 'add' && x.index > m.index && (x.status = 'lapsed'));
   p.clauses = clauses;
   p.constitutional = clauses.some((e: any) => CONSTITUTIONAL.includes(e.t) || (e.t === 'office' && own(TEMPLATES, e.template)?.constitutional));
   p.editedAt = w.now;
   p.edits = (p.edits || 0) + 1;
-  m.status = 'accepted';
-  m.answeredAt = w.now;
-  earn(w, m.by, 3, 'Your amendment was accepted');
-  gazette(w, 'proposal', `${nm(w, actor)} accepts ${nm(w, m.by)}’s amendment to ${p.title}.`, '#/p/' + p.id);
+  history(w, p, m.by, `${nm(w, m.by)}’s amendment`);
+}
+function openDivision(w: W, p: any, m: any) {
+  m.status = 'division';
+  m.votes = {};
+  p.debateEndsAt = Math.max(p.debateEndsAt, w.now + DIVISION_HOURS * HOUR);
+  gazette(w, 'proposal', `${nm(w, p.by)} turns down ${nm(w, m.by)}’s amendment to ${p.title}, but ${backing(w, m).length} MPs back it. The House divides on it before the vote.`, '#/p/' + p.id);
+}
+function own_amendment(w: W, pid: unknown, mid: unknown) {
+  const p = own(w.proposals, pid);
+  if (!p) fail('No such proposal.');
+  const m = (p.amendments || []).find((x: any) => x.id === mid);
+  if (!m) fail('No such amendment.');
+  return { p, m };
+}
+export function backAmendment(w: W, actor: Id, pid: unknown, mid: unknown) {
+  const { p, m } = own_amendment(w, pid, mid);
+  if (!isMP(w, actor)) fail('Only MPs can back amendments.');
+  if (p.stage !== 'debate' || m.status !== 'pending') fail('It’s no longer waiting.');
+  if (actor === p.by) fail('It’s your bill: take it or leave it.');
+  if (actor === m.by) fail('It’s your amendment.');
+  m.backers ??= [];
+  m.backers = m.backers.includes(actor) ? m.backers.filter((x: Id) => x !== actor) : [...m.backers, actor];
+}
+export function voteAmendment(w: W, actor: Id, pid: unknown, mid: unknown, v: unknown) {
+  const { p, m } = own_amendment(w, pid, mid);
+  if (m.status !== 'division' || p.stage !== 'debate') fail('There’s no vote on that amendment.');
+  if (!isMP(w, actor)) fail('Only MPs vote on amendments.');
+  if (v !== 'aye' && v !== 'no' && v !== 'abstain') fail('Vote aye, no or abstain.');
+  m.votes[actor] = v;
+}
+export function whipAmendment(w: W, actor: Id, pid: unknown, mid: unknown, line: unknown) {
+  const { p, m } = own_amendment(w, pid, mid);
+  if (!['pending', 'division'].includes(m.status) || p.stage !== 'debate') fail('It’s no longer open.');
+  if (line !== 'aye' && line !== 'no' && line !== 'free') fail('Pick aye, no or a free vote.');
+  if (!canWhip(w, actor)) fail('Only your party leader or the Chief Whip sets the line.');
+  const party = w.citizens[actor].party;
+  m.whips ??= {};
+  if (m.whips[party]?.line === line) return;
+  m.whips[party] = { line, by: actor, at: w.now };
+  const pt = w.parties[party];
+  gazette(w, 'government', line === 'free' ? `${pt.name}: a free vote on ${nm(w, m.by)}’s amendment to ${p.title}.` : `${pt.name} ${line === 'aye' ? 'backs' : 'opposes'} ${nm(w, m.by)}’s amendment to ${p.title}.`, '#/p/' + p.id);
+}
+export function amendmentLine(w: W, m: any, mp: Id): 'aye' | 'no' | null {
+  const party = w.citizens[mp]?.party;
+  const line = party && m.whips?.[party]?.line;
+  return line === 'aye' || line === 'no' ? line : null;
+}
+// when the debate ends: settle every division, then whatever's still waiting lapses
+function settleDivisions(w: W, p: any) {
+  (p.amendments || []).filter((m: any) => m.status === 'division').forEach((m: any) => {
+    const ayes = Object.entries(m.votes).filter(([k, v]) => v === 'aye' && isMP(w, k)).length;
+    const noes = Object.entries(m.votes).filter(([k, v]) => v === 'no' && isMP(w, k)).length;
+    m.result = { ayes, noes };
+    if (ayes <= noes) {
+      m.status = 'defeated';
+      gazette(w, 'proposal', `The House rejects ${nm(w, m.by)}’s amendment to ${p.title}, ${ayes} to ${noes}.`, '#/p/' + p.id);
+      return;
+    }
+    if (!fits(p, m)) return void (m.status = 'lapsed');
+    try {
+      applyAmendment(w, p, m);
+    } catch {
+      return void (m.status = 'lapsed');
+    }
+    m.status = 'carried';
+    earn(w, m.by, 3, 'The House carried your amendment');
+    approve(w, p.by, -1);
+    gazette(w, 'proposal', `The House carries ${nm(w, m.by)}’s amendment to ${p.title} against its author, ${ayes} to ${noes}.`, '#/p/' + p.id);
+  });
+}
+// the bill's history: every wording it has had, and why it changed. Capped so a much-edited bill stays small.
+const HISTORY_MAX = 25;
+export function history(w: W, p: any, by: Id, why: string) {
+  p.history ??= [];
+  p.history.push({ at: w.now, by, why, title: p.title, summary: p.summary, clauses: structuredClone(p.clauses) });
+  if (p.history.length > HISTORY_MAX) p.history.splice(1, p.history.length - HISTORY_MAX);
 }
 export function withdrawProposal(w: W, actor: Id, pid: unknown) {
   const p = own(w.proposals, pid);
@@ -337,6 +436,7 @@ export function casting(w: W, actor: Id, pid: Id, v: 'aye' | 'no') {
 }
 
 export function openVote(w: W, p: any) {
+  settleDivisions(w, p);
   p.stage = 'vote';
   if (lapseAmendments(p)) gazette(w, 'proposal', `Amendments not taken up on ${p.title} lapse as voting opens.`, '#/p/' + p.id);
   p.voteEndsAt = w.now + (p.fast || ['no_confidence', 'confidence', 'censure'].includes(p.kind) ? 12 : w.config.voteHours) * HOUR;

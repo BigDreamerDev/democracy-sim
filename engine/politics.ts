@@ -596,30 +596,35 @@ export function honour(w: W, actor: Id, target: Id, title: string) {
 
 // ================= Parties =================
 export const members = (w: W, pid: Id): Id[] => allCitizens(w).filter((c: any) => c.party === pid).map((c: any) => c.id);
-export function foundParty(w: W, actor: Id, name: string, colour: string, cofounders: Id[]) {
+// a party is founded the moment it's registered: no co-founders. `cofounders` from older clients is ignored.
+export function foundParty(w: W, actor: Id, name: string, colour: string) {
   mustBeFree(w, actor);
   name = text(name, 3, 40, 'party name');
   if (typeof colour !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(colour)) fail('Pick a colour.');
-  if (!Array.isArray(cofounders) || cofounders.some((x) => typeof x !== 'string' || !w.citizens[x]?.active)) fail('Name 2 co-founders.');
-  if (Object.values(w.parties).some((p: any) => p.name.toLowerCase() === name.toLowerCase())) fail('That name is taken.');
-  const co = [...new Set(cofounders)].filter((c) => c && c !== actor);
-  if (co.length < 2) fail('Name 2 co-founders.');
+  if (Object.values(w.parties).some((p: any) => p.name.toLowerCase() === name.toLowerCase() && p.status !== 'lapsed')) fail('That name is taken.');
   transfer(w, ca(actor), 'treasury', 10, `Registered ${name}`);
   const id = newId(w, 'p');
-  w.parties[id] = { id, name, colour, leader: actor, status: 'forming', invited: co, signed: [], founded: w.now, formingUntil: w.now + DAY, manifesto: [], motions: [] };
-  gazette(w, 'party', `${nm(w, actor)} is forming the ${name}. Two co-founders have a day to sign.`, '#/parties');
+  w.parties[id] = { id, name, colour, leader: actor, status: 'forming', invited: [], signed: [], founded: w.now, formingUntil: null, manifesto: [], motions: [] };
+  activateParty(w, w.parties[id]);
+  return id;
 }
-export function cosign(w: W, actor: Id, pid: Id) {
-  const p = own(w.parties, pid);
-  if (!p || p.status !== 'forming' || !p.invited.includes(actor)) fail('You were not invited to co-found it.');
-  if (!p.signed.includes(actor)) p.signed.push(actor);
-  if (p.signed.length >= 2) {
-    p.status = 'active';
-    [p.leader, ...p.signed].forEach((m: Id) => (w.citizens[m].party = p.id));
+// founds a party: its leader, and anyone who already co-signed under the old rules, become members
+export function activateParty(w: W, p: any) {
+  p.status = 'active';
+  p.formingUntil = null;
+  [p.leader, ...(p.signed || [])].forEach((m: Id) => w.citizens[m] && (w.citizens[m].party = p.id));
+  if (w.citizens[p.leader]) {
     w.citizens[p.leader].stats.foundedParty = true;
     stamp(w, p.leader, 'Founded a party', p.name);
-    gazette(w, 'party', `The ${p.name} is founded, led by ${nm(w, p.leader)}.`, '#/party/' + p.id);
   }
+  gazette(w, 'party', `The ${p.name} is founded, led by ${nm(w, p.leader)}.`, '#/party/' + p.id);
+}
+// kept for older clients and apps: co-signing now just joins a party still waiting from before the change
+export function cosign(w: W, actor: Id, pid: Id) {
+  const p = own(w.parties, pid);
+  if (!p || p.status !== 'forming' || !p.invited.includes(actor)) fail('Parties no longer need co-founders. Join one instead.');
+  if (!p.signed.includes(actor)) p.signed.push(actor);
+  activateParty(w, p);
 }
 export function joinParty(w: W, actor: Id, pid: Id | null) {
   const c = cit(w, actor);

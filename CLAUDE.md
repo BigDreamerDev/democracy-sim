@@ -262,6 +262,12 @@ Citizen id = `'u' + users.id`.
   as `e.method` when it opens. Ballots are an id (single) or a list (others). `config.billVoters` ('mps'|'all')
   and `config.passRule` ('cast'|'seats'|'twothirds') are copied onto each proposal (`voters`, `rule`);
   `passCheck()` in proposals.ts is the one place that decides a pass. All are chosen at the Convention.
+- **Parties** are founded at once by `party.found` (no co-founders; `cofounders` is ignored, `party.cosign` stays for old
+  clients). `activateParty()` founds one; migrate founds any left `forming`.
+- **Amendments** (`p.amendments`, public): `prop.amend` → author `prop.amendment`. Turned down with `HOSTILE_BACKERS` (3) MPs
+  behind it (`prop.amendBack`; the proposer counts) it goes to a `division` (`prop.amendVote`, whipped by `prop.amendWhip`),
+  settled in `openVote` before the main vote; the debate runs at least 6 h more. `history()` records every wording
+  (`p.history`, capped 25). Co-sponsors from another party make `p.crossParty` (+2 approval author, +1 each).
 - **Whips**: `p.whips[partyId] = {line}` (public), set by `prop.whip` (party leader, or the Chief Whip for a governing
   party). `whipLine()` is the one place that says what line an MP is under: their party's, else the PM's vote for
   government MPs, none on a free vote. `trackWhip` counts `c.whip.loyal/rebel` and stores `p.rebels` when the vote closes.

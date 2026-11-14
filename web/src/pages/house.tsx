@@ -4,7 +4,7 @@ import { useStore, act, getState, toast as say } from '../store';
 import { go, Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Seg, Opt, Field, Pick, Stamp } from '../ui';
 import { nm, isMP, isPM, isHOS, inGovernment, mps, fmtTime, superMajority, majority, officeWithPower, hosTitle, nextAt } from '../../../engine/index';
 import { leaderOfOpposition, HOS_METHODS } from '../../../engine/politics';
-import { describe, KINDS, SETTABLE, canVoteOn, passCheck, PASS_RULES, whipLine, canWhip, rebelsOn } from '../../../engine/proposals';
+import { describe, KINDS, SETTABLE, canVoteOn, passCheck, PASS_RULES, whipLine, canWhip, rebelsOn, amendmentLine, HOSTILE_BACKERS } from '../../../engine/proposals';
 import { TEMPLATES, POWERS, FILL } from '../../../engine/offices';
 
 const STAGE: Record<string, string> = { debate: 'Debate', vote: 'Voting', assent: 'Awaiting assent', override: 'Veto override', hos: 'With the head of state', enacted: 'Law', passed: 'Passed', failed: 'Defeated', vetoed: 'Vetoed', withheld: 'Assent refused', withdrawn: 'Withdrawn' };
@@ -153,7 +153,7 @@ export function Proposal({ id }: { id: string }) {
   const need = p.constitutional ? superMajority(w) : p.rule === 'seats' ? majority(w) : null;
   const blocker = officeWithPower(w, me, 'block');
   return (
-    <Page back={['#/house', 'The House']} kicker={<>{KINDS[p.kind].name}{p.kind === 'bill' ? ` ${p.n}` : ''}, by <Who id={p.by} />{p.sponsors?.length ? <>, with {p.sponsors.map((x: string, i: number) => <>{i ? ', ' : ''}<Who id={x} /></>)}</> : ''}{p.constitutional ? ', constitutional' : ''}{p.fast ? ', fast-tracked' : ''}</>} title={p.title}>
+    <Page back={['#/house', 'The House']} kicker={<>{KINDS[p.kind].name}{p.kind === 'bill' ? ` ${p.n}` : ''}, by <Who id={p.by} />{p.sponsors?.length ? <>, with {p.sponsors.map((x: string, i: number) => <>{i ? ', ' : ''}<Who id={x} /></>)}</> : ''}{p.crossParty ? ', cross-party' : ''}{p.constitutional ? ', constitutional' : ''}{p.fast ? ', fast-tracked' : ''}</>} title={p.title}>
       {['enacted', 'passed', 'failed', 'vetoed', 'withdrawn'].includes(p.stage) && <Stamp label={['enacted', 'passed'].includes(p.stage) ? 'Passed' : p.stage === 'vetoed' ? 'Vetoed' : p.stage === 'withdrawn' ? 'Withdrawn' : 'Defeated'} sub={p.lawRef || (p.result ? `${p.result.ayes} to ${p.result.noes}` : '')} red={failed} style={{ top: 70, right: 16, transformOrigin: '100% 0' }} />}
       {p.summary && <p class="intro">{p.summary}</p>}
       {p.editedAt && <p class="small muted" style={{ margin: '4px 0 0' }}>Amended by its author {p.edits > 1 ? `${p.edits} times, last ` : ''}{fmtTime(w, p.editedAt)}.</p>}
@@ -185,6 +185,7 @@ export function Proposal({ id }: { id: string }) {
       )}
       {p.kind !== 'bill' && p.kind !== 'referendum' && <p class="small muted" style={{ marginTop: 14 }}>{KINDS[p.kind].blurb}</p>}
       {(p.kind === 'bill' || p.kind === 'referendum') && <Amendments p={p} />}
+      {(p.history?.length || 0) > 1 && <History p={p} />}
 
       {(p.stage === 'vote' || p.stage === 'override' || p.result) && p.stage !== 'withdrawn' && p.kind !== 'dissolution' && (
         <Sec>
@@ -410,7 +411,8 @@ function Sponsors({ draftId, keep }: { draftId: string; keep: () => Promise<bool
   );
 }
 // amendments: any other MP proposes changing one clause during the debate; the author takes it or leaves it
-const AM_STATE: Record<string, string> = { pending: 'Waiting', accepted: 'Accepted', rejected: 'Turned down', lapsed: 'Lapsed' };
+const AM_STATE: Record<string, string> = { pending: 'Waiting', accepted: 'Accepted', rejected: 'Turned down', lapsed: 'Lapsed', division: 'The House votes', carried: 'Carried by the House', defeated: 'Defeated' };
+const LINE: Record<string, string> = { aye: 'backs it', no: 'opposes it', free: 'free vote' };
 function Amendments({ p }: { p: any }) {
   const { world: w, me } = useStore();
   const [draft, setDraft] = useState<any>(null);
@@ -425,9 +427,10 @@ function Amendments({ p }: { p: any }) {
       <div class="stack">
         {list.map((m) => (
           <Card kind={m.status === 'pending' ? 'tint' : undefined}>
-            <div class="row"><span class="small muted"><Who id={m.by} />, {fmtTime(w, m.at)}</span><span class={'chip' + (m.status === 'accepted' ? ' teal' : m.status === 'rejected' ? ' red' : '')}>{AM_STATE[m.status]}</span></div>
+            <div class="row"><span class="small muted"><Who id={m.by} />, {fmtTime(w, m.at)}</span><span class={'chip' + (['accepted', 'carried'].includes(m.status) ? ' teal' : ['rejected', 'defeated'].includes(m.status) ? ' red' : '')}>{AM_STATE[m.status]}</span></div>
             <p style={{ margin: '6px 0 0' }}>{what(m)}</p>
             {m.why && <p class="small muted" style={{ margin: '4px 0 0' }}>“{m.why}”</p>}
+            <AmendmentHouse p={p} m={m} />
             {m.status === 'pending' && p.by === me && p.stage === 'debate' && <div class="row" style={{ justifyContent: 'flex-start', gap: 8, marginTop: 8 }}><Btn small onClick={() => act('prop.amendment', { prop: p.id, amendment: m.id, accept: true }, 'Accepted. The bill is amended.')}>Accept</Btn><Btn small kind="plain" onClick={() => act('prop.amendment', { prop: p.id, amendment: m.id, accept: false }, 'Turned down.')}>Turn down</Btn></div>}
           </Card>
         ))}
@@ -442,6 +445,61 @@ function Amendments({ p }: { p: any }) {
           </div></Card>
         )}
       </div>
+    </Sec>
+  );
+}
+// backing, whips and the House's own vote on one amendment
+function AmendmentHouse({ p, m }: { p: any; m: any }) {
+  const { world: w, me } = useStore();
+  const open = p.stage === 'debate' && ['pending', 'division'].includes(m.status);
+  const backers = [m.by, ...(m.backers || [])].filter((x: string) => isMP(w, x));
+  const lines = Object.entries(m.whips || {}).filter(([k]) => w.parties[k]) as [string, any][];
+  const myLine = amendmentLine(w, m, me);
+  const tally = (v: string) => Object.entries(m.votes || {}).filter(([k, x]) => x === v && isMP(w, k)).length;
+  const myParty = w.citizens[me]?.party;
+  return (
+    <div class="stack" style={{ gap: 6, marginTop: 8 }}>
+      {(m.status === 'pending' || backers.length > 1) && <span class="small">Backed by {backers.map((x: string) => nm(w, x)).join(', ')}{m.status === 'pending' && backers.length < HOSTILE_BACKERS ? `. With ${HOSTILE_BACKERS} MPs behind it, turning it down sends it to a House vote.` : m.status === 'pending' ? '. If the author turns it down, the House votes on it.' : '.'}</span>}
+      {lines.length > 0 && <div class="chips">{lines.map(([k, x]) => <span class="chip" style={{ color: w.parties[k].colour }}>{w.parties[k].name} {LINE[x.line]}</span>)}</div>}
+      {m.status === 'pending' && open && isMP(w, me) && me !== p.by && me !== m.by && <div><Btn small kind="ghost" onClick={() => act('prop.amendBack', { prop: p.id, amendment: m.id }, m.backers?.includes(me) ? 'Backing taken back.' : 'You back it.')}>{m.backers?.includes(me) ? 'Stop backing it' : 'Back it'}</Btn></div>}
+      {m.status === 'division' && (
+        <Card kind="tint">
+          <div class="row"><b>The House divides</b><span class="small tnum">Aye {tally('aye')}, No {tally('no')}. Closes <When at={p.debateEndsAt} /></span></div>
+          {isMP(w, me) && <div class="row" style={{ justifyContent: 'flex-start', gap: 8, marginTop: 8 }}>{(['aye', 'no', 'abstain'] as const).map((v) => <Btn small kind={m.votes?.[me] === v ? undefined : 'ghost'} onClick={() => act('prop.amendVote', { prop: p.id, amendment: m.id, vote: v }, 'Vote recorded.')}>{v === 'aye' ? 'Aye' : v === 'no' ? 'No' : 'Abstain'}</Btn>)}{myLine && <span class="small muted">Your party says {myLine === 'aye' ? 'Aye' : 'No'}.</span>}</div>}
+        </Card>
+      )}
+      {m.result && <span class="small muted tnum">The House voted {m.result.ayes} to {m.result.noes}.</span>}
+      {open && canWhip(w, me) && myParty && <div class="row" style={{ justifyContent: 'flex-start', gap: 8 }}><span class="small">Your party’s line:</span><Seg value={m.whips?.[myParty]?.line || ''} onChange={(v) => act('prop.amendWhip', { prop: p.id, amendment: m.id, line: v }, 'Line set. It’s public.')} options={[['aye', 'Back'], ['no', 'Oppose'], ['free', 'Free']]} /></div>}
+    </div>
+  );
+}
+// every wording the bill has had, what changed each time, and why
+function History({ p }: { p: any }) {
+  const { world: w } = useStore();
+  const [open, setOpen] = useState<number | null>(null);
+  const h = p.history as any[];
+  const changes = (i: number) => {
+    if (!i) return `${h[0].clauses.length} clause${h[0].clauses.length === 1 ? '' : 's'}`;
+    const a = h[i - 1].clauses.map((e: any) => JSON.stringify(e));
+    const b = h[i].clauses.map((e: any) => JSON.stringify(e));
+    const out: string[] = [];
+    if (h[i].title !== h[i - 1].title) out.push('new title');
+    b.forEach((x: string, k: number) => k < a.length && x !== a[k] && out.push(`clause ${k + 1} changed`));
+    if (b.length > a.length) out.push(`clause${b.length - a.length > 1 ? 's' : ''} ${a.length + 1}${b.length - a.length > 1 ? `–${b.length}` : ''} added`);
+    if (a.length > b.length) out.push(`${a.length - b.length} clause${a.length - b.length > 1 ? 's' : ''} removed`);
+    if (h[i].summary !== h[i - 1].summary) out.push('new summary');
+    return out.join(', ') || 'no change to the wording';
+  };
+  return (
+    <Sec title="History" sub="Every version of the wording, oldest first.">
+      <ol class="list" style={{ paddingLeft: 0, listStyle: 'none' }}>
+        {h.map((x, i) => (
+          <li>
+            <div class="row"><span><b>{x.why}</b> <span class="small muted">{nm(w, x.by)}, {fmtTime(w, x.at)}</span><div class="small">{changes(i)}</div></span><Btn small kind="plain" onClick={() => setOpen(open === i ? null : i)}>{open === i ? 'Hide' : 'Wording'}</Btn></div>
+            {open === i && <ol class="small" style={{ margin: '6px 0 0', paddingLeft: 20 }}>{x.clauses.map((e: any) => <li>{safe(w, e)}</li>)}</ol>}
+          </li>
+        ))}
+      </ol>
     </Sec>
   );
 }

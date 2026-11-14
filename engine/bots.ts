@@ -174,7 +174,6 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
     }
   }
   Object.values(w.parties).forEach((pt: any) => {
-    if (pt.status === 'forming') pt.invited.forEach((i: Id) => isBot(i) && p(0.6) && go(i, 'party.cosign', { party: pt.id }));
     pt.motions?.forEach((m: any) => m.status === 'open' && bots.forEach((b: any) => b.party === pt.id && !m.votes[b.id] && p(0.2) && go(b.id, 'party.motionVote', { motion: m.id, vote: chance(w, 0.6) ? 'for' : 'against' })));
   });
 

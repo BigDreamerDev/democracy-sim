@@ -165,19 +165,16 @@ export function HOS() {
 
 export function Parties() {
   const { world: w, me } = useStore();
-  const [f, setF] = useState({ name: '', colour: '#3B4A8C', a: '', b: '' });
-  const ps = Object.values(w.parties).filter((p: any) => ['active', 'forming'].includes(p.status)) as any[];
-  const opts = allCitizens(w).filter((c: any) => c.id !== me).map((c: any) => [c.id, c.name]) as any;
+  const [f, setF] = useState({ name: '', colour: '#3B4A8C' });
+  const ps = Object.values(w.parties).filter((p: any) => p.status === 'active') as any[];
   return (
-    <Page back={['#/realm', 'The realm']} title="Parties" intro="Parties are groups of similar minded individuals standing united in election. It costs 10 crowns and 2 co-founders to make one">
-      <Sec><ul class="list">{ps.map((p) => <LinkRow href={'#/party/' + p.id} title={<><i class="dot" style={{ background: p.colour, marginRight: 8 }} />{p.name}</>} sub={p.status === 'forming' ? `Forming: ${p.signed.length} of 2 signed` : `Led by ${nm(w, p.leader)}, ${members(w, p.id).length} members, ${sideSeats(w, 'p:' + p.id)} seats`} />)}</ul></Sec>
-      {ps.filter((p) => p.status === 'forming' && p.invited.includes(me) && !p.signed.includes(me)).map((p) => <Card kind="tint"><b>{nm(w, p.leader)} asked you to co-found the {p.name}.</b><Btn small style={{ marginTop: 8 }} onClick={() => act('party.cosign', { party: p.id }, 'Signed.')}>Co-sign</Btn></Card>)}
+    <Page back={['#/realm', 'The realm']} title="Parties" intro="Parties are groups of similar minded individuals standing united in election. It costs 10 crowns to found one, and you lead it">
+      <Sec><ul class="list">{ps.map((p) => <LinkRow href={'#/party/' + p.id} title={<><i class="dot" style={{ background: p.colour, marginRight: 8 }} />{p.name}</>} sub={`Led by ${nm(w, p.leader)}, ${members(w, p.id).length} members, ${sideSeats(w, 'p:' + p.id)} seats`} />)}</ul></Sec>
       <Sec title="Found a party">
         <Card><div class="stack">
           <Field label="Name" value={f.name} onInput={(v) => setF({ ...f, name: v })} placeholder="e.g. Harbour Party" />
           <label class="f">Colour<input type="color" value={f.colour} onInput={(e: any) => setF({ ...f, colour: e.target.value })} style={{ width: 60, height: 40 }} /></label>
-          <div class="grid2"><Pick label="Co-founder" value={f.a} onChange={(v) => setF({ ...f, a: v })} empty="Pick" options={opts} /><Pick label="Co-founder" value={f.b} onChange={(v) => setF({ ...f, b: v })} empty="Pick" options={opts} /></div>
-          <Btn full onClick={() => act('party.found', { name: f.name, colour: f.colour, cofounders: [f.a, f.b] }, 'Forming. Co-founders have a day.')}>Found it (10 crowns)</Btn>
+          <Btn full onClick={() => act('party.found', { name: f.name, colour: f.colour }, `The ${f.name.trim()} is founded. You lead it.`)}>Found it (10 crowns)</Btn>
         </div></Card>
       </Sec>
     </Page>
