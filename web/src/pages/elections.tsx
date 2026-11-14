@@ -3,7 +3,7 @@ import { useStore, act, ONLINE } from '../store';
 import { shareResult } from '../share';
 import { Page, Sec, Card, Btn, Who, Left, Empty, LinkRow, Meter, Stamp, Seg, Field, Pick, BallotPaper, MultiBallot } from '../ui';
 import { nm, allCitizens, fmtDay } from '../../../engine/index';
-import { canVote, conventionNeed, conventionSpec, SETTABLE_START, DOW, VOTING } from '../../../engine/politics';
+import { canVote, conventionNeed, conventionSpec, SETTABLE_START, DOW, VOTING, NEWSNIGHT_MOVES, newsnightDue } from '../../../engine/politics';
 
 export function Elections() {
   const { world: w } = useStore();
@@ -16,6 +16,15 @@ export function Elections() {
         <ul class="list">{open.map((e) => <LinkRow href={'#/election/' + e.id} title={e.title} sub={<>{Object.keys(e.candidates).length} standing, closes in <Left at={e.closesAt} /></>} />)}</ul>
         {!open.length && <Empty>No election is open.</Empty>}
       </Sec>
+      {open.length > 0 && (
+        <Sec title="Newsnight">
+          <p class="small muted" style={{ marginTop: 0 }}>Exit polls every 6 hours while the polls are open. Who you voted for stays secret.</p>
+          <ul class="list">{open.map((e) => {
+            const p = e.polls?.[0];
+            return <LinkRow href={'#/election/' + e.id} title={e.title} sub={p ? <>{p.close ? 'Too close to call. ' : ''}{e.winners === 1 ? 'Leading' : 'Projected'}: {p.projected.map((c: string) => nm(w, c)).join(', ')} · {p.turnout} ballots, <Ago at={p.at} /></> : 'No exit poll yet.'} />;
+          })}</ul>
+        </Sec>
+      )}
       {refs.length > 0 && <Sec title="Referendums"><ul class="list">{refs.map((r) => <LinkRow href={'#/p/' + r.id} title={r.title} sub={r.stage} />)}</ul></Sec>}
       <Sec title="Results"><ul class="list">{all.filter((e) => e.status === 'closed').map((e) => <LinkRow href={'#/election/' + e.id} title={e.title} sub={`Closed ${fmtDay(e.closedAt || e.closesAt)}`} />)}</ul></Sec>
     </Page>
@@ -32,6 +41,11 @@ export function Election({ id }: { id: string }) {
       <Page back={['#/elections', 'Elections']} kicker={`Closed ${fmtDay(e.closedAt || e.closesAt)}${e.results ? `, turnout ${e.results.turnout}` : ''}`} title={e.title}>
         {e.results && <div class="row" style={{ marginTop: 14, justifyContent: 'flex-start', gap: 8 }}><Btn kind="ghost" small onClick={() => setNight(!night)}>{night ? 'Show the full count' : 'Replay election night'}</Btn><Btn kind="plain" small onClick={() => shareResult(w, e)}>Share as a picture</Btn></div>}
         {night ? <Night e={e} /> : <Count e={e} />}
+        {e.results && e.polls?.length > 0 && (() => {
+          const last = e.polls[0];
+          const right = last.projected.filter((c: string) => e.results.winners.includes(c)).length;
+          return <p class="small muted">Newsnight’s last exit poll, <Ago at={last.at} /> with {last.turnout} ballots in, called {right} of {e.winners} {e.winners === 1 ? 'winner' : 'winners'} right.</p>;
+        })()}
       </Page>
     );
   }
@@ -65,8 +79,55 @@ export function Election({ id }: { id: string }) {
           })()
         )}
       </Sec>
+      <Newsnight e={e} />
       <Sec title="Turnout so far"><Meter value={Object.keys(e.ballots).length} max={allCitizens(w).length} /><p class="small muted">{Object.keys(e.ballots).length} of {allCitizens(w).length} have voted.</p></Sec>
     </Page>
+  );
+}
+
+function Ago({ at }: { at: number }) {
+  const { world: w } = useStore();
+  const h = Math.max(0, Math.round((w.now - at) / 3600000));
+  return <>{h < 1 ? 'just now' : h === 1 ? '1 hour ago' : h < 48 ? `${h} hours ago` : `${Math.round(h / 24)} days ago`}</>;
+}
+
+// the public exit poll: counts at the time of each poll, never who voted for whom
+function Newsnight({ e }: { e: any }) {
+  const { world: w } = useStore();
+  const polls = e.polls || [];
+  const next = newsnightDue(e);
+  const p = polls[0];
+  const prev = polls[1];
+  const unit = VOTING[e.method || 'single'].unit;
+  const top = p ? Math.max(1, ...Object.values(p.counts as Record<string, number>)) : 1;
+  const order = p ? Object.keys(p.counts).sort((a, b) => p.counts[b] - p.counts[a]) : [];
+  return (
+    <Sec title="Newsnight">
+      <Card>
+        {!p ? <p class="small muted" style={{ margin: 0 }}>No exit poll yet. Newsnight publishes one every 6 hours, once at least {NEWSNIGHT_MOVES} ballots have been cast or changed since the last.</p> : (
+          <div class="stack">
+            <div class="row small"><b>Exit poll, <Ago at={p.at} /></b><span class="muted">{p.turnout} ballots in</span></div>
+            <p style={{ margin: 0, fontWeight: 700 }}>{p.close ? 'Too close to call at the line. ' : ''}{e.winners === 1 ? <>{nm(w, p.projected[0])} on course to win.</> : <>Projected to win: {p.projected.map((c: string) => nm(w, c)).join(', ')}.</>}</p>
+            {order.map((id, i) => {
+              const won = p.projected.includes(id);
+              const was = prev?.counts?.[id];
+              const d = was === undefined ? null : p.counts[id] - was;
+              return (
+                <>
+                  <div class={'count-row' + (won ? ' won' : '')}>
+                    <div class="row small"><span><Who id={id} />{won && <span class="chip teal" style={{ marginLeft: 8 }}>Projected</span>}</span><b class="tnum">{p.counts[id]}{d ? <span class="muted"> ({d > 0 ? '+' : ''}{Math.round(d * 100) / 100})</span> : ''}</b></div>
+                    <Meter value={p.counts[id]} max={top} color={won ? 'var(--teal)' : 'var(--rule)'} />
+                  </div>
+                  {i === e.winners - 1 && order.length > e.winners && <div class="cutline"><span>{e.kind === 'general' ? `${e.winners} seats` : 'Projected winner'}</span></div>}
+                </>
+              );
+            })}
+            <p class="small muted" style={{ margin: 0 }}>Numbers are {unit}{e.method === 'ranked' ? ', with the projection after transfers' : ''}. Brackets show the change since the last poll. Ballots can still change before the polls close.</p>
+          </div>
+        )}
+        {next && next < e.closesAt && <p class="small muted" style={{ margin: p ? '10px 0 0' : '8px 0 0' }}>Next exit poll in <Left at={next} />.</p>}
+      </Card>
+    </Sec>
   );
 }
 

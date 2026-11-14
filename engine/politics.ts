@@ -359,7 +359,7 @@ export const inInduction = (w: W) => !!w.induction && !w.induction.done && w.now
 // stand: who may stand ('all' or 'party:<id>'); voters: 'all', 'mps' or 'party:<id>'; winners: how many win
 export function newElection(w: W, e: any) {
   const id = newId(w, 'e');
-  w.elections[id] = { id, status: 'open', candidates: {}, ballots: {}, opensAt: w.now, results: null, stand: 'all', voters: 'all', winners: 1, method: w.config.voting || 'single', ...e };
+  w.elections[id] = { id, status: 'open', candidates: {}, ballots: {}, polls: [], opensAt: w.now, results: null, stand: 'all', voters: 'all', winners: 1, method: w.config.voting || 'single', ...e };
   const el = w.elections[id];
   if (el.closesAt && w.phase === 'running') openMarket(w, 'election', id, el.kind === 'general' ? `Who tops the poll in the ${el.title.replace(/^General election for the /, '').replace(/^./, (x: string) => x.toLowerCase())} election?` : `Who wins the ${el.title.replace(/^./, (x: string) => x.toLowerCase())}?`, null, el.closesAt);
   return el;
@@ -413,6 +413,7 @@ export function castBallot(w: W, actor: Id, eid: Id, cand: Id, a: any = {}) {
   if (e.status !== 'open') fail('This election has closed.');
   // a ballot can be changed until the polls close; only the first one earns Influence
   const again = e.ballots[actor] !== undefined;
+  e.moves = (e.moves || 0) + 1;
   const method = e.method || 'single';
   if (method === 'single') {
     if (!own(e.candidates, cand)) fail('That person is not standing.');
@@ -428,6 +429,27 @@ export function castBallot(w: W, actor: Id, eid: Id, cand: Id, a: any = {}) {
   if (again) return;
   earn(w, actor, 2, 'Voted in an election');
   tick(w, actor, 'votes');
+}
+// ---------- Newsnight: a public exit poll every few hours while the polls are open ----------
+// Published only once NEWSNIGHT_MOVES ballots have been cast or changed since the last one, so the change
+// between two polls never shows how one person voted. e.moves (that count) is private: viewFor strips it.
+export const NEWSNIGHT_EVERY = 6 * 3600000;
+export const NEWSNIGHT_MOVES = 3;
+export const newsnightDue = (e: any) => (e.status === 'open' ? (e.pollAt || e.opensAt) + NEWSNIGHT_EVERY : null);
+export function newsnight(w: W, e: any) {
+  e.pollAt = w.now;
+  e.polls ??= [];
+  const turnout = Object.keys(e.ballots).length;
+  if ((e.moves || 0) - (e.movesAtPoll || 0) < NEWSNIGHT_MOVES || turnout < NEWSNIGHT_MOVES || !Object.keys(e.candidates).length) return;
+  e.movesAtPoll = e.moves;
+  const r: any = countElection(w, e);
+  const projected = r.ranked.slice(0, e.winners);
+  const prev = e.polls[0];
+  e.polls.unshift({ at: w.now, turnout, counts: r.counts, projected, close: !!r.draw, rounds: r.rounds ? r.rounds.length : null });
+  if (e.polls.length > 20) e.polls.length = 20;
+  const gains = prev ? projected.filter((c: Id) => !prev.projected.includes(c)) : [];
+  const call = r.draw ? 'too close to call at the line' : e.winners === 1 ? `${nm(w, projected[0])} on course to win` : `projected to win: ${projected.map((c: Id) => nm(w, c)).join(', ')}`;
+  gazette(w, 'newsnight', `Newsnight exit poll, ${e.title.replace(/^./, (x: string) => x.toLowerCase())}: ${call}. ${turnout} ballot${turnout === 1 ? '' : 's'} in.${gains.length ? ` New in the frame: ${gains.map((c: Id) => nm(w, c)).join(', ')}.` : ''}`, '#/election/' + e.id);
 }
 // every method returns the same shape: a score per candidate for display, the full order (winners first, then
 // the countback list), and for ranked choice the rounds of the count

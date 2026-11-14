@@ -200,7 +200,7 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | `convention.clauses[]` | `id`, `q` (the question), `options[]` (strings), `votes`, `adopted` (option index or `null`) |
 | `seats`, `speaker`, `pm`, `hos.holder` | who sits in the House and holds the top jobs |
 | `parties` | `name`, `colour`, `leader`, `status` (`forming`/`active`/`lapsed`), `motions` |
-| `elections` | `kind`, `status`, `candidates`, `closesAt`, `results`, `ballots` (others show `'•'`; yours shows your choice) |
+| `elections` | `kind`, `status`, `candidates`, `closesAt`, `results`, `ballots` (others show `'•'`; yours shows your choice), `polls` (Newsnight exit polls, newest first: `at`, `turnout`, `counts`, `projected`, `close`) |
 | `proposals` | `n`, `kind`, `title`, `clauses`, `stage` (`debate` → `vote` → `passed`/`assent` → `enacted`, or `failed`/`vetoed`/`override`/`withheld`/`hos`), `debateEndsAt`, `voteEndsAt`, `speeches`, `votes` |
 | `laws[]` | the statute book: `ref`, `title`, `text[]`, `summary` |
 | `questions[]` | PM's Questions: `text`, `by`, `to`, `backers`, `answer` |

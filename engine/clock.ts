@@ -1,6 +1,6 @@
 // Time: everything closes itself. advanceTo() runs every deadline in order, including the calendar's weekly events.
 import { W, DAY, HOUR, nm, gazette, exiled, allCitizens, nextAt, meter, inDanger, approve } from './core';
-import { closeElection, callGeneralElection, autoInvite, governmentFalls, startHosSelection, newObjectives, closeConvention, endInduction , lapseChallenge, lapseBreakaway } from './politics';
+import { closeElection, callGeneralElection, autoInvite, governmentFalls, startHosSelection, newObjectives, closeConvention, endInduction , lapseChallenge, lapseBreakaway, newsnight, newsnightDue } from './politics';
 import { openVote, closeVote, enact, closeOverride, dissolve, closePMQs, missFormal } from './proposals';
 import { payday, settleVenture } from './economy';
 import { actBots } from './bots';
@@ -30,6 +30,10 @@ function collect(w: W): D[] {
     if (!bad.has(key)) out.push({ at, run, key });
   };
   Object.values(w.elections).forEach((e: any) => e.status === 'open' && add(e.closesAt, () => closeElection(w, e), e.id));
+  Object.values(w.elections).forEach((e: any) => {
+    const t = newsnightDue(e);
+    if (t && t < e.closesAt) add(t, () => newsnight(w, e), 'nn' + e.id);
+  });
   Object.values(w.parties).forEach((p: any) => p.challenge?.status === 'open' && add(p.challenge.dueAt, () => lapseChallenge(w, p), 'ch' + p.id));
   Object.values(w.breakaways || {}).forEach((b: any) => b.status === 'plotting' && add(b.dueAt, () => lapseBreakaway(w, b), b.id));
   if (w.phase === 'convention' && w.convention.closesAt) add(w.convention.closesAt, () => closeConvention(w));

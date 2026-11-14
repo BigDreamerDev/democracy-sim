@@ -16,6 +16,9 @@ export function viewFor(full: W, me: Id): W {
   // secret ballots: who voted is public, how they voted is not (except your own)
   Object.values(w.elections).forEach((e: any) => {
     Object.keys(e.ballots).forEach((v) => !mine(v) && (e.ballots[v] = '•'));
+    // how many ballots were cast or changed: with turnout, it would show when someone changed their vote
+    delete e.moves;
+    delete e.movesAtPoll;
   });
   Object.values(w.proposals).forEach((p: any) => {
     if (p.voters === 'all') Object.keys(p.votes).forEach((v) => !mine(v) && (p.votes[v] = '•'));

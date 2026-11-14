@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 7, text: 'Newsnight is on air. Every open election gets a public exit poll every 6 hours, with the vote counts and who’s projected to win. Your own ballot stays secret.' },
   { n: 6, text: 'Voted for the wrong person? You can now change your election ballot until the polls close. Only your first ballot earns Influence.' },
   { n: 5, text: 'Parties can now split: plan a breakaway in private and leave with your MPs, seats and all. Challenge your leader with enough signatures, or stand down for a contest. MPs can pledge to back each other’s amendments, and amendment votes count towards your rebel record.' },
   { n: 4, text: 'Founding a party no longer needs co-founders: it’s yours at once. Back an amendment you like: if the author turns down one with 3 MPs behind it, the House votes on it. Parties can whip amendments, every bill shows its history, and cross-party bills win their sponsors approval.' },
