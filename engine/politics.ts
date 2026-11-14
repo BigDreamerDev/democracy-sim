@@ -433,7 +433,7 @@ export function castBallot(w: W, actor: Id, eid: Id, cand: Id, a: any = {}) {
 // ---------- Newsnight: a public exit poll every few hours while the polls are open ----------
 // Published only once NEWSNIGHT_MOVES ballots have been cast or changed since the last one, so the change
 // between two polls never shows how one person voted. e.moves (that count) is private: viewFor strips it.
-export const NEWSNIGHT_EVERY = 6 * 3600000;
+export const NEWSNIGHT_EVERY = 10 * 60000;
 export const NEWSNIGHT_MOVES = 3;
 export const newsnightDue = (e: any) => (e.status === 'open' ? (e.pollAt || e.opensAt) + NEWSNIGHT_EVERY : null);
 export function newsnight(w: W, e: any) {
@@ -447,6 +447,8 @@ export function newsnight(w: W, e: any) {
   const prev = e.polls[0];
   e.polls.unshift({ at: w.now, turnout, counts: r.counts, projected, close: !!r.draw, rounds: r.rounds ? r.rounds.length : null });
   if (e.polls.length > 20) e.polls.length = 20;
+  // the Gazette hears only when the call changes, or it would fill up every 10 minutes
+  if (prev && prev.close === !!r.draw && prev.projected.join() === projected.join()) return;
   const gains = prev ? projected.filter((c: Id) => !prev.projected.includes(c)) : [];
   const call = r.draw ? 'too close to call at the line' : e.winners === 1 ? `${nm(w, projected[0])} on course to win` : `projected to win: ${projected.map((c: Id) => nm(w, c)).join(', ')}`;
   gazette(w, 'newsnight', `Newsnight exit poll, ${e.title.replace(/^./, (x: string) => x.toLowerCase())}: ${call}. ${turnout} ballot${turnout === 1 ? '' : 's'} in.${gains.length ? ` New in the frame: ${gains.map((c: Id) => nm(w, c)).join(', ')}.` : ''}`, '#/election/' + e.id);

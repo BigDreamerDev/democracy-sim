@@ -18,7 +18,7 @@ export function Elections() {
       </Sec>
       {open.length > 0 && (
         <Sec title="Newsnight">
-          <p class="small muted" style={{ marginTop: 0 }}>Exit polls every 6 hours while the polls are open. Who you voted for stays secret.</p>
+          <p class="small muted" style={{ marginTop: 0 }}>Exit polls every 10 minutes while the polls are open. Who you voted for stays secret.</p>
           <ul class="list">{open.map((e) => {
             const p = e.polls?.[0];
             return <LinkRow href={'#/election/' + e.id} title={e.title} sub={p ? <>{p.close ? 'Too close to call. ' : ''}{e.winners === 1 ? 'Leading' : 'Projected'}: {p.projected.map((c: string) => nm(w, c)).join(', ')} · {p.turnout} ballots, <Ago at={p.at} /></> : 'No exit poll yet.'} />;
@@ -87,8 +87,9 @@ export function Election({ id }: { id: string }) {
 
 function Ago({ at }: { at: number }) {
   const { world: w } = useStore();
-  const h = Math.max(0, Math.round((w.now - at) / 3600000));
-  return <>{h < 1 ? 'just now' : h === 1 ? '1 hour ago' : h < 48 ? `${h} hours ago` : `${Math.round(h / 24)} days ago`}</>;
+  const m = Math.max(0, Math.round((w.now - at) / 60000));
+  const h = Math.round(m / 60);
+  return <>{m < 1 ? 'just now' : m < 60 ? `${m} min ago` : h === 1 ? '1 hour ago' : h < 48 ? `${h} hours ago` : `${Math.round(h / 24)} days ago`}</>;
 }
 
 // the public exit poll: counts at the time of each poll, never who voted for whom
@@ -104,7 +105,7 @@ function Newsnight({ e }: { e: any }) {
   return (
     <Sec title="Newsnight">
       <Card>
-        {!p ? <p class="small muted" style={{ margin: 0 }}>No exit poll yet. Newsnight publishes one every 6 hours, once at least {NEWSNIGHT_MOVES} ballots have been cast or changed since the last.</p> : (
+        {!p ? <p class="small muted" style={{ margin: 0 }}>No exit poll yet. Newsnight publishes one every 10 minutes, once at least {NEWSNIGHT_MOVES} ballots have been cast or changed since the last.</p> : (
           <div class="stack">
             <div class="row small"><b>Exit poll, <Ago at={p.at} /></b><span class="muted">{p.turnout} ballots in</span></div>
             <p style={{ margin: 0, fontWeight: 700 }}>{p.close ? 'Too close to call at the line. ' : ''}{e.winners === 1 ? <>{nm(w, p.projected[0])} on course to win.</> : <>Projected to win: {p.projected.map((c: string) => nm(w, c)).join(', ')}.</>}</p>
