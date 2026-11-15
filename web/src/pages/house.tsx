@@ -255,7 +255,7 @@ export function Proposal({ id }: { id: string }) {
         <Sec>
           <Card kind="dashed">
             <h2 class="h">The Crown’s prerogative</h2>
-            <p class="small" style={{ margin: '0 0 10px' }}>Hurry this along. The Gazette reports each use. A shortened stage always keeps at least {HASTE_FLOOR} hour.</p>
+            <p class="small" style={{ margin: '0 0 10px' }}>Hurry this along. The Gazette reports each use. A shortened stage always keeps at least {Math.round(HASTE_FLOOR * 60)} minutes.</p>
             <div class="grid2">
               {p.stage === 'debate' && !p.hastened?.skip && <Btn kind="plain" onClick={() => act('prop.hasten', { prop: p.id, mode: 'skip' }, 'Debate skipped. Voting is open.')}>Skip the debate</Btn>}
               {(p.stage === 'debate' ? p.debateEndsAt : p.voteEndsAt) - w.now > HASTE_FLOOR * HOUR && <Btn kind="plain" onClick={() => act('prop.hasten', { prop: p.id, mode: 'halve' }, 'Time halved.')}>Halve the {p.stage === 'debate' ? 'debate' : 'voting'} time</Btn>}

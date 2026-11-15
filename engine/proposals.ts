@@ -742,8 +742,8 @@ export function assent(w: W, actor: Id, pid: Id, yes: boolean) {
   }
 }
 // the Monarch's prerogative over the timetable: skip a bill's debate (once), or halve what's left of its debate or vote
-// (once per stage). A halved stage always keeps at least HASTE_FLOOR hours, so a vote is never closed on the spot.
-export const HASTE_FLOOR = 1;
+// (as often as they like). A halved stage always keeps at least HASTE_FLOOR hours (15 minutes), so a vote is never closed on the spot.
+export const HASTE_FLOOR = 0.25;
 export const HASTE_KINDS = ['bill', 'referendum'];
 export function canHasten(w: W, id: Id, p: any): '' | string {
   if (w.config.hos !== 'monarchy' || !isHOS(w, id)) return 'Only the Monarch can hurry a bill along.';
@@ -767,7 +767,7 @@ export function hasten(w: W, actor: Id, pid: Id, mode: string) {
   }
   const key = p.stage === 'debate' ? 'debateEndsAt' : 'voteEndsAt';
   const left = p[key] - w.now;
-  if (left <= HASTE_FLOOR * HOUR) fail(`There is ${HASTE_FLOOR} hour or less left already.`);
+  if (left <= HASTE_FLOOR * HOUR) fail(`There are ${Math.round(HASTE_FLOOR * 60)} minutes or less left already.`);
   p[key] = w.now + Math.max(HASTE_FLOOR * HOUR, Math.ceil(left / 2));
   p.hastened[p.stage] = (Number(p.hastened[p.stage]) || 0) + 1;
   if (p.stage === 'vote') Object.values(w.markets || {}).forEach((m: any) => m.kind === 'prop' && m.ref === p.id && m.status === 'open' && (m.closesAt = Math.min(m.closesAt, p[key])));
