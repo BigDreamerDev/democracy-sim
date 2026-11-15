@@ -46,6 +46,12 @@ export function migrate(w: W): W {
   w.probeAt ??= 0;
   w.scars ??= null;
   w.fame.regimes ??= [];
+  // Acts that change how the realm is governed (acts.ts)
+  w.acts ??= { jail: null, decrees: null, continuity: null, unity: null, national: null };
+  w.bannedParties ??= [];
+  w.seasonDueAt ??= null;
+  w.deputy ??= null;
+  w.lastPM ??= null;
   Object.values(w.plots || {}).forEach((p: any) => ((p.informers ??= []), (p.chest ??= 0), (p.paid ??= {}), (p.asked ??= {}), (p.heat ??= 0), (p.backer ??= null)));
   w.drafts ??= {};
   w.pledges ??= {};

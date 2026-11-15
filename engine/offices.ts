@@ -1,6 +1,6 @@
 // Offices: every role in government is one of these. A law creates an office from a template or from
 // a list of powers; whoever holds it gets those powers as buttons.
-import { W, Id, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, exiled, barred, holdsAnything, own, text, int } from './core';
+import { W, Id, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, exiled, barred, detained, holdsAnything, own, text, int } from './core';
 
 export const POWERS: Record<string, { label: string; strong?: boolean }> = {
   grant: { label: 'Pay citizens from its weekly budget' },
@@ -13,7 +13,9 @@ export const POWERS: Record<string, { label: string; strong?: boolean }> = {
   judge: { label: 'Rule on cases before the Court' },
   fine: { label: 'Fine a citizen up to 10 crowns', strong: true },
   block: { label: 'Send one passed bill back for 48 hours each term', strong: true },
-  protect: { label: 'Guard one citizen from assassins each day' }
+  protect: { label: 'Guard one citizen from assassins each day' },
+  detain: { label: 'Detain citizens in the Realm Jail', strong: true },
+  release: { label: 'Release detainees from the Realm Jail' }
 };
 
 export const TEMPLATES: Record<string, { name: string; title: string; act: string; powers: string[]; fill: string; budget: number; secrecy: string; blurb: string; constitutional?: boolean }> = {
@@ -36,7 +38,7 @@ export function createOffice(w: W, spec: any, law: string) {
     id,
     template: spec.template || null,
     name: t ? t.name : spec.name,
-    title: t ? t.title : spec.name,
+    title: t ? t.title : spec.title || spec.name,
     powers: t ? t.powers.slice() : (Array.isArray(spec.powers) ? spec.powers : []).filter((p: string) => own(POWERS, p)),
     fill: t ? t.fill : own(FILL, spec.fill) ? spec.fill : 'pm',
     budget: Math.max(0, Math.round(Number(spec.budget ?? (t ? t.budget : 0))) || 0),
@@ -74,6 +76,7 @@ export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
     if (!t.active) fail('They are no longer a citizen.');
     if (exiled(w, target)) fail('They are in exile.');
     if (barred(w, target)) fail('They are barred from office for now.');
+    if (detained(w, target)) fail('A detainee cannot hold office.');
     if (w.regime?.type === 'party' && t.party !== w.regime.party) fail('Only members of the Party may hold office.');
     const promised = Object.entries(w.coalition?.promises || {}).find(([k]) => k === officeId)?.[1];
     o.holder = target;
@@ -129,8 +132,8 @@ export function officePay(w: W) {
 
 export function lotOfficeRefresh(w: W, o: any) {
   if (o.fill !== 'lot') return;
-  const pool = allCitizens(w).filter((c: any) => !exiled(w, c.id) && !o.members.includes(c.id)).map((c: any) => c.id);
-  o.members = o.members.filter((m: Id) => !exiled(w, m));
+  const pool = allCitizens(w).filter((c: any) => !exiled(w, c.id) && !detained(w, c.id) && !o.members.includes(c.id)).map((c: any) => c.id);
+  o.members = o.members.filter((m: Id) => !exiled(w, m) && !detained(w, m));
   const extra = shuffle(w, pool);
   while (o.members.length < (o.template === 'court' ? 3 : 1) && extra.length) o.members.push(extra.shift());
   o.holder = o.members[0] || null;

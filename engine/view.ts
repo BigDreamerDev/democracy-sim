@@ -172,6 +172,10 @@ export function viewFor(full: W, me: Id): W {
       o.title = 'Classified';
     }
   });
+  // questions held for the Prime Minister's approval (Press and Information Act): the asker and the PM only
+  w.questions = w.questions.filter((q: any) => !['held', 'refused'].includes(q.status) || q.by === me || full.pm === me);
+  // the Protection Act's record of who was last PM is internal
+  w.lastPM = null;
   // the Returning Officer sees the sign-up queue; nobody else needs it
   if (!full.citizens[me]?.admin) {
     w.pending = [];

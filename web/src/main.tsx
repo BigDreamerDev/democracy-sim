@@ -27,6 +27,8 @@ import { CopyDesk } from './pages/copydesk';
 import { CopyOverlay } from './copyEdit';
 import { watchForUpdates, UpdateBar } from './update';
 import { Regime } from './pages/regime';
+import { Jail, Powers } from './pages/acts';
+import { stateMode, slogans } from './state';
 
 const ROOTS = ['', 'house', 'realm', 'laws', 'you', 'gazette'];
 function level(hash: string) {
@@ -85,7 +87,7 @@ function route(hash: string) {
     society: () => <Society />, press: () => <Society focus="press" />, court: () => <Society focus="court" />, crises: () => <Society focus="crises" />,
     honours: () => <Honours />, season: () => <Honours focus="season" />, fame: () => <Honours focus="fame" />,
     nation: () => <Nation id={b} />, case: () => <Case id={b} />, crisis: () => <Crisis id={b} />,
-    regime: () => <Regime />, backroom: () => <BackroomAll />, plots: () => <BackroomAll focus="plots" />, exile: () => <BackroomAll focus="exile" />, admin: () => <Admin />, learn: () => <Learn />, rolog: () => <RoLog />, developers: () => <Developers />, apps: () => <Apps />, app: () => <AppPage id={b} />, authorize: () => <Authorize query={q} />,
+    regime: () => <Regime />, jail: () => <Jail />, powers: () => <Powers />, backroom: () => <BackroomAll />, plots: () => <BackroomAll focus="plots" />, exile: () => <BackroomAll focus="exile" />, admin: () => <Admin />, learn: () => <Learn />, rolog: () => <RoLog />, developers: () => <Developers />, apps: () => <Apps />, app: () => <AppPage id={b} />, authorize: () => <Authorize query={q} />,
     // an invitation link opened while already signed in: nothing to do but say so
     join: () => (setTimeout(() => (say('You are already signed in. Invitations are for new players.'), (location.hash = '#/')), 0), <Today />),
     streets: () => <Streets />, hunt: () => <Hunt />, tag: () => <TagLanding code={b || ''} />, meet: () => <Meet code={b} />, market: () => <Market />, polls: () => <Polls />,
@@ -111,10 +113,14 @@ function Game() {
   const here = where(hash).tab.id;
   useEffect(() => markSeen(here), [here]);
   const marked = TABS.map((t) => [t.href, t.label, t.icon, t.id === here] as [string, string, string, boolean]);
+  // state stock: the whole site changes colour once the realm is a dictatorship in all but name
+  const { world } = useStore();
+  const state = !!stateMode(world);
+  useEffect(() => void document.documentElement.toggleAttribute('data-state', state), [state]);
   return (
     <div class={'app' + (ONLINE ? ' online' : '')}>
       <Sidebar tabs={marked} current={'#/' + hash.replace(/^#\/?/, '').split('?')[0]} />
-      <main key={r.key}><StatusBanner />{r.view}</main>
+      <main key={r.key}>{state && <Ticker />}<StatusBanner />{r.view}</main>
       <nav class="nav" aria-label="Main"><div class="in">
         {marked.map(([href, label, icon, on]) => (
           <a href={href} class={on ? 'on' : ''} aria-current={on ? 'page' : undefined}>{on && <span class="mark" aria-hidden="true" />}<Icon name={icon} /><span>{label}</span></a>
@@ -130,6 +136,12 @@ function Game() {
   );
 }
 
+// state stock: the State's slogans across the top of every page (still, for anyone who prefers less motion)
+function Ticker() {
+  const { world: w } = useStore();
+  const line = slogans(w).join('  ★  ');
+  return <div class="ticker" aria-hidden="true"><div><span>{line}  ★  </span><span>{line}  ★  </span></div></div>;
+}
 // on every page while it's true: the clock is paused, or the realm is under emergency rule
 function StatusBanner() {
   const { world: w } = useStore();
@@ -137,12 +149,12 @@ function StatusBanner() {
   const m = w.martial;
   const k = w.coup, r = w.regime, t = w.transition;
   if (!p && !m && !k && !r && !t) return null;
-  const rule: Record<string, string> = { martial: 'Martial law', junta: 'A junta rules', dictatorship: 'A dictatorship', party: 'A one-party state' };
+  const rule: Record<string, string> = { martial: 'Martial law', junta: 'A junta rules', dictatorship: 'A dictatorship', party: 'A one-party state', civil: 'Rule by decree' };
   return (
     <div class={'status-banner' + (!p ? ' martial' : '')} role="status">
       {p ? <><b>The realm is paused</b>{w.clock.reason ? `: ${w.clock.reason}` : ''}. No deadline passes until the Returning Officer resumes it.</>
         : k ? <><b>A coup is under way</b>, led by {nm(w, k.leader)}. <a href="#/regime">Declare for or against it</a> by <When at={k.endsAt} />.</>
-        : r ? <><b>{rule[r.type]}</b>, led by {nm(w, r.leader)}. <a href="#/regime">See what is in force</a>.</>
+        : r ? <><b>{rule[r.type]}</b>{r.leader ? `, ${r.type === 'civil' ? 'by' : 'led by'} ${nm(w, r.leader)}` : ''}. <a href="#/regime">See what is in force</a>.</>
         : t ? <><b>Provisional government</b>, led by {nm(w, t.leader)}, until the Restoration election. <a href="#/regime">What happens now</a>.</>
         : <><b>{m.emergency ? 'State of emergency' : 'Martial law'}</b>, led by {nm(w, m.leader)}{m.until ? <>, until <When at={m.until} /></> : ''}.</>}
     </div>

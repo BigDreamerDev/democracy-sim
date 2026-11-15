@@ -2,6 +2,7 @@
 import { W, Id, DAY, WEEK, fail, newId, pick, cit, nm, own, text, allCitizens, mustBeFree, gazette, earn, stamp, transfer, ca, meter, approve, tick, isPM, weekNo, standing, fmtDay, addCard, holderOf } from './core';
 import { armyLoyalty } from './foreign';
 import { photoId } from './streets';
+import { licensed } from './acts';
 
 // longer player writing (story bodies, arguments): keeps its line breaks, capped
 function prose(v: unknown, max: number, what: string) {
@@ -18,7 +19,7 @@ export function foundPaper(w: W, actor: Id, name: string) {
   if (Object.values(w.papers).some((p: any) => p.editor === actor)) fail('You already edit a paper.');
   transfer(w, ca(actor), 'treasury', 10, 'Newspaper registration');
   const id = newId(w, 'np');
-  w.papers[id] = { id, name: name.trim(), editor: actor, followers: [actor], at: w.now };
+  w.papers[id] = { id, name: name.trim(), editor: actor, followers: [actor], at: w.now, ...(w.acts?.press ? { licence: 'pending' } : {}) };
   gazette(w, 'press', `${nm(w, actor)} launches a newspaper, ${name.trim()}.`, '#/press');
 }
 export function follow(w: W, actor: Id, pid: Id) {
@@ -31,6 +32,7 @@ export function submitStory(w: W, actor: Id, pid: Id, headline: string, body: st
   mustBeFree(w, actor);
   const p = own(w.papers, pid);
   if (!p) fail('Pick a paper.');
+  if (!licensed(w, p)) fail(`${p.name} has no licence to publish. The Ministry of Public Order grants them.`);
   const h = text(headline, 5, 120, 'headline');
   const b = prose(body, 2000, 'story');
   if (w.stories.filter((x: any) => x.by === actor && x.at > w.now - DAY).length >= 5) fail('You have filed 5 stories today. Come back tomorrow.');
@@ -45,6 +47,7 @@ export function editStory(w: W, actor: Id, sid: Id, yes: boolean) {
   const s = w.stories.find((x: any) => x.id === sid);
   if (!s || s.status !== 'submitted') fail('That story is not waiting.');
   if (own(w.papers, s.paper)?.editor !== actor) fail('Only the editor decides.');
+  if (yes && !licensed(w, w.papers[s.paper])) fail('Your paper has no licence to publish.');
   const held = !!w.regime?.censorship;
   s.status = yes ? (held ? 'held' : 'published') : 'spiked';
   s.at = w.now;

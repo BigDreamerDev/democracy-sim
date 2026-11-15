@@ -8,48 +8,52 @@
 // - fallRegime() ends it: an orderly hand-back goes straight to a Restoration election; anything else gets a
 //   provisional government (w.transition) with its own troubles, then the election. Parliament then holds the
 //   reckoning (w.reckoning) on the people who ran it.
-import { W, Id, DAY, HOUR, fail, newId, chance, pick, cit, nm, own, text as txt, int, clamp, allCitizens, exiled, detained, mustBeFree, gazette, earn, spend, stamp, approve, meter, legit, isHOS, isMP, mps, holderOf, transfer, bal, ca, bump, DAYNO, hosTitle } from './core';
+import { W, Id, DAY, HOUR, fail, newId, chance, pick, cit, nm, own, text as txt, int, clamp, allCitizens, exiled, detained, held, jailed, inForce, isPM, mustBeFree, gazette, earn, spend, stamp, approve, meter, legit, isHOS, isMP, mps, holderOf, transfer, bal, ca, bump, DAYNO, hosTitle } from './core';
 import { clearMinisters, callGeneralElection, vacateSeat, members, VOTING } from './politics';
 import { armyLoyalty } from './foreign';
 import { spawnCrisis } from './crises';
+import { syncActs, formFromHouse } from './acts';
 
 export const REGIMES: Record<string, { name: string; ruler: string; what: string }> = {
   martial: { name: 'Martial law', ruler: 'Commander', what: 'Three days, then a Restoration election. Parliament is suspended. Only censorship, a curfew and pardons.' },
   junta: { name: 'Junta', ruler: 'Chairman of the junta', what: 'The plotters rule as a council for a week. Decrees need a majority of the council. Legitimacy drains after day 7.' },
   dictatorship: { name: 'Dictatorship', ruler: 'Dictator', what: 'One ruler, every decree, no end date. Legitimacy drains by 1 every day.' },
-  party: { name: 'One-party state', ruler: 'Chairman of the Party', what: 'Parliament sits, but only Party members may stand or hold office. Steady while half the realm are members (after two days to recruit).' }
+  party: { name: 'One-party state', ruler: 'Chairman of the Party', what: 'Parliament sits, but only Party members may stand or hold office. Steady while half the realm are members (after two days to recruit).' },
+  civil: { name: 'Rule by decree', ruler: 'Prime Minister', what: 'Under the Government Powers Act the Prime Minister issues the regime’s decrees, once a day, with no legitimacy to lose. They stay in force until lifted by decree or the Act is repealed.' }
 };
 const ALL = ['martial', 'junta', 'dictatorship', 'party'];
 const HARD = ['junta', 'dictatorship', 'party'];
 // arg: what the decree needs ('target' a citizen, 'party', 'bank', 'n' a number, 'to' a regime type, 'key' a rule, 'text')
 export const DECREES: Record<string, { name: string; what: string; cost: string; types: string[]; arg?: string[]; group: string }> = {
-  censorship: { name: 'Censorship', what: 'Every story needs the regime’s approval before it is printed.', cost: '−1', types: ALL, group: 'Control' },
-  curfew: { name: 'Curfew', what: 'No speeches or stories from 22:00 to 06:00. The Streets close for the night too.', cost: '−1', types: ALL, group: 'Control' },
-  dissolve: { name: 'Dissolve Parliament', what: 'No bills and no votes until the regime ends.', cost: '−2', types: ['junta', 'dictatorship'], group: 'Control' },
-  police: { name: 'Secret police', what: 'Name a chief. Once a day they learn whether one person has signed the strike, written underground or joined a plot.', cost: '−1', types: HARD, arg: ['target'], group: 'Control' },
-  arrest: { name: 'Arrest', what: 'Detain someone for up to 2 days. Three held at most. They can read, and write one letter a day.', cost: '−2, −3 for an MP or party leader, free if marked', types: HARD, arg: ['target', 'n'], group: 'Repression' },
-  exile: { name: 'Exile', what: 'Banish someone for a week.', cost: '−2, free if marked', types: HARD, arg: ['target'], group: 'Repression' },
-  ban: { name: 'Ban a party', what: 'Its members sit as independents until the regime ends.', cost: '−3', types: HARD, arg: ['party'], group: 'Repression' },
-  trial: { name: 'Show trial', what: 'Try a detainee or the ousted Prime Minister. Citizens say whether they believe it: belief +2, disbelief −4.', cost: 'A gamble', types: HARD, arg: ['target'], group: 'Repression' },
-  seize: { name: 'Seize funds', what: 'Freeze up to 50 crowns of one citizen’s money, or a whole bank. Returned when the regime ends.', cost: '−2', types: HARD, arg: ['target', 'bank'], group: 'Money and force' },
-  nationalise: { name: 'Nationalise', what: 'A bank pays a tenth of its cash to the Treasury each payday; or all profit on trade ventures goes to the Treasury.', cost: '−2', types: HARD, arg: ['bank'], group: 'Money and force' },
-  tax: { name: 'Set the tax rate', what: 'By decree, from 0% to 40%. Lapses when the regime ends.', cost: '−1', types: HARD, arg: ['n'], group: 'Money and force' },
-  rate: { name: 'Set the Reserve rate', what: 'By decree, from 0% to 15%. Lapses when the regime ends.', cost: '−1', types: HARD, arg: ['n'], group: 'Money and force' },
-  conscription: { name: 'Conscription', what: 'Army loyalty +1 now. Every citizen pays 2 crowns each payday.', cost: '−2', types: HARD, group: 'Money and force' },
+  censorship: { name: 'Censorship', what: 'Every story needs the regime’s approval before it is printed.', cost: '−1', types: [...ALL, 'civil'], group: 'Control' },
+  curfew: { name: 'Curfew', what: 'No speeches or stories from 22:00 to 06:00. The Streets close for the night too.', cost: '−1', types: [...ALL, 'civil'], group: 'Control' },
+  dissolve: { name: 'Dissolve Parliament', what: 'No bills and no votes until the regime ends.', cost: '−2', types: ['junta', 'dictatorship', 'civil'], group: 'Control' },
+  police: { name: 'Secret police', what: 'Name a chief. Once a day they learn whether one person has signed the strike, written underground or joined a plot.', cost: '−1', types: [...HARD, 'civil'], arg: ['target'], group: 'Control' },
+  arrest: { name: 'Arrest', what: 'Detain someone for up to 2 days. Three held at most. They can read, and write one letter a day.', cost: '−2, −3 for an MP or party leader, free if marked', types: [...HARD, 'civil'], arg: ['target', 'n'], group: 'Repression' },
+  exile: { name: 'Exile', what: 'Banish someone for a week.', cost: '−2, free if marked', types: [...HARD, 'civil'], arg: ['target'], group: 'Repression' },
+  ban: { name: 'Ban a party', what: 'Its members sit as independents until the regime ends.', cost: '−3', types: [...HARD, 'civil'], arg: ['party'], group: 'Repression' },
+  trial: { name: 'Show trial', what: 'Try a detainee or the ousted Prime Minister. Citizens say whether they believe it: belief +2, disbelief −4.', cost: 'A gamble', types: [...HARD, 'civil'], arg: ['target'], group: 'Repression' },
+  seize: { name: 'Seize funds', what: 'Freeze up to 50 crowns of one citizen’s money, or a whole bank. Returned when the regime ends.', cost: '−2', types: [...HARD, 'civil'], arg: ['target', 'bank'], group: 'Money and force' },
+  nationalise: { name: 'Nationalise', what: 'A bank pays a tenth of its cash to the Treasury each payday; or all profit on trade ventures goes to the Treasury.', cost: '−2', types: [...HARD, 'civil'], arg: ['bank'], group: 'Money and force' },
+  tax: { name: 'Set the tax rate', what: 'By decree, from 0% to 40%. Lapses when the regime ends.', cost: '−1', types: [...HARD, 'civil'], arg: ['n'], group: 'Money and force' },
+  rate: { name: 'Set the Reserve rate', what: 'By decree, from 0% to 15%. Lapses when the regime ends.', cost: '−1', types: [...HARD, 'civil'], arg: ['n'], group: 'Money and force' },
+  conscription: { name: 'Conscription', what: 'Army loyalty +1 now. Every citizen pays 2 crowns each payday.', cost: '−2', types: [...HARD, 'civil'], group: 'Money and force' },
   postpone: { name: 'Postpone the election', what: 'One more day in power.', cost: '−2', types: ['junta'], group: 'Staying in power' },
   rigged: { name: 'Rigged election', what: 'Call an election your people cannot lose. Winning it is worth +4. Any of the council, or the secret police chief, can leak it and end you.', cost: '−3', types: ['junta', 'dictatorship'], group: 'Staying in power' },
-  rewrite: { name: 'Rewrite the constitution', what: 'Change how votes are cast, how bills pass, or the length of a term. Lapses when the regime ends.', cost: '−4', types: ['dictatorship', 'party'], arg: ['key'], group: 'Staying in power' },
+  rewrite: { name: 'Rewrite the constitution', what: 'Change how votes are cast, how bills pass, or the length of a term. Lapses when the regime ends.', cost: '−4', types: ['dictatorship', 'party', 'civil'], arg: ['key'], group: 'Staying in power' },
   plebiscite: { name: 'Plebiscite', what: 'Ask every citizen to confirm you. Win and you are President with legitimacy restored. Lose and the regime ends.', cost: 'Everything', types: ['dictatorship'], group: 'Staying in power' },
   heir: { name: 'Name an heir', what: 'If the General removes you, your heir takes over with half your legitimacy.', cost: 'Free', types: ['dictatorship'], arg: ['target'], group: 'Staying in power' },
   escalate: { name: 'Change the regime', what: 'Martial law can become a junta or a dictatorship; a junta a dictatorship or a one-party state; a President a one-party state. Never back down.', cost: '−3', types: ['martial', 'junta', 'dictatorship'], arg: ['to'], group: 'Staying in power' },
-  circuses: { name: 'Bread and circuses', what: 'The Treasury pays every citizen 3 crowns. Once a week.', cost: '+2', types: HARD, group: 'Buying support' },
-  oath: { name: 'Loyalty oath', what: 'Every citizen is asked to swear. Swearing pays 3 crowns and is public. Refusing is public too, and marks you.', cost: 'Free', types: HARD, group: 'Buying support' },
-  honour: { name: 'Honours for the faithful', what: 'A title for a supporter. It marks them as a collaborator.', cost: 'Free', types: HARD, arg: ['target', 'text'], group: 'Buying support' },
-  pardon: { name: 'Pardon', what: 'Release a detainee or recall an exile.', cost: '+1', types: ALL, arg: ['target'], group: 'Buying support' },
-  amnesty: { name: 'Amnesty day', what: 'Free every detainee at once.', cost: '+2 or more', types: ALL, group: 'Buying support' },
+  circuses: { name: 'Bread and circuses', what: 'The Treasury pays every citizen 3 crowns. Once a week.', cost: '+2', types: [...HARD, 'civil'], group: 'Buying support' },
+  oath: { name: 'Loyalty oath', what: 'Every citizen is asked to swear. Swearing pays 3 crowns and is public. Refusing is public too, and marks you.', cost: 'Free', types: [...HARD, 'civil'], group: 'Buying support' },
+  honour: { name: 'Honours for the faithful', what: 'A title for a supporter. It marks them as a collaborator.', cost: 'Free', types: [...HARD, 'civil'], arg: ['target', 'text'], group: 'Buying support' },
+  pardon: { name: 'Pardon', what: 'Release a detainee or recall an exile.', cost: '+1', types: [...ALL, 'civil'], arg: ['target'], group: 'Buying support' },
+  amnesty: { name: 'Amnesty day', what: 'Free every detainee at once.', cost: '+2 or more', types: [...ALL, 'civil'], group: 'Buying support' },
   purge: { name: 'Purge', what: 'Expel a Party member. They are marked.', cost: '−2', types: ['party'], arg: ['target'], group: 'Repression' },
+  lift: { name: 'Lift a decree', what: 'End one of the decrees in force: the censor, the curfew, the suspension of Parliament, conscription, nationalisation, the secret police, the oath, party bans, seizures, or a rate or rule set by decree.', cost: 'Free', types: ['civil'], arg: ['what'], group: 'Lifting decrees' },
   plan: { name: 'Five-year plan', what: 'Promise to pay the people a sum from the Treasury in 7 days. +3 now; −6 if the money isn’t there.', cost: '+3 now', types: ['party'], arg: ['n'], group: 'Buying support' }
 };
+export const LIFT: Record<string, string> = { censorship: 'Censorship', curfew: 'The curfew', parliament: 'The suspension of Parliament', conscription: 'Conscription', trade: 'Nationalised trade', banks: 'Nationalised banks', police: 'The secret police', oath: 'The loyalty oath', bans: 'Party bans', seized: 'Seized money and frozen banks', exiles: 'Exiles by decree', tax: 'The tax rate', rate: 'The Reserve rate', constitution: 'Constitutional rewrites' };
 export const REWRITE: Record<string, string> = { voting: 'How ballots are counted', passRule: 'How a bill passes', termDays: 'Days between elections' };
 const PASS = ['cast', 'seats', 'twothirds'];
 
@@ -65,12 +69,14 @@ export function curfewNow(w: W) {
   return h >= 22 || h < 6;
 }
 export const partyShare = (w: W) => (w.regime?.party ? members(w, w.regime.party).length / Math.max(1, allCitizens(w).length) : 0);
-export const detainees = (w: W): Id[] => allCitizens(w).filter((c: any) => detained(w, c.id)).map((c: any) => c.id);
+// held by a regime (the Realm Jail's detainees are listed on its own page, and no regime can free them)
+export const detainees = (w: W): Id[] => allCitizens(w).filter((c: any) => held(w, c.id)).map((c: any) => c.id);
 
 // run() and the bots call this before every command: a detainee can do very little, and curfew closes the night
 const DETAINED_OK = ['prison.letter', 'daily.answer', 'daily.freeze', 'tutorial.visit', 'me.profile', 'coup.flee', 'streets.answer', 'streets.gotMe', 'streets.newCode', 'streets.leave'];
 const CURFEW_SHUT = ['prop.speak', 'press.submit', 'crisis.speak', 'newsnight.comment', 'streets.contract', 'streets.tag', 'streets.claim', 'streets.meet', 'stall.open', 'stall.buy', 'bounty.post', 'bounty.take'];
 export function gate(w: W, actor: Id, cmd: string) {
+  if (jailed(w, actor) && !DETAINED_OK.includes(cmd) && !cmd.startsWith('admin.')) fail('You are in the Realm Jail. You can read everything and write one letter a day, and nothing else, until the government releases you.');
   if (detained(w, actor) && !DETAINED_OK.includes(cmd) && !cmd.startsWith('draft.') && !cmd.startsWith('admin.')) fail('You are detained. You can read everything and write one prison letter a day, and nothing else, until you are released.');
   if (curfewNow(w) && CURFEW_SHUT.includes(cmd)) fail('Curfew. Speeches, the presses and the Streets are closed until 06:00.');
 }
@@ -83,6 +89,11 @@ function say(w: W, r: any, kind: string, text: string) {
   gazette(w, 'crisis', text, '#/regime');
 }
 export function takePower(w: W, o: { leader: Id; council: Id[]; name: string; swift: boolean; legit: number; backer: Id | null; backers: Id[]; type?: string }) {
+  // a coup ends the Prime Minister's rule by decree: whatever it decreed is undone first
+  if (w.regime?.type === 'civil') endCivil(w, null);
+  // a coup breaks the line of succession
+  w.deputy = null;
+  w.lastPM = null;
   const ousted = w.pm && w.pm !== o.leader ? w.pm : null;
   const r: any = (w.regime = {
     id: newId(w, 'rg'), name: o.name, type: 'martial', chosen: false, chooseBy: w.now + 6 * HOUR, leader: o.leader, council: o.council.slice(), startedAt: w.now, until: w.now + 3 * DAY,
@@ -193,7 +204,7 @@ export function fleeOrStand(w: W, actor: Id, flee: unknown) {
 // ================= Decrees =================
 export function decree(w: W, actor: Id, a: any) {
   const r = R(w);
-  if (r.leader !== actor) fail('Only the leader of the regime issues decrees.');
+  if (r.type === 'civil' ? !isPM(w, actor) : r.leader !== actor) fail(r.type === 'civil' ? 'Only the Prime Minister issues decrees.' : 'Only the leader of the regime issues decrees.');
   const kind = a?.kind;
   const d = own(DECREES, kind);
   if (!d) fail('Unknown decree.');
@@ -299,7 +310,7 @@ function enact(w: W, r: any, kind: string, a: any) {
     case 'trial': {
       const c = target();
       if (r.trial) fail('One trial at a time.');
-      if (!detained(w, c.id) && !(r.ousted === c.id && !r.fled)) fail('Only a detainee or the ousted Prime Minister can be put on trial.');
+      if (!held(w, c.id) && !(r.ousted === c.id && !r.fled)) fail('Only a detainee or the ousted Prime Minister can be put on trial.');
       r.trial = { target: c.id, closesAt: w.now + DAY, votes: {} };
       return say(w, r, kind, `${c.name} is put on trial for crimes against the realm. Citizens have a day to say whether they believe a word of it.`);
     }
@@ -363,6 +374,7 @@ function enact(w: W, r: any, kind: string, a: any) {
       cost(2, 'The election postponed');
       return say(w, r, kind, `By decree: the Restoration election is put back a day.`);
     case 'rigged': {
+      if (inForce(w, 'continuity')) fail('No election can be held under the Continuity of Parliament Act.');
       if (r.rigged && !r.rigged.done) fail('An election is already arranged.');
       if (Object.values(w.elections).some((e: any) => e.kind === 'general' && e.status === 'open')) fail('A general election is already open.');
       callGeneralElection(w, w.now + 2 * DAY);
@@ -425,7 +437,7 @@ function enact(w: W, r: any, kind: string, a: any) {
     }
     case 'pardon': {
       const c = target();
-      if (detained(w, c.id)) c.detainedUntil = w.now;
+      if (held(w, c.id)) c.detainedUntil = w.now;
       else if (exiled(w, c.id) && r.exiles.includes(c.id) && r.fled !== c.id) c.exiledUntil = w.now;
       else fail('They are not held or banished by this regime.');
       legit(w, 1, `Pardoned ${c.name}`);
@@ -437,6 +449,12 @@ function enact(w: W, r: any, kind: string, a: any) {
       held.forEach((id) => (w.citizens[id].detainedUntil = w.now));
       legit(w, Math.max(2, held.length), 'Amnesty day');
       return say(w, r, kind, `Amnesty day: ${held.map((id) => nm(w, id)).join(', ')} walk${held.length === 1 ? 's' : ''} free.`);
+    }
+    case 'lift': {
+      const what = a.what;
+      if (typeof what !== 'string' || !own(LIFT, what)) fail('Pick what to lift.');
+      lift(w, r, what) || fail('That is not in force.');
+      return say(w, r, kind, `By decree: ${LIFT[what].toLowerCase()} ${what === 'tax' || what === 'rate' ? 'goes back to what it was' : what === 'seized' ? 'are returned' : 'is lifted'}.`);
     }
     case 'purge': {
       const c = target();
@@ -560,7 +578,8 @@ export function jailbreak(w: W, actor: Id, target: Id) {
   mustBeFree(w, actor);
   if (inRegime(r, actor)) fail('You hold the keys already.');
   cit(w, target);
-  if (!detained(w, target)) fail('They are not being held.');
+  if (jailed(w, target)) fail('Nobody breaks out of the Realm Jail. Only the government can release them.');
+  if (!held(w, target)) fail('They are not being held.');
   const list: Id[] = (r.breaks[target] ??= []);
   if (list.includes(actor)) fail('You are in. It needs one more person.');
   list.push(actor);
@@ -650,6 +669,7 @@ export function admitParty(w: W, actor: Id, target: Id, yes: unknown) {
 export function palace(w: W, actor: Id) {
   const r = R(w);
   mustBeFree(w, actor);
+  if (r.type === 'civil') fail('The Prime Minister rules by law, not by force. Bring them down in the House, or in the backroom.');
   if (r.leader === actor) fail('You cannot overthrow yourself.');
   if (r.type === 'dictatorship') {
     if (!w.offices.army || holderOf(w, 'army') !== actor) fail('Only the General can remove a dictator.');
@@ -712,6 +732,7 @@ export function leakRigging(w: W, actor: Id) {
 export const arbiter = (w: W): Id | null => (w.regime && w.hos.holder && !inRegime(w.regime, w.hos.holder) && free(w, w.hos.holder) ? w.hos.holder : null);
 export function offerExit(w: W, actor: Id) {
   const r = R(w);
+  if (r.type === 'civil') fail('There is no regime to hand back. Repeal the Government Powers Act instead.');
   if (r.leader !== actor) fail('Only the leader can offer to go.');
   if (r.exit) fail('The offer is already on the table.');
   if (r.exitRefused && w.now - r.exitRefused < 2 * DAY) fail('It was refused. Wait two days before offering again.');
@@ -743,6 +764,7 @@ export function regimeDay(w: W) {
   const r = w.regime;
   if (!r) return;
   r.nextTick = w.now + DAY;
+  if (r.type === 'civil') return;
   if (r.type === 'dictatorship') legit(w, -1, 'Another day of one-man rule');
   if (r.type === 'junta' && w.now >= r.startedAt + 7 * DAY) legit(w, -1, 'The junta has outstayed its week');
   // (two days' grace to hand out cards)
@@ -779,8 +801,14 @@ export function regimePayday(w: W) {
 // after every command and every deadline: the leader is the Prime Minister, a regime with no legitimacy falls,
 // a finished Restoration election ends the provisional government and opens the reckoning
 export function sync(w: W) {
+  syncActs(w);
   const r = w.regime;
-  if (r) {
+  // rule by decree follows whoever is Prime Minister; nothing about it can fall
+  if (r && r.type === 'civil') {
+    r.leader = w.pm || null;
+    r.council = w.pm ? [w.pm] : [];
+    if (w.martial?.regime) w.martial.leader = w.pm || w.martial.leader;
+  } else if (r) {
     const L = w.citizens[r.leader];
     if (!L || !L.active || L.suspended || exiled(w, r.leader) || detained(w, r.leader)) return fallRegime(w, 'collapse', r.lastBlow);
     if (w.pm !== r.leader) {
@@ -825,25 +853,8 @@ export function fallRegime(w: W, why: string, by: Id | null | undefined) {
   const r = w.regime;
   if (!r) return;
   const days = Math.max(0, Math.round((w.now - r.startedAt) / DAY));
-  // everything is undone
-  allCitizens(w).forEach((c: any) => {
-    if (detained(w, c.id)) c.detainedUntil = w.now;
-    if (r.exiles.includes(c.id) && exiled(w, c.id)) (c.exiledUntil = w.now), (c.exileNoted = true);
-  });
-  r.seized.forEach((s: any) => {
-    if (s.amt > 0) transfer(w, 'escrow', s.acct, s.amt, 'Returned after the regime');
-    if (s.bank && w.banks[s.bank]?.status === 'frozen') w.banks[s.bank].status = 'open';
-  });
-  r.banks.forEach((x: any) => x.taken > 0 && w.banks[x.bank] && transfer(w, 'treasury', 'bank:' + x.bank, x.taken, 'Returned after the regime'));
-  Object.entries(r.banned).forEach(([pid, ms]: any) => {
-    if (w.parties[pid]) w.parties[pid].status = 'active';
-    ms.forEach((m: Id) => w.citizens[m] && !w.citizens[m].party && (w.citizens[m].party = pid));
-  });
-  r.suspended.forEach((pid: Id) => w.parties[pid]?.status === 'suspended' && (w.parties[pid].status = 'active'));
-  Object.entries(r.prev).forEach(([k, v]) => (k === 'rate' ? (w.economy.rate = v) : (w.config[k] = v)));
-  w.stories.forEach((s: any) => s.status === 'held' && (s.status = 'published'));
-  Object.values(w.nations).forEach((n: any) => n.regimeSanction && ((n.sanctionsUntil = null), (n.regimeSanction = false)));
-  r.treaties.forEach((id: Id) => w.treaties[id]?.status === 'suspended' && (w.treaties[id].status = 'active'));
+  // everything is undone (except the Realm Jail, which no regime's fall empties)
+  undoAll(w, r);
   w.martial = null;
   w.confidence = null;
   // the record
@@ -874,24 +885,129 @@ export function fallRegime(w: W, why: string, by: Id | null | undefined) {
     // an orderly end: straight to the Restoration election; then Parliament judges them, unless amnesty was agreed
     const e = restoration(w, 2);
     w.pmInviteDue = null;
-    if (why === 'handback') w.reckoningDue = { ...fallen, election: e };
-    else h.verdict = 'amnesty';
+    if (!e) formFromHouse(w);
+    if (why === 'exit') h.verdict = 'amnesty';
+    else if (e) w.reckoningDue = { ...fallen, election: e };
+    else openReckoning(w, fallen, 'mps', []);
     return;
   }
   startTransition(w, fallen, by || null, why);
 }
-// call the Restoration election (or reuse one already open) and say which it is
-function restoration(w: W, days: number): Id {
+// call the Restoration election (or reuse one already open) and say which it is. Under the Continuity of
+// Parliament Act there is none: null, and the government is formed from the sitting House instead
+function restoration(w: W, days: number): Id | null {
   const open = () => (Object.values(w.elections) as any[]).filter((x) => x.kind === 'general' && x.status === 'open').pop();
   if (!open()) {
+    if (inForce(w, 'continuity')) return null;
     gazette(w, 'election', 'Polls open for the Restoration election.', '#/elections');
     callGeneralElection(w, w.now + days * DAY);
   }
-  return open().id;
+  return open()?.id || null;
+}
+
+// ---------- undoing decrees: all of them when a regime falls, one at a time under the Government Powers Act ----------
+function lift(w: W, r: any, what: string): boolean {
+  const any = (b: any) => !!b;
+  switch (what) {
+    case 'censorship':
+      if (!r.censorship) return false;
+      r.censorship = false;
+      w.stories.forEach((s: any) => s.status === 'held' && (s.status = 'published'));
+      return true;
+    case 'curfew':
+      return any(r.curfew) && !(r.curfew = false);
+    case 'parliament':
+      if (!w.martial?.regime) return false;
+      w.martial = null;
+      return true;
+    case 'conscription':
+      return any(r.conscription) && !(r.conscription = false);
+    case 'trade':
+      return any(r.trade) && !(r.trade = false);
+    case 'police':
+      return any(r.police) && !(r.police = null);
+    case 'oath':
+      return any(r.oath) && !(r.oath = null);
+    case 'banks':
+      if (!r.banks.length) return false;
+      r.banks.forEach((x: any) => x.taken > 0 && w.banks[x.bank] && transfer(w, 'treasury', 'bank:' + x.bank, x.taken, 'Returned: nationalisation ended'));
+      r.banks = [];
+      return true;
+    case 'bans':
+      if (!Object.keys(r.banned).length) return false;
+      Object.entries(r.banned).forEach(([pid, ms]: any) => {
+        if (w.parties[pid]?.status !== 'banned') return;
+        w.parties[pid].status = 'active';
+        ms.forEach((m: Id) => w.citizens[m] && !w.citizens[m].party && (w.citizens[m].party = pid));
+      });
+      r.banned = {};
+      return true;
+    case 'seized':
+      if (!r.seized.length) return false;
+      r.seized.forEach((s: any) => {
+        if (s.amt > 0) transfer(w, 'escrow', s.acct, s.amt, 'Returned: seized by decree');
+        if (s.bank && w.banks[s.bank]?.status === 'frozen') w.banks[s.bank].status = 'open';
+      });
+      r.seized = [];
+      return true;
+    case 'exiles': {
+      const out = allCitizens(w).filter((c: any) => r.exiles.includes(c.id) && exiled(w, c.id) && r.fled !== c.id);
+      out.forEach((c: any) => ((c.exiledUntil = w.now), (c.exileNoted = true)));
+      r.exiles = r.exiles.filter((id: Id) => id === r.fled);
+      return out.length > 0;
+    }
+    case 'tax':
+    case 'rate':
+    case 'constitution': {
+      const keys = what === 'tax' ? ['taxRate'] : what === 'rate' ? ['rate'] : ['voting', 'passRule', 'termDays'];
+      const set = keys.filter((k) => own(r.prev, k));
+      set.forEach((k) => ((k === 'rate' ? (w.economy.rate = r.prev[k]) : (w.config[k] = r.prev[k])), delete r.prev[k]));
+      return set.length > 0;
+    }
+  }
+  return false;
+}
+function undoAll(w: W, r: any) {
+  allCitizens(w).forEach((c: any) => held(w, c.id) && (c.detainedUntil = w.now));
+  ['censorship', 'curfew', 'conscription', 'trade', 'police', 'oath', 'banks', 'bans', 'seized', 'exiles', 'tax', 'rate', 'constitution'].forEach((k) => lift(w, r, k));
+  r.suspended.forEach((pid: Id) => w.parties[pid]?.status === 'suspended' && (w.parties[pid].status = 'active'));
+  w.stories.forEach((s: any) => s.status === 'held' && (s.status = 'published'));
+  Object.values(w.nations).forEach((n: any) => n.regimeSanction && ((n.sanctionsUntil = null), (n.regimeSanction = false)));
+  r.treaties.forEach((id: Id) => w.treaties[id]?.status === 'suspended' && (w.treaties[id].status = 'active'));
+}
+
+// ---------- rule by decree under the Government Powers Act ----------
+// The Prime Minister's built-in decrees need somewhere to keep what they did: a 'civil' regime, which follows the
+// PM, has no legitimacy, never falls, and is undone only by a coup or the repeal of the Act
+export function edict(w: W, actor: Id, a: any) {
+  if (!inForce(w, 'decrees')) fail('The Prime Minister has no power to issue decrees.');
+  if (!isPM(w, actor)) fail('Only the Prime Minister issues decrees.');
+  // a regime's leader is the Prime Minister: they decree as the regime, at its usual price
+  if (w.regime && w.regime.type !== 'civil') return decree(w, actor, a);
+  if (!w.regime) {
+    w.regime = {
+      id: newId(w, 'rg'), name: 'Rule by decree', type: 'civil', chosen: true, chooseBy: w.now, leader: actor, council: [actor], startedAt: w.now, until: null,
+      legit: 10, legit0: 10, log: [], swift: false, backer: null, ousted: null, fled: null, stood: false,
+      decreeDay: -1, decrees: [], pending: null, censorship: false, curfew: false, police: null, probes: [], probeDay: -1, marked: {}, collab: {},
+      exiles: [], banned: {}, suspended: [], seized: [], banks: [], trade: false, conscription: false, oath: null, oathWon: false, heir: null, party: null, applicants: [],
+      strike: [], breaks: {}, trial: null, plebiscite: null, president: false, rigged: null, plan: null, prev: {}, foreign: {}, exileGov: null, treaties: [],
+      exit: null, ouster: null, freeVotes: [], lastCircus: 0, lastBlow: null, nextTick: w.now + DAY
+    };
+  }
+  decree(w, actor, a);
+}
+export function endCivil(w: W, why: string | null) {
+  const r = w.regime;
+  if (!r || r.type !== 'civil') return;
+  undoAll(w, r);
+  if (w.martial?.regime) w.martial = null;
+  w.regime = null;
+  if (why) gazette(w, 'law', why, '#/laws');
 }
 
 // ================= The provisional government =================
 export const FORMS: Record<string, { name: string; what: string; effects: string[] }> = {
+  // (under the Continuity of Parliament Act there is no election: the provisional government simply ends when stated)
   unity: { name: 'Government of national unity', what: 'Every party leader gets a seat at the table. The election is called at once and closes in 3 days.', effects: ['Stability +5', 'Parliament sits'] },
   caretaker: { name: 'Caretaker government', what: 'Nobody governs, somebody minds the shop. Parliament stays shut and the election closes in 2 days.', effects: ['Prosperity +3', 'No bills until the election'] },
   council: { name: 'Revolutionary council', what: 'The people who brought the regime down rule for 3 days before any election, and try the regime themselves, at once.', effects: ['Stability −5', 'A tribunal instead of Parliament', 'More trouble'] },
@@ -936,10 +1052,12 @@ export function setForm(w: W, t: any, kind: string) {
     const leaders = Object.values(w.parties).filter((p: any) => p.status === 'active' && p.leader && p.leader !== t.leader && free(w, p.leader) && !t.fallen.council.includes(p.leader)).map((p: any) => p.leader);
     Object.values(w.offices).filter((o: any) => o.fill === 'pm').forEach((o: any, i) => (o.holder = leaders[i] || null));
     t.election = restoration(w, 3);
+    if (!t.election) t.endsAt = w.now + 3 * DAY;
   } else if (kind === 'caretaker') {
     meter(w, 'prosperity', 3, 'A steady caretaker');
     shut();
     t.election = restoration(w, 2);
+    if (!t.election) t.endsAt = w.now + 2 * DAY;
   } else if (kind === 'council') {
     meter(w, 'stability', -5, 'A revolutionary council');
     t.council = [...new Set([t.leader, ...t.fallen.resisters.filter((id: Id) => free(w, id))])];
@@ -960,6 +1078,7 @@ export function callRestoration(w: W) {
   if (!t) return;
   t.callAt = null;
   t.election = restoration(w, 2);
+  if (!t.election) endTransition(w);
 }
 export function actTransition(w: W, actor: Id, act: unknown) {
   const t = w.transition || fail('There is no provisional government.');
@@ -1050,12 +1169,16 @@ export function transitionDay(w: W) {
     }
   }
 }
-function endTransition(w: W) {
+export function endTransition(w: W) {
   const t = w.transition;
   if (!t) return;
   w.transition = null;
   if (w.martial?.provisional) w.martial = null;
-  gazette(w, 'government', 'The provisional government stands down. The realm has an elected Parliament again.', '#/house');
+  // with no election to form a government, the head of state invites one from the House as it stands
+  if (inForce(w, 'continuity')) {
+    formFromHouse(w);
+    gazette(w, 'government', 'The provisional government stands down. With no election, the head of state will invite a government from the House as it stands.', '#/cabinet');
+  } else gazette(w, 'government', 'The provisional government stands down. The realm has an elected Parliament again.', '#/house');
   if (!t.amnesty && !w.reckoning && !w.regimes.find((h: any) => h.id === t.fallen.id)?.verdict) openReckoning(w, t.fallen, 'mps', []);
   else if (t.amnesty) {
     const h = w.regimes.find((x: any) => x.id === t.fallen.id);

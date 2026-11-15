@@ -121,6 +121,31 @@ export function needs(w: W, me: Id): Alert[] {
   }
   if (tr?.leader === me && !tr.form) out.push({ key: 'transition:' + tr.id, href: here, label: 'Provisional government', title: 'Decide what kind of government this is', at: tr.formDue, urgent: true });
   if (rk && !rk.votes[me] && !rk.targets.includes(me) && (rk.voters === 'council' ? rk.council.includes(me) : isMP(w, me))) out.push({ key: 'reckoning:' + rk.id, href: here, label: 'The reckoning', title: 'Pardon, fine or exile the people who ran the regime', at: rk.closesAt });
+  // the Acts: the Prime Minister's waiting jobs
+  if (isPM(w, me) && w.acts?.protection) {
+    Object.values(w.proposals).forEach((p: any) => {
+      if (p.stage === 'consent') out.push({ key: 'consent:' + p.id, href: '#/powers', label: 'Your consent', title: `${nm(w, p.by)} wants to table ${p.title}`, urgent: true });
+      (p.amendments || []).forEach((m: any) => m.status === 'consent' && out.push({ key: 'amendconsent:' + m.id, href: '#/powers', label: 'Your consent', title: `${nm(w, m.by)} wants to amend ${p.title}` }));
+    });
+    if (!w.hos?.holder) out.push({ key: 'hosvacant:' + (w.hos?.since || 0), href: '#/powers', label: 'No head of state', title: 'Appoint one' });
+  }
+  if (isPM(w, me) && w.acts?.press) {
+    const held = w.questions.filter((q: any) => q.status === 'held').length;
+    if (held) out.push({ key: 'qheld:' + held, href: '#/powers', label: 'Questions', title: `${held} question${held === 1 ? '' : 's'} waiting for your approval` });
+  }
+  if (w.acts?.press && (hasPower(w, me, 'detain') || (isPM(w, me) && !Object.values(w.offices).some((o: any) => o.powers.includes('detain') && o.holder)))) {
+    const due = Object.values(w.papers).filter((p: any) => p.licence === 'pending' || !p.licence).length;
+    if (due) out.push({ key: 'licence:' + due, href: '#/powers', label: 'Licences', title: `${due} newspaper${due === 1 ? '' : 's'} waiting for a licence` });
+  }
+  if (isPM(w, me)) {
+    const nat = w.acts?.unity && w.acts.national && w.parties[w.acts.national];
+    if (nat?.applicants?.length) out.push({ key: 'national:' + nat.applicants.join(','), href: '#/powers', label: 'National Party', title: `${nat.applicants.length} application${nat.applicants.length === 1 ? '' : 's'} to join` });
+    if (w.acts?.continuity) {
+      const empty = w.seats.filter((s: any) => !s).length;
+      if (empty) out.push({ key: 'seats:' + empty + ':' + w.seats.join(','), href: '#/powers', label: 'Empty seats', title: `${empty} seat${empty === 1 ? '' : 's'} for you to fill` });
+      if (!w.speaker) out.push({ key: 'speaker:none', href: '#/powers', label: 'No Speaker', title: 'Appoint a Speaker' });
+    }
+  }
   if (intrigueOpen(w)) {
     Object.values(w.plots).forEach((p: any) => p.status === 'planning' && p.informed && !p.members.includes(me) && out.push({ key: 'informer:' + p.id, href: '#/plots', label: 'Security Service', title: 'You have someone inside a plot' }));
     Object.values(w.deals).forEach((d: any) => d.status === 'offered' && d.to === me && out.push({ key: 'deal:' + d.id, href: '#/backroom', label: 'Private', title: `${nm(w, d.from)} offers you a deal` }));

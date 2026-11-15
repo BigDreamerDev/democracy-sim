@@ -116,7 +116,7 @@ export function Plots() {
   const mine = Object.values(w.plots).find((p: any) => p.status === 'planning' && p.members.includes(me)) as any;
   const invites = Object.values(w.plots).filter((p: any) => p.status === 'planning' && p.invited[me] === 'pending') as any[];
   const watched = Object.values(w.plots).filter((p: any) => p.status === 'planning' && p.informed && watcher(w) === me) as any[];
-  const director = !!w.offices.security && (hasPower(w, me, 'intel') || (w.pm === me && !holderOf(w, 'security')));
+  const director = (!!w.offices.security || !!w.acts?.security) && (hasPower(w, me, 'intel') || (w.pm === me && !holderOf(w, 'security')));
   const answer = (p: any, how: string, done: string) => act('plot.answer', { plot: p.id, how }, done);
   return (
     <Page dark back={['#/realm', 'The realm']} kicker="Treason" title="Plots" intro="Recruit, prepare, and seize power. With two of the General, a foreign backer and a full war chest, a coup succeeds at once. Otherwise the realm gets a night to pick sides. If it is reported or found, every plotter goes into exile for a week. Starting one costs 20 Influence.">

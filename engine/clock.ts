@@ -5,8 +5,9 @@ import { openVote, closeVote, enact, closeOverride, dissolve, closePMQs, missFor
 import { payday, settleVenture } from './economy';
 import { actBots } from './bots';
 import { maybeOffers, answerAsk, resolveIntel, armyLoyalty } from './foreign';
-import { checkPlot, endMartialLaw, resolveCoup } from './backroom';
-import { regimeDay, regimePayday, fallRegime, closeTrial, closePlebiscite, planDue, lapseDecree, settleExit, transitionDay, setForm, callRestoration, closeReckoning, strikeOn, sync } from './regime';
+import { checkPlot, endMartialLaw, resolveCoup, autoFind } from './backroom';
+import { regimeDay, regimePayday, fallRegime, closeTrial, closePlebiscite, planDue, lapseDecree, settleExit, transitionDay, setForm, callRestoration, closeReckoning, strikeOn, sync, endTransition } from './regime';
+import { seasonDue, freeFromJail, lapseLicence } from './acts';
 import { spawnCrisis, timeoutCrisis, fireQueued, rule, makeFrontPage } from './society';
 import { nationsTurn, settleUltimatum } from './foreign';
 import { expireContract, settleClaim, ghostBack, bountyDeadline, bountyDue, orderDeadline, openHunt, startHunt, finishHunt } from './streets';
@@ -41,7 +42,7 @@ function collect(w: W): D[] {
   if (w.induction && !w.induction.done) add(w.induction.until, () => endInduction(w));
   // practice bots take a turn every two hours during induction
   if (w.induction && !w.induction.done && w.induction.nextBotAt) add(w.induction.nextBotAt, () => ((w.induction.nextBotAt = w.now + 2 * HOUR), actBots(w, (id) => !!id && !!w.citizens[id]?.bot, 0.6)));
-  if (w.phase === 'running' && w.nextGeneralAt && !w.martial && !(w.regime && w.regime.type !== 'party') && !w.transition) add(w.nextGeneralAt - 2 * DAY, () => callGeneralElection(w, w.nextGeneralAt));
+  if (w.phase === 'running' && w.nextGeneralAt && !w.acts?.continuity && !w.martial && !(w.regime && !['party', 'civil'].includes(w.regime.type)) && !w.transition) add(w.nextGeneralAt - 2 * DAY, () => callGeneralElection(w, w.nextGeneralAt));
   Object.values(w.proposals).forEach((p: any) => {
     if (p.stage === 'debate') add(p.debateEndsAt, () => openVote(w, p), p.id);
     if (p.stage === 'vote') add(p.voteEndsAt, () => closeVote(w, p), p.id);
@@ -79,7 +80,13 @@ function collect(w: W): D[] {
     add(tr.nextTick, () => transitionDay(w));
     if (!tr.form) add(tr.formDue, () => setForm(w, tr, 'unity'));
     add(tr.callAt, () => callRestoration(w));
+    add(tr.endsAt, () => endTransition(w));
   }
+  // the Acts: a jail order with an end date, and the season clock while there are no elections
+  allCitizens(w).forEach((c: any) => c.jail?.until && add(c.jail.until, () => freeFromJail(w, c), 'jl' + c.id));
+  if (w.acts?.continuity && w.phase === 'running' && w.seasonDueAt) add(w.seasonDueAt, () => seasonDue(w));
+  Object.values(w.plots).forEach((p: any) => p.status === 'planning' && p.foundAt && add(p.foundAt, () => autoFind(w, p), 'af' + p.id));
+  Object.values(w.papers).forEach((p: any) => p.licenceDue && add(p.licenceDue, () => lapseLicence(w, p), 'lc' + p.id));
   if (w.reckoning) add(w.reckoning.closesAt, () => closeReckoning(w));
   allCitizens(w).forEach((c: any) => c.detainedUntil && !c.detainedNoted && add(c.detainedUntil, () => ((c.detainedNoted = true), gazette(w, 'quiet', `${c.name} is released.`)), 'dt' + c.id));
   allCitizens(w).forEach((c: any) => c.exiledUntil && !c.exileNoted && add(c.exiledUntil, () => ((c.exileNoted = true), gazette(w, 'quiet', `${c.name}'s exile is over.`)), c.id));

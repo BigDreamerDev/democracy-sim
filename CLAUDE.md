@@ -59,6 +59,13 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   regime.ts    after a coup: w.regime (martial/junta/dictatorship/party, `legit`), DECREES, resistance (strike, underground
                press, prison letters, jailbreak, palace coup), fallRegime (undoes everything), the provisional government
                (w.transition, FORMS, ACTS, rival claims), the reckoning (w.reckoning); gate() and sync() run on every command
+  acts.ts      Acts a bill (or decree) can contain as whole clauses: 'jail' (Ministry of Public Order, c.jail, the Realm Jail),
+               'decrees' (gov.decree makes law; gov.edict = regime decrees as a 'civil' w.regime; 1h assent), 'continuity'
+               (no general/Speaker elections, PM fills seats, w.seasonDueAt), 'unity' (w.acts.national, the only party). On while
+               w.acts[key] holds the law ref; repealAct undoes. A decree law (law.decree) can only be repealed by a decree
+               'protection' (consent stage for proposals, no confidence/censure of the government, PM appoints HOS,
+               succession via w.deputy/w.lastPM, ENTRENCHED Acts repealable only by decree, plots auto-found in 1h),
+               'press' (paper.licence, press.remove, questions 'held' until q.approve), 'security' (harder coups, gov +3)
   society.ts   press, front pages, court, crisis spawning and deciding
   crises.ts    CRISES and their lifecycle: spawn (weighted, no repeats), PM decide or `house` MP vote,
                timeout (last option), `then` chains queued in w.crisisQueue and fired by the clock
@@ -211,7 +218,7 @@ Citizen id = `'u' + users.id`.
    server. Hiding a button is cosmetic.
 4. **Rules change only through Parliament.** The RO's powers are exactly: approve sign-ups,
    toggle `requireApproval`/`openSignup`, move the calendar, start a crisis, force-enact a stuck
-   bill, reset a password, make or revoke an invitation, give a player invitations, remove a duplicate account, remove or restore a player app, add or remove a Streets safe zone, take down a
+   bill, link a bill to one of the Acts in acts.ts (`admin.linkAct`, any stage up to enacted), reset a password, make or revoke an invitation, give a player invitations, remove a duplicate account, remove or restore a player app, add or remove a Streets safe zone, take down a
    bounty or a photo, export, reset the realm, suspend or restore a player, make or remove a second RO, pause the
    clock, restore a snapshot. The safe-zone, bounty and photo powers exist for real-world safety only. Don't add RO
    powers over game rules. **Every one of them goes through `adminDid()`** (engine/core.ts), which
@@ -282,6 +289,9 @@ Citizen id = `'u' + users.id`.
   changes must be undone in `fallRegime`. A detainee is gated in `run()` by `gate()` (`DETAINED_OK`); curfew shuts `CURFEW_SHUT`
   commands at night. Regime and aftermath crises are `chainOnly` entries in crises.ts (`rg_*`, `aft_*`), decided by `w.pm`.
   New secret regime state must be stripped in `viewFor` (strike, probes, rigged, breaks, votes).
+- **Acts** (acts.ts): `detained()` = regime-held (`held()`, `c.detainedUntil`) or jailed (`jailed()`, `c.jail`). Regime pardons,
+  amnesties, jailbreaks and `fallRegime` free only the held. `callGeneralElection` returns false under continuity, so anything
+  that waits on an election (restoration, transition, handback) must handle having none (`formFromHouse`).
 - **Whips**: `p.whips[partyId] = {line}` (public), set by `prop.whip` (party leader, or the Chief Whip for a governing
   party). `whipLine()` is the one place that says what line an MP is under: their party's, else the PM's vote for
   government MPs, none on a free vote. `trackWhip` counts `c.whip.loyal/rebel` and stores `p.rebels` when the vote closes.

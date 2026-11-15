@@ -3,9 +3,9 @@
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Field, Pick, Seg, Opt, Meter, When, Left, Who, Empty } from '../ui';
-import { nm, allCitizens, exiled, detained, isMP, holderOf, hosTitle, fmtDay, fmtTime, DAY } from '../../../engine/index';
+import { nm, allCitizens, exiled, detained, held as isHeld, isMP, holderOf, hosTitle, fmtDay, fmtTime, DAY } from '../../../engine/index';
 import { coupTally } from '../../../engine/backroom';
-import { REGIMES, DECREES, REWRITE, FORMS, ACTS, VERDICTS, strikeNeed, strikeOn, detainees, partyShare, arbiter, canJudge } from '../../../engine/regime';
+import { REGIMES, DECREES, REWRITE, LIFT, FORMS, ACTS, VERDICTS, strikeNeed, strikeOn, detainees, partyShare, arbiter, canJudge } from '../../../engine/regime';
 import { VOTING, members } from '../../../engine/politics';
 
 const names = (w: any, ids: string[]) => ids.map((id) => nm(w, id)).join(', ') || 'nobody';
@@ -15,8 +15,8 @@ export function Regime() {
   const { world: w } = useStore();
   const any = w.coup || w.regime || w.transition || w.reckoning;
   return (
-    <Page kicker={w.regime ? REGIMES[w.regime.type].name : w.coup ? 'A coup is under way' : w.transition ? 'Provisional government' : 'Power'} title={w.regime ? `The regime of ${nm(w, w.regime.leader)}` : w.coup ? 'The night of the coup' : w.transition ? 'After the fall' : w.reckoning ? 'The reckoning' : 'Coups and regimes'}
-      intro={w.regime ? 'Its legitimacy is its lifeline: at zero it falls. Every decree costs some, and so does every act of resistance.' : w.coup ? 'Every citizen may declare for the coup or against it. When the night ends, the heavier side wins.' : w.transition ? 'Somebody has to mind the realm until it can vote. It rarely goes smoothly.' : 'What happens when someone takes the realm by force, and what it costs them.'}>
+    <Page kicker={w.regime ? REGIMES[w.regime.type].name : w.coup ? 'A coup is under way' : w.transition ? 'Provisional government' : 'Power'} title={w.regime ? (w.regime.type === 'civil' ? 'Rule by decree' : `The regime of ${nm(w, w.regime.leader)}`) : w.coup ? 'The night of the coup' : w.transition ? 'After the fall' : w.reckoning ? 'The reckoning' : 'Coups and regimes'}
+      intro={w.regime?.type === 'civil' ? 'The Prime Minister’s decrees under the Government Powers Act, and what the realm can do about them.' : w.regime ? 'Its legitimacy is its lifeline: at zero it falls. Every decree costs some, and so does every act of resistance.' : w.coup ? 'Every citizen may declare for the coup or against it. When the night ends, the heavier side wins.' : w.transition ? 'Somebody has to mind the realm until it can vote. It rarely goes smoothly.' : 'What happens when someone takes the realm by force, and what it costs them.'}>
       {w.coup && <Night />}
       {w.regime && <Under />}
       {w.transition && <Transition />}
@@ -67,11 +67,15 @@ function Under() {
     <>
       <Sec>
         <Card kind="warn">
-          <div class="kicker" style={{ margin: 0 }}>{r.president ? 'President' : REGIMES[r.type].ruler} · Legitimacy</div>
-          <div class="serif tnum" style={{ fontSize: 44, lineHeight: 1 }}>{r.legit}</div>
-          <Meter value={r.legit} max={Math.max(12, r.legit0)} color="var(--red)" />
-          <p class="small" style={{ margin: '8px 0 0' }}>Day {days + 1}. {r.until ? <>It must hand back power by <When at={r.until} />.</> : 'It has set no date to go.'} {REGIMES[r.type].what}</p>
-          {r.type !== 'dictatorship' && r.council.length > 1 && <p class="small" style={{ margin: '4px 0 0' }}>{r.type === 'party' ? 'Founders' : 'Council'}: {names(w, r.council)}.</p>}
+          {r.type === 'civil' ? <p class="small" style={{ margin: 0 }}>{REGIMES.civil.what} {w.pm ? `The Prime Minister is ${nm(w, w.pm)}.` : 'There is no Prime Minister right now.'}</p> : (
+            <>
+              <div class="kicker" style={{ margin: 0 }}>{r.president ? 'President' : REGIMES[r.type].ruler} · Legitimacy</div>
+              <div class="serif tnum" style={{ fontSize: 44, lineHeight: 1 }}>{r.legit}</div>
+              <Meter value={r.legit} max={Math.max(12, r.legit0)} color="var(--red)" />
+              <p class="small" style={{ margin: '8px 0 0' }}>Day {days + 1}. {r.until ? <>It must hand back power by <When at={r.until} />.</> : 'It has set no date to go.'} {REGIMES[r.type].what}</p>
+            </>
+          )}
+          {!['dictatorship', 'civil'].includes(r.type) && r.council.length > 1 && <p class="small" style={{ margin: '4px 0 0' }}>{r.type === 'party' ? 'Founders' : 'Council'}: {names(w, r.council)}.</p>}
           {r.type === 'party' && <p class="small" style={{ margin: '4px 0 0' }}>The {w.parties[r.party]?.name} has {members(w, r.party).length} of {allCitizens(w).length} citizens ({Math.round(partyShare(w) * 100)}%). It needs half.</p>}
           {flags.length > 0 && <p class="small" style={{ margin: '4px 0 0' }}><b>In force:</b> {flags.join(' · ')}.</p>}
           {held.length > 0 && <p class="small" style={{ margin: '4px 0 0' }}><b>Detained:</b> {held.map((id) => `${nm(w, id)} (until ${fmtTime(w, w.citizens[id].detainedUntil)})`).join(', ')}.</p>}
@@ -84,8 +88,8 @@ function Under() {
           <div class="grid2"><Btn onClick={() => act('coup.flee', { flee: false }, 'You stay.')}>Stay and face them</Btn><Btn kind="ghost" onClick={() => act('coup.flee', { flee: true }, 'You are over the border. Seek asylum from the Exile page.')}>Flee the realm</Btn></div>
         </Sec>
       )}
-      {detained(w, me) && <Cell />}
-      {leader && <Desk />}
+      {isHeld(w, me) && <Cell />}
+      {(r.type === 'civil' ? w.pm === me : leader) && <Desk />}
       {inside && <Inside />}
       {r.police === me && <Police />}
       {!inside && !detained(w, me) && !exiled(w, me) && <Resist />}
@@ -94,23 +98,22 @@ function Under() {
         <ul class="list">{r.decrees.slice(0, 12).map((d: any) => <li><span>{d.text}<div class="small muted">{fmtTime(w, d.at)}</div></span></li>)}</ul>
         {!r.decrees.length && <Empty>No decrees yet.</Empty>}
       </Sec>
-      <Sec title="What has moved its legitimacy"><ul class="list small">{r.log.slice(0, 10).map((l: any) => <li class="row"><span>{l.why}</span><b class="tnum" style={{ color: l.d < 0 ? 'var(--red)' : 'var(--teal)' }}>{l.d > 0 ? '+' : ''}{l.d}</b></li>)}</ul>{!r.log.length && <Empty>Nothing yet.</Empty>}</Sec>
+      {r.type !== 'civil' && <Sec title="What has moved its legitimacy"><ul class="list small">{r.log.slice(0, 10).map((l: any) => <li class="row"><span>{l.why}</span><b class="tnum" style={{ color: l.d < 0 ? 'var(--red)' : 'var(--teal)' }}>{l.d > 0 ? '+' : ''}{l.d}</b></li>)}</ul>{!r.log.length && <Empty>Nothing yet.</Empty>}</Sec>}
     </>
   );
 }
 
-// the leader's desk: how to rule, the day's decree, the censor, the Party's applicants, the way out
-function Desk() {
+// the form for a built-in decree: the regime's leader (regime.decree), or the PM under the Government Powers Act (gov.edict)
+export function DecreeForm({ type, cmd, council }: { type: string; cmd: string; council?: boolean }) {
   const { world: w, me } = useStore();
   const r = w.regime;
-  const kinds = Object.keys(DECREES).filter((k) => DECREES[k].types.includes(r.type));
+  const kinds = Object.keys(DECREES).filter((k) => DECREES[k].types.includes(type));
   const [kind, setKind] = useState('');
-  const [a, setA] = useState<any>({ target: '', party: '', bank: '', n: '', to: '', key: 'voting', value: '', text: '' });
+  const [a, setA] = useState<any>({ target: '', party: '', bank: '', n: '', to: '', key: 'voting', value: '', text: '', what: '' });
   const set = (k: string, v: any) => setA({ ...a, [k]: v });
   const d = kind ? DECREES[kind] : null;
   const needs = d?.arg || [];
   const groups = [...new Set(kinds.map((k) => DECREES[k].group))];
-  const heldStories = w.stories.filter((s: any) => s.status === 'held');
   const send = () => {
     const args: any = { kind };
     needs.forEach((k) => {
@@ -118,9 +121,38 @@ function Desk() {
       else if (k === 'key') (args.key = a.key), (args.value = a.key === 'termDays' ? Number(a.value) : a.value);
       else if (a[k]) args[k] = a[k];
     });
-    act('regime.decree', args, r.type === 'junta' && r.council.length >= 3 ? 'Sent to the council.' : 'Decreed.');
+    act(cmd, args, council ? 'Sent to the council.' : 'Decreed.');
   };
   const banks = (Object.values(w.banks) as any[]).filter((b) => b.status === 'open').map((b): [string, string] => [b.id, b.name]);
+  const civil = type === 'civil';
+  return (
+    <div class="stack">
+      <Pick value={kind} onChange={setKind} empty="Choose a decree" options={groups.flatMap((g) => kinds.filter((k) => DECREES[k].group === g).map((k): [string, string] => [k, `${g}: ${DECREES[k].name}${civil ? '' : ` (${DECREES[k].cost})`}`]))} />
+      {d && <p class="small" style={{ margin: 0 }}>{d.what}</p>}
+      {needs.includes('target') && <Pick label={kind === 'seize' ? 'A citizen (or pick a bank below)' : 'Who'} value={a.target} onChange={(v) => set('target', v)} empty="Pick someone" options={people(w, (c) => c.id !== me)} />}
+      {needs.includes('party') && <Pick label="Party" value={a.party} onChange={(v) => set('party', v)} empty="Pick a party" options={(Object.values(w.parties) as any[]).filter((p) => p.status === 'active' && p.id !== r?.party).map((p): [string, string] => [p.id, p.name])} />}
+      {needs.includes('bank') && (banks.length ? <Pick label={kind === 'nationalise' ? 'A bank (leave empty to nationalise foreign trade)' : 'Or a bank'} value={a.bank} onChange={(v) => set('bank', v)} empty={kind === 'nationalise' ? 'Foreign trade' : 'No bank'} options={banks} /> : kind === 'nationalise' ? <p class="small muted" style={{ margin: 0 }}>There are no banks, so this nationalises foreign trade.</p> : null)}
+      {needs.includes('n') && <Field label={kind === 'arrest' ? 'Days held (1 or 2)' : kind === 'plan' ? 'Crowns promised (20 to 300)' : kind === 'tax' ? 'Tax rate, % (0 to 40)' : 'Interest rate, % (0 to 15)'} type="number" value={a.n} onInput={(v) => set('n', v)} />}
+      {needs.includes('to') && <Pick label="Become" value={a.to} onChange={(v) => set('to', v)} empty="Choose" options={(r?.type === 'martial' ? ['junta', 'dictatorship'] : r?.type === 'junta' ? ['dictatorship', 'party'] : ['party']).map((t): [string, string] => [t, REGIMES[t].name])} />}
+      {needs.includes('what') && <Pick label="Lift" value={a.what} onChange={(v) => set('what', v)} empty="Choose" options={Object.entries(LIFT)} />}
+      {needs.includes('key') && (
+        <>
+          <Pick label="Rewrite" value={a.key} onChange={(v) => setA({ ...a, key: v, value: '' })} options={Object.entries(REWRITE)} />
+          {a.key === 'termDays' ? <Field label="Days (7 to 42)" type="number" value={a.value} onInput={(v) => set('value', v)} /> : <Pick label="To" value={a.value} onChange={(v) => set('value', v)} empty="Choose" options={a.key === 'voting' ? Object.entries(VOTING).map(([k, v]): [string, string] => [k, v.short]) : [['cast', 'A majority of votes cast'], ['seats', 'A majority of all seats'], ['twothirds', 'Two-thirds']]} />}
+        </>
+      )}
+      {needs.includes('text') && <Field label="Title" value={a.text} onInput={(v) => set('text', v)} placeholder="Hero of the Realm" />}
+      <Btn kind="danger" full disabled={!kind} onClick={send}>{council ? 'Put it to the council' : 'Decree it'}</Btn>
+    </div>
+  );
+}
+
+// the leader's desk: how to rule, the day's decree, the censor, the Party's applicants, the way out
+function Desk() {
+  const { world: w } = useStore();
+  const r = w.regime;
+  const civil = r.type === 'civil';
+  const heldStories = w.stories.filter((s: any) => s.status === 'held');
   return (
     <>
       {!r.chosen && w.now < r.chooseBy && (
@@ -128,30 +160,16 @@ function Desk() {
           <div class="stack">{['martial', 'junta', 'dictatorship'].map((t) => <Opt on={r.type === t && r.chosen} onClick={() => act('regime.form', { type: t }, 'So be it.')} title={REGIMES[t].name} hint={REGIMES[t].what} />)}</div>
         </Sec>
       )}
-      <Sec title="Issue a decree" sub="One a day. The cost is in legitimacy.">
-        <div class="stack">
-          <Pick value={kind} onChange={setKind} empty="Choose a decree" options={groups.flatMap((g) => kinds.filter((k) => DECREES[k].group === g).map((k): [string, string] => [k, `${g}: ${DECREES[k].name} (${DECREES[k].cost})`]))} />
-          {d && <p class="small" style={{ margin: 0 }}>{d.what}</p>}
-          {needs.includes('target') && <Pick label={kind === 'seize' ? 'A citizen (or pick a bank below)' : 'Who'} value={a.target} onChange={(v) => set('target', v)} empty="Pick someone" options={people(w, (c) => c.id !== me)} />}
-          {needs.includes('party') && <Pick label="Party" value={a.party} onChange={(v) => set('party', v)} empty="Pick a party" options={(Object.values(w.parties) as any[]).filter((p) => p.status === 'active' && p.id !== r.party).map((p): [string, string] => [p.id, p.name])} />}
-          {needs.includes('bank') && (banks.length ? <Pick label={kind === 'nationalise' ? 'A bank (leave empty to nationalise foreign trade)' : 'Or a bank'} value={a.bank} onChange={(v) => set('bank', v)} empty={kind === 'nationalise' ? 'Foreign trade' : 'No bank'} options={banks} /> : kind === 'nationalise' ? <p class="small muted" style={{ margin: 0 }}>There are no banks, so this nationalises foreign trade.</p> : null)}
-          {needs.includes('n') && <Field label={kind === 'arrest' ? 'Days held (1 or 2)' : kind === 'plan' ? 'Crowns promised (20 to 300)' : kind === 'tax' ? 'Tax rate, % (0 to 40)' : 'Interest rate, % (0 to 15)'} type="number" value={a.n} onInput={(v) => set('n', v)} />}
-          {needs.includes('to') && <Pick label="Become" value={a.to} onChange={(v) => set('to', v)} empty="Choose" options={(r.type === 'martial' ? ['junta', 'dictatorship'] : r.type === 'junta' ? ['dictatorship', 'party'] : ['party']).map((t): [string, string] => [t, REGIMES[t].name])} />}
-          {needs.includes('key') && (
-            <>
-              <Pick label="Rewrite" value={a.key} onChange={(v) => setA({ ...a, key: v, value: '' })} options={Object.entries(REWRITE)} />
-              {a.key === 'termDays' ? <Field label="Days (7 to 42)" type="number" value={a.value} onInput={(v) => set('value', v)} /> : <Pick label="To" value={a.value} onChange={(v) => set('value', v)} empty="Choose" options={a.key === 'voting' ? Object.entries(VOTING).map(([k, v]): [string, string] => [k, v.short]) : [['cast', 'A majority of votes cast'], ['seats', 'A majority of all seats'], ['twothirds', 'Two-thirds']]} />}
-            </>
-          )}
-          {needs.includes('text') && <Field label="Title" value={a.text} onInput={(v) => set('text', v)} placeholder="Hero of the Realm" />}
-          <Btn kind="danger" full disabled={!kind} onClick={send}>{r.type === 'junta' && r.council.length >= 3 ? 'Put it to the council' : 'Decree it'}</Btn>
-        </div>
+      <Sec title="Issue a decree" sub={civil ? 'One a day, under the Government Powers Act. No legitimacy to lose.' : 'One a day. The cost is in legitimacy.'}>
+        <DecreeForm type={r.type} cmd={civil ? 'gov.edict' : 'regime.decree'} council={r.type === 'junta' && r.council.length >= 3} />
       </Sec>
       {heldStories.length > 0 && <Sec title="The censor’s desk">{heldStories.map((s: any) => <Card><div class="kicker" style={{ margin: 0 }}>{w.papers[s.paper]?.name}</div><b>{s.headline}</b><p class="small">{s.body}</p><div class="small muted">By {nm(w, s.by)}</div><div class="grid2" style={{ marginTop: 8 }}><Btn small onClick={() => act('regime.censor', { story: s.id, allow: true }, 'Printed.')}>Let it run</Btn><Btn small kind="danger" onClick={() => act('regime.censor', { story: s.id, allow: false }, 'Struck out.')}>Strike it out</Btn></div></Card>)}</Sec>}
       {r.applicants.length > 0 && <Sec title="Applications for a Party card"><ul class="list">{r.applicants.map((id: string) => <li class="row"><Who id={id} /><span class="row" style={{ gap: 6 }}><Btn small onClick={() => act('regime.admit', { target: id, yes: true }, 'Admitted.')}>Admit</Btn><Btn small kind="plain" onClick={() => act('regime.admit', { target: id, yes: false }, 'Refused.')}>Refuse</Btn></span></li>)}</ul></Sec>}
-      <Sec title="The way out" sub={`Offer to hand back power in return for amnesty. ${arbiter(w) ? `The ${hosTitle(w)} can refuse, which costs you 1.` : 'There is nobody to refuse: it takes effect after a day.'}`}>
-        {r.exit ? <Card>Your offer is on the table until <When at={r.exit.dueAt} />.</Card> : <Btn kind="ghost" full onClick={() => act('regime.exit', {}, 'The offer is made.')}>Offer to hand back power</Btn>}
-      </Sec>
+      {!civil && (
+        <Sec title="The way out" sub={`Offer to hand back power in return for amnesty. ${arbiter(w) ? `The ${hosTitle(w)} can refuse, which costs you 1.` : 'There is nobody to refuse: it takes effect after a day.'}`}>
+          {r.exit ? <Card>Your offer is on the table until <When at={r.exit.dueAt} />.</Card> : <Btn kind="ghost" full onClick={() => act('regime.exit', {}, 'The offer is made.')}>Offer to hand back power</Btn>}
+        </Sec>
+      )}
     </>
   );
 }
@@ -222,7 +240,7 @@ function Resist() {
       <div class="stack">
         <Card>
           <b>The general strike</b>
-          <p class="small" style={{ margin: '4px 0 8px' }}>{r.strikeN ?? r.strike.length} of the {need} signatures it needs. Once it holds there is no payday, and the regime loses 1 legitimacy a day. Nobody can see who has signed, except the secret police if they check your name.</p>
+          <p class="small" style={{ margin: '4px 0 8px' }}>{r.strikeN ?? r.strike.length} of the {need} signatures it needs. Once it holds there is no payday{r.type === 'civil' ? '' : ', and the regime loses 1 legitimacy a day'}. Nobody can see who has signed, except the secret police if they check your name.</p>
           <Btn kind={signed ? 'plain' : undefined} full onClick={() => act('regime.strike', {}, signed ? 'Your name is off it.' : 'Signed.')}>{signed ? 'Take your name off the strike' : 'Sign the strike'}</Btn>
         </Card>
         {r.censorship && (
@@ -248,7 +266,7 @@ function Resist() {
           </Card>
         )}
         {r.type === 'party' && !member && (r.applicants.includes(me) ? <Card>Your application for a Party card is with the Chairman.</Card> : <Btn kind="ghost" full onClick={() => act('regime.apply', {}, 'Application sent.')}>Apply for a Party card (2 crowns a payday; you may stand and hold office)</Btn>)}
-        <p class="small muted" style={{ margin: 0 }}>A counter-coup is planned in the <a href="#/plots">backroom</a>. Once the regime is down to half its legitimacy, two plotters are enough.</p>
+        <p class="small muted" style={{ margin: 0 }}>{r.type === 'civil' ? <>A coup against the Prime Minister is planned in the <a href="#/plots">backroom</a>, and ends every decree in force.</> : <>A counter-coup is planned in the <a href="#/plots">backroom</a>. Once the regime is down to half its legitimacy, two plotters are enough.</>}</p>
       </div>
     </Sec>
   );

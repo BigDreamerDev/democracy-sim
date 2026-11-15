@@ -37,6 +37,7 @@ const monarchy = (w: W) => w.config.hos === 'monarchy';
 const lastPrice = (w: W) => w.economy.prices[w.economy.prices.length - 1];
 // a snap general election in two days, unless one is already under way
 const snapElection = (w: W) => {
+  if (w.acts?.continuity) return gazette(w, 'election', 'A snap election would be called, but the Continuity of Parliament Act forbids it.', '#/house');
   if (Object.values(w.elections).some((e: any) => e.kind === 'general' && e.status === 'open')) return;
   gazette(w, 'election', 'A snap general election is called.', '#/elections');
   callGeneralElection(w, w.now + 2 * DAY);
@@ -49,7 +50,7 @@ const emergency = (w: W) => {
   gazette(w, 'government', `A state of emergency. Parliament is suspended and ${nm(w, w.pm)} rules by decree for 3 days, then the realm votes.`, '#/cabinet');
 };
 // the head of state's time is up: a new one is chosen as the constitution says
-const hosGoes = (w: W) => w.hos.holder && (w.hos.until = w.now + HOUR);
+const hosGoes = (w: W) => w.hos.holder && !w.acts?.protection && (w.hos.until = w.now + HOUR);
 const card = (w: W, about: Id | null, title: string, from: string, viewers: string[]) => addCard(w, { title, about, from, level: 'restricted', viewers });
 
 export const CRISES: Crisis[] = [
@@ -527,7 +528,7 @@ export const CRISES: Crisis[] = [
   {
     id: 'rg_list', title: 'The list gets out', text: 'A clerk has copied the names of everyone the regime is holding, and why. It is on every wall.', needs: (w) => !!w.regime, chainOnly: true,
     options: [
-      { label: 'Free them all', what: 'Open the cells and call it mercy.', effects: ['Every detainee released', 'Legitimacy +1'], run: (w) => (allCitizens(w).forEach((c: any) => detained(w, c.id) && (c.detainedUntil = w.now)), legit(w, 1, 'Opened the cells')) },
+      { label: 'Free them all', what: 'Open the cells and call it mercy.', effects: ['Every detainee released', 'Legitimacy +1'], run: (w) => (allCitizens(w).forEach((c: any) => c.detainedUntil > w.now && (c.detainedUntil = w.now)), legit(w, 1, 'Opened the cells')) },
       { label: 'Call it a forgery', what: 'Nobody believes you.', effects: ['Legitimacy −2'], run: (w) => legit(w, -2, 'Denied the list') },
       { label: 'Hunt the clerk', what: 'Soldiers go door to door.', effects: ['Legitimacy −1', 'Stability −3'], run: (w) => (legit(w, -1, 'Hunted a clerk'), meter(w, 'stability', -3, 'Door-to-door searches')) }
     ]

@@ -1,7 +1,8 @@
 // The backroom: private deals, secret cards (leak, use or burn), coups, exile and pardons. Opens in week 3.
-import { W, Id, DAY, HOUR, fail, newId, chance, cit, nm, own, text as txt, int, clamp, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, meter, needIntrigue, canSeeCard, addCard, isHOS, isMP, isPM, inDanger, holderOf, hasPower, transfer, ca, hosTitle, bump } from './core';
+import { W, Id, DAY, HOUR, fail, newId, chance, cit, nm, own, text as txt, int, clamp, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, meter, needIntrigue, canSeeCard, addCard, isHOS, isMP, isPM, inDanger, holderOf, hasPower, transfer, ca, hosTitle, bump, inForce, inGov, isMinister } from './core';
 import { vacateSeat, clearMinisters, callGeneralElection } from './politics';
 import { takePower, fallRegime } from './regime';
+import { jailByState, plotPunishment, leakBlocked, earlyWarning } from './acts';
 
 // ---------- private deals: written down, never enforced ----------
 export function offerDeal(w: W, actor: Id, to: Id, text: string) {
@@ -41,6 +42,11 @@ export function leakCard(w: W, actor: Id, kid: Id, paperId: Id | null) {
   mustBeFree(w, actor);
   const k = w.cards.find((x: any) => x.id === kid);
   if (!k || !canSeeCard(w, k, actor)) fail('You do not hold that card.');
+  if (leakBlocked(w, actor, k)) {
+    // the Press and Information Act: trying is an offence when the Detention Act is law too
+    if (inForce(w, 'press') && inGov(w, k.about) && inForce(w, 'jail') && jailByState(w, actor, 'Tried to leak a state secret')) return;
+    fail('That card is about the government. It cannot be leaked.');
+  }
   k.state = 'leaked';
   k.leakedBy = actor;
   const paper = paperId ? own(w.papers, paperId) : null;
@@ -66,6 +72,7 @@ export function useCard(w: W, actor: Id, kid: Id, ask: string) {
   if (!k.about) fail('That card is not about anyone in particular.');
   if (k.about === actor) fail('That card is about you.');
   if (!own(ASKS, ask)) fail('Pick what you want.');
+  if (inForce(w, 'protection') && inGov(w, k.about)) fail('Demands against the Prime Minister or a minister are void.');
   if (Object.values(w.demands).some((d: any) => d.card === kid && d.status === 'sent')) fail('You are already using that card.');
   const id = newId(w, 'dm');
   w.demands[id] = { id, from: actor, target: k.about, card: kid, ask, status: 'sent', at: w.now, dueAt: w.now + DAY };
@@ -121,12 +128,14 @@ export function plotNeeds(w: W, p: any) {
   const general = holderOf(w, 'army');
   const scar = w.scars && w.scars.until > w.now ? 1 : 0;
   // a regime that has lost half its legitimacy can be toppled by two people
-  const weak = !!w.regime && w.regime.legit <= Math.ceil(w.regime.legit0 / 2);
-  const need = weak ? 2 : Math.max(2, (w.offices.army ? 3 : 4) - (inDanger(w, 'stability') ? 1 : 0) - scar);
+  const weak = !!w.regime && w.regime.type !== 'civil' && w.regime.legit <= Math.ceil(w.regime.legit0 / 2);
+  const base = weak ? 2 : Math.max(2, (w.offices.army ? 3 : 4) - (inDanger(w, 'stability') ? 1 : 0) - scar);
+  // State Security Act: two more, and never fewer than four
+  const need = inForce(w, 'security') ? Math.max(4, base + 2) : base;
   const hasGeneral = !!w.offices.army && !!general && p.members.includes(general);
   const chest = p.chest || 0;
   const preps = [hasGeneral, !!p.backer, chest >= CHEST_FULL].filter(Boolean).length;
-  return { need, enough: p.members.length >= need, armyOk: true, hasGeneral, chest, preps, swift: preps >= 2, pretext: pretext(w), risk: Math.min(90, 10 + 5 * p.members.length + 5 * preps + (p.heat || 0)) };
+  return { need, enough: p.members.length >= need, armyOk: true, hasGeneral, chest, preps, swift: preps >= 2 && !inForce(w, 'security'), pretext: pretext(w), risk: Math.min(90, 10 + 5 * p.members.length + 5 * preps + (p.heat || 0)) };
 }
 export function startPlot(w: W, actor: Id, name: string) {
   needIntrigue(w);
@@ -136,6 +145,8 @@ export function startPlot(w: W, actor: Id, name: string) {
   spend(w, actor, 20, 'Started a plot');
   const id = newId(w, 'pl');
   w.plots[id] = { id, name: txt(name, 0, 60, 'plot name') || 'Operation Nightjar', leader: actor, members: [actor], invited: {}, informers: [], chest: 0, paid: {}, backer: null, asked: {}, heat: 0, status: 'planning', at: w.now, nextCheck: w.now + DAY };
+  // the Protection of the State Act, without State Security: found within the hour
+  if (inForce(w, 'protection') && !inForce(w, 'security')) w.plots[id].foundAt = w.now + HOUR;
 }
 export function invitePlot(w: W, actor: Id, pid: Id, target: Id) {
   const p = own(w.plots, pid);
@@ -166,6 +177,7 @@ export function answerPlot(w: W, actor: Id, pid: Id, join: boolean, how?: unknow
   }
   p.invited[actor] = 'joined';
   p.members.push(actor);
+  earlyWarning(w, p);
 }
 // the Security Service acts on its informer: every plotter but the informers goes into exile
 export function raidPlot(w: W, actor: Id, pid: Id) {
@@ -178,11 +190,14 @@ export function raidPlot(w: W, actor: Id, pid: Id) {
 // one a day: is this person in a plot? The answer is true, and only the asker sees it
 export function investigate(w: W, actor: Id, target: Id) {
   needIntrigue(w);
-  if (!w.offices.security) fail('This needs a Security Service.');
+  const acting = inForce(w, 'security') && isPM(w, actor) && !holderOf(w, 'security');
+  if (!w.offices.security && !acting) fail('This needs a Security Service.');
   if (!hasPower(w, actor, 'intel') && !(isPM(w, actor) && !holderOf(w, 'security'))) fail('Only the Director of the Security Service investigates.');
   cit(w, target);
   if (target === actor) fail('Pick someone else.');
-  if (w.probeAt && w.now - w.probeAt < DAY) fail('One investigation a day.');
+  // State Security Act: the PM may make two a day while there is no Director
+  const per = inForce(w, 'security') && isPM(w, actor) ? 2 : 1;
+  if (w.probes.filter((x: any) => x.by === actor && w.now - x.at < DAY).length >= per) fail(per === 1 ? 'One investigation a day.' : 'Two investigations a day.');
   w.probeAt = w.now;
   const yes = Object.values(w.plots).some((p: any) => p.status === 'planning' && p.members.includes(target));
   w.probes.unshift({ id: newId(w, 'pb'), by: actor, target, at: w.now, yes });
@@ -228,11 +243,12 @@ export function abandonPlot(w: W, actor: Id, pid: Id) {
   refundChest(w, p);
   p.status = 'abandoned';
 }
-export function failPlot(w: W, p: any, why: string, spare: Id[] = []) {
+export function failPlot(w: W, p: any, why: string, spare: Id[] = [], auto = false) {
   p.status = 'failed';
   loseChest(w, p, 'Seized from plotters');
   const out = p.members.filter((m: Id) => !spare.includes(m));
-  gazette(w, 'crisis', `A coup plot is uncovered (${why}). ${out.map((m: Id) => nm(w, m)).join(', ')} go${out.length === 1 ? 'es' : ''} into exile for a week.`, '#/exile');
+  const how = plotPunishment(w, auto);
+  gazette(w, 'crisis', `A coup plot is uncovered (${why}). ${out.map((m: Id) => nm(w, m)).join(', ')} ${how === 'jail' ? `${out.length === 1 ? 'is' : 'are'} detained in the Realm Jail` : how === 'forever' ? `${out.length === 1 ? 'goes' : 'go'} into exile, with no end date` : `go${out.length === 1 ? 'es' : ''} into exile for a week`}.`, how === 'jail' ? '#/jail' : '#/exile');
   meter(w, 'stability', -5, 'A coup plot was uncovered');
   spare.forEach((m: Id) => {
     earn(w, m, 10, 'Informed on a plot');
@@ -242,7 +258,8 @@ export function failPlot(w: W, p: any, why: string, spare: Id[] = []) {
   });
   out.forEach((m: Id) => {
     const c = w.citizens[m];
-    c.exiledUntil = w.now + 7 * DAY;
+    if (how === 'jail' && jailByState(w, m, p.name)) return void (approve(w, m, -15), stamp(w, m, 'Traitor', p.name, 'bad'));
+    c.exiledUntil = w.now + (how === 'forever' ? 36500 : 7) * DAY;
     c.exileNoted = false;
     c.asylum = null;
     approve(w, m, -15);
@@ -252,6 +269,12 @@ export function failPlot(w: W, p: any, why: string, spare: Id[] = []) {
     if (w.pm === m && !w.regime) w.pm = null;
     Object.values(w.offices).forEach((o: any) => o.holder === m && (o.holder = null));
   });
+}
+// the Protection of the State Act: every plot is found an hour after it starts (unless State Security governs coups)
+export function autoFind(w: W, p: any) {
+  p.foundAt = null;
+  if (p.status !== 'planning' || !inForce(w, 'protection') || inForce(w, 'security')) return;
+  failPlot(w, p, 'it was found within the hour, as the law provides', [], true);
 }
 export function checkPlot(w: W, p: any) {
   p.nextCheck = w.now + DAY;
@@ -267,20 +290,22 @@ export function launchCoup(w: W, actor: Id, pid: Id) {
   if (!p || p.status !== 'planning' || p.leader !== actor) fail('Only the leader can launch it.');
   if (w.coup) fail('A coup is already under way.');
   if (w.phase !== 'running') fail('There is nothing to seize yet.');
-  if (w.regime && (w.regime.leader === actor || w.regime.council.includes(actor))) fail('You are the regime.');
+  if (w.regime && (w.regime.leader === actor || w.regime.council.includes(actor))) fail(w.regime.type === 'civil' ? 'You are the government.' : 'You are the regime.');
   const r = plotNeeds(w, p);
   if (!r.enough) fail(`You need ${r.need} plotters.`);
   const to = watcher(w);
   if ((p.informers || []).length && to && !p.members.includes(to)) return failPlot(w, p, 'the Security Service was waiting', p.informers);
   loseChest(w, p, 'The plotters’ war chest');
+  // State Security Act: a minister in the plot loses their post the moment it launches
+  if (inForce(w, 'security')) p.members.forEach((m: Id) => Object.values(w.offices).forEach((o: any) => o.fill === 'pm' && o.holder === m && (o.holder = null)));
   if (r.swift) return seize(w, p, { swift: true, margin: 0, declared: {} });
   p.status = 'launched';
-  w.coup = { plot: p.id, name: p.name, leader: actor, plotters: p.members.slice(), defected: [], declared: {}, startedAt: w.now, endsAt: w.now + NIGHT, backer: p.backer || null, pretext: r.pretext, chest: p.chest || 0, against: w.regime ? 'regime' : 'government' };
+  w.coup = { plot: p.id, name: p.name, leader: actor, plotters: p.members.slice(), defected: [], declared: {}, startedAt: w.now, endsAt: w.now + NIGHT, backer: p.backer || null, pretext: r.pretext, chest: p.chest || 0, against: w.regime && w.regime.type !== 'civil' ? 'regime' : 'government' };
   meter(w, 'stability', -8, 'Soldiers in the streets');
   gazette(w, 'crisis', `Coup attempt. ${nm(w, actor)} and ${p.members.length - 1} other${p.members.length === 2 ? '' : 's'} move against the ${w.coup.against}. Every citizen has 12 hours to declare for the coup or against it.`, '#/regime');
 }
 // the General speaks for the Army (3), the head of state for the realm (2), everyone else for themselves
-export const coupWeight = (w: W, id: Id) => (w.offices.army && holderOf(w, 'army') === id ? 3 : isHOS(w, id) ? 2 : 1);
+export const coupWeight = (w: W, id: Id) => (w.offices.army && holderOf(w, 'army') === id ? 3 : isHOS(w, id) || (inForce(w, 'security') && isPM(w, id)) ? 2 : 1);
 export function coupTally(w: W) {
   const k = w.coup;
   if (!k) return { coup: 0, gov: 0, lines: [] as [string, number, string][] };
@@ -288,6 +313,11 @@ export function coupTally(w: W) {
   const add = (side: string, n: number, why: string) => n && lines.push([side, n, why]);
   k.plotters.forEach((m: Id) => add('coup', coupWeight(w, m), `${nm(w, m)}, plotter`));
   Object.entries(k.declared).forEach(([id, side]: any) => w.citizens[id]?.active && add(side, coupWeight(w, id), nm(w, id)));
+  // State Security Act: the security forces, and the PM and ministers unless they say otherwise, stand with the government
+  if (inForce(w, 'security')) {
+    add('gov', 3, 'Loyal security forces');
+    [w.pm, ...Object.values(w.offices).filter((o: any) => o.fill === 'pm').map((o: any) => o.holder)].filter((id, i, a) => id && a.indexOf(id) === i && !k.plotters.includes(id) && !k.declared[id] && w.citizens[id]?.active).forEach((id: Id) => add('gov', coupWeight(w, id), `${nm(w, id)}, ${w.pm === id ? 'Prime Minister' : 'minister'}`));
+  }
   add('coup', k.backer ? 1 : 0, `Backed by ${w.nations[k.backer]?.name}`);
   add('coup', k.pretext ? 1 : 0, 'A realm already in trouble');
   add('coup', k.chest >= CHEST_FULL ? 2 : k.chest >= CHEST_FULL / 2 ? 1 : 0, 'A war chest');
@@ -350,7 +380,8 @@ export function resolveCoup(w: W) {
 function seize(w: W, p: any, o: { swift: boolean; margin: number; declared: Record<Id, string> }) {
   p.status = 'succeeded';
   // against a regime it is a restoration: the regime falls and the plot's leader heads what comes next
-  if (w.regime) {
+  // (against a Prime Minister ruling by decree it is an ordinary coup: takePower undoes the decrees)
+  if (w.regime && w.regime.type !== 'civil') {
     p.members.forEach((m: Id) => stamp(w, m, 'Restorer', p.name, 'good'));
     return fallRegime(w, 'countercoup', p.leader);
   }
@@ -358,8 +389,9 @@ function seize(w: W, p: any, o: { swift: boolean; margin: number; declared: Reco
 }
 // an old-style martial law saved before regimes existed (and the state of emergency from a crisis) still ends this way
 export function endMartialLaw(w: W) {
-  gazette(w, 'election', 'Martial law ends. Polls open for the Restoration election.', '#/elections');
   w.martial = null;
+  if (inForce(w, 'continuity')) return gazette(w, 'government', 'Martial law ends. Under the Continuity of Parliament Act there is no election: the House sits as it is.', '#/house');
+  gazette(w, 'election', 'Martial law ends. Polls open for the Restoration election.', '#/elections');
   callGeneralElection(w, w.now + 2 * DAY);
 }
 

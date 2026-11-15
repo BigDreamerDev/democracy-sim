@@ -6,6 +6,7 @@ import { where, visible, isSectionRoot } from './nav';
 import qrcode from 'qrcode-generator';
 import { useStore, ONLINE, photoUrl, uploadPhoto, removePhoto, toast } from './store';
 import { fmtLeft, fmtTime, nm } from '../../engine/index';
+import { leaderLine } from './state';
 
 export function useRoute(): string[] {
   const get = () => (location.hash.replace(/^#\/?/, '') || '').split('/').filter(Boolean);
@@ -67,7 +68,7 @@ export function Page(p: { kicker?: ComponentChildren; title: ComponentChildren; 
   return (
     <div class={'page' + (p.dark ? ' dark' : '')}>
       <div>
-        <div class="masthead" aria-hidden="true"><span>{p.dark ? 'Eyes only · not for the Gazette' : `${w.config.realmName} · ${fmtTime(w, w.now).split(',')[0]}`}</span></div>
+        <div class="masthead" aria-hidden="true"><span>{p.dark ? 'Eyes only · not for the Gazette' : leaderLine(w) || `${w.config.realmName} · ${fmtTime(w, w.now).split(',')[0]}`}</span></div>
         <SectionNav />
         {back && (
           <a class="back" href={back[0]} style={{ marginTop: 4 }}>

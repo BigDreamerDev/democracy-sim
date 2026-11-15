@@ -12,7 +12,11 @@ export function digest(w: W): string {
   L.push(`*${w.config.realmName}* · ${when}`);
   if (w.clock?.pausedAt) L.push(`⏸ The realm is paused${w.clock.reason ? `: ${w.clock.reason}` : ''}.`);
   if (w.coup) L.push(`⚠ A coup is under way, led by ${nm(w, w.coup.leader)}. Declare for or against it by ${fmtTime(w, w.coup.endsAt)}.`);
-  if (w.regime) L.push(`⚠ ${nm(w, w.regime.leader)} rules by ${({ martial: 'martial law', junta: 'junta', dictatorship: 'dictatorship', party: 'one-party state' } as any)[w.regime.type]}. Legitimacy ${w.regime.legit}.`);
+  if (w.regime?.type === 'civil') L.push(`⚠ The Prime Minister rules by decree under the Government Powers Act.`);
+  else if (w.regime) L.push(`⚠ ${nm(w, w.regime.leader)} rules by ${({ martial: 'martial law', junta: 'junta', dictatorship: 'dictatorship', party: 'one-party state' } as any)[w.regime.type]}. Legitimacy ${w.regime.legit}.`);
+  const jailedN = Object.values(w.citizens).filter((c: any) => c.jail && (c.jail.until == null || c.jail.until > w.now)).length;
+  if (jailedN) L.push(`⚠ ${jailedN} in the Realm Jail.`);
+  if (w.acts?.continuity) L.push('No general elections: the Continuity of Parliament Act is in force.');
   if (w.transition) L.push(`⚠ A provisional government, led by ${nm(w, w.transition.leader)}, until the Restoration election.`);
   if (w.martial && !w.martial.regime) L.push(`⚠ ${w.martial.emergency ? 'State of emergency' : 'Martial law'}, led by ${nm(w, w.martial.leader)}, until ${fmtTime(w, w.martial.until)}.`);
   if (w.phase === 'convention') {

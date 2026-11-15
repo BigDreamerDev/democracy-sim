@@ -14,6 +14,7 @@ import * as M from './markets';
 import * as G from './glory';
 import * as D from './drafts';
 import * as X from './regime';
+import * as K from './acts';
 
 export * from './core';
 export { createWorld, createLiveWorld, NAMES } from './world';
@@ -144,6 +145,22 @@ export const COMMANDS: Record<string, Cmd> = {
   'transition.claim': (w, me) => X.claimPower(w, me),
   'transition.back': (w, me, a) => X.backClaim(w, me, a.who),
   'reckoning.vote': (w, me, a) => X.reckoningVote(w, me, a.verdict),
+  'jail.detain': (w, me, a) => K.detain(w, me, a.target, a.days),
+  'jail.release': (w, me, a) => K.release(w, me, a.target),
+  'gov.decree': (w, me, a) => K.issueDecree(w, me, a),
+  'gov.edict': (w, me, a) => X.edict(w, me, a),
+  'gov.speaker': (w, me, a) => K.appointSpeaker(w, me, a.target),
+  'gov.seat': (w, me, a) => K.fillSeat(w, me, a.target),
+  'gov.unseat': (w, me, a) => K.unseat(w, me, a.target),
+  'party.apply': (w, me) => K.applyNational(w, me),
+  'party.admit': (w, me, a) => K.admitNational(w, me, a.target, a.yes),
+  'party.expel': (w, me, a) => K.expelNational(w, me, a.target),
+  'gov.consent': (w, me, a) => K.consent(w, me, a.prop, a.yes, a.amendment),
+  'gov.deputy': (w, me, a) => K.nameDeputy(w, me, a.target),
+  'gov.hos': (w, me, a) => K.appointHos(w, me, a.target),
+  'press.licence': (w, me, a) => K.licence(w, me, a.paper, a.grant),
+  'press.remove': (w, me, a) => K.removeContent(w, me, a),
+  'q.approve': (w, me, a) => K.approveQuestion(w, me, a.id, a.yes),
   'exile.asylum': (w, me, a) => B.seekAsylum(w, me, a.nation),
   'exile.pardonRequest': (w, me) => B.askPardon(w, me),
   'hos.pardon': (w, me, a) => B.pardon(w, me, a.target),
@@ -196,6 +213,7 @@ export const COMMANDS: Record<string, Cmd> = {
   'me.profile': (w, me, a) => P.setProfile(w, me, a.name, a.bio),
   'admin.bounty': (w, me, a) => R.removeBounty(w, me, a.id, a.reason),
   'admin.forceEnact': (w, me, a) => L.forceEnact(w, me, a.prop, a.reason),
+  'admin.linkAct': (w, me, a) => L.linkAct(w, me, a.prop, a.act),
   'admin.approve': (w, me, a) => {
     if (!w.citizens[me]?.admin) fail('Only the Returning Officer approves sign-ups.');
     const p = w.pending.find((x: any) => x.id === a.id);

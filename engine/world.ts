@@ -30,6 +30,7 @@ function blank(seed: number, now: number): W {
     banks: {}, ventures: [], nations: {}, offers: {}, treaties: {}, asks: [], intel: [],
     army: { readiness: 'ready', loyalty: 3, reasons: [], war: null },
     deals: {}, cards: [], demands: {}, plots: {}, martial: null,
+    acts: { jail: null, decrees: null, continuity: null, unity: null, national: null }, bannedParties: [], seasonDueAt: null, deputy: null, lastPM: null,
     coup: null, regime: null, transition: null, reckoning: null, reckoningDue: null, regimes: [], probes: [], probeAt: 0, scars: null,
     papers: {}, stories: [], frontpages: [], cases: {}, crises: {}, crisisQueue: [],
     meters: { prosperity: 60, stability: 60, log: [] },

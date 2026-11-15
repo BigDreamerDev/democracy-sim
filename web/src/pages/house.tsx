@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { drafts, getDraft, newDraftId, hasContent, saveDraft, deleteDraft, flushDraft, forgetDraft } from '../drafts';
 import { useStore, act, getState, toast as say } from '../store';
 import { go, Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Seg, Opt, Field, Pick, Stamp } from '../ui';
-import { nm, isMP, isPM, isHOS, inGovernment, mps, fmtTime, superMajority, majority, officeWithPower, hosTitle, nextAt } from '../../../engine/index';
+import { nm, isMP, isPM, isHOS, inGovernment, mps, fmtTime, superMajority, majority, officeWithPower, hosTitle, nextAt, hasPower } from '../../../engine/index';
 import { leaderOfOpposition, HOS_METHODS } from '../../../engine/politics';
-import { describe, KINDS, SETTABLE, canVoteOn, passCheck, PASS_RULES, whipLine, canWhip, rebelsOn, amendmentLine, HOSTILE_BACKERS } from '../../../engine/proposals';
+import { describe, KINDS, SETTABLE, canVoteOn, passCheck, PASS_RULES, whipLine, canWhip, rebelsOn, amendmentLine, HOSTILE_BACKERS, LINKABLE } from '../../../engine/proposals';
 import { TEMPLATES, POWERS, FILL } from '../../../engine/offices';
+import { ACT_KEYS, ACTS, describeAct } from '../../../engine/acts';
 
-const STAGE: Record<string, string> = { debate: 'Debate', vote: 'Voting', assent: 'Awaiting assent', override: 'Veto override', hos: 'With the head of state', enacted: 'Law', passed: 'Passed', failed: 'Defeated', vetoed: 'Vetoed', withheld: 'Assent refused', withdrawn: 'Withdrawn' };
+const STAGE: Record<string, string> = { debate: 'Debate', vote: 'Voting', assent: 'Awaiting assent', override: 'Veto override', hos: 'With the head of state', enacted: 'Law', passed: 'Passed', failed: 'Defeated', vetoed: 'Vetoed', withheld: 'Assent refused', withdrawn: 'Withdrawn', consent: 'Waiting for the Prime Minister’s consent', refused: 'Consent refused' };
 const LIVE = ['debate', 'vote', 'assent', 'override', 'hos'];
 // a whole number from 0 to max, for the bill form's crowns fields
 const whole = (v: string, max: number) => Math.min(max, Math.max(0, Math.round(Number(v)) || 0));
@@ -128,6 +129,22 @@ export function Proposals() {
   );
 }
 
+// the Returning Officer: link a bill to the Act its wording describes, so the game carries it out (public, logged)
+function LinkAct({ p }: { p: any }) {
+  const { world: w } = useStore();
+  const [k, setK] = useState('');
+  const open = ACT_KEYS.filter((x) => !w.acts?.[x] && !p.clauses.some((e: any) => e.t === x));
+  if (!open.length) return null;
+  return (
+    <Sec>
+      <Card kind="dashed">
+        <div class="small" style={{ fontWeight: 700 }}>Returning Officer: link this bill to an Act</div>
+        <p class="small muted" style={{ margin: '4px 0 8px' }}>Adds the coded clause, so the game carries out the Act {p.stage === 'enacted' ? 'at once' : 'if this bill becomes law'}. Announced in the Gazette and the admin log, and shown in the bill’s history.</p>
+        <div class="grid2"><Pick value={k} onChange={setK} empty="Pick an Act" options={open.map((x) => [x, `${ACTS[x].name} Act`])} /><Btn kind="danger ghost" onClick={() => k && act('admin.linkAct', { prop: p.id, act: k }, 'Linked and logged.')}>Link</Btn></div>
+      </Card>
+    </Sec>
+  );
+}
 export function Proposal({ id }: { id: string }) {
   const { world: w, me } = useStore();
   const p = w.proposals[id];
@@ -254,6 +271,7 @@ export function Proposal({ id }: { id: string }) {
       )}
       {p.stage === 'withheld' && <Sec><Card kind="warn"><b>Constitutional crisis.</b> The Crown refused assent and Stability fell. The House can censure, or pass a bill removing the Monarch.</Card></Sec>}
 
+      {w.citizens[me].admin && (p.kind === 'bill' || p.kind === 'referendum') && LINKABLE.includes(p.stage) && <LinkAct p={p} />}
       {p.kind !== 'dissolution' && (
         <Sec title={`Debate (${p.speeches.length})`} sub="Hansard, the official record.">
           <ol class="list">
@@ -262,6 +280,7 @@ export function Proposal({ id }: { id: string }) {
                 <div class="row"><b class="serif" style={{ fontSize: 18 }}><Who id={s.by} /></b><span class="small muted">{fmtTime(w, s.at)}{p.editedAt && s.at < p.editedAt ? ' · on the earlier wording' : ''}</span></div>
                 <div class="small" style={{ fontWeight: 700, color: s.side === 'for' ? 'var(--teal)' : s.side === 'against' ? 'var(--red)' : 'var(--muted)' }}>{s.side === 'order' ? 'Order' : s.side[0].toUpperCase() + s.side.slice(1)}</div>
                 <p style={{ margin: '4px 0 0', fontStyle: s.side === 'order' ? 'italic' : 'normal' }}>{s.text}</p>
+                {w.acts?.press && (isPM(w, me) || hasPower(w, me, 'detain')) && <button type="button" class="btn plain small" style={{ marginTop: 6 }} onClick={() => act('press.remove', { prop: p.id, speech: s.id }, 'Removed.')}>Remove</button>}
               </li>
             ))}
             {!p.speeches.length && <li class="muted">No speeches yet.</li>}
@@ -291,11 +310,14 @@ export function Proposal({ id }: { id: string }) {
 }
 
 // ---------- drafting ----------
-const CLAUSES: [string, string][] = [
+export const CLAUSES: [string, string][] = [
   ['text', 'A rule in words'], ['office', 'Create an office'], ['set', 'Change a number'], ['budget', 'Set an office budget'], ['abolish', 'Abolish an office'],
   ['permit', 'Allow banks'], ['treaty', 'Ratify a treaty'], ['breakTreaty', 'Break a treaty'], ['repeal', 'Repeal a law'],
   ['constitution', 'Change the constitution'], ['removeHos', 'Remove the head of state'], ['war', 'Declare war'], ['peace', 'Make peace'],
-  ['job', 'Create a civic job (paid wage)'], ['zone', 'Add a Streets safe zone']
+  ['job', 'Create a civic job (paid wage)'], ['zone', 'Add a Streets safe zone'],
+  ['jail', 'Act: Public Order and Detention (the Realm Jail)'], ['decrees', 'Act: Government Powers (rule by decree)'],
+  ['continuity', 'Act: Continuity of Parliament (no more elections)'], ['unity', 'Act: National Unity (one party)'],
+  ['protection', 'Act: Protection of the State'], ['press', 'Act: Press and Information'], ['security', 'Act: State Security']
 ];
 export function NewProposal({ query }: { query: URLSearchParams }) {
   const { world: w, me } = useStore();
@@ -601,7 +623,7 @@ function safe(w: any, e: any) {
     return '';
   }
 }
-function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; onChange: (e: any) => void; onRemove?: () => void }) {
+export function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; onChange: (e: any) => void; onRemove?: () => void }) {
   const { world: w } = useStore();
   const defaults: Record<string, any> = {
     text: { t: 'text', text: '' },
@@ -618,7 +640,14 @@ function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; onChang
     war: { t: 'war', nation: 'kessmark' },
     peace: { t: 'peace', nation: w.army.war || 'kessmark' },
     job: { t: 'job', title: '', pay: 5 },
-    zone: { t: 'zone', text: '' }
+    zone: { t: 'zone', text: '' },
+    jail: { t: 'jail' },
+    decrees: { t: 'decrees' },
+    continuity: { t: 'continuity' },
+    unity: { t: 'unity' },
+    protection: { t: 'protection' },
+    press: { t: 'press' },
+    security: { t: 'security' }
   };
   const ob = e.office || {};
   const setOb = (k: string, v: any) => onChange({ ...e, template: null, office: { ...ob, [k]: v } });
@@ -627,6 +656,7 @@ function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; onChang
       <div class="row"><b class="serif" style={{ fontSize: 20 }}>Clause {n}</b>{onRemove && <button type="button" class="btn plain small" onClick={onRemove}>Remove</button>}</div>
       <div class="stack" style={{ marginTop: 8 }}>
         <Pick value={e.t} onChange={(t) => onChange(defaults[t])} options={CLAUSES} />
+        {ACT_KEYS.includes(e.t) && <p class="small" style={{ margin: 0 }}>{w.acts?.[e.t] ? <b>Already law ({w.acts[e.t]}). </b> : 'The game carries all of this out the moment it becomes law. '}{describeAct(e.t)}</p>}
         {e.t === 'text' && <Field label="The rule" area value={e.text} onInput={(v) => onChange({ ...e, text: v })} placeholder="e.g. The second Friday of every month is a public holiday." />}
         {e.t === 'office' && (
           <>

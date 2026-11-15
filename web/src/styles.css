@@ -864,3 +864,52 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .seat.rebel { box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--red); }
 .toast.update { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
 .update-go { font: inherit; font-weight: 700; padding: 6px 12px; border: 0; border-radius: 3px; background: var(--paper); color: var(--ink); cursor: pointer; }
+
+/* state stock: the realm is a dictatorship in all but name (web/src/state.ts). Oxblood for teal, colder paper. */
+:root[data-state] {
+  --paper: #E9E7E2; --soft: #DEDAD3; --rule: #CBC2B8;
+  --teal: #7A1F1F; --teal-dark: #4E1212; --teal-tint: #F1E2DE; --passport: #5A1616; --on-passport: #F1ECE6;
+}
+:root[data-state][data-theme="dark"] {
+  --paper: #161112; --soft: #2A1E1F; --rule: #46302F;
+  --teal: #E08A7E; --teal-dark: #F2B3A8; --teal-tint: #33201F; --passport: #4A1515; --on-passport: #F1E5E1;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-state]:not([data-theme="light"]) {
+    --paper: #161112; --soft: #2A1E1F; --rule: #46302F;
+    --teal: #E08A7E; --teal-dark: #F2B3A8; --teal-tint: #33201F; --passport: #4A1515; --on-passport: #F1E5E1;
+  }
+}
+:root[data-state] .masthead { color: var(--teal); }
+.leader-poster { position: relative; display: flex; align-items: center; gap: 16px; margin: 16px 0 4px; padding: 18px 18px 18px 16px; border: 2px solid var(--ink); border-radius: 3px; background: var(--teal); color: var(--on-accent); text-decoration: none; box-shadow: 4px 4px 0 var(--shadow); overflow: hidden; }
+.leader-poster .seal { flex: none; }
+.leader-kicker { font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; opacity: .85; }
+.leader-name { font-family: var(--serif); font-size: 38px; line-height: 1; margin: 4px 0 6px; }
+.leader-line { font-size: 13px; opacity: .9; }
+.leader-stamp { position: absolute; right: -6px; bottom: 10px; transform: rotate(-12deg); padding: 3px 10px; border: 2px solid currentColor; border-radius: 3px; font-size: 11px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; opacity: .55; }
+
+/* state stock, a little heavier: a slogan band, a sunburst behind the leader, a darker night */
+:root[data-state] { --grain: .09; }
+:root[data-state][data-theme="dark"] { --paper: #141012; --card: #1C1517; --field: #161113; --soft: #2A1E1F; --rule: #46302F; --ink: #EAE2D8; --muted: #B3A69B;
+  --teal: #D2685A; --teal-dark: #E8C46A; --teal-tint: #2E1A19; --gold: #E3C16F; --shadow: #050304; }
+@media (prefers-color-scheme: dark) {
+  :root[data-state]:not([data-theme="light"]) { --paper: #141012; --card: #1C1517; --field: #161113; --soft: #2A1E1F; --rule: #46302F; --ink: #EAE2D8; --muted: #B3A69B;
+    --teal: #D2685A; --teal-dark: #E8C46A; --teal-tint: #2E1A19; --gold: #E3C16F; --shadow: #050304; }
+}
+.ticker { margin: 0 calc(-1 * var(--mx, 18px)) 14px; overflow: hidden; background: #1A1213; color: #E3C16F; border-bottom: 2px solid var(--teal); font: 700 11px/1 var(--sans); letter-spacing: .18em; white-space: nowrap; }
+.ticker div { display: inline-flex; padding: 7px 0; animation: ticker 70s linear infinite; }
+@keyframes ticker { to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) { .ticker div { animation: none; } }
+:root[data-state] .masthead { color: var(--teal); }
+:root[data-state] .masthead::before, :root[data-state] .masthead::after { border-color: var(--teal); }
+:root[data-state] .status-banner { background: #1A1213; color: #E3C16F; border: 0; border-left: 4px solid var(--teal); }
+:root[data-state] .status-banner a { color: #E3C16F; }
+.leader-poster { min-height: 130px; }
+.leader-poster > *:not(.leader-rays) { position: relative; z-index: 1; }
+.leader-rays { position: absolute; left: -60px; top: 50%; width: 300px; height: 300px; transform: translateY(-50%); background: repeating-conic-gradient(from 0deg, rgba(255, 236, 200, .07) 0 6deg, transparent 6deg 15deg); border-radius: 50%; pointer-events: none; }
+:root[data-state] .leader-poster { background: linear-gradient(160deg, var(--teal) 0%, #5A1616 100%); }
+:root[data-state][data-theme="dark"] .leader-poster { background: linear-gradient(160deg, #8E2A22 0%, #4A1212 100%); }
+@media (prefers-color-scheme: dark) { :root[data-state]:not([data-theme="light"]) .leader-poster { background: linear-gradient(160deg, #8E2A22 0%, #4A1212 100%); } }
+:root[data-state] .leader-name { color: #FFF6E8; }
+:root[data-state] .leader-kicker, :root[data-state] .leader-stamp { color: #E3C16F; }
+:root[data-state] .leader-poster { color: #FFF6E8; }

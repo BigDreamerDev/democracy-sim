@@ -21,6 +21,7 @@ export const TABS: Tab[] = [
     { id: 'questions', label: 'Questions', href: '#/questions', routes: ['questions'] },
     { id: 'government', label: 'Government', href: '#/government', routes: ['government', 'cabinet', 'offices', 'office', 'hos'] },
     { id: 'laws', label: 'Laws', href: '#/laws', routes: ['laws', 'law'] },
+    { id: 'powers', label: 'Powers', href: '#/powers', routes: ['powers'], show: (w) => !!(w.acts && (w.acts.jail || w.acts.decrees || w.acts.continuity || w.acts.unity || w.acts.protection || w.acts.press || w.acts.security)) },
     { id: 'regime', label: 'Regime', href: '#/regime', routes: ['regime'], show: (w) => !!(w.coup || w.regime || w.transition || w.reckoning || w.regimes?.length) }
   ] },
   { id: 'politics', label: 'Politics', icon: 'politics', href: '#/elections', sections: [
@@ -35,6 +36,7 @@ export const TABS: Tab[] = [
     { id: 'world', label: 'World', href: '#/world', routes: ['world', 'foreign', 'nation', 'security', 'army'] },
     { id: 'society', label: 'Society', href: '#/society', routes: ['society', 'press', 'court', 'case', 'crises', 'crisis'] },
     { id: 'backroom', label: 'Backroom', href: '#/backroom', routes: ['backroom', 'plots', 'exile'], count: (w, me) => (intrigueOpen(w) ? w.cards.filter((k: any) => canSeeCard(w, k, me)).length || null : null) },
+    { id: 'jail', label: 'Realm Jail', href: '#/jail', routes: ['jail'], show: (w) => !!w.acts?.jail || Object.values(w.citizens).some((c: any) => c.jail), count: (w) => Object.values(w.citizens).filter((c: any) => c.jail && (c.jail.until == null || c.jail.until > w.now)).length || null },
     { id: 'streets', label: 'Streets', href: '#/streets', routes: ['streets', 'hunt', 'market', 'tag', 'meet'] }
   ] },
   { id: 'you', label: 'You', icon: 'you', href: '#/you', sections: [
@@ -78,6 +80,8 @@ const PARTS: [string, string, string, string][] = [
   ['#/press', 'The press', 'society', 'newspapers front page story leak scandal'],
   ['#/court', 'Supreme Court', 'society', 'case judge lawsuit sue justice'],
   ['#/plots', 'Plots', 'backroom', 'coup conspiracy overthrow'],
+  ['#/jail', 'The Realm Jail', 'jail', 'detained detention prison prisoners'],
+  ['#/powers', 'Government powers', 'powers', 'decree continuity national party unity acts'],
   ['#/regime', 'Coups and regimes', 'regime', 'coup junta dictatorship martial law strike decree reckoning'],
   ['#/exile', 'Exile', 'backroom', 'banished traitor pardon'],
   ['#/season', 'This season', 'honours', 'leaderboard awards ranking'],

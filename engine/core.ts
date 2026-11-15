@@ -64,7 +64,16 @@ export const nm = (w: W, id: Id | null | undefined) => (id && w.citizens[id] ? w
 export const allCitizens = (w: W): any[] => Object.values(w.citizens).filter((c: any) => c.active);
 export const exiled = (w: W, id: Id) => !!w.citizens[id]?.exiledUntil && w.citizens[id].exiledUntil > w.now;
 // held by a regime: they can read everything and write a prison letter, and nothing else, until released
-export const detained = (w: W, id: Id) => !!w.citizens[id]?.detainedUntil && w.citizens[id].detainedUntil > w.now;
+// two kinds: held by a regime (c.detainedUntil, a few days at most) and jailed under the Public Order and Detention Act
+// (c.jail, often with no end). detained() means either; regime-only rules (pardons, jailbreaks) use held()
+export const held = (w: W, id: Id) => !!w.citizens[id]?.detainedUntil && w.citizens[id].detainedUntil > w.now;
+export const jailed = (w: W, id: Id) => { const j = w.citizens[id]?.jail; return !!j && (j.until == null || j.until > w.now); };
+export const detained = (w: W, id: Id) => held(w, id) || jailed(w, id);
+// an Act passed with one of the special clauses (acts.ts) is in force while w.acts[key] holds its law number
+export const inForce = (w: W, key: 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security') => !!w.acts?.[key];
+// a minister: anyone holding an office the Prime Minister appoints
+export const isMinister = (w: W, id: Id) => Object.values(w.offices).some((o: any) => o.fill === 'pm' && o.holder === id);
+export const inGov = (w: W, id: Id | null | undefined) => !!id && (w.pm === id || isMinister(w, id));
 // barred from standing or holding office (a sentence at a reckoning, or lustration after a regime falls)
 export const barred = (w: W, id: Id) => !!w.citizens[id]?.barredUntil && w.citizens[id].barredUntil > w.now;
 export function mustBeFree(w: W, id: Id) {
@@ -197,7 +206,8 @@ export const inDanger = (w: W, key: string) => (key === 'standing' ? standing(w)
 // ---------- a regime's legitimacy: its lifeline. At zero it falls (regime.ts) ----------
 export function legit(w: W, d: number, why: string) {
   const r = w.regime;
-  if (!r || !d) return;
+  // rule by decree under the Government Powers Act has no legitimacy to lose
+  if (!r || !d || r.type === 'civil') return;
   const before = r.legit;
   r.legit = clamp(Math.round(before + d), 0, 20);
   r.log.unshift({ at: w.now, d: r.legit - before, why });

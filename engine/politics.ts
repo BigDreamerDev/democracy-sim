@@ -2,7 +2,8 @@
 // parties, forming a government, coalitions, the shadow cabinet, seasons, ambitions and weekly objectives.
 import {
   W, Id, DAY, HOUR, fail, newId, pick, rand, shuffle, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, stamp, approve,
-  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal, fmtDay, bump, adminDid, own, text, barred, detained, legit } from './core';
+  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal, fmtDay, bump, adminDid, own, text, barred, detained, legit, inForce } from './core';
+import { national } from './acts';
 import { openMarket, settleMarket } from './markets';
 import { seasonAwards } from './glory';
 import { leave } from './streets';
@@ -364,20 +365,24 @@ export function newElection(w: W, e: any) {
   return el;
 }
 export function callGeneralElection(w: W, closesAt: number) {
+  // under the Continuity of Parliament Act nothing calls one: not a term ending, a dissolution, a crisis or a regime falling
+  if (inForce(w, 'continuity')) return false;
   const g = newElection(w, { kind: 'general', title: `General election for the ${ordinal(w.season.n + 1)} Parliament`, winners: w.config.seats, closesAt });
   const s = newElection(w, { kind: 'speaker', title: 'Election for Speaker', closesAt });
   // sitting MPs and the Speaker stand again automatically; they can withdraw
   // (not the barred or the detained, and in a one-party state only Party members)
-  const may = (m: Id) => !exiled(w, m) && !barred(w, m) && !detained(w, m) && !(w.regime?.type === 'party' && w.citizens[m].party !== w.regime.party);
+  const nid = national(w);
+  const may = (m: Id) => !exiled(w, m) && !barred(w, m) && !detained(w, m) && !(w.regime?.type === 'party' && w.citizens[m].party !== w.regime.party) && !(nid && w.citizens[m].party !== nid);
   mps(w).forEach((m) => may(m) && (g.candidates[m] = { id: m, party: w.citizens[m].party, at: w.now, incumbent: true }));
   if (w.speaker && may(w.speaker)) s.candidates[w.speaker] = { id: w.speaker, at: w.now, incumbent: true };
-  if (w.config.hos === 'republic' && w.config.hosMethod === 'citizens') newElection(w, { kind: 'hos', title: 'Election for President', closesAt });
+  if (w.config.hos === 'republic' && w.config.hosMethod === 'citizens' && !inForce(w, 'protection')) newElection(w, { kind: 'hos', title: 'Election for President', closesAt });
   w.nextGeneralAt = null;
   gazette(w, 'election', `Polls are open. The ${w.config.seats} candidates with the most votes nationwide win seats.`, '#/elections');
+  return true;
 }
 export function canVote(w: W, e: any, id: Id) {
   const c = w.citizens[id];
-  if (!c || !c.active || exiled(w, id) || e.status !== 'open') return false;
+  if (!c || !c.active || exiled(w, id) || detained(w, id) || e.status !== 'open') return false;
   if (e.voters === 'mps') return isMP(w, id);
   if (e.voters.startsWith('party:')) return c.party === e.voters.slice(6);
   return true;
@@ -390,6 +395,7 @@ export function stand(w: W, actor: Id, eid: Id) {
   if (e.stand.startsWith('party:') && c.party !== e.stand.slice(6)) fail('Only party members can stand.');
   if (e.kind !== 'leadership' && barred(w, actor)) fail('You are barred from standing for office for now.');
   if (w.regime?.type === 'party' && ['general', 'speaker', 'office'].includes(e.kind) && c.party !== w.regime.party) fail('Only members of the Party may stand.');
+  if (national(w) && c.party !== national(w)) fail('Only members of the National Party may stand.');
   if (e.candidates[actor]) fail('You are already standing.');
   if ((e.withdrawn || []).includes(actor)) fail('You withdrew from this election. You can’t stand again in it.');
   e.candidates[actor] = { id: actor, party: c.party, at: w.now };
@@ -624,9 +630,12 @@ export function closeElection(w: W, e: any) {
 }
 // an empty seat goes to the next candidate in line from the last general election
 export function countback(w: W) {
+  // under the Continuity of Parliament Act an empty seat waits for the Prime Minister to fill it
+  if (inForce(w, 'continuity')) return;
+  const nid = national(w);
   w.seats.forEach((s: Id | null, i: number) => {
     if (s) return;
-    const next = (w.lastRanked || []).find((c: Id) => !w.seats.includes(c) && w.speaker !== c && w.hos.holder !== c && w.citizens[c]?.active && !exiled(w, c) && !barred(w, c) && !(w.regime?.type === 'party' && w.citizens[c].party !== w.regime.party));
+    const next = (w.lastRanked || []).find((c: Id) => !w.seats.includes(c) && w.speaker !== c && w.hos.holder !== c && w.citizens[c]?.active && !exiled(w, c) && !barred(w, c) && !detained(w, c) && !(w.regime?.type === 'party' && w.citizens[c].party !== w.regime.party) && !(nid && w.citizens[c].party !== nid));
     if (next) {
       w.seats[i] = next;
       stamp(w, next, 'Took a seat', 'On countback', 'bad');
@@ -651,8 +660,10 @@ export function setHos(w: W, id: Id | null, until: number | null) {
   gazette(w, 'hos', `${nm(w, id)} becomes ${hosTitle(w)}.`, '#/hos');
 }
 export function startHosSelection(w: W) {
+  // under the Protection of the State Act the Prime Minister appoints the next head of state
+  if (inForce(w, 'protection')) return gazette(w, 'hos', `The Prime Minister will appoint the next ${hosTitle(w)}.`, '#/powers');
   const m = w.config.hosMethod;
-  const pool = allCitizens(w).filter((c: any) => !exiled(w, c.id)).map((c: any) => c.id);
+  const pool = allCitizens(w).filter((c: any) => !exiled(w, c.id) && !detained(w, c.id)).map((c: any) => c.id);
   if (m === 'life' || m === 'citizens') {
     if (!Object.values(w.elections).some((e: any) => e.kind === 'hos' && e.status === 'open'))
       newElection(w, { kind: 'hos', title: w.config.hos === 'monarchy' ? 'Election of the Monarch, for life' : 'Election for President', closesAt: w.now + 2 * DAY });
@@ -684,6 +695,8 @@ export function foundParty(w: W, actor: Id, name: string, colour: string) {
   mustBeFree(w, actor);
   name = text(name, 3, 40, 'party name');
   if (typeof colour !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(colour)) fail('Pick a colour.');
+  if (national(w)) fail('No new party can be founded. The National Unity Act allows only the National Party.');
+  if ((w.bannedParties || []).some((b: any) => b.name === name.toLowerCase() || b.colour === colour.toLowerCase())) fail('That party’s name or colour was outlawed, and can’t be used again.');
   if (Object.values(w.parties).some((p: any) => p.name.toLowerCase() === name.toLowerCase() && p.status !== 'lapsed')) fail('That name is taken.');
   transfer(w, ca(actor), 'treasury', 10, `Registered ${name}`);
   const id = newId(w, 'p');
@@ -713,6 +726,8 @@ export function joinParty(w: W, actor: Id, pid: Id | null) {
   const c = cit(w, actor);
   if (pid && own(w.parties, pid)?.status !== 'active') fail('That party is not open.');
   if (pid && w.regime?.type === 'party' && pid === w.regime.party) fail('Apply to the Party. The Chairman decides who gets a card.');
+  if (pid && pid === national(w)) fail('Apply to join the National Party. The Prime Minister decides.');
+  if (!pid && c.party && c.party === national(w) && w.pm === actor) fail('The Prime Minister leads the National Party while in office.');
   if (!pid && w.regime?.type === 'party' && w.regime.leader === actor) fail('The Chairman cannot leave the Party.');
   const old = c.party && w.parties[c.party];
   c.party = pid;
@@ -757,11 +772,13 @@ function openContest(w: W, p: any, incumbent: boolean) {
   if (incumbent && p.leader) e.candidates[p.leader] = { id: p.leader, party: p.id, at: w.now };
   return e;
 }
+const noChallenges = (w: W, pid: Id) => pid && pid === national(w) && fail('The Prime Minister leads the National Party. There are no challenges or contests.');
 export function challengeLeader(w: W, actor: Id) {
   mustBeFree(w, actor);
   const c = cit(w, actor);
   const p = c.party && w.parties[c.party];
   if (!p || p.status !== 'active') fail('Join a party first.');
+  noChallenges(w, p.id);
   if (p.leader === actor) fail('You already lead it.');
   if (contestOpen(w, p.id)) fail('A leadership contest is already running.');
   if (p.challenge?.status === 'open') fail('A challenge is already gathering names. Sign it instead.');
@@ -773,6 +790,7 @@ export function signChallenge(w: W, actor: Id, pid: unknown) {
   const p = own(w.parties, pid);
   const ch = p?.challenge;
   if (!ch || ch.status !== 'open') fail('There’s no challenge to sign.');
+  noChallenges(w, p.id);
   if (w.citizens[actor]?.party !== p.id) fail('Only members can sign.');
   if (p.leader === actor) fail('You can’t sign a challenge to yourself.');
   if (!ch.signed.includes(actor)) ch.signed.push(actor);
@@ -792,6 +810,7 @@ export function standDown(w: W, actor: Id) {
   const c = cit(w, actor);
   const p = c.party && w.parties[c.party];
   if (!p || p.leader !== actor) fail('You don’t lead a party.');
+  noChallenges(w, p.id);
   if (contestOpen(w, p.id)) fail('A leadership contest is already running.');
   if (members(w, p.id).length < 2) fail('You’re its only member. Leave it instead.');
   if (p.challenge?.status === 'open') p.challenge.status = 'lapsed';
@@ -807,6 +826,7 @@ export function planBreakaway(w: W, actor: Id, a: any) {
   const c = cit(w, actor);
   const from = c.party && w.parties[c.party];
   if (!from || from.status !== 'active') fail('You can only break away from a party you’re in.');
+  if (national(w)) fail('The National Party cannot split, and no new party can be founded. You can leave it.');
   const name = text(a?.name, 3, 40, 'party name');
   if (typeof a?.colour !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(a.colour)) fail('Pick a colour.');
   if (Object.values(w.parties).some((p: any) => p.name.toLowerCase() === name.toLowerCase() && p.status !== 'lapsed')) fail('That name is taken.');
@@ -831,6 +851,7 @@ export function launchBreakaway(w: W, actor: Id, bid: unknown) {
   mustBeFree(w, actor);
   const b = own(w.breakaways, bid);
   if (!b || b.by !== actor || b.status !== 'plotting') fail('That isn’t yours to launch.');
+  if (national(w)) fail('No new party can be founded under the National Unity Act.');
   const from = w.parties[b.from];
   const going = b.signed.filter((x: Id) => w.citizens[x]?.party === b.from && w.citizens[x].active);
   const mpsGoing = going.filter((x: Id) => isMP(w, x));
@@ -879,14 +900,14 @@ export function contenders(w: W) {
   const ids = new Set<Id>();
   Object.values(w.parties).forEach((p: any) => p.status === 'active' && p.leader && ids.add(p.leader));
   mps(w).forEach((m) => ids.add(m));
-  return [...ids].filter((l) => !exiled(w, l) && w.hos.holder !== l && w.citizens[l]?.active);
+  return [...ids].filter((l) => !exiled(w, l) && !detained(w, l) && w.hos.holder !== l && w.citizens[l]?.active);
 }
 export function clearMinisters(w: W) {
   Object.values(w.offices).forEach((o: any) => o.fill === 'pm' && (o.holder = null));
 }
 export function formGovernmentAfterElection(w: W) {
   // under a regime an election changes the House, not who rules
-  if (w.regime) return;
+  if (w.regime && w.regime.type !== 'civil') return;
   w.pm = null;
   w.coalition = null;
   w.confidence = null;
@@ -894,7 +915,7 @@ export function formGovernmentAfterElection(w: W) {
   w.pmInviteDue = w.now + DAY;
   w.formingSince = w.now;
   w.hungNoted = false;
-  if (w.config.hos === 'republic' && w.config.hosMethod !== 'citizens') startHosSelection(w);
+  if (w.config.hos === 'republic' && w.config.hosMethod !== 'citizens' && !inForce(w, 'protection')) startHosSelection(w);
   gazette(w, 'government', `The ${hosTitle(w)} will invite whoever commands a majority of ${majority(w)} seats to be Prime Minister. Without one, parties must agree a coalition first.`, '#/cabinet');
 }
 export function invitePM(w: W, actor: Id | null, target: Id) {
@@ -904,6 +925,7 @@ export function invitePM(w: W, actor: Id | null, target: Id) {
   if (!t.active) fail('They are no longer a citizen.');
   if (exiled(w, target)) fail('They are in exile.');
   if (barred(w, target)) fail('They are barred from office for now.');
+  if (detained(w, target)) fail('They are detained.');
   if (!commands(w, target)) {
     const s = supportFor(w, target);
     fail(leaderOfSide(w, sideOf(w, target)) !== target ? `${t.name} doesn’t lead their side, so they can’t be invited.` : w.coalition?.status === 'signed' && w.coalition.sides.includes(sideOf(w, target)) && supportFor(w, target) >= majority(w) ? `The coalition is led by ${sideName(w, w.coalition.lead)}. Invite its leader.` : `${t.name} has ${s} of the ${majority(w)} seats needed. Nobody can be invited until a party or coalition commands a majority.`);
@@ -925,7 +947,7 @@ export function autoInvite(w: W) {
   const best = contenders(w).filter((l) => commands(w, l)).sort((a, b) => supportFor(w, b) - supportFor(w, a))[0];
   if (best) return invitePM(w, null, best);
   const electing = Object.values(w.elections).some((e: any) => e.kind === 'general' && e.status === 'open');
-  if (!electing && w.now - w.formingSince >= FORM_DAYS * DAY) {
+  if (!electing && !inForce(w, 'continuity') && w.now - w.formingSince >= FORM_DAYS * DAY) {
     gazette(w, 'hos', `No party or coalition could command a majority in ${FORM_DAYS} days. The ${hosTitle(w)} dissolves Parliament: a fresh general election closes in 2 days.`, '#/elections');
     meter(w, 'stability', -3, 'A hung parliament');
     w.formingSince = null;
@@ -939,7 +961,7 @@ export function autoInvite(w: W) {
 }
 export function resignPM(w: W, actor: Id) {
   if (!isPM(w, actor)) fail('Only the Prime Minister can resign as PM.');
-  if (w.regime || w.transition) fail(w.regime ? 'A regime does not resign. Offer to hand back power instead.' : 'The provisional government stays until the election.');
+  if ((w.regime && w.regime.type !== 'civil') || w.transition) fail(w.regime && w.regime.type !== 'civil' ? 'A regime does not resign. Offer to hand back power instead.' : 'The provisional government stays until the election.');
   gazette(w, 'government', `${nm(w, actor)} resigns as Prime Minister.`);
   meter(w, 'stability', -4, 'The Prime Minister resigned');
   w.pm = null;
@@ -948,8 +970,10 @@ export function resignPM(w: W, actor: Id) {
   w.pmInviteDue = w.now + DAY;
 }
 export function governmentFalls(w: W) {
+  // under the Protection of the State Act the government cannot fall for lack of confidence
+  if (inForce(w, 'protection')) return void (w.confidence = null);
   // a regime ignores the House, at a price
-  if (w.regime) {
+  if (w.regime && w.regime.type !== 'civil') {
     w.confidence = null;
     return legit(w, -3, 'The House voted no confidence');
   }

@@ -2,7 +2,8 @@
 // The kind only changes who votes and what happens. Also: laws, PM's Questions, formal questions and lobbying.
 import {
   W, Id, DAY, HOUR, fail, newId, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, tick, meter,
-  isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, hasPower, officeWithPower, weekNo, adminDid, bump, own, text, int } from './core';
+  isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, hasPower, officeWithPower, weekNo, adminDid, bump, own, text, int, inForce, inGov } from './core';
+import { ACTS, ACT_KEYS, ENTRENCHED, applyAct, repealAct, describeAct, national, expelNational } from './acts';
 import { TEMPLATES, POWERS, FILL, createOffice } from './offices';
 import { startHosSelection, callGeneralElection, governmentFalls, vacateSeat, HOS_METHODS, countback } from './politics';
 import { addJob, addZone } from './streets';
@@ -27,7 +28,7 @@ export const SETTABLE: Record<string, { label: string; unit: string; min: number
   voteHours: { label: 'Voting length', unit: ' hours', min: 12, max: 48 }
 };
 export const CONSTITUTIONAL = ['constitution', 'removeHos'];
-export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone'];
+export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security'];
 
 export function describe(w: W, e: any): string {
   switch (e.t) {
@@ -66,6 +67,14 @@ export function describe(w: W, e: any): string {
       return `Creates a civic job: ${e.title}. The Treasury pays ${e.pay} crowns each time someone does it, once a week each, signed off by the Chancellor.`;
     case 'zone':
       return `Adds a safe zone to the Streets: ${e.text}.`;
+    case 'jail':
+    case 'decrees':
+    case 'continuity':
+    case 'unity':
+    case 'protection':
+    case 'press':
+    case 'security':
+      return describeAct(e.t);
     case 'war':
       return `Declares war on ${w.nations[e.nation]?.name}.`;
     case 'peace':
@@ -75,7 +84,7 @@ export function describe(w: W, e: any): string {
 }
 
 // every clause is checked in full when tabled, so enacting it later (often by the clock) can never fail
-function checkClause(w: W, e: any) {
+function checkClause(w: W, e: any, byDecree = false) {
   const choose = (v: unknown, list: unknown[], msg: string) => (list.includes(v) ? v : fail(msg));
   switch (e.t) {
     case 'text':
@@ -102,7 +111,8 @@ function checkClause(w: W, e: any) {
       if (!e.office || typeof e.office !== 'object') fail('Describe the new office.');
       e.office = {
         name: text(e.office.name, 3, 40, 'office name'),
-        powers: Array.isArray(e.office.powers) ? [...new Set(e.office.powers.filter((p: unknown) => own(POWERS, p)))] : fail('Pick the office’s powers.'),
+        // (detaining and releasing come only with the Public Order and Detention Act's own Ministry)
+        powers: Array.isArray(e.office.powers) ? [...new Set(e.office.powers.filter((p: unknown) => own(POWERS, p) && p !== 'detain' && p !== 'release'))] : fail('Pick the office’s powers.'),
         fill: choose(e.office.fill ?? 'pm', Object.keys(FILL), 'Pick how the office is filled.'),
         secrecy: choose(e.office.secrecy ?? 'public', ['public', 'restricted', 'secret'], 'Pick public, restricted or secret.'),
         budget: int(e.office.budget ?? 0, 0, 200, 'weekly budget')
@@ -123,6 +133,22 @@ function checkClause(w: W, e: any) {
       break;
     case 'repeal':
       if (typeof e.ref !== 'string' || e.ref.length > 10 || !w.laws.some((l: any) => l.ref === e.ref)) fail('Pick a law to repeal.');
+      // decrees outrank bills: only a later decree can repeal one
+      if (!byDecree && w.laws.find((l: any) => l.ref === e.ref)?.decree) fail('That law was made by decree. Only a later decree can repeal it.');
+      // the Protection of the State Act entrenches itself and the other Acts: only a decree can repeal them
+      if (!byDecree && inForce(w, 'protection') && ENTRENCHED.some((k) => w.acts?.[k] === e.ref)) fail('That Act is entrenched. Only a decree of the Prime Minister can repeal it.');
+      break;
+    case 'removeHos':
+      if (!byDecree && inForce(w, 'protection')) fail('Only a decree of the Prime Minister can remove the head of state.');
+      break;
+    case 'jail':
+    case 'decrees':
+    case 'continuity':
+    case 'unity':
+    case 'protection':
+    case 'press':
+    case 'security':
+      if (inForce(w, e.t)) fail(`The ${ACTS[e.t as 'jail'].name} Act is already law.`);
       break;
     case 'war':
     case 'peace':
@@ -132,6 +158,7 @@ function checkClause(w: W, e: any) {
       const ok: Record<string, unknown[]> = { seats: [3, 5, 7, 9], termDays: [14, 21, 28], hos: ['monarchy', 'republic'] };
       if (e.key === 'hosMethod') ok.hosMethod = (HOS_METHODS[w.config.hos] || []).map((m: any) => m.id);
       if (!own(ok, e.key)) fail('Pick what to change in the constitution.');
+      if ((e.key === 'hos' || e.key === 'hosMethod') && !byDecree && inForce(w, 'protection')) fail('Only a decree of the Prime Minister can change the head of state.');
       choose(e.value, ok[e.key], 'That value isn’t allowed.');
       if (e.label !== undefined) e.label = text(e.label, 0, 40, 'label');
       break;
@@ -139,13 +166,13 @@ function checkClause(w: W, e: any) {
   }
 }
 // every clause checked in full: the same rules for a new proposal and an edited one
-function checkClauses(w: W, kind: string, clauses: any) {
+export function checkClauses(w: W, kind: string, clauses: any, byDecree = false) {
   if (!Array.isArray(clauses)) fail('Clauses must be a list.');
   if (kind === 'bill' && !clauses.length) fail('Add at least one clause.');
   if (clauses.length > 20) fail('A bill can have 20 clauses at most.');
   for (const e of clauses) {
     if (!CLAUSE_TYPES.includes(e?.t)) fail('Unknown kind of clause.');
-    checkClause(w, e);
+    checkClause(w, e, byDecree);
     if (e.t === 'treaty' && !own(w.offers, e.offer)) fail('That treaty offer has expired.');
     if ((e.t === 'war' || e.t === 'peace') && !w.offices.army) fail('War and peace need an Army: pass the Defence Act first.');
     if (e.t === 'permit' && w.permits.banks) fail('Banks are already allowed.');
@@ -157,6 +184,11 @@ export function propose(w: W, actor: Id, a: any) {
   if (w.martial) fail('Parliament is suspended under martial law.');
   const kind = a.kind || 'bill';
   if (!own(KINDS, kind)) fail('Unknown kind of proposal.');
+  if (kind === 'dissolution' && inForce(w, 'continuity')) fail('Parliament cannot be dissolved under the Continuity of Parliament Act.');
+  const guarded = inForce(w, 'protection');
+  if (guarded && kind === 'no_confidence') fail('Motions of no confidence can no longer be tabled.');
+  if (guarded && kind === 'referendum' && !isPM(w, actor)) fail('Only the Prime Minister can call a referendum.');
+  if (guarded && kind === 'censure' && (inGov(w, a.target) || isHOS(w, a.target))) fail('The Prime Minister, ministers and the head of state cannot be censured.');
   // a copy: checking a clause tidies it in place, and the caller's object must not change
   const clauses = kind === 'bill' || kind === 'referendum' ? structuredClone(a.clauses || []) : [];
   let title = kind === 'bill' || kind === 'referendum' ? text(a.title, kind === 'referendum' ? 8 : 4, 120, kind === 'referendum' ? 'question' : 'title') : '';
@@ -187,7 +219,9 @@ export function propose(w: W, actor: Id, a: any) {
   const debateH = a.fast ? 12 : kind === 'no_confidence' || kind === 'confidence' || kind === 'censure' ? 12 : w.config.debateHours;
   w.proposals[id] = {
     id, n: w.propCount, kind, title: own(titles, kind) || title, summary, by: actor, clauses, target: a.target || null,
-    constitutional, voters: kind === 'referendum' || (kind === 'bill' && w.config.billVoters === 'all') ? 'all' : 'mps', rule: w.config.passRule || 'cast', stage: kind === 'dissolution' ? 'hos' : 'debate', at: w.now,
+    constitutional, voters: kind === 'referendum' || (kind === 'bill' && w.config.billVoters === 'all') ? 'all' : 'mps', rule: w.config.passRule || 'cast',
+    // under the Protection of the State Act, anyone but the Prime Minister waits for their consent first
+    stage: kind === 'dissolution' ? 'hos' : guarded && !isPM(w, actor) ? 'consent' : 'debate', consentH: debateH, at: w.now,
     debateEndsAt: w.now + debateH * HOUR, voteEndsAt: null, assentDueAt: null, hosDueAt: kind === 'dissolution' ? w.now + DAY : null,
     speeches: [], votes: {}, casting: null, lobby: 0, result: null, lawRef: null, fast: !!a.fast,
     sponsors, amendments: [], draft: fromDraft
@@ -202,6 +236,7 @@ export function propose(w: W, actor: Id, a: any) {
     approve(w, actor, 2);
     across.forEach((s) => approve(w, s, 1));
   }
+  if (w.proposals[id].stage === 'consent') return (gazette(w, 'proposal', `${nm(w, actor)} asks the Prime Minister’s consent to table: ${w.proposals[id].title}.`, '#/p/' + id), id);
   gazette(w, 'proposal', `${nm(w, actor)} puts a ${across.length ? 'cross-party ' : ''}${KINDS[kind].name.toLowerCase()} to the House${sponsors.length ? `, co-sponsored by ${sponsors.map((s) => nm(w, s)).join(', ')}` : ''}: ${w.proposals[id].title}${constitutional ? ' (constitutional: needs ' + superMajority(w) + ' of ' + w.config.seats + ')' : ''}.`, '#/p/' + id);
   return id;
 }
@@ -231,7 +266,7 @@ export function editProposal(w: W, actor: Id, pid: unknown, a: any) {
 // The author takes it or leaves it; whatever is still waiting when the vote opens lapses.
 const AMEND_OPS = ['change', 'add', 'remove'];
 export function lapseAmendments(p: any) {
-  const open = (p.amendments || []).filter((m: any) => m.status === 'pending' || m.status === 'division');
+  const open = (p.amendments || []).filter((m: any) => m.status === 'pending' || m.status === 'division' || m.status === 'consent');
   open.forEach((m: any) => (m.status = 'lapsed'));
   return open.length;
 }
@@ -246,7 +281,7 @@ export function proposeAmendment(w: W, actor: Id, pid: unknown, a: any) {
   const op = a?.op;
   if (!AMEND_OPS.includes(op)) fail('Change, add or remove a clause.');
   p.amendments ??= [];
-  if (p.amendments.filter((m: any) => m.by === actor && m.status === 'pending').length >= 3) fail('You have 3 amendments waiting on this already.');
+  if (p.amendments.filter((m: any) => m.by === actor && (m.status === 'pending' || m.status === 'consent')).length >= 3) fail('You have 3 amendments waiting on this already.');
   const why = text(a.why, 0, 300, 'reason');
   const index = op === 'add' ? p.clauses.length : int(a.index, 0, p.clauses.length - 1, 'clause number');
   let clause = null;
@@ -255,7 +290,9 @@ export function proposeAmendment(w: W, actor: Id, pid: unknown, a: any) {
     checkClauses(w, p.kind, [clause]);
   } else if (p.kind === 'bill' && p.clauses.length < 2) fail('A bill needs at least one clause.');
   if (op === 'add' && p.clauses.length >= 20) fail('A bill can have 20 clauses at most.');
-  const m = { id: newId(w, 'am'), by: actor, op, index, clause, was: op === 'add' ? null : JSON.stringify(p.clauses[index]), why, status: 'pending', at: w.now, backers: [], whips: {} };
+  // to a government proposal, under the Protection of the State Act: only with the Prime Minister's consent
+  const needsConsent = inForce(w, 'protection') && inGov(w, p.by) && !isPM(w, actor);
+  const m = { id: newId(w, 'am'), by: actor, op, index, clause, was: op === 'add' ? null : JSON.stringify(p.clauses[index]), why, status: needsConsent ? 'consent' : 'pending', at: w.now, backers: [], whips: {} };
   p.amendments.push(m);
   const what = op === 'remove' ? `removing clause ${index + 1}` : op === 'add' ? `a new clause: ${describe(w, clause)}` : `clause ${index + 1} to read: ${describe(w, clause)}`;
   gazette(w, 'proposal', `${nm(w, actor)} proposes an amendment to ${p.title}, ${what}.`, '#/p/' + p.id);
@@ -582,7 +619,8 @@ export function closeVote(w: W, p: any) {
   approve(w, p.by, 3);
   if (p.kind === 'bill') {
     p.stage = 'assent';
-    p.assentDueAt = w.now + 48 * HOUR;
+    // under the Government Powers Act, assent follows within the hour whatever the head of state does
+    p.assentDueAt = w.now + (inForce(w, 'decrees') ? 1 : 48) * HOUR;
     return;
   }
   p.stage = 'passed';
@@ -617,6 +655,12 @@ export function closeVote(w: W, p: any) {
 // whipping. 'free' means a free vote. Without a line, government MPs are measured against the PM's own vote.
 export function whipLine(w: W, p: any, mp: Id): 'aye' | 'no' | null {
   const party = w.citizens[mp]?.party;
+  // the National Party's line is always the Prime Minister's own vote
+  if (party && party === national(w)) {
+    if (!w.pm || mp === w.pm) return null;
+    const v = p.votes?.[w.pm];
+    return v === 'aye' || v === 'no' ? v : null;
+  }
   const set = party && p.whips?.[party]?.line;
   if (set === 'free') return null;
   if (set) return set;
@@ -665,12 +709,16 @@ function trackWhip(w: W, p: any) {
   });
   p.rebels = rebels;
   if (rebels.length) gazette(w, 'government', `${rebels.map((r) => nm(w, r)).join(' and ')} defied the whip.`, '#/p/' + p.id);
+  // under the National Unity Act, voting against the Prime Minister costs you your party card
+  const nid = national(w);
+  if (nid) rebels.forEach((r) => w.citizens[r]?.party === nid && r !== w.pm && expelNational(w, r, r, true));
 }
 export function assent(w: W, actor: Id, pid: Id, yes: boolean) {
   const p = own(w.proposals, pid);
   if (!p || p.stage !== 'assent') fail('Nothing is waiting for assent.');
   if (!isHOS(w, actor)) fail(`Only the ${hosTitle(w)} can do this.`);
   if (yes) return enact(w, p, w.config.hos === 'monarchy' ? 'Royal Assent' : 'signed by the President');
+  if (inForce(w, 'decrees')) fail(`The ${hosTitle(w)} can no longer refuse assent. It becomes law within the hour.`);
   if (w.config.hos === 'monarchy') {
     p.stage = 'withheld';
     meter(w, 'stability', -10, 'The Crown refused assent');
@@ -776,6 +824,7 @@ export function applyClause(w: W, e: any, ref: string) {
         if (x.t === 'office') Object.values(w.offices).forEach((o: any) => o.law === e.ref && delete w.offices[o.id]);
         if (x.t === 'permit') w.permits.banks = false;
         if (x.t === 'job') Object.values(w.jobs).forEach((j: any) => j.law === e.ref && (j.active = false));
+        if (ACT_KEYS.includes(x.t) && w.acts?.[x.t] === e.ref) repealAct(w, x.t);
       });
       break;
     }
@@ -799,6 +848,15 @@ export function applyClause(w: W, e: any, ref: string) {
       w.hos = { holder: null, since: w.now, until: null };
       startHosSelection(w);
       break;
+    case 'jail':
+    case 'decrees':
+    case 'continuity':
+    case 'unity':
+    case 'protection':
+    case 'press':
+    case 'security':
+      applyAct(w, e.t, ref);
+      break;
     case 'war':
       if (!own(w.nations, e.nation)) break;
       w.army.war = e.nation;
@@ -820,12 +878,52 @@ export function answerDissolution(w: W, actor: Id, pid: Id, yes: boolean) {
   dissolve(w, p, yes);
 }
 export function dissolve(w: W, p: any, yes: boolean) {
+  if (yes && inForce(w, 'continuity')) yes = false;
   p.stage = yes ? 'passed' : 'failed';
   if (yes) {
     Object.values(w.elections).forEach((e: any) => e.kind === 'general' && e.status === 'open' && (e.status = 'cancelled'));
     gazette(w, 'hos', 'Parliament is dissolved. A snap general election closes in 2 days.', '#/elections');
     callGeneralElection(w, w.now + 2 * DAY);
   } else gazette(w, 'hos', `The ${hosTitle(w)} refuses to dissolve Parliament.`);
+}
+// a decree under the Government Powers Act: law at once, with a number, and a record like a bill's
+export function enactDecree(w: W, actor: Id, title: string, summary: string, clauses: any[]) {
+  w.propCount += 1;
+  const id = newId(w, 'p');
+  const ref = 'L' + String(w.laws.length + 1).padStart(3, '0');
+  w.proposals[id] = {
+    id, n: w.propCount, kind: 'bill', decree: true, title, summary, by: actor, clauses, target: null, constitutional: false, voters: 'mps', rule: 'cast',
+    stage: 'enacted', at: w.now, debateEndsAt: null, voteEndsAt: null, assentDueAt: null, hosDueAt: null, speeches: [], votes: {}, casting: null, lobby: 0,
+    result: null, lawRef: ref, fast: false, sponsors: [], amendments: [], history: [], draft: null
+  };
+  const secret = clauses.some((e: any) => e.t === 'office' && e.office?.secrecy === 'secret');
+  w.laws.push({ ref, title, summary, text: clauses.map((e: any) => describe(w, e)), propId: id, at: w.now, classified: secret, how: 'By decree of the Prime Minister', decree: true, repealed: false, rulings: [] });
+  clauses.forEach((e: any) => applyClause(w, e, ref));
+  bump(w, actor, 'decrees');
+  gazette(w, 'law', `By decree of the Prime Minister: ${secret ? 'a classified decree' : title}.`, '#/law/' + ref);
+  return ref;
+}
+// The Returning Officer links a bill to the Act its wording describes, so the game carries it out. Public, like every
+// admin power: the admin log, the Gazette, and the bill's own history. On a bill already enacted, the Act takes effect at once.
+export const LINKABLE = ['debate', 'vote', 'assent', 'override', 'enacted'];
+export function linkAct(w: W, actor: Id, pid: unknown, key: unknown) {
+  if (!w.citizens[actor]?.admin) fail('Only the Returning Officer can do this.');
+  const p = own(w.proposals, pid);
+  if (!p || (p.kind !== 'bill' && p.kind !== 'referendum')) fail('Pick a bill.');
+  if (!LINKABLE.includes(p.stage)) fail('That bill has failed or was withdrawn. There is nothing to link.');
+  if (typeof key !== 'string' || !ACT_KEYS.includes(key as any)) fail('Pick an Act.');
+  if (p.clauses.some((e: any) => e.t === key)) fail('That bill already carries that Act.');
+  if (inForce(w, key as any)) fail(`The ${ACTS[key as 'jail'].name} Act is already law.`);
+  if (p.clauses.length >= 20) fail('That bill already has 20 clauses.');
+  p.clauses.push({ t: key });
+  p.linked = [...(p.linked || []), { act: key, by: actor, at: w.now }];
+  history(w, p, actor, `Linked to the ${ACTS[key as 'jail'].name} Act by the Returning Officer`);
+  if (p.stage === 'enacted' && p.lawRef) {
+    const law = w.laws.find((l: any) => l.ref === p.lawRef);
+    if (law) law.text.push(describe(w, { t: key }));
+    applyClause(w, { t: key }, p.lawRef);
+  }
+  adminDid(w, actor, `linked ${p.title} to the ${ACTS[key as 'jail'].name} Act${p.stage === 'enacted' ? `, which takes effect now under ${p.lawRef}` : ': the game will carry it out if the bill becomes law'}`, '#/p/' + p.id);
 }
 export function forceEnact(w: W, actor: Id, pid: Id, reason: string) {
   if (!w.citizens[actor]?.admin) fail('Only the Returning Officer can do this.');
@@ -857,13 +955,15 @@ export function ask(w: W, actor: Id, question: string, to?: Id) {
     const o = officeWithPower(w, actor, 'question');
     if (!o) fail('Only offices with the power to question ministers can do that. Ask the PM at PMQs instead.');
     if (!own(w.citizens, to)?.active) fail('Pick who to question.');
+    // under the Press and Information Act a question is only published once the Prime Minister approves it
+    if (inForce(w, 'press')) return void w.questions.unshift({ id: newId(w, 'q'), by: actor, to, text: q, backers: [], answer: null, status: 'held', formal: true, office: o.id, at: w.now, dueAt: null, week: weekNo(w) });
     w.questions.unshift({ id: newId(w, 'q'), by: actor, to, text: q, backers: [], answer: null, status: 'open', formal: true, office: o.id, at: w.now, dueAt: w.now + 3 * DAY, week: weekNo(w) });
     gazette(w, 'question', `The ${o.name} formally asks ${nm(w, to)}: "${q}" An answer is due in 3 days.`, '#/questions');
     return;
   }
   if (!w.pm) fail('There is no Prime Minister to ask.');
   if (w.questions.some((q: any) => q.by === actor && !q.formal && q.week === weekNo(w))) fail('You get one PMQ a week.');
-  w.questions.unshift({ id: newId(w, 'q'), by: actor, to: 'pm', text: q, backers: [], answer: null, status: 'open', formal: false, at: w.now, week: weekNo(w) });
+  w.questions.unshift({ id: newId(w, 'q'), by: actor, to: 'pm', text: q, backers: [], answer: null, status: inForce(w, 'press') && !isPM(w, actor) ? 'held' : 'open', formal: false, at: w.now, week: weekNo(w) });
   tick(w, actor, 'asks');
 }
 export function back(w: W, actor: Id, qid: Id) {
