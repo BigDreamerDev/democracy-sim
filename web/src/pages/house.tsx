@@ -159,8 +159,11 @@ export function Proposal({ id }: { id: string }) {
   const voters = p.voters === 'all' ? Object.keys(w.citizens) : mps(w);
   const ayes = Object.entries(book).filter(([k, v]) => v === 'aye' && voters.includes(k)).length;
   const noes = Object.entries(book).filter(([k, v]) => v === 'no' && voters.includes(k)).length;
-  const steps = p.kind === 'bill' ? ['Debate', 'Vote', w.config.hos === 'monarchy' ? 'Royal Assent' : 'Signature', 'Law'] : p.kind === 'dissolution' ? ['Asked', 'Head of state decides', 'Result'] : ['Debate', 'Vote', 'Result'];
-  const idx = p.kind === 'dissolution' ? (p.stage === 'hos' ? 1 : 2) : ({ debate: 0, vote: 1, assent: 2, override: 2, enacted: 3, passed: p.kind === 'bill' ? 3 : 2, failed: p.kind === 'bill' ? 1 : 2, vetoed: 2, withheld: 2, withdrawn: p.debateEndsAt && p.result?.at > p.debateEndsAt ? 1 : 0 } as any)[p.stage];
+  // a bill removing the head of state needs no assent: it goes straight from the vote to law
+  const removal = p.kind === 'bill' && p.clauses.some((e: any) => e.t === 'removeHos');
+  const steps = removal ? ['Debate', 'Vote', 'Law'] : p.kind === 'bill' ? ['Debate', 'Vote', w.config.hos === 'monarchy' ? 'Royal Assent' : 'Signature', 'Law'] : p.kind === 'dissolution' ? ['Asked', 'Head of state decides', 'Result'] : ['Debate', 'Vote', 'Result'];
+  const idx0 = p.kind === 'dissolution' ? (p.stage === 'hos' ? 1 : 2) : ({ debate: 0, vote: 1, assent: 2, override: 2, enacted: 3, passed: p.kind === 'bill' ? 3 : 2, failed: p.kind === 'bill' ? 1 : 2, vetoed: 2, withheld: 2, withdrawn: p.debateEndsAt && p.result?.at > p.debateEndsAt ? 1 : 0 } as any)[p.stage];
+  const idx = removal && idx0 >= 3 ? 2 : idx0;
   const failed = ['failed', 'vetoed', 'withheld', 'withdrawn'].includes(p.stage);
   const author = p.by === me && ['debate', 'vote'].includes(p.stage);
   const rebels: string[] = p.voters === 'mps' ? (p.stage === 'vote' ? rebelsOn(w, p) : p.rebels || []) : [];
