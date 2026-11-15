@@ -65,7 +65,8 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
                w.acts[key] holds the law ref; repealAct undoes. A decree law (law.decree) can only be repealed by a decree
                'protection' (consent stage for proposals, no confidence/censure of the government, PM appoints HOS,
                succession via w.deputy/w.lastPM, ENTRENCHED Acts repealable only by decree, plots auto-found in 1h),
-               'press' (paper.licence, press.remove, questions 'held' until q.approve), 'security' (harder coups, gov +3)
+               'press' (paper.licence, press.remove, questions 'held' until q.approve), 'security' (harder coups, gov +3),
+               'crown' (syncActs keeps w.pm = the head of state, except under a coup regime or provisional government)
   society.ts   press, front pages, court, crisis spawning and deciding
   crises.ts    CRISES and their lifecycle: spawn (weighted, no repeats), PM decide or `house` MP vote,
                timeout (last option), `then` chains queued in w.crisisQueue and fired by the clock

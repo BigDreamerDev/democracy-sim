@@ -329,7 +329,8 @@ export const CLAUSES: [string, string][] = [
   ['job', 'Create a civic job (paid wage)'], ['zone', 'Add a Streets safe zone'],
   ['jail', 'Act: Public Order and Detention (the Realm Jail)'], ['decrees', 'Act: Government Powers (rule by decree)'],
   ['continuity', 'Act: Continuity of Parliament (no more elections)'], ['unity', 'Act: National Unity (one party)'],
-  ['protection', 'Act: Protection of the State'], ['press', 'Act: Press and Information'], ['security', 'Act: State Security']
+  ['protection', 'Act: Protection of the State'], ['press', 'Act: Press and Information'], ['security', 'Act: State Security'],
+  ['crown', 'Act: The Crown (the head of state is Prime Minister)']
 ];
 export function NewProposal({ query }: { query: URLSearchParams }) {
   const { world: w, me } = useStore();
@@ -659,7 +660,8 @@ export function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; 
     unity: { t: 'unity' },
     protection: { t: 'protection' },
     press: { t: 'press' },
-    security: { t: 'security' }
+    security: { t: 'security' },
+    crown: { t: 'crown' }
   };
   const ob = e.office || {};
   const setOb = (k: string, v: any) => onChange({ ...e, template: null, office: { ...ob, [k]: v } });

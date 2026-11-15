@@ -28,7 +28,7 @@ export const SETTABLE: Record<string, { label: string; unit: string; min: number
   voteHours: { label: 'Voting length', unit: ' hours', min: 12, max: 48 }
 };
 export const CONSTITUTIONAL = ['constitution', 'removeHos'];
-export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security'];
+export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown'];
 
 export function describe(w: W, e: any): string {
   switch (e.t) {
@@ -74,6 +74,7 @@ export function describe(w: W, e: any): string {
     case 'protection':
     case 'press':
     case 'security':
+    case 'crown':
       return describeAct(e.t);
     case 'war':
       return `Declares war on ${w.nations[e.nation]?.name}.`;
@@ -148,6 +149,7 @@ function checkClause(w: W, e: any, byDecree = false) {
     case 'protection':
     case 'press':
     case 'security':
+    case 'crown':
       if (inForce(w, e.t)) fail(`The ${ACTS[e.t as 'jail'].name} Act is already law.`);
       break;
     case 'war':
@@ -187,6 +189,7 @@ export function propose(w: W, actor: Id, a: any) {
   if (kind === 'dissolution' && inForce(w, 'continuity')) fail('Parliament cannot be dissolved under the Continuity of Parliament Act.');
   const guarded = inForce(w, 'protection');
   if (guarded && kind === 'no_confidence') fail('Motions of no confidence can no longer be tabled.');
+  if (kind === 'no_confidence' && inForce(w, 'crown') && w.pm && w.pm === w.hos.holder) fail('Under the Crown Act the head of state is Prime Minister, and cannot lose the confidence of the House.');
   if (guarded && kind === 'referendum' && !isPM(w, actor)) fail('Only the Prime Minister can call a referendum.');
   if (guarded && kind === 'censure' && (inGov(w, a.target) || isHOS(w, a.target))) fail('The Prime Minister, ministers and the head of state cannot be censured.');
   // a copy: checking a clause tidies it in place, and the caller's object must not change
@@ -888,6 +891,7 @@ export function applyClause(w: W, e: any, ref: string) {
     case 'protection':
     case 'press':
     case 'security':
+    case 'crown':
       applyAct(w, e.t, ref);
       break;
     case 'war':

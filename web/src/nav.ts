@@ -21,7 +21,7 @@ export const TABS: Tab[] = [
     { id: 'questions', label: 'Questions', href: '#/questions', routes: ['questions'] },
     { id: 'government', label: 'Government', href: '#/government', routes: ['government', 'cabinet', 'offices', 'office', 'hos'] },
     { id: 'laws', label: 'Laws', href: '#/laws', routes: ['laws', 'law'] },
-    { id: 'powers', label: 'Powers', href: '#/powers', routes: ['powers'], show: (w) => !!(w.acts && (w.acts.jail || w.acts.decrees || w.acts.continuity || w.acts.unity || w.acts.protection || w.acts.press || w.acts.security)) },
+    { id: 'powers', label: 'Powers', href: '#/powers', routes: ['powers'], show: (w) => !!(w.acts && (w.acts.jail || w.acts.decrees || w.acts.continuity || w.acts.unity || w.acts.protection || w.acts.press || w.acts.security || w.acts.crown)) },
     { id: 'regime', label: 'Regime', href: '#/regime', routes: ['regime'], show: (w) => !!(w.coup || w.regime || w.transition || w.reckoning || w.regimes?.length) }
   ] },
   { id: 'politics', label: 'Politics', icon: 'politics', href: '#/elections', sections: [

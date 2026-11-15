@@ -920,6 +920,7 @@ export function formGovernmentAfterElection(w: W) {
 }
 export function invitePM(w: W, actor: Id | null, target: Id) {
   if (actor && !isHOS(w, actor)) fail(`Only the ${hosTitle(w)} invites the Prime Minister.`);
+  if (inForce(w, 'crown') && w.hos.holder) fail(`Under the Crown Act the ${hosTitle(w)} is Prime Minister. Nobody else can be invited.`);
   if (w.pm) fail('There is already a Prime Minister.');
   const t = cit(w, target);
   if (!t.active) fail('They are no longer a citizen.');
@@ -961,6 +962,7 @@ export function autoInvite(w: W) {
 }
 export function resignPM(w: W, actor: Id) {
   if (!isPM(w, actor)) fail('Only the Prime Minister can resign as PM.');
+  if (inForce(w, 'crown') && isHOS(w, actor)) fail('Under the Crown Act the head of state is Prime Minister. Repeal the Act to step down.');
   if ((w.regime && w.regime.type !== 'civil') || w.transition) fail(w.regime && w.regime.type !== 'civil' ? 'A regime does not resign. Offer to hand back power instead.' : 'The provisional government stays until the election.');
   gazette(w, 'government', `${nm(w, actor)} resigns as Prime Minister.`);
   meter(w, 'stability', -4, 'The Prime Minister resigned');
@@ -970,8 +972,8 @@ export function resignPM(w: W, actor: Id) {
   w.pmInviteDue = w.now + DAY;
 }
 export function governmentFalls(w: W) {
-  // under the Protection of the State Act the government cannot fall for lack of confidence
-  if (inForce(w, 'protection')) return void (w.confidence = null);
+  // under the Protection of the State Act (or with the Crown as PM) the government cannot fall for lack of confidence
+  if (inForce(w, 'protection') || (inForce(w, 'crown') && w.pm && w.pm === w.hos.holder)) return void (w.confidence = null);
   // a regime ignores the House, at a price
   if (w.regime && w.regime.type !== 'civil') {
     w.confidence = null;

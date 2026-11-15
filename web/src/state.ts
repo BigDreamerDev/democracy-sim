@@ -9,9 +9,10 @@ export function stateMode(w: any): { leader: string | null; title: string; realm
   const r = w.regime;
   const a = w.acts || {};
   const coup = r && r.type !== 'civil';
-  if (!coup && !(a.decrees && a.continuity) && !a.unity) return null;
+  const crown = !!a.crown && !!w.pm && w.pm === w.hos?.holder;
+  if (!coup && !(a.decrees && a.continuity) && !a.unity && !crown) return null;
   const leader = coup ? r.leader : w.pm || null;
-  const title = coup ? (r.president ? 'The President' : RULER[r.type] || 'The Leader') : 'The Prime Minister';
+  const title = coup ? (r.president ? 'The President' : RULER[r.type] || 'The Leader') : crown ? 'The ' + (w.config.hos === 'monarchy' ? w.config.hosTitle : 'President') : 'The Prime Minister';
   const place = String(w.config.realmName || 'the Realm').split(' of ')[1] || 'the Realm';
   return { leader, title, realm: `The State of ${place}` };
 }

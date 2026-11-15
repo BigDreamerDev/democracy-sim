@@ -18,8 +18,8 @@ import { checkClauses, enactDecree } from './proposals';
 import { voidMarket } from './markets';
 import { endCivil } from './regime';
 
-export type ActKey = 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security';
-export const ACT_KEYS: ActKey[] = ['jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security'];
+export type ActKey = 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security' | 'crown';
+export const ACT_KEYS: ActKey[] = ['jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown'];
 export const ACTS: Record<ActKey, { name: string; text: string }> = {
   jail: {
     name: 'Public Order and Detention',
@@ -38,6 +38,7 @@ export const ACTS: Record<ActKey, { name: string; text: string }> = {
     text: 'The party led by the Prime Minister becomes the National Party, the only legal party. Every other party is dissolved: its members become independents, and its name and colour can never be used again. No new party can be founded. A citizen joins the National Party only with the Prime Minister’s approval, and the Prime Minister may expel any member. The National Party cannot split; members may leave. The Prime Minister leads it for as long as they are Prime Minister, with no challenges, contests or standing down. In any election that still takes place, only National Party members may stand. In House votes the National Party line is the Prime Minister’s own vote, and an MP who votes against it is expelled from the party automatically.'
   }
   ,
+  crown: { name: 'Crown', text: '' },
   protection: {
     name: 'Protection of the State',
     text: 'Motions of no confidence can no longer be tabled; any open one is withdrawn and any confidence deadline is cancelled, and the government cannot fall for lack of confidence. The Prime Minister, ministers and the head of state cannot be censured, and their censures are cleared. No proposal can be tabled, and no amendment moved to a government proposal, without the Prime Minister’s consent; only the Prime Minister can call a referendum. Demands made with a secret card against the Prime Minister or a minister are void and cannot be sent, and cards about the Prime Minister cannot be leaked. If the State Security Act is not law, every coup plot is discovered one hour after it starts, and its members are detained under the Public Order and Detention Act if it is law, or otherwise exiled indefinitely. The head of state cannot be removed or changed, nor the kind of head of state, except by decree of the Prime Minister; if the head of state leaves office, the Prime Minister appoints the next. The Prime Minister may name a Deputy, who becomes Prime Minister at once if the Prime Minister leaves office; with no Deputy, the longest-serving MP of the Prime Minister’s party does. This Act and the Public Order and Detention, Government Powers, Continuity of Parliament, National Unity, Press and Information and State Security Acts can only be amended or repealed by decree of the Prime Minister.'
@@ -50,6 +51,11 @@ export const ACTS: Record<ActKey, { name: string; text: string }> = {
     name: 'State Security',
     text: 'While the post of Director of the Security Service is vacant, the Prime Minister holds all of its powers, and may make two investigations a day. A coup needs two more plotters than the rules otherwise require, and never fewer than four. Every coup launch goes to the 12-hour contested night. On that night the government side gets +3 for loyal security forces, the Prime Minister counts 2, and every minister counts as declared for the government unless they declare otherwise. When any plot reaches three members, the Prime Minister is told privately that a plot of that size exists, but not who is in it. Plotters caught by a raid or discovery, and plotters in a failed coup, are detained under the Public Order and Detention Act if it is law. A minister who joins a plot loses their post the moment it is discovered or launched.'
   }
+};
+// (the Crown Act: the head of state is the Prime Minister)
+ACTS.crown = {
+  name: 'Crown',
+  text: 'The head of state is also the Prime Minister, at all times, and holds every power of that office. There is no separate Prime Minister: whoever holds the post leaves office when this becomes law, and nobody else can be invited to form a government. The Crown cannot lose the confidence of the House, and cannot resign the premiership. When a new head of state takes office, they become Prime Minister at once. While the post of head of state is empty, a government is formed as the law otherwise provides, until there is one.'
 };
 // the Acts that only a decree can amend or repeal once the Protection of the State Act is law
 export const ENTRENCHED: ActKey[] = ['protection', 'jail', 'decrees', 'continuity', 'unity', 'press', 'security'];
@@ -86,6 +92,7 @@ export function applyAct(w: W, key: ActKey, ref: string) {
     Object.values(w.papers).forEach((p: any) => ((p.licence = 'pending'), (p.licenceDue = w.now + DAY)));
     gazette(w, 'press', 'Every newspaper now needs a licence from the Ministry of Public Order. Papers not renewed within 24 hours lose theirs.', '#/press');
   }
+  if (key === 'crown') gazette(w, 'law', `The Crown Act is law. The ${w.config.hos === 'monarchy' ? w.config.hosTitle : 'President'} is now the Prime Minister too.`, '#/cabinet');
   if (key === 'security') gazette(w, 'law', 'The State Security Act is law. Plots need more members, every coup goes to a contested night, and the security forces stand with the government.', '#/plots');
 }
 export function repealAct(w: W, key: ActKey) {
@@ -109,6 +116,11 @@ export function repealAct(w: W, key: ActKey) {
   }
   if (key === 'press') gazette(w, 'law', 'The press is free again: newspapers need no licence, and questions are published as they are asked.', '#/press');
   if (key === 'security') gazette(w, 'law', 'The State Security Act is repealed. Coups are back to the ordinary rules.', '#/laws');
+  if (key === 'crown') {
+    // the head of state stops being Prime Minister; the House forms a government as usual
+    if (w.pm && w.pm === w.hos.holder && !(w.regime && w.regime.type !== 'civil') && !w.transition) formFromHouse(w);
+    gazette(w, 'law', 'The Crown Act is repealed. The head of state is no longer Prime Minister; the House will form a government.', '#/cabinet');
+  }
   if (key === 'continuity') {
     w.seasonDueAt = null;
     w.nextGeneralAt = w.now + w.config.termDays * DAY;
@@ -269,6 +281,19 @@ function foundNational(w: W) {
 }
 // on every command and deadline: the Prime Minister leads the National Party, and is a member of it
 export function syncActs(w: W) {
+  // the Crown Act: the head of state is Prime Minister, except while a coup regime or a provisional government rules
+  const hos = w.hos?.holder;
+  if (inForce(w, 'crown') && hos && w.pm !== hos && !(w.regime && w.regime.type !== 'civil') && !w.transition && w.citizens[hos]?.active) {
+    const was = w.pm;
+    w.pm = hos;
+    w.pmInviteDue = null;
+    w.formingSince = null;
+    w.confidence = null;
+    if (w.deputy === hos) w.deputy = null;
+    bump(w, hos, 'pmTerms');
+    stamp(w, hos, 'Prime Minister', 'By the Crown Act', 'ink');
+    gazette(w, 'government', `${was ? `${nm(w, was)} leaves office. ` : ''}${nm(w, hos)}, the ${w.config.hos === 'monarchy' ? w.config.hosTitle : 'President'}, is Prime Minister under the Crown Act.`, '#/cabinet');
+  }
   if (inForce(w, 'protection')) {
     const regime = !!w.regime && w.regime.type !== 'civil';
     if (w.pm && !regime && !w.transition) w.lastPM = w.pm;
@@ -404,7 +429,7 @@ export function appointHos(w: W, actor: Id, target: Id) {
   if (w.hos.holder) fail(`There is already a ${w.config.hos === 'monarchy' ? w.config.hosTitle : 'President'}.`);
   const c = cit(w, target);
   if (!c.active || exiled(w, target) || detained(w, target)) fail('They are not free to serve.');
-  if (isPM(w, target)) fail('The Prime Minister cannot be head of state too.');
+  if (isPM(w, target) && !inForce(w, 'crown')) fail('The Prime Minister cannot be head of state too.');
   setHos(w, target, null);
 }
 // succession: when the Prime Minister leaves office, the Deputy (or the longest-serving MP of their party) takes over
