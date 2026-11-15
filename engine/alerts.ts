@@ -101,7 +101,28 @@ export function needs(w: W, me: Id): Alert[] {
   (w.jobClaims || []).forEach((c: any) => c.status === 'pending' && c.by !== me && (signer === me || (isPM(w, me) && holderOf(w, 'treasury') === c.by)) && out.push({ key: 'job:' + c.id, href: '#/market', label: 'Wage to sign off', title: `${nm(w, c.by)}: ${c.title}`, at: c.dueAt }));
   (w.ultimatums || []).forEach((u: any) => u.status === 'sent' && (isPM(w, me) || hasPower(w, me, 'envoy')) && out.push({ key: 'ultimatum:' + u.id, href: '#/foreign', label: 'Foreign demand', title: `${w.nations[u.nation]?.name} wants ${u.crowns} crowns`, at: u.dueAt, urgent: true }));
   if (w.daily && w.daily.votes?.[me] === undefined && w.citizens[me] && !w.citizens[me].bot) out.push({ key: 'daily:' + w.daily.day, href: '#/honours', label: 'The Red Box', title: RED_BOX[w.daily.qi].q, at: w.daily.endsAt });
+  // coups, regimes and what follows: all public business, so not behind the backroom's door
+  const k = w.coup, rg = w.regime, tr = w.transition, rk = w.reckoning;
+  const here = '#/regime';
+  if (k && !k.plotters.includes(me) && !k.declared[me]) out.push({ key: 'coup:' + k.plot, href: here, label: 'Coup', title: 'Declare for the coup or against it', at: k.endsAt, urgent: true });
+  if (rg) {
+    if (rg.ousted === me && !rg.fled && !rg.stood) out.push({ key: 'flee:' + rg.id, href: here, label: 'You were overthrown', title: 'Flee the realm, or stay and face them', urgent: true });
+    if (rg.leader === me && !rg.chosen && w.now < rg.chooseBy) out.push({ key: 'form:' + rg.id, href: here, label: 'You hold power', title: 'Choose how to rule', at: rg.chooseBy, urgent: true });
+    if (rg.pending && rg.council.includes(me) && rg.pending.votes?.[me] === undefined) out.push({ key: 'council:' + rg.pending.id, href: here, label: 'The council', title: 'A decree needs your vote', at: rg.pending.dueAt });
+    if (rg.oath && !rg.oath[me] && rg.leader !== me) out.push({ key: 'oath:' + rg.id, href: here, label: 'Loyalty oath', title: 'Swear, or refuse in public' });
+    if (rg.trial && rg.trial.target !== me && rg.leader !== me && rg.trial.votes[me] === undefined) out.push({ key: 'trial:' + rg.trial.closesAt, href: here, label: 'Show trial', title: `Do you believe the case against ${nm(w, rg.trial.target)}?`, at: rg.trial.closesAt });
+    if (rg.plebiscite && rg.plebiscite.votes[me] === undefined) out.push({ key: 'plebiscite:' + rg.plebiscite.closesAt, href: here, label: 'Plebiscite', title: `Should ${nm(w, rg.leader)} be President?`, at: rg.plebiscite.closesAt, urgent: true });
+    if (rg.exit && w.hos.holder === me && rg.leader !== me && !rg.council.includes(me)) out.push({ key: 'exit:' + rg.exit.at, href: here, label: 'The regime offers to go', title: 'Accept amnesty for an election, or refuse', at: rg.exit.dueAt, urgent: true });
+    if (rg.leader === me) {
+      const held = w.stories.filter((s: any) => s.status === 'held').length;
+      if (held) out.push({ key: 'censor:' + held, href: here, label: 'The censor', title: `${held} stor${held === 1 ? 'y' : 'ies'} waiting for approval` });
+      if (rg.applicants?.length) out.push({ key: 'applicants:' + rg.applicants.length, href: here, label: 'The Party', title: `${rg.applicants.length} application${rg.applicants.length === 1 ? '' : 's'} for a card` });
+    }
+  }
+  if (tr?.leader === me && !tr.form) out.push({ key: 'transition:' + tr.id, href: here, label: 'Provisional government', title: 'Decide what kind of government this is', at: tr.formDue, urgent: true });
+  if (rk && !rk.votes[me] && !rk.targets.includes(me) && (rk.voters === 'council' ? rk.council.includes(me) : isMP(w, me))) out.push({ key: 'reckoning:' + rk.id, href: here, label: 'The reckoning', title: 'Pardon, fine or exile the people who ran the regime', at: rk.closesAt });
   if (intrigueOpen(w)) {
+    Object.values(w.plots).forEach((p: any) => p.status === 'planning' && p.informed && !p.members.includes(me) && out.push({ key: 'informer:' + p.id, href: '#/plots', label: 'Security Service', title: 'You have someone inside a plot' }));
     Object.values(w.deals).forEach((d: any) => d.status === 'offered' && d.to === me && out.push({ key: 'deal:' + d.id, href: '#/backroom', label: 'Private', title: `${nm(w, d.from)} offers you a deal` }));
     Object.values(w.demands).forEach((d: any) => d.status === 'sent' && d.target === me && out.push({ key: 'demand:' + d.id, href: '#/backroom', label: 'Private', title: 'Someone has a card on you', at: d.dueAt, urgent: true }));
     Object.values(w.plots).forEach((p: any) => p.status === 'planning' && p.invited[me] === 'pending' && out.push({ key: 'plot:' + p.id, href: '#/plots', label: 'Private', title: 'You have been approached' }));

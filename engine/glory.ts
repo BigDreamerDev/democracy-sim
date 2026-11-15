@@ -32,6 +32,14 @@ export const BADGES: Badge[] = [
   { id: 'hunter', name: 'Hunter', sub: 'Five hits in the Hunt', test: (c) => L(c, 'huntKills') >= 5 },
   { id: 'lastone', name: 'Last one standing', sub: 'Won the Hunt', test: (c) => L(c, 'huntWins') >= 1 },
   { id: 'insider', name: 'Insider', sub: 'Made money betting on something you decided', hidden: true, test: (c) => L(c, 'insider') >= 1 },
+  { id: 'dictator', name: 'Dictator', sub: 'Ruled the realm alone', hidden: true, test: (c) => L(c, 'dictator') >= 1 },
+  { id: 'chairman', name: 'Chairman', sub: 'Led a one-party state', hidden: true, test: (c) => L(c, 'chairman') >= 1 },
+  { id: 'partycard', name: 'Party card', sub: 'Joined the only party there was', hidden: true, test: (c) => L(c, 'partyCard') >= 1 },
+  { id: 'loyalist', name: 'Loyalist', sub: 'Declared against a coup on the night', test: (c) => L(c, 'loyalist') >= 1 },
+  { id: 'kingmaker', name: 'Kingmaker', sub: 'Decided who ruled, as General or head of state', hidden: true, test: (c) => L(c, 'kingmaker') >= 1 },
+  { id: 'prisoner', name: 'Political prisoner', sub: 'Detained by a regime', test: (c) => L(c, 'detained') >= 1 },
+  { id: 'penpal', name: 'Letters from prison', sub: 'Smuggled out 3 prison letters', hidden: true, test: (c) => L(c, 'letters') >= 3 },
+  { id: 'tyrannicide', name: 'Tyrannicide', sub: 'Brought down a tyrant', test: (c) => L(c, 'tyrannicide') >= 1 },
   { id: 'exile', name: 'Came back', sub: 'Went into exile', hidden: true, test: (c) => L(c, 'exiled') >= 1 }
 ];
 export function checkBadges(w: W, id: Id) {

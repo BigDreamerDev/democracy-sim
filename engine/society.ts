@@ -35,17 +35,20 @@ export function submitStory(w: W, actor: Id, pid: Id, headline: string, body: st
   const b = prose(body, 2000, 'story');
   if (w.stories.filter((x: any) => x.by === actor && x.at > w.now - DAY).length >= 5) fail('You have filed 5 stories today. Come back tomorrow.');
   const mine = p.editor === actor;
-  w.stories.unshift({ id: newId(w, 'st'), paper: pid, by: actor, headline: h, body: b, photo: photoId(photo), status: mine ? 'published' : 'submitted', at: w.now, cheers: [] });
+  // under censorship an editor's yes only sends the story to the censor ('held')
+  const held = !!w.regime?.censorship;
+  w.stories.unshift({ id: newId(w, 'st'), paper: pid, by: actor, headline: h, body: b, photo: photoId(photo), status: mine ? (held ? 'held' : 'published') : 'submitted', at: w.now, cheers: [] });
   tick(w, actor, 'stories');
-  if (mine) earn(w, actor, 1, 'Published a story');
+  if (mine && !held) earn(w, actor, 1, 'Published a story');
 }
 export function editStory(w: W, actor: Id, sid: Id, yes: boolean) {
   const s = w.stories.find((x: any) => x.id === sid);
   if (!s || s.status !== 'submitted') fail('That story is not waiting.');
   if (own(w.papers, s.paper)?.editor !== actor) fail('Only the editor decides.');
-  s.status = yes ? 'published' : 'spiked';
+  const held = !!w.regime?.censorship;
+  s.status = yes ? (held ? 'held' : 'published') : 'spiked';
   s.at = w.now;
-  if (yes) earn(w, s.by, 1, 'Story published');
+  if (yes && !held) earn(w, s.by, 1, 'Story published');
 }
 export function cheer(w: W, actor: Id, sid: Id) {
   const s = w.stories.find((x: any) => x.id === sid);
@@ -66,9 +69,10 @@ export function makeFrontPage(w: W) {
   const score = (s: any) => s.cheers.length * 2 + (w.papers[s.paper]?.followers.length || 0) / 4 + (s.leak ? 3 : 0);
   const lead = stories.sort((a: any, b: any) => score(b) - score(a))[0] || null;
   if (lead) {
-    w.citizens[lead.by].stats.frontPage = true;
+    if (!lead.underground || lead.named) w.citizens[lead.by].stats.frontPage = true;
     earn(w, lead.by, 5, 'Your story made the front page');
-    stamp(w, lead.by, 'Front page', fmtDay(w.now), 'ink');
+    // an unsigned pamphlet stays unsigned: no public stamp to give its author away
+    if (!lead.underground || lead.named) stamp(w, lead.by, 'Front page', fmtDay(w.now), 'ink');
   }
   // the crisis of the week: the worst one settled since the last front page
   const sev = (c: any) => { const t = crisisById(c.type); return (t?.extreme ? 10 : 0) + (c.house ? 4 : 0) + (c.how === 'default' ? 3 : 0) + (c.cause ? 2 : 0) + 1; };
@@ -81,7 +85,7 @@ export function makeFrontPage(w: W) {
   const crisisLeads = !!crisis && (crisis.extreme || !lead);
   const fp = {
     id: newId(w, 'fp'), at: w.now, week: weekNo(w), crisis, crisisLeads,
-    lead: lead ? { headline: lead.headline, body: lead.body, by: lead.by, paper: w.papers[lead.paper]?.name, photo: lead.photo || null } : null,
+    lead: lead ? { headline: lead.headline, body: lead.body, by: lead.underground && !lead.named ? null : lead.by, paper: lead.underground ? 'The underground press' : w.papers[lead.paper]?.name, photo: lead.photo || null } : null,
     snapshot: snapshotOfWeek(w, since),
     laws: w.laws.filter((l: any) => l.at > since && !l.classified).map((l: any) => ({ ref: l.ref, title: l.title })),
     meters: { prosperity: w.meters.prosperity, stability: w.meters.stability, standing: standing(w) },

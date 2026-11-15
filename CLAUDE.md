@@ -54,7 +54,11 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   offices.ts   POWERS, TEMPLATES, createOffice, appoint, grant/fine
   economy.ts   payday, tax, Reserve rate, banks, ventures
   foreign.ts   5 nations, envoys, treaties, intel, the army
-  backroom.ts  cards, deals, demands, plots/coups, exile, pardons
+  backroom.ts  cards, deals, demands, exile, pardons; plots (three answers, informers, war chest, backer, Security raid) and the
+               launch: swift, or a 12-hour contested night (w.coup) settled by resolveCoup
+  regime.ts    after a coup: w.regime (martial/junta/dictatorship/party, `legit`), DECREES, resistance (strike, underground
+               press, prison letters, jailbreak, palace coup), fallRegime (undoes everything), the provisional government
+               (w.transition, FORMS, ACTS, rival claims), the reckoning (w.reckoning); gate() and sync() run on every command
   society.ts   press, front pages, court, crisis spawning and deciding
   crises.ts    CRISES and their lifecycle: spawn (weighted, no repeats), PM decide or `house` MP vote,
                timeout (last option), `then` chains queued in w.crisisQueue and fired by the clock
@@ -274,6 +278,10 @@ Citizen id = `'u' + users.id`.
   behind it (`prop.amendBack`; the proposer counts) it goes to a `division` (`prop.amendVote`, whipped by `prop.amendWhip`),
   settled in `openVote` before the main vote; the debate runs at least 6 h more. `history()` records every wording
   (`p.history`, capped 25). Co-sponsors from another party make `p.crossParty` (+2 approval author, +1 each).
+- **Regimes**: the regime leader is always `w.pm` (`sync()` keeps it so, and ends a regime at 0 legitimacy). Anything a decree
+  changes must be undone in `fallRegime`. A detainee is gated in `run()` by `gate()` (`DETAINED_OK`); curfew shuts `CURFEW_SHUT`
+  commands at night. Regime and aftermath crises are `chainOnly` entries in crises.ts (`rg_*`, `aft_*`), decided by `w.pm`.
+  New secret regime state must be stripped in `viewFor` (strike, probes, rigged, breaks, votes).
 - **Whips**: `p.whips[partyId] = {line}` (public), set by `prop.whip` (party leader, or the Chief Whip for a governing
   party). `whipLine()` is the one place that says what line an MP is under: their party's, else the PM's vote for
   government MPs, none on a free vote. `trackWhip` counts `c.whip.loyal/rebel` and stores `p.rebels` when the vote closes.

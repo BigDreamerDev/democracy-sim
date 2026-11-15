@@ -63,9 +63,14 @@ export function cit(w: W, id: Id) {
 export const nm = (w: W, id: Id | null | undefined) => (id && w.citizens[id] ? w.citizens[id].name : 'nobody');
 export const allCitizens = (w: W): any[] => Object.values(w.citizens).filter((c: any) => c.active);
 export const exiled = (w: W, id: Id) => !!w.citizens[id]?.exiledUntil && w.citizens[id].exiledUntil > w.now;
+// held by a regime: they can read everything and write a prison letter, and nothing else, until released
+export const detained = (w: W, id: Id) => !!w.citizens[id]?.detainedUntil && w.citizens[id].detainedUntil > w.now;
+// barred from standing or holding office (a sentence at a reckoning, or lustration after a regime falls)
+export const barred = (w: W, id: Id) => !!w.citizens[id]?.barredUntil && w.citizens[id].barredUntil > w.now;
 export function mustBeFree(w: W, id: Id) {
   cit(w, id);
   if (exiled(w, id)) fail('You are in exile and cannot do that until your exile ends.');
+  if (detained(w, id)) fail('You are detained and cannot do that until you are released.');
 }
 
 // ---------- money: a ledger whose accounts always sum to zero ----------
@@ -176,7 +181,9 @@ export const METERS: Record<string, { name: string; low: string; blurb: string }
 export function meter(w: W, key: 'prosperity' | 'stability', d: number, why: string) {
   if (!d) return;
   const before = w.meters[key];
-  w.meters[key] = clamp(Math.round(before + d), 0, 100);
+  // for two weeks after a regime falls the realm is scarred: Stability cannot climb past 50
+  const cap = key === 'stability' && w.scars && w.scars.until > w.now ? Math.max(50, before) : 100;
+  w.meters[key] = clamp(Math.round(before + d), 0, cap);
   w.meters.log.unshift({ at: w.now, key, d: w.meters[key] - before, why });
   if (w.meters.log.length > 30) w.meters.log.length = 30;
   if (before > 15 && w.meters[key] <= 15) gazette(w, 'crisis', `${METERS[key].name} has collapsed. ${METERS[key].low}.`, '#/');
@@ -186,6 +193,16 @@ export function standing(w: W) {
   return ns.length ? Math.round((ns.reduce((s, n) => s + n.mood, 0) / ns.length) * 25) : 50;
 }
 export const inDanger = (w: W, key: string) => (key === 'standing' ? standing(w) : w.meters[key]) <= 15;
+
+// ---------- a regime's legitimacy: its lifeline. At zero it falls (regime.ts) ----------
+export function legit(w: W, d: number, why: string) {
+  const r = w.regime;
+  if (!r || !d) return;
+  const before = r.legit;
+  r.legit = clamp(Math.round(before + d), 0, 20);
+  r.log.unshift({ at: w.now, d: r.legit - before, why });
+  if (r.log.length > 30) r.log.length = 30;
+}
 
 // ---------- secret cards: the backroom's only currency ----------
 // viewers: 'pm', 'hos', 'office:<id>' (that office's holder), 'cit:<id>'

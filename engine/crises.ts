@@ -6,10 +6,11 @@
 // - `chainOnly` crises never appear at random; `weight` makes a crisis rarer (default 1); `needs` limits where it fits.
 // `effects` is what players see before choosing, so keep it honest and in step with `run`.
 // Money only moves through transfer(), so the ledger balances.
-import { W, Id, DAY, HOUR, clamp, fail, newId, transfer, meter, approve, earn, addCard, allCitizens, holderOf, chance, rand, ca, bal, gazette, isMP, isPM, mps, nm, mustBeFree, weekNo, tick, own } from './core';
+import { W, Id, DAY, HOUR, clamp, fail, newId, transfer, meter, approve, earn, addCard, allCitizens, holderOf, chance, rand, ca, bal, gazette, legit, detained, exiled, isMP, isPM, mps, nm, mustBeFree, weekNo, tick, own } from './core';
 import { armyLoyalty } from './foreign';
 import { openMarket, settleMarket } from './markets';
 import { callGeneralElection } from './politics';
+import { takePower } from './regime';
 
 type Option = { label: string; what: string; effects: string[]; run: (w: W) => any; then?: { type: string; days: number } };
 export type Crisis = { id: string; title: string; text: string; needs?: (w: W) => boolean; options: Option[]; house?: boolean; chainOnly?: boolean; weight?: number; extreme?: boolean };
@@ -42,7 +43,7 @@ const snapElection = (w: W) => {
 };
 // a state of emergency: Parliament is suspended and the PM rules for 3 days, then a Restoration election
 const emergency = (w: W) => {
-  if (!w.pm || w.martial) return;
+  if (!w.pm || w.martial || w.regime || w.transition) return;
   w.martial = { leader: w.pm, plotters: [], until: w.now + 3 * DAY, emergency: true };
   w.citizens[w.pm].stats.ruledByDecree = true;
   gazette(w, 'government', `A state of emergency. Parliament is suspended and ${nm(w, w.pm)} rules by decree for 3 days, then the realm votes.`, '#/cabinet');
@@ -497,7 +498,97 @@ export const CRISES: Crisis[] = [
       { label: 'Let the result stand, whatever it is', what: 'An even chance they go.', effects: ['Even chance: Stability +3', 'Otherwise: Prosperity −6, Stability −4'], run: (w) => (chance(w, 0.5) ? meter(w, 'stability', 3, 'The north voted to stay') : (meter(w, 'prosperity', -6, 'The north left'), meter(w, 'stability', -4, 'The north left'))) }
     ]
   }
-
+  ,
+  // ---------- under a regime: decided by its leader. Each trades legitimacy, money and the Army ----------
+  {
+    id: 'rg_mutiny', title: 'Mutiny in the barracks', text: 'A garrison has locked its officers out and wants to know who it is taking orders from.', needs: (w) => !!w.regime, chainOnly: true,
+    options: [
+      { label: 'Pay them off', what: 'Back pay, in cash, tonight.', effects: ['Treasury −40', 'Army loyalty +1'], run: (w) => (spend(w, 40, 'escrow', 'Paying off a mutiny'), army(w, 1, 'The regime paid up')) },
+      { label: 'Shoot the ringleaders', what: 'Order is restored. People notice how.', effects: ['Legitimacy −2', 'Army loyalty −1', 'Stability −3'], run: (w) => (legit(w, -2, 'Shot its own soldiers'), army(w, -1, 'Ringleaders were shot'), meter(w, 'stability', -3, 'A mutiny was put down in blood')) },
+      { label: 'Ignore it', what: 'They will get hungry eventually.', effects: ['Legitimacy −1', 'Army loyalty −2'], run: (w) => (legit(w, -1, 'Could not control its own barracks'), army(w, -2, 'A mutiny was left to fester')) }
+    ]
+  },
+  {
+    id: 'rg_ultimatum', title: 'The neighbours want a date', text: 'Three embassies deliver the same note: name the day of the election, or pay for the delay.', needs: (w) => !!w.regime, chainOnly: true,
+    options: [
+      { label: 'Name a date', what: 'An election within five days, on the record.', effects: ['Legitimacy +2', 'The regime must end within 5 days'], run: (w) => (legit(w, 2, 'Named a date for elections'), (w.regime.until = Math.min(w.regime.until || Infinity, w.now + 5 * DAY))) },
+      { label: 'Pay them to be patient', what: 'It is a lot of patience.', effects: ['Treasury −50'], run: (w) => spend(w, 50, 'nation:sundmere', 'Bought patience abroad') },
+      { label: 'Tell them to mind their own realm', what: 'It plays well at home. Abroad, less so.', effects: ['Legitimacy −1', 'Stability +1', 'Sundmere and Varnholm cool'], run: (w) => (legit(w, -1, 'Defied the neighbours'), meter(w, 'stability', 1, 'The regime stood up to the neighbours'), mood(w, 'sundmere', -1, 'The regime insulted them'), mood(w, 'varnholm', -1, 'The regime insulted them')) }
+    ]
+  },
+  {
+    id: 'rg_bankrun', title: 'A run on the banks', text: 'Nobody trusts a regime with their savings. The queues go round the block.', needs: (w) => !!w.regime, chainOnly: true,
+    options: [
+      { label: 'Guarantee every deposit', what: 'The Treasury stands behind the banks.', effects: ['Treasury −40', 'Prosperity +1'], run: (w) => (spend(w, 40, 'escrow', 'Guaranteeing deposits'), meter(w, 'prosperity', 1, 'Deposits were guaranteed')) },
+      { label: 'Shut the banks for a week', what: 'No queue, no problem.', effects: ['Prosperity −5', 'Legitimacy −1'], run: (w) => (meter(w, 'prosperity', -5, 'The banks were shut'), legit(w, -1, 'Shut the banks')) },
+      { label: 'Let them fall', what: 'The strong will survive.', effects: ['Prosperity −8', 'Legitimacy −2'], run: (w) => (meter(w, 'prosperity', -8, 'A banking panic'), legit(w, -2, 'Let the banks fall')) }
+    ]
+  },
+  {
+    id: 'rg_list', title: 'The list gets out', text: 'A clerk has copied the names of everyone the regime is holding, and why. It is on every wall.', needs: (w) => !!w.regime, chainOnly: true,
+    options: [
+      { label: 'Free them all', what: 'Open the cells and call it mercy.', effects: ['Every detainee released', 'Legitimacy +1'], run: (w) => (allCitizens(w).forEach((c: any) => detained(w, c.id) && (c.detainedUntil = w.now)), legit(w, 1, 'Opened the cells')) },
+      { label: 'Call it a forgery', what: 'Nobody believes you.', effects: ['Legitimacy −2'], run: (w) => legit(w, -2, 'Denied the list') },
+      { label: 'Hunt the clerk', what: 'Soldiers go door to door.', effects: ['Legitimacy −1', 'Stability −3'], run: (w) => (legit(w, -1, 'Hunted a clerk'), meter(w, 'stability', -3, 'Door-to-door searches')) }
+    ]
+  },
+  // ---------- after a regime falls: the provisional government's troubles ----------
+  {
+    id: 'aft_loyalists', title: 'Loyalists hold the barracks', text: 'Officers of the old regime have barricaded themselves in with the armoury and are waiting to see who blinks.', needs: (w) => !!w.transition, chainOnly: true,
+    options: [
+      { label: 'Storm it', what: 'It is over by morning.', effects: ['Army loyalty −1', 'Stability +3'], run: (w) => (army(w, -1, 'Soldiers fought soldiers'), meter(w, 'stability', 3, 'The barracks were retaken')) },
+      { label: 'Offer them amnesty', what: 'They walk out, and so does everyone else who served the regime.', effects: ['No reckoning for anyone', 'Stability +1'], run: (w) => (!w.reckoning && (w.transition.amnesty = true), meter(w, 'stability', 1, 'The loyalists walked out')) },
+      { label: 'Wait them out', what: 'They are not the ones running out of time.', effects: ['Stability −6', 'The old leader may claim the government'], run: (w) => {
+        meter(w, 'stability', -6, 'An armed standoff');
+        const t = w.transition, old = t.fallen.leader;
+        if (w.citizens[old]?.active && !exiled(w, old) && !detained(w, old) && !t.claims[old] && t.leader !== old) (t.claims[old] = [old]), gazette(w, 'crisis', `${nm(w, old)} appears on the barracks steps and claims the government.`, '#/regime');
+      } }
+    ]
+  },
+  {
+    id: 'aft_reprisals', title: 'Mobs hunt collaborators', text: 'Lists are going round of everyone who swore, served or took a medal. Windows are being broken.', needs: (w) => !!w.transition, chainOnly: true,
+    options: [
+      { label: 'Protect them', what: 'The law protects everyone, even them.', effects: ['Stability −2', 'Your approval −3'], run: (w) => (meter(w, 'stability', -2, 'Collaborators were protected'), approve(w, w.pm, -3)) },
+      { label: 'People’s courts', what: 'Quick hearings, small fines, and it is done.', effects: ['Each collaborator fined up to 10 crowns', 'Stability −1'], run: (w) => (Object.keys(w.transition.fallen.collab).forEach((id) => bal(w, ca(id)) >= 1 && transfer(w, ca(id), 'treasury', Math.min(10, bal(w, ca(id))), 'Fined by a people’s court')), meter(w, 'stability', -1, 'People’s courts')) },
+      { label: 'Look away', what: 'It will burn itself out.', effects: ['Collaborators’ approval −10', 'Stability −5'], run: (w) => (Object.keys(w.transition.fallen.collab).forEach((id) => approve(w, id, -10)), meter(w, 'stability', -5, 'Reprisals in the streets')) }
+    ]
+  },
+  {
+    id: 'aft_general', title: 'The General offers to keep order', text: 'Just until the election, the General says. The Army could run things. It would be tidier.', needs: (w) => !!w.transition && !!holderOf(w, 'army') && holderOf(w, 'army') !== w.transition.leader && !exiled(w, holderOf(w, 'army')!), chainOnly: true,
+    options: [
+      { label: 'Decline, politely', what: 'Thank the Army for its service.', effects: ['Army loyalty −1'], run: (w) => army(w, -1, 'Its offer was declined') },
+      { label: 'Dismiss the General', what: 'Nobody who makes that offer should command soldiers.', effects: ['The post falls vacant', 'Army loyalty −2', 'Stability −2'], run: (w) => ((w.offices.army.holder = null), army(w, -2, 'Its General was dismissed'), meter(w, 'stability', -2, 'The General was dismissed')) },
+      { label: 'Accept', what: 'The General takes charge. Just until the election.', effects: ['The General rules as a junta'], run: (w) => {
+        const g = holderOf(w, 'army')!;
+        gazette(w, 'crisis', `${nm(w, g)} accepts the invitation to keep order, and keeps rather more than that.`, '#/regime');
+        takePower(w, { leader: g, council: [g], name: 'The Generals’ Peace', swift: true, legit: 6, backer: null, backers: [], type: 'junta' });
+      } }
+    ]
+  },
+  {
+    id: 'aft_bankrun', title: 'Savers want their money now', text: 'Whatever comes next, people want their crowns under the mattress while it happens.', needs: (w) => !!w.transition, chainOnly: true,
+    options: [
+      { label: 'Guarantee every deposit', what: 'The Treasury stands behind the banks.', effects: ['Treasury −40'], run: (w) => spend(w, 40, 'escrow', 'Guaranteeing deposits') },
+      { label: 'Limit withdrawals', what: 'A little each day.', effects: ['Prosperity −5'], run: (w) => meter(w, 'prosperity', -5, 'Withdrawals were limited') },
+      { label: 'Do nothing', what: 'There is no government to do anything.', effects: ['Prosperity −8'], run: (w) => meter(w, 'prosperity', -8, 'A banking panic') }
+    ]
+  },
+  {
+    id: 'aft_border', title: 'Kessmark moves troops to the border', text: 'To restore order, they say, if we cannot manage it ourselves.', needs: (w) => !!w.transition, chainOnly: true,
+    options: [
+      { label: 'Accept peacekeepers', what: 'Foreign soldiers on our streets, and calm.', effects: ['Stability +3', 'Your approval −5', 'Kessmark warms'], run: (w) => (meter(w, 'stability', 3, 'Peacekeepers arrived'), approve(w, w.pm, -5), mood(w, 'kessmark', 1, 'We let their soldiers in')) },
+      { label: 'Pay them to go home', what: 'Call it a goodwill payment.', effects: ['Treasury −50'], run: (w) => spend(w, 50, 'nation:kessmark', 'A goodwill payment') },
+      { label: 'Warn them off', what: 'Whatever we are, we are not theirs.', effects: ['Stability −2', 'Kessmark cools'], run: (w) => (meter(w, 'stability', -2, 'A standoff at the border'), mood(w, 'kessmark', -1, 'We warned them off')) }
+    ]
+  },
+  {
+    id: 'aft_secession', title: 'The north declares independence', text: 'The market towns say they obeyed one government too many, and have elected their own.', needs: (w) => !!w.transition, chainOnly: true,
+    options: [
+      { label: 'Grant them autonomy', what: 'Their own council, their own taxes, our flag.', effects: ['Treasury −30', 'Stability +1'], run: (w) => (spend(w, 30, 'escrow', 'Settlement with the north'), meter(w, 'stability', 1, 'The north settled for autonomy')) },
+      { label: 'Send the Army', what: 'If there is one, and if it will go.', effects: ['Army loyalty −1', 'Stability −2'], run: (w) => (army(w, -1, 'Sent against its own towns'), meter(w, 'stability', -2, 'Soldiers in the north')) },
+      { label: 'Let them go', what: 'The realm is smaller this morning.', effects: ['Stability −8'], run: (w) => meter(w, 'stability', -8, 'The north broke away') }
+    ]
+  }
 ];
 
 export const crisisById = (id: string) => CRISES.find((c) => c.id === id);

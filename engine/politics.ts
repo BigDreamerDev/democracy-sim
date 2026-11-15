@@ -2,8 +2,7 @@
 // parties, forming a government, coalitions, the shadow cabinet, seasons, ambitions and weekly objectives.
 import {
   W, Id, DAY, HOUR, fail, newId, pick, rand, shuffle, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, stamp, approve,
-  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal, fmtDay, bump, adminDid, own, text
-} from './core';
+  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal, fmtDay, bump, adminDid, own, text, barred, detained, legit } from './core';
 import { openMarket, settleMarket } from './markets';
 import { seasonAwards } from './glory';
 import { leave } from './streets';
@@ -368,8 +367,10 @@ export function callGeneralElection(w: W, closesAt: number) {
   const g = newElection(w, { kind: 'general', title: `General election for the ${ordinal(w.season.n + 1)} Parliament`, winners: w.config.seats, closesAt });
   const s = newElection(w, { kind: 'speaker', title: 'Election for Speaker', closesAt });
   // sitting MPs and the Speaker stand again automatically; they can withdraw
-  mps(w).forEach((m) => !exiled(w, m) && (g.candidates[m] = { id: m, party: w.citizens[m].party, at: w.now, incumbent: true }));
-  if (w.speaker && !exiled(w, w.speaker)) s.candidates[w.speaker] = { id: w.speaker, at: w.now, incumbent: true };
+  // (not the barred or the detained, and in a one-party state only Party members)
+  const may = (m: Id) => !exiled(w, m) && !barred(w, m) && !detained(w, m) && !(w.regime?.type === 'party' && w.citizens[m].party !== w.regime.party);
+  mps(w).forEach((m) => may(m) && (g.candidates[m] = { id: m, party: w.citizens[m].party, at: w.now, incumbent: true }));
+  if (w.speaker && may(w.speaker)) s.candidates[w.speaker] = { id: w.speaker, at: w.now, incumbent: true };
   if (w.config.hos === 'republic' && w.config.hosMethod === 'citizens') newElection(w, { kind: 'hos', title: 'Election for President', closesAt });
   w.nextGeneralAt = null;
   gazette(w, 'election', `Polls are open. The ${w.config.seats} candidates with the most votes nationwide win seats.`, '#/elections');
@@ -387,6 +388,8 @@ export function stand(w: W, actor: Id, eid: Id) {
   if (!e || e.status !== 'open') fail('That election is not open.');
   const c = cit(w, actor);
   if (e.stand.startsWith('party:') && c.party !== e.stand.slice(6)) fail('Only party members can stand.');
+  if (e.kind !== 'leadership' && barred(w, actor)) fail('You are barred from standing for office for now.');
+  if (w.regime?.type === 'party' && ['general', 'speaker', 'office'].includes(e.kind) && c.party !== w.regime.party) fail('Only members of the Party may stand.');
   if (e.candidates[actor]) fail('You are already standing.');
   if ((e.withdrawn || []).includes(actor)) fail('You withdrew from this election. You can’t stand again in it.');
   e.candidates[actor] = { id: actor, party: c.party, at: w.now };
@@ -568,6 +571,12 @@ export function closeElection(w: W, e: any) {
   e.status = 'closed';
   e.closedAt = w.now;
   const r: any = countElection(w, e);
+  // a rigged election: the regime's own people are counted in first, whatever the ballots say
+  const rg = w.regime;
+  if (rg?.rigged?.election === e.id) {
+    const ours = r.ranked.filter((c: Id) => c === rg.leader || rg.council.includes(c) || (rg.party && w.citizens[c]?.party === rg.party));
+    r.ranked = [...ours, ...r.ranked.filter((c: Id) => !ours.includes(c))];
+  }
   const winners = r.ranked.slice(0, e.winners);
   e.results = { counts: r.counts, ranked: r.ranked, winners, draw: r.draw, turnout: Object.keys(e.ballots).length, method: e.method || 'single', rounds: r.rounds || null, quota: r.quota || null };
   scorePundits(w, e, winners);
@@ -617,7 +626,7 @@ export function closeElection(w: W, e: any) {
 export function countback(w: W) {
   w.seats.forEach((s: Id | null, i: number) => {
     if (s) return;
-    const next = (w.lastRanked || []).find((c: Id) => !w.seats.includes(c) && w.speaker !== c && w.hos.holder !== c && w.citizens[c]?.active && !exiled(w, c));
+    const next = (w.lastRanked || []).find((c: Id) => !w.seats.includes(c) && w.speaker !== c && w.hos.holder !== c && w.citizens[c]?.active && !exiled(w, c) && !barred(w, c) && !(w.regime?.type === 'party' && w.citizens[c].party !== w.regime.party));
     if (next) {
       w.seats[i] = next;
       stamp(w, next, 'Took a seat', 'On countback', 'bad');
@@ -703,6 +712,8 @@ export function cosign(w: W, actor: Id, pid: Id) {
 export function joinParty(w: W, actor: Id, pid: Id | null) {
   const c = cit(w, actor);
   if (pid && own(w.parties, pid)?.status !== 'active') fail('That party is not open.');
+  if (pid && w.regime?.type === 'party' && pid === w.regime.party) fail('Apply to the Party. The Chairman decides who gets a card.');
+  if (!pid && w.regime?.type === 'party' && w.regime.leader === actor) fail('The Chairman cannot leave the Party.');
   const old = c.party && w.parties[c.party];
   c.party = pid;
   if (old && old.leader === actor) {
@@ -874,6 +885,8 @@ export function clearMinisters(w: W) {
   Object.values(w.offices).forEach((o: any) => o.fill === 'pm' && (o.holder = null));
 }
 export function formGovernmentAfterElection(w: W) {
+  // under a regime an election changes the House, not who rules
+  if (w.regime) return;
   w.pm = null;
   w.coalition = null;
   w.confidence = null;
@@ -890,6 +903,7 @@ export function invitePM(w: W, actor: Id | null, target: Id) {
   const t = cit(w, target);
   if (!t.active) fail('They are no longer a citizen.');
   if (exiled(w, target)) fail('They are in exile.');
+  if (barred(w, target)) fail('They are barred from office for now.');
   if (!commands(w, target)) {
     const s = supportFor(w, target);
     fail(leaderOfSide(w, sideOf(w, target)) !== target ? `${t.name} doesn’t lead their side, so they can’t be invited.` : w.coalition?.status === 'signed' && w.coalition.sides.includes(sideOf(w, target)) && supportFor(w, target) >= majority(w) ? `The coalition is led by ${sideName(w, w.coalition.lead)}. Invite its leader.` : `${t.name} has ${s} of the ${majority(w)} seats needed. Nobody can be invited until a party or coalition commands a majority.`);
@@ -925,6 +939,7 @@ export function autoInvite(w: W) {
 }
 export function resignPM(w: W, actor: Id) {
   if (!isPM(w, actor)) fail('Only the Prime Minister can resign as PM.');
+  if (w.regime || w.transition) fail(w.regime ? 'A regime does not resign. Offer to hand back power instead.' : 'The provisional government stays until the election.');
   gazette(w, 'government', `${nm(w, actor)} resigns as Prime Minister.`);
   meter(w, 'stability', -4, 'The Prime Minister resigned');
   w.pm = null;
@@ -933,6 +948,11 @@ export function resignPM(w: W, actor: Id) {
   w.pmInviteDue = w.now + DAY;
 }
 export function governmentFalls(w: W) {
+  // a regime ignores the House, at a price
+  if (w.regime) {
+    w.confidence = null;
+    return legit(w, -3, 'The House voted no confidence');
+  }
   const by = w.confidence?.by;
   if (by && w.citizens[by]) w.citizens[by].stats.toppled = true;
   gazette(w, 'government', `${nm(w, w.pm)}'s government falls after failing to win back the House.`, '#/cabinet');

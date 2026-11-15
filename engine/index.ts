@@ -13,6 +13,7 @@ import * as R from './streets';
 import * as M from './markets';
 import * as G from './glory';
 import * as D from './drafts';
+import * as X from './regime';
 
 export * from './core';
 export { createWorld, createLiveWorld, NAMES } from './world';
@@ -109,9 +110,40 @@ export const COMMANDS: Record<string, Cmd> = {
   'demand.answer': (w, me, a) => B.answerDemand(w, me, a.id, a.how),
   'plot.start': (w, me, a) => B.startPlot(w, me, a.name),
   'plot.invite': (w, me, a) => B.invitePlot(w, me, a.plot, a.target),
-  'plot.answer': (w, me, a) => B.answerPlot(w, me, a.plot, a.join),
+  'plot.answer': (w, me, a) => B.answerPlot(w, me, a.plot, a.join, a.how),
   'plot.launch': (w, me, a) => B.launchCoup(w, me, a.plot),
   'plot.abandon': (w, me, a) => B.abandonPlot(w, me, a.plot),
+  'plot.pay': (w, me, a) => B.payChest(w, me, a.plot, a.amount),
+  'plot.backer': (w, me, a) => B.askBacker(w, me, a.plot, a.nation),
+  'plot.raid': (w, me, a) => B.raidPlot(w, me, a.plot),
+  'security.investigate': (w, me, a) => B.investigate(w, me, a.target),
+  'coup.declare': (w, me, a) => B.declareCoup(w, me, a.side),
+  'coup.defect': (w, me) => B.defectCoup(w, me),
+  'coup.flee': (w, me, a) => X.fleeOrStand(w, me, a.flee),
+  'regime.form': (w, me, a) => X.formRegime(w, me, a.type),
+  'regime.decree': (w, me, a) => X.decree(w, me, a),
+  'regime.council': (w, me, a) => X.councilVote(w, me, a.yes),
+  'regime.censor': (w, me, a) => X.censor(w, me, a.story, a.allow),
+  'regime.oath': (w, me, a) => X.swear(w, me, a.swear),
+  'regime.apply': (w, me) => X.applyParty(w, me),
+  'regime.admit': (w, me, a) => X.admitParty(w, me, a.target, a.yes),
+  'regime.strike': (w, me) => X.strike(w, me),
+  'regime.verdict': (w, me, a) => X.trialVote(w, me, a.believe),
+  'regime.vote': (w, me, a) => X.plebisciteVote(w, me, a.yes),
+  'regime.palace': (w, me) => X.palace(w, me),
+  'regime.free': (w, me) => X.freeElections(w, me),
+  'regime.leak': (w, me) => X.leakRigging(w, me),
+  'regime.exit': (w, me) => X.offerExit(w, me),
+  'regime.exitAnswer': (w, me, a) => X.answerExit(w, me, a.yes),
+  'police.probe': (w, me, a) => X.policeProbe(w, me, a.target),
+  'prison.letter': (w, me, a) => X.prisonLetter(w, me, a.text),
+  'prison.break': (w, me, a) => X.jailbreak(w, me, a.target),
+  'press.underground': (w, me, a) => X.underground(w, me, a.headline, a.body),
+  'transition.form': (w, me, a) => X.formTransition(w, me, a.kind),
+  'transition.act': (w, me, a) => X.actTransition(w, me, a.act),
+  'transition.claim': (w, me) => X.claimPower(w, me),
+  'transition.back': (w, me, a) => X.backClaim(w, me, a.who),
+  'reckoning.vote': (w, me, a) => X.reckoningVote(w, me, a.verdict),
   'exile.asylum': (w, me, a) => B.seekAsylum(w, me, a.nation),
   'exile.pardonRequest': (w, me) => B.askPardon(w, me),
   'hos.pardon': (w, me, a) => B.pardon(w, me, a.target),
@@ -216,7 +248,9 @@ export function run(world: W, actor: Id, cmd: string, args: any = {}): W {
   const who = cit(w, actor);
   if (who.suspended) fail('Your account is suspended. Ask the Returning Officer.');
   if (ghost(w, actor) && !R.isGhostOk(cmd)) fail(`You were assassinated. Until ${fmtTime(w, w.citizens[actor].ghostUntil)} you are a ghost: you can vote, and nothing else.`);
+  X.gate(w, actor, cmd);
   f(w, actor, args || {});
+  X.sync(w);
   T.afterCommand(w, actor, cmd);
   P.checkObjectives(w, actor);
   Object.keys(w.citizens).forEach((id) => P.checkObjectives(w, id));

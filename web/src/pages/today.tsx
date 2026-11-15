@@ -224,7 +224,7 @@ function SlipActions({ k }: { k: string }) {
   if (kind === 'prop') { const p = w.proposals[id]; if (!p) return null; const all = p.voters === 'all'; return <div class="slip-acts"><Btn small onClick={() => act('prop.vote', { prop: id, vote: 'aye' }, 'Vote cast. +2 Influence.')}>{all ? 'Yes' : 'Aye'}</Btn><Btn small kind="ghost" onClick={() => act('prop.vote', { prop: id, vote: 'no' }, 'Vote cast. +2 Influence.')}>No</Btn>{!all && <Btn small kind="plain" onClick={() => act('prop.vote', { prop: id, vote: 'abstain' }, 'Abstention recorded.')}>Abstain</Btn>}</div>; }
   if (kind === 'assent') return two(w.config.hos === 'monarchy' ? 'Give assent' : 'Sign', w.config.hos === 'monarchy' ? 'Refuse' : 'Veto', 'prop.assent', (v) => ({ prop: id, yes: v }), ['Signed into law.', 'Refused.']);
   if (kind === 'deal') return two('Accept', 'Refuse', 'deal.answer', (v) => ({ id, yes: v }), ['Deal accepted.', 'Deal refused.']);
-  if (kind === 'plot') return two('Join', 'Refuse', 'plot.answer', (v) => ({ plot: id, join: v }), ['You’re in.', 'You said no.']);
+  if (kind === 'plot') return two('Join', 'Say no, keep quiet', 'plot.answer', (v) => ({ plot: id, how: v ? 'join' : 'silent' }), ['You’re in.', 'You said no, and nothing else.']);
   if (kind === 'daily' && w.daily) return <div class="slip-acts">{RED_BOX[w.daily.qi].a.map((a: string, i: number) => <Btn small kind="ghost" onClick={() => act('daily.answer', { option: i }, 'In the Red Box.')}>{a}</Btn>)}</div>;
   return null;
 }
@@ -358,13 +358,13 @@ export function FrontPage({ id }: { id: string }) {
             <h2 class="fp-head">{f.crisis.title}</h2>
             <p class="fp-dek">{f.crisis.text} {f.crisis.how === 'house' ? 'The House voted to' : f.crisis.how === 'pm' ? 'The Prime Minister chose to' : 'Nobody decided, so the realm was left to'} <b>{f.crisis.choice.charAt(0).toLowerCase() + f.crisis.choice.slice(1)}</b>. {f.crisis.what}{f.crisis.consequence ? ' It was the price of an earlier decision.' : ''}</p>
             {f.crisis.quote && <blockquote class="fp-quote">“{f.crisis.quote.text}” <span class="small">{nm(w, f.crisis.quote.by)}</span></blockquote>}
-            {f.lead && <p class="fp-dek" style={{ borderTop: '1px solid #C3B9A0', paddingTop: 8 }}><b>Also: {f.lead.headline}.</b> {f.lead.body} <span class="small">By {nm(w, f.lead.by)}, {f.lead.paper}.</span></p>}
+            {f.lead && <p class="fp-dek" style={{ borderTop: '1px solid #C3B9A0', paddingTop: 8 }}><b>Also: {f.lead.headline}.</b> {f.lead.body} <span class="small">By {f.lead.by ? nm(w, f.lead.by) : 'an unsigned hand'}, {f.lead.paper}.</span></p>}
           </>
         ) : (
           <>
             <h2 class="fp-head">{f.lead ? f.lead.headline : 'A quiet week in the realm'}</h2>
             {f.lead?.photo && <div class="fp-photo"><Photo id={f.lead.photo} alt={f.lead.headline} /></div>}
-            {f.lead && <p class="fp-dek">{f.lead.body} <span class="small">By {nm(w, f.lead.by)}, {f.lead.paper}.</span></p>}
+            {f.lead && <p class="fp-dek">{f.lead.body} <span class="small">By {f.lead.by ? nm(w, f.lead.by) : 'an unsigned hand'}, {f.lead.paper}.</span></p>}
             {f.crisis && <p class="fp-dek" style={{ borderTop: '1px solid #C3B9A0', paddingTop: 8 }}><b>Crisis of the week: {f.crisis.title}.</b> {f.crisis.how === 'house' ? 'The House chose' : f.crisis.how === 'pm' ? 'The PM chose' : 'Nobody chose, so:'} “{f.crisis.choice}”.</p>}
           </>
         )}

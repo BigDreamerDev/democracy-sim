@@ -30,12 +30,13 @@ function blank(seed: number, now: number): W {
     banks: {}, ventures: [], nations: {}, offers: {}, treaties: {}, asks: [], intel: [],
     army: { readiness: 'ready', loyalty: 3, reasons: [], war: null },
     deals: {}, cards: [], demands: {}, plots: {}, martial: null,
+    coup: null, regime: null, transition: null, reckoning: null, reckoningDue: null, regimes: [], probes: [], probeAt: 0, scars: null,
     papers: {}, stories: [], frontpages: [], cases: {}, crises: {}, crisisQueue: [],
     meters: { prosperity: 60, stability: 60, log: [] },
     season: { n: 0, startedAt: now }, archive: [], gazette: [], adminLog: [],
     streets: { zones: SAFE_ZONES.map((text, i) => ({ id: 'z' + i, text, by: 'default' })), contracts: {}, protect: null, meets: [] },
     bounties: {}, stalls: {}, orders: {}, jobs: {}, jobClaims: [], markets: {}, ultimatums: [],
-    daily: freshDaily(now), dailyPast: [], polls: [], fame: { pms: [], seasons: [], records: {} }, hunt: null, clockErrors: []
+    daily: freshDaily(now), dailyPast: [], polls: [], fame: { pms: [], seasons: [], records: {}, regimes: [] }, hunt: null, clockErrors: []
   };
 }
 function addCitizen(w: W, name: string, admin = false) {

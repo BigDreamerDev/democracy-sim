@@ -125,15 +125,16 @@ export function Press() {
     <Page back={['#/realm', 'The realm']} title="The press" intro="You and your friends can make a newspaper and publish stories, the most popular of the week makes the Gazette's front page">
       <Sec title="Papers"><ul class="list">{Object.values(w.papers).map((p: any) => <li class="row"><span><b>{p.name}</b><div class="small muted">Editor {nm(w, p.editor)} · {p.followers.length} readers</div></span><Btn small kind={p.followers.includes(me) ? 'plain' : 'ghost'} onClick={() => act('press.follow', { paper: p.id })}>{p.followers.includes(me) ? 'Following' : 'Follow'}</Btn></li>)}</ul></Sec>
       {waiting.length > 0 && <Sec title="Waiting for your decision">{waiting.map((s: any) => <Card><b>{s.headline}</b><Photo id={s.photo} alt={s.headline} /><p class="small">{s.body}</p><div class="small muted">By {nm(w, s.by)}</div><div class="grid2" style={{ marginTop: 8 }}><Btn small onClick={() => act('press.edit', { story: s.id, yes: true }, 'Published.')}>Publish</Btn><Btn small kind="plain" onClick={() => act('press.edit', { story: s.id, yes: false })}>Spike</Btn></div></Card>)}</Sec>}
+      {w.regime?.censorship && <Sec><Card kind="warn"><b>Censorship is in force.</b> Every story goes to the regime before it is printed.{w.stories.some((s: any) => s.status === 'held' && s.by === me) ? ' Yours is with the censor.' : ''} The <a href="#/regime">underground press</a> prints without asking.</Card></Sec>}
       <Sec title="Latest">
         <div class="stack">
           {stories.map((s: any) => (
             <Card kind={s.leak ? 'warn' : undefined}>
-              <div class="kicker" style={{ margin: 0 }}>{w.papers[s.paper]?.name}{s.leak ? ' · leaked' : ''}</div>
+              <div class="kicker" style={{ margin: 0 }}>{s.underground ? 'The underground press' : w.papers[s.paper]?.name}{s.leak ? ' · leaked' : ''}</div>
               <div class="serif" style={{ fontSize: 21, lineHeight: 1.15 }}>{s.headline}</div>
               <Photo id={s.photo} alt={s.headline} />
               <p style={{ margin: '4px 0' }}>{s.body}</p>
-              <div class="row"><span class="small muted">{nm(w, s.by)}, {fmtDay(s.at)}</span><button type="button" class={'cheer' + (s.cheers.includes(me) ? ' on' : '')} aria-pressed={s.cheers.includes(me) ? 'true' : 'false'} onClick={() => act('press.cheer', { story: s.id })}>Cheer <b class="tnum">{s.cheers.length}</b></button></div>
+              <div class="row"><span class="small muted">{s.by ? nm(w, s.by) : 'Unsigned'}, {fmtDay(s.at)}</span><button type="button" class={'cheer' + (s.cheers.includes(me) ? ' on' : '')} aria-pressed={s.cheers.includes(me) ? 'true' : 'false'} onClick={() => act('press.cheer', { story: s.id })}>Cheer <b class="tnum">{s.cheers.length}</b></button></div>
             </Card>
           ))}
           {!stories.length && <Empty>No stories yet.</Empty>}

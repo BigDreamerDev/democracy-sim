@@ -11,7 +11,10 @@ export function digest(w: W): string {
   const when = fmtTime(w, w.now);
   L.push(`*${w.config.realmName}* · ${when}`);
   if (w.clock?.pausedAt) L.push(`⏸ The realm is paused${w.clock.reason ? `: ${w.clock.reason}` : ''}.`);
-  if (w.martial) L.push(`⚠ ${w.martial.emergency ? 'State of emergency' : 'Martial law'}, led by ${nm(w, w.martial.leader)}, until ${fmtTime(w, w.martial.until)}.`);
+  if (w.coup) L.push(`⚠ A coup is under way, led by ${nm(w, w.coup.leader)}. Declare for or against it by ${fmtTime(w, w.coup.endsAt)}.`);
+  if (w.regime) L.push(`⚠ ${nm(w, w.regime.leader)} rules by ${({ martial: 'martial law', junta: 'junta', dictatorship: 'dictatorship', party: 'one-party state' } as any)[w.regime.type]}. Legitimacy ${w.regime.legit}.`);
+  if (w.transition) L.push(`⚠ A provisional government, led by ${nm(w, w.transition.leader)}, until the Restoration election.`);
+  if (w.martial && !w.martial.regime) L.push(`⚠ ${w.martial.emergency ? 'State of emergency' : 'Martial law'}, led by ${nm(w, w.martial.leader)}, until ${fmtTime(w, w.martial.until)}.`);
   if (w.phase === 'convention') {
     const open = w.convention.clauses.filter((c: any) => c.adopted === null).length;
     L.push(`The Founding Convention is sitting: ${open} clause${open === 1 ? '' : 's'} still open, closing ${fmtTime(w, w.convention.closesAt)}.`);

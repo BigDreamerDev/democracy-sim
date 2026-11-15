@@ -1,6 +1,7 @@
 // Bots: the other citizens take plausible turns so one person can play the whole game.
 import { W, Id, chance, pick, rand, allCitizens, exiled, isMP, mps, inGovernment, sideOf, intrigueOpen, canSeeCard, weekNo, ghost, holderOf , sideName , DAY , majority } from './core';
 import { isGhostOk } from './streets';
+import { gate } from './regime';
 import { RED_BOX } from './glory';
 import { COMMANDS } from './index';
 import { canVote, checkObjectives, leaderOfSide, supportFor , contenders, commands, sideSeats } from './politics';
@@ -30,6 +31,7 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
   const go = (actor: Id, cmd: string, a: any = {}) => {
     if (ghost(w, actor) && !isGhostOk(cmd)) return false;
     try {
+      gate(w, actor, cmd);
       COMMANDS[cmd](w, actor, a);
       checkObjectives(w, actor);
       return true;
@@ -201,11 +203,27 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
   });
   Object.values(w.papers).forEach((pp: any) => isBot(pp.editor) && w.stories.filter((s: any) => s.paper === pp.id && s.status === 'submitted').forEach((s: any) => p(0.3) && go(pp.editor, 'press.edit', { story: s.id, yes: chance(w, 0.75) })));
 
+  // a coup night, a regime, and what comes after
+  bots.forEach((b: any) => {
+    const k = w.coup, r = w.regime, t = w.transition;
+    if (k && !k.plotters.includes(b.id) && !k.declared[b.id] && p(0.3)) go(b.id, 'coup.declare', { side: chance(w, 0.6) ? 'gov' : 'coup' });
+    if (r?.oath && !r.oath[b.id] && p(0.2)) go(b.id, 'regime.oath', { swear: chance(w, 0.6) });
+    if (r?.trial && r.trial.votes[b.id] === undefined && p(0.2)) go(b.id, 'regime.verdict', { believe: chance(w, 0.35) });
+    if (r?.plebiscite && r.plebiscite.votes[b.id] === undefined && p(0.2)) go(b.id, 'regime.vote', { yes: chance(w, 0.4) });
+    if (r && r.leader !== b.id && !r.council.includes(b.id) && !r.strike.includes(b.id) && p(0.03)) go(b.id, 'regime.strike');
+    if (r?.type === 'party' && b.party !== r.party && !r.applicants.includes(b.id) && p(0.05)) go(b.id, 'regime.apply');
+    if (r?.ousted === b.id && !r.fled && !r.stood && p(0.3)) go(b.id, 'coup.flee', { flee: chance(w, 0.5) });
+    if (r?.leader === b.id && !r.chosen && p(0.5)) go(b.id, 'regime.form', { type: pick(w, ['martial', 'junta', 'dictatorship']) });
+    if (r?.leader === b.id) r.applicants.forEach((x: Id) => p(0.3) && go(b.id, 'regime.admit', { target: x, yes: true }));
+    if (t?.leader === b.id && !t.form && p(0.3)) go(b.id, 'transition.form', { kind: pick(w, ['unity', 'caretaker']) });
+    if (w.reckoning && !w.reckoning.votes[b.id] && p(0.2)) go(b.id, 'reckoning.vote', { verdict: pick(w, ['pardon', 'fine', 'exile']) });
+  });
+
   // the backroom answers back
   if (intrigueOpen(w)) {
     Object.values(w.deals).forEach((d: any) => d.status === 'offered' && isBot(d.to) && p(0.3) && go(d.to, 'deal.answer', { id: d.id, yes: chance(w, 0.55) }));
     Object.values(w.demands).forEach((d: any) => d.status === 'sent' && isBot(d.target) && p(0.3) && go(d.target, 'demand.answer', { id: d.id, how: chance(w, 0.5) ? 'comply' : 'expose' }));
-    Object.values(w.plots).forEach((pl: any) => pl.status === 'planning' && Object.entries(pl.invited).forEach(([id, s]) => s === 'pending' && isBot(id) && p(0.3) && go(id, 'plot.answer', { plot: pl.id, join: chance(w, 0.55) })));
+    Object.values(w.plots).forEach((pl: any) => pl.status === 'planning' && Object.entries(pl.invited).forEach(([id, s]) => s === 'pending' && isBot(id) && p(0.3) && go(id, 'plot.answer', { plot: pl.id, how: pick(w, ['join', 'join', 'silent', 'silent', 'report']) })));
     bots.forEach((b: any) => {
       const mine = w.cards.filter((k: any) => canSeeCard(w, k, b.id) && k.about && k.about !== b.id);
       if (mine.length && p(0.01)) go(b.id, 'card.leak', { card: (pick(w, mine) as any).id, paper: pick(w, [null, ...Object.keys(w.papers)]) });

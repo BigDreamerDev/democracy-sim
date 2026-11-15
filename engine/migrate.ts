@@ -35,6 +35,18 @@ export function migrate(w: W): W {
   w.hunt ??= null;
   Object.values(w.citizens || {}).forEach((c: any) => ((c.streets ??= { in: false }), (c.life ??= {}), (c.badges ??= {})));
   w.clockErrors ??= [];
+  // coups, regimes and what follows them
+  w.coup ??= null;
+  w.regime ??= null;
+  w.transition ??= null;
+  w.reckoning ??= null;
+  w.reckoningDue ??= null;
+  w.regimes ??= [];
+  w.probes ??= [];
+  w.probeAt ??= 0;
+  w.scars ??= null;
+  w.fame.regimes ??= [];
+  Object.values(w.plots || {}).forEach((p: any) => ((p.informers ??= []), (p.chest ??= 0), (p.paid ??= {}), (p.asked ??= {}), (p.heat ??= 0), (p.backer ??= null)));
   w.drafts ??= {};
   w.pledges ??= {};
   w.breakaways ??= {};

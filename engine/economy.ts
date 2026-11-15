@@ -126,6 +126,7 @@ export function withdraw(w: W, actor: Id, bid: Id, amount: number) {
   if (!b) fail('No such bank.');
   amount = int(amount, 1, 1_000_000, 'amount');
   if ((b.deposits[actor] || 0) < amount) fail(`You have ${b.deposits[actor] || 0} saved there.`);
+  if (b.status === 'frozen') fail(`${b.name} is frozen by the regime. Nothing goes in or out until it ends.`);
   // a run on the bank: it fails (and stays failed), and nothing is paid out
   if (bal(w, 'bank:' + bid) < amount) return failBank(w, b);
   b.deposits[actor] -= amount;
@@ -156,6 +157,7 @@ export function bankHealth(w: W, b: any) {
 function bankPayday(w: W) {
   Object.values(w.banks).forEach((b: any) => {
     if (b.status !== 'open') return;
+    // (a frozen bank is skipped too: its cash is held by the regime, and it must not fail for that)
     b.loans.forEach((l: any) => {
       if (l.left <= 0) return;
       const due = Math.min(l.weekly, l.left);
@@ -204,7 +206,10 @@ export function settleVenture(w: W, v: any) {
   v.status = 'back';
   v.returned = back;
   const pay = Math.min(back, bal(w, 'nation:' + v.nation));
-  if (pay > 0) transfer(w, 'nation:' + v.nation, ca(v.by), pay, `Venture returns from ${n.name}`);
+  // nationalised trade: the stake comes home, the profit goes to the Treasury
+  const mine = w.regime?.trade ? Math.min(pay, v.amount) : pay;
+  if (mine > 0) transfer(w, 'nation:' + v.nation, ca(v.by), mine, `Venture returns from ${n.name}`);
+  if (pay > mine) transfer(w, 'nation:' + v.nation, 'treasury', pay - mine, 'Nationalised trade');
   if (back > v.amount) {
     earn(w, v.by, 2, 'A profitable venture');
     meter(w, 'prosperity', 1, 'Trade brought money home');

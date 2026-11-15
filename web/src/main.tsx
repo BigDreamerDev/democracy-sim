@@ -26,6 +26,7 @@ import { Polls } from './pages/glory';
 import { CopyDesk } from './pages/copydesk';
 import { CopyOverlay } from './copyEdit';
 import { watchForUpdates, UpdateBar } from './update';
+import { Regime } from './pages/regime';
 
 const ROOTS = ['', 'house', 'realm', 'laws', 'you', 'gazette'];
 function level(hash: string) {
@@ -84,7 +85,7 @@ function route(hash: string) {
     society: () => <Society />, press: () => <Society focus="press" />, court: () => <Society focus="court" />, crises: () => <Society focus="crises" />,
     honours: () => <Honours />, season: () => <Honours focus="season" />, fame: () => <Honours focus="fame" />,
     nation: () => <Nation id={b} />, case: () => <Case id={b} />, crisis: () => <Crisis id={b} />,
-    backroom: () => <BackroomAll />, plots: () => <BackroomAll focus="plots" />, exile: () => <BackroomAll focus="exile" />, admin: () => <Admin />, learn: () => <Learn />, rolog: () => <RoLog />, developers: () => <Developers />, apps: () => <Apps />, app: () => <AppPage id={b} />, authorize: () => <Authorize query={q} />,
+    regime: () => <Regime />, backroom: () => <BackroomAll />, plots: () => <BackroomAll focus="plots" />, exile: () => <BackroomAll focus="exile" />, admin: () => <Admin />, learn: () => <Learn />, rolog: () => <RoLog />, developers: () => <Developers />, apps: () => <Apps />, app: () => <AppPage id={b} />, authorize: () => <Authorize query={q} />,
     // an invitation link opened while already signed in: nothing to do but say so
     join: () => (setTimeout(() => (say('You are already signed in. Invitations are for new players.'), (location.hash = '#/')), 0), <Today />),
     streets: () => <Streets />, hunt: () => <Hunt />, tag: () => <TagLanding code={b || ''} />, meet: () => <Meet code={b} />, market: () => <Market />, polls: () => <Polls />,
@@ -134,10 +135,16 @@ function StatusBanner() {
   const { world: w } = useStore();
   const p = w.clock?.pausedAt;
   const m = w.martial;
-  if (!p && !m) return null;
+  const k = w.coup, r = w.regime, t = w.transition;
+  if (!p && !m && !k && !r && !t) return null;
+  const rule: Record<string, string> = { martial: 'Martial law', junta: 'A junta rules', dictatorship: 'A dictatorship', party: 'A one-party state' };
   return (
-    <div class={'status-banner' + (m && !p ? ' martial' : '')} role="status">
-      {p ? <><b>The realm is paused</b>{w.clock.reason ? `: ${w.clock.reason}` : ''}. No deadline passes until the Returning Officer resumes it.</> : <><b>{m.emergency ? 'State of emergency' : 'Martial law'}</b>, led by {nm(w, m.leader)}, until <When at={m.until} />.</>}
+    <div class={'status-banner' + (!p ? ' martial' : '')} role="status">
+      {p ? <><b>The realm is paused</b>{w.clock.reason ? `: ${w.clock.reason}` : ''}. No deadline passes until the Returning Officer resumes it.</>
+        : k ? <><b>A coup is under way</b>, led by {nm(w, k.leader)}. <a href="#/regime">Declare for or against it</a> by <When at={k.endsAt} />.</>
+        : r ? <><b>{rule[r.type]}</b>, led by {nm(w, r.leader)}. <a href="#/regime">See what is in force</a>.</>
+        : t ? <><b>Provisional government</b>, led by {nm(w, t.leader)}, until the Restoration election. <a href="#/regime">What happens now</a>.</>
+        : <><b>{m.emergency ? 'State of emergency' : 'Martial law'}</b>, led by {nm(w, m.leader)}{m.until ? <>, until <When at={m.until} /></> : ''}.</>}
     </div>
   );
 }

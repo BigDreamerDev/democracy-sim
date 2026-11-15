@@ -1,6 +1,7 @@
 // The backroom: private deals, secret cards (leak, use or burn), coups, exile and pardons. Opens in week 3.
-import { W, Id, DAY, fail, newId, chance, cit, nm, own, text as txt, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, meter, needIntrigue, canSeeCard, addCard, isHOS, isMP, isPM, inDanger, holderOf, transfer, ca, hosTitle, bump } from './core';
+import { W, Id, DAY, HOUR, fail, newId, chance, cit, nm, own, text as txt, int, clamp, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, meter, needIntrigue, canSeeCard, addCard, isHOS, isMP, isPM, inDanger, holderOf, hasPower, transfer, ca, hosTitle, bump } from './core';
 import { vacateSeat, clearMinisters, callGeneralElection } from './politics';
+import { takePower, fallRegime } from './regime';
 
 // ---------- private deals: written down, never enforced ----------
 export function offerDeal(w: W, actor: Id, to: Id, text: string) {
@@ -106,20 +107,35 @@ export function burnCard(w: W, actor: Id, kid: Id) {
   k.burnedBy = actor;
 }
 
-// ---------- coups ----------
+// ---------- coups: planning ----------
+// A plot is private to its members and whoever they approach. An approach can be joined, kept quiet, reported
+// (which ends the plot) or joined as an informer for the Security Service, who can then raid it when they like.
+// Three preparations make a coup swift (any two of them): the General is in, a foreign backer has signed on,
+// the war chest is full. Each one also raises the chance of discovery every day.
+export const CHEST_FULL = 150;
+export const NIGHT = 12 * HOUR;
+export const pretext = (w: W) => inDanger(w, 'stability') || !!w.confidence || Object.values(w.crises).some((c: any) => c.status === 'open');
+// who a double agent reports to: the Director of the Security Service, or the Prime Minister if there is none
+export const watcher = (w: W): Id | null => holderOf(w, 'security') || w.pm || null;
 export function plotNeeds(w: W, p: any) {
   const general = holderOf(w, 'army');
-  const need = (w.offices.army ? 4 : 5) - (inDanger(w, 'stability') ? 1 : 0);
-  const armyOk = !w.offices.army || w.army.loyalty <= 2 || (!!general && p.members.includes(general));
-  return { need, enough: p.members.length >= need, armyOk, risk: Math.min(90, 10 + 5 * p.members.length) };
+  const scar = w.scars && w.scars.until > w.now ? 1 : 0;
+  // a regime that has lost half its legitimacy can be toppled by two people
+  const weak = !!w.regime && w.regime.legit <= Math.ceil(w.regime.legit0 / 2);
+  const need = weak ? 2 : Math.max(2, (w.offices.army ? 3 : 4) - (inDanger(w, 'stability') ? 1 : 0) - scar);
+  const hasGeneral = !!w.offices.army && !!general && p.members.includes(general);
+  const chest = p.chest || 0;
+  const preps = [hasGeneral, !!p.backer, chest >= CHEST_FULL].filter(Boolean).length;
+  return { need, enough: p.members.length >= need, armyOk: true, hasGeneral, chest, preps, swift: preps >= 2, pretext: pretext(w), risk: Math.min(90, 10 + 5 * p.members.length + 5 * preps + (p.heat || 0)) };
 }
 export function startPlot(w: W, actor: Id, name: string) {
   needIntrigue(w);
   mustBeFree(w, actor);
+  if (w.coup) fail('A coup is already under way.');
   if (Object.values(w.plots).some((p: any) => p.status === 'planning' && p.members.includes(actor))) fail('You are already in a plot.');
   spend(w, actor, 20, 'Started a plot');
   const id = newId(w, 'pl');
-  w.plots[id] = { id, name: txt(name, 0, 60, 'plot name') || 'Operation Nightjar', leader: actor, members: [actor], invited: {}, status: 'planning', at: w.now, nextCheck: w.now + DAY };
+  w.plots[id] = { id, name: txt(name, 0, 60, 'plot name') || 'Operation Nightjar', leader: actor, members: [actor], invited: {}, informers: [], chest: 0, paid: {}, backer: null, asked: {}, heat: 0, status: 'planning', at: w.now, nextCheck: w.now + DAY };
 }
 export function invitePlot(w: W, actor: Id, pid: Id, target: Id) {
   const p = own(w.plots, pid);
@@ -128,46 +144,103 @@ export function invitePlot(w: W, actor: Id, pid: Id, target: Id) {
   if (p.members.includes(target) || p.invited[target]) fail('Already approached.');
   p.invited[target] = 'pending';
 }
-export function answerPlot(w: W, actor: Id, pid: Id, join: boolean) {
+// how: 'join', 'silent' (say no and keep the secret), 'report' (ends the plot) or 'inform' (join, and tell the
+// Security Service). Old clients send only `join`: true joins, false stays silent.
+export function answerPlot(w: W, actor: Id, pid: Id, join: boolean, how?: unknown) {
   const p = own(w.plots, pid);
   if (!p || p.status !== 'planning' || p.invited[actor] !== 'pending') fail('There is no invitation for you.');
-  if (join) {
-    p.invited[actor] = 'joined';
-    p.members.push(actor);
-  } else {
+  mustBeFree(w, actor);
+  const h = how === undefined || how === null ? (join ? 'join' : 'silent') : how;
+  if (h !== 'join' && h !== 'silent' && h !== 'report' && h !== 'inform') fail('Join, stay silent, report it or inform on it.');
+  if (h === 'silent') return void (p.invited[actor] = 'silent');
+  if (h === 'report') {
     p.invited[actor] = 'reported';
     earn(w, actor, 10, 'Reported a plot');
     approve(w, actor, 5);
-    failPlot(w, p, `${nm(w, actor)} reported it`);
+    return failPlot(w, p, `${nm(w, actor)} reported it`);
   }
+  if (h === 'inform') {
+    const to = watcher(w);
+    if (!to || p.members.includes(to)) fail('There is nobody to inform: the Security Service is empty, or in on it.');
+    p.informers.push(actor);
+  }
+  p.invited[actor] = 'joined';
+  p.members.push(actor);
 }
-export function launchCoup(w: W, actor: Id, pid: Id) {
+// the Security Service acts on its informer: every plotter but the informers goes into exile
+export function raidPlot(w: W, actor: Id, pid: Id) {
   const p = own(w.plots, pid);
-  if (!p || p.status !== 'planning' || p.leader !== actor) fail('Only the leader can launch it.');
-  const r = plotNeeds(w, p);
-  if (!r.enough) fail(`You need ${r.need} plotters.`);
-  if (!r.armyOk) fail('The Army would stop you. Win over the General, or wait for its loyalty to fall to 2.');
-  p.status = 'succeeded';
-  w.martial = { leader: actor, plotters: p.members.slice(), until: w.now + 3 * DAY };
-  w.pm = actor;
-  clearMinisters(w);
-  const pmOffices = Object.values(w.offices).filter((o: any) => o.fill === 'pm');
-  pmOffices.forEach((o: any, i) => (o.holder = p.members[i + 1] || null));
-  w.confidence = null;
-  p.members.forEach((m: Id) => stamp(w, m, 'Coup', p.name, 'bad'));
-  meter(w, 'stability', -20, 'A coup');
-  gazette(w, 'crisis', `Coup. ${nm(w, actor)} and ${p.members.length - 1} others seize power. Martial law for 3 days, then a Restoration election.`, '#/plots');
+  if (!p || p.status !== 'planning' || !(p.informers || []).length) fail('You have nobody inside that plot.');
+  if (watcher(w) !== actor) fail('Only the head of the Security Service orders a raid.');
+  earn(w, actor, 5, 'Broke up a plot');
+  failPlot(w, p, 'the Security Service had someone inside', p.informers);
+}
+// one a day: is this person in a plot? The answer is true, and only the asker sees it
+export function investigate(w: W, actor: Id, target: Id) {
+  needIntrigue(w);
+  if (!w.offices.security) fail('This needs a Security Service.');
+  if (!hasPower(w, actor, 'intel') && !(isPM(w, actor) && !holderOf(w, 'security'))) fail('Only the Director of the Security Service investigates.');
+  cit(w, target);
+  if (target === actor) fail('Pick someone else.');
+  if (w.probeAt && w.now - w.probeAt < DAY) fail('One investigation a day.');
+  w.probeAt = w.now;
+  const yes = Object.values(w.plots).some((p: any) => p.status === 'planning' && p.members.includes(target));
+  w.probes.unshift({ id: newId(w, 'pb'), by: actor, target, at: w.now, yes });
+  w.probes = w.probes.slice(0, 30);
+}
+// the war chest: held in escrow, refunded if the plot is called off, lost to the Treasury otherwise
+export function payChest(w: W, actor: Id, pid: Id, amount: number) {
+  const p = own(w.plots, pid);
+  if (!p || p.status !== 'planning' || !p.members.includes(actor)) fail('You are not in that plot.');
+  const amt = int(amount, 1, CHEST_FULL, 'amount');
+  if ((p.chest || 0) + amt > CHEST_FULL) fail(`The chest is full at ${CHEST_FULL} crowns. It has ${p.chest || 0}.`);
+  transfer(w, ca(actor), 'escrow', amt, 'A private subscription');
+  p.chest = (p.chest || 0) + amt;
+  p.paid[actor] = (p.paid[actor] || 0) + amt;
+}
+// ask a nation to back the coup: friends say yes more often; a refusal makes the plot easier to find
+export function askBacker(w: W, actor: Id, pid: Id, nid: Id) {
+  const p = own(w.plots, pid);
+  if (!p || p.status !== 'planning' || p.leader !== actor) fail('Only the leader deals with foreign powers.');
+  const n = own(w.nations, nid);
+  if (!n) fail('Unknown country.');
+  if (p.backer) fail(`${w.nations[p.backer].name} is already backing you.`);
+  if (p.asked[nid]) fail('You have already asked them.');
+  const yes = chance(w, [0.1, 0.3, 0.55, 0.75, 0.9][n.mood]);
+  p.asked[nid] = yes ? 'yes' : 'no';
+  if (yes) p.backer = nid;
+  else p.heat = (p.heat || 0) + 5;
+}
+function refundChest(w: W, p: any) {
+  Object.entries(p.paid || {}).forEach(([id, amt]: any) => amt > 0 && transfer(w, 'escrow', ca(id), amt, 'A subscription returned'));
+  p.chest = 0;
+  p.paid = {};
+}
+function loseChest(w: W, p: any, memo: string) {
+  // once only: a launched plot banks its chest, and may still fail later
+  if (p.chest > 0 && !p.banked) transfer(w, 'escrow', 'treasury', p.chest, memo);
+  p.banked = true;
+  p.paid = {};
 }
 export function abandonPlot(w: W, actor: Id, pid: Id) {
   const p = own(w.plots, pid);
   if (!p || p.status !== 'planning' || p.leader !== actor) fail('Only the leader can call it off.');
+  refundChest(w, p);
   p.status = 'abandoned';
 }
-export function failPlot(w: W, p: any, why: string) {
+export function failPlot(w: W, p: any, why: string, spare: Id[] = []) {
   p.status = 'failed';
-  gazette(w, 'crisis', `A coup plot is uncovered (${why}). ${p.members.map((m: Id) => nm(w, m)).join(', ')} go into exile for a week.`, '#/exile');
+  loseChest(w, p, 'Seized from plotters');
+  const out = p.members.filter((m: Id) => !spare.includes(m));
+  gazette(w, 'crisis', `A coup plot is uncovered (${why}). ${out.map((m: Id) => nm(w, m)).join(', ')} go${out.length === 1 ? 'es' : ''} into exile for a week.`, '#/exile');
   meter(w, 'stability', -5, 'A coup plot was uncovered');
-  p.members.forEach((m: Id) => {
+  spare.forEach((m: Id) => {
+    earn(w, m, 10, 'Informed on a plot');
+    approve(w, m, 5);
+    bump(w, m, 'informer');
+    stamp(w, m, 'Double agent', p.name, 'ink');
+  });
+  out.forEach((m: Id) => {
     const c = w.citizens[m];
     c.exiledUntil = w.now + 7 * DAY;
     c.exileNoted = false;
@@ -176,7 +249,7 @@ export function failPlot(w: W, p: any, why: string) {
     bump(w, m, 'exiled');
     stamp(w, m, 'Traitor', p.name, 'bad');
     if (isMP(w, m)) vacateSeat(w, m, 'exiled');
-    if (w.pm === m) w.pm = null;
+    if (w.pm === m && !w.regime) w.pm = null;
     Object.values(w.offices).forEach((o: any) => o.holder === m && (o.holder = null));
   });
 }
@@ -185,6 +258,105 @@ export function checkPlot(w: W, p: any) {
   if (w.offices.security && chance(w, plotNeeds(w, p).risk / 100)) failPlot(w, p, 'the Security Service found it');
   else if (!w.offices.security && chance(w, plotNeeds(w, p).risk / 300)) failPlot(w, p, 'someone talked');
 }
+
+// ---------- coups: the launch ----------
+// Swift (two preparations): power changes hands at once, with little legitimacy. Otherwise a contested night:
+// 12 hours in which every citizen may declare for the coup or the government; the heavier side wins.
+export function launchCoup(w: W, actor: Id, pid: Id) {
+  const p = own(w.plots, pid);
+  if (!p || p.status !== 'planning' || p.leader !== actor) fail('Only the leader can launch it.');
+  if (w.coup) fail('A coup is already under way.');
+  if (w.phase !== 'running') fail('There is nothing to seize yet.');
+  if (w.regime && (w.regime.leader === actor || w.regime.council.includes(actor))) fail('You are the regime.');
+  const r = plotNeeds(w, p);
+  if (!r.enough) fail(`You need ${r.need} plotters.`);
+  const to = watcher(w);
+  if ((p.informers || []).length && to && !p.members.includes(to)) return failPlot(w, p, 'the Security Service was waiting', p.informers);
+  loseChest(w, p, 'The plotters’ war chest');
+  if (r.swift) return seize(w, p, { swift: true, margin: 0, declared: {} });
+  p.status = 'launched';
+  w.coup = { plot: p.id, name: p.name, leader: actor, plotters: p.members.slice(), defected: [], declared: {}, startedAt: w.now, endsAt: w.now + NIGHT, backer: p.backer || null, pretext: r.pretext, chest: p.chest || 0, against: w.regime ? 'regime' : 'government' };
+  meter(w, 'stability', -8, 'Soldiers in the streets');
+  gazette(w, 'crisis', `Coup attempt. ${nm(w, actor)} and ${p.members.length - 1} other${p.members.length === 2 ? '' : 's'} move against the ${w.coup.against}. Every citizen has 12 hours to declare for the coup or against it.`, '#/regime');
+}
+// the General speaks for the Army (3), the head of state for the realm (2), everyone else for themselves
+export const coupWeight = (w: W, id: Id) => (w.offices.army && holderOf(w, 'army') === id ? 3 : isHOS(w, id) ? 2 : 1);
+export function coupTally(w: W) {
+  const k = w.coup;
+  if (!k) return { coup: 0, gov: 0, lines: [] as [string, number, string][] };
+  const lines: [string, number, string][] = [];
+  const add = (side: string, n: number, why: string) => n && lines.push([side, n, why]);
+  k.plotters.forEach((m: Id) => add('coup', coupWeight(w, m), `${nm(w, m)}, plotter`));
+  Object.entries(k.declared).forEach(([id, side]: any) => w.citizens[id]?.active && add(side, coupWeight(w, id), nm(w, id)));
+  add('coup', k.backer ? 1 : 0, `Backed by ${w.nations[k.backer]?.name}`);
+  add('coup', k.pretext ? 1 : 0, 'A realm already in trouble');
+  add('coup', k.chest >= CHEST_FULL ? 2 : k.chest >= CHEST_FULL / 2 ? 1 : 0, 'A war chest');
+  add('gov', w.meters.stability >= 60 ? 1 : 0, 'A settled realm');
+  const general = holderOf(w, 'army');
+  const silent = !general || (!k.plotters.includes(general) && !k.declared[general]);
+  add('gov', w.offices.army && silent && w.army.loyalty >= 4 ? 2 : 0, 'A loyal Army');
+  add('coup', w.offices.army && silent && w.army.loyalty <= 1 ? 1 : 0, 'A restless Army');
+  const sum = (s: string) => lines.filter((l) => l[0] === s).reduce((n, l) => n + l[1], 0);
+  return { coup: sum('coup'), gov: sum('gov'), lines };
+}
+export function declareCoup(w: W, actor: Id, side: unknown) {
+  const k = w.coup;
+  if (!k) fail('There is no coup under way.');
+  mustBeFree(w, actor);
+  if (k.plotters.includes(actor)) fail('You are one of the plotters. You can only defect.');
+  if (side !== 'coup' && side !== 'gov') fail('Declare for the coup or against it.');
+  if (k.declared[actor] === side) fail('You have already declared that.');
+  k.declared[actor] = side;
+  gazette(w, 'crisis', `${nm(w, actor)} declares ${side === 'coup' ? 'for the coup' : `for the ${k.against}`}.`, '#/regime');
+}
+// a plotter changes sides during the night: they are spared whatever happens to the rest
+export function defectCoup(w: W, actor: Id) {
+  const k = w.coup;
+  if (!k || !k.plotters.includes(actor)) fail('You are not one of the plotters.');
+  if (k.leader === actor) fail('The leader cannot defect from their own coup.');
+  k.plotters = k.plotters.filter((m: Id) => m !== actor);
+  k.defected.push(actor);
+  k.declared[actor] = 'gov';
+  const p = w.plots[k.plot];
+  if (p) p.members = p.members.filter((m: Id) => m !== actor);
+  stamp(w, actor, 'Turned', `Left ${k.name} on the night`, 'ink');
+  gazette(w, 'crisis', `${nm(w, actor)} abandons the coup and declares for the ${k.against}.`, '#/regime');
+}
+export function resolveCoup(w: W) {
+  const k = w.coup;
+  if (!k) return;
+  const t = coupTally(w);
+  const p = w.plots[k.plot];
+  const won = t.coup > t.gov;
+  w.coup = null;
+  if (p) p.night = { coup: t.coup, gov: t.gov, at: w.now };
+  Object.entries(k.declared).forEach(([id, side]: any) => {
+    if (!w.citizens[id]) return;
+    if (side === 'gov') {
+      stamp(w, id, 'Loyalist', `Stood against ${k.name}`, 'good');
+      bump(w, id, 'loyalist');
+      approve(w, id, won ? 1 : 3);
+    } else if (!won) {
+      stamp(w, id, 'Backed a failed coup', k.name, 'bad');
+      approve(w, id, -5);
+    }
+    if (won === (side === 'coup') && coupWeight(w, id) > 1) bump(w, id, 'kingmaker');
+  });
+  gazette(w, 'crisis', `The night is over: ${t.coup} for the coup, ${t.gov} against. ${won ? 'The coup succeeds.' : 'The coup collapses.'}`, '#/regime');
+  if (!p) return;
+  if (won) seize(w, p, { swift: false, margin: t.coup - t.gov, declared: k.declared });
+  else failPlot(w, p, 'it collapsed overnight');
+}
+function seize(w: W, p: any, o: { swift: boolean; margin: number; declared: Record<Id, string> }) {
+  p.status = 'succeeded';
+  // against a regime it is a restoration: the regime falls and the plot's leader heads what comes next
+  if (w.regime) {
+    p.members.forEach((m: Id) => stamp(w, m, 'Restorer', p.name, 'good'));
+    return fallRegime(w, 'countercoup', p.leader);
+  }
+  takePower(w, { leader: p.leader, council: p.members.slice(), name: p.name, swift: o.swift, legit: o.swift ? 5 : clamp(3 + o.margin, 5, 12), backer: p.backer || null, backers: Object.keys(o.declared).filter((id) => o.declared[id] === 'coup') });
+}
+// an old-style martial law saved before regimes existed (and the state of emergency from a crisis) still ends this way
 export function endMartialLaw(w: W) {
   gazette(w, 'election', 'Martial law ends. Polls open for the Restoration election.', '#/elections');
   w.martial = null;

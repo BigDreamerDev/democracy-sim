@@ -1,8 +1,8 @@
 // What one citizen is allowed to see. The server sends only this; the full world never leaves it.
 // Anything secret by the rules (ballots, other people's cards, deals, plots, ambitions, wallets) is stripped here.
-import { W, Id, canSeeCard, hasPower, isPM } from './core';
+import { W, Id, canSeeCard, hasPower, isPM, holderOf } from './core';
 const canSeeIntel = (w: W, id: Id) => hasPower(w, id, 'intel') || isPM(w, id);
-const PRIVATE_COUNTS = ['sends', 'saves', 'ventures', 'betsWon', 'betCrowns', 'insider', 'maxBalance'];
+const PRIVATE_COUNTS = ['sends', 'saves', 'ventures', 'betsWon', 'betCrowns', 'insider', 'maxBalance', 'underground', 'strikes', 'jailbreaks', 'informer'];
 
 export function viewFor(full: W, me: Id): W {
   // copy everything except the induction snapshot (a whole world of its own, and never sent)
@@ -37,6 +37,7 @@ export function viewFor(full: W, me: Id): W {
     c.tagCode = null;
     c.meetCode = null;
     c.sweptAt = null;
+    c.letterDay = null;
     // private counters: money sent and saved, ventures, bets, insider trades, income, highest balance
     c.weekIncome = 0;
     c.lastWeekIncome = 0;
@@ -71,9 +72,40 @@ export function viewFor(full: W, me: Id): W {
   Object.keys(w.plots).forEach((id) => {
     const p = w.plots[id];
     const involved = p.members.includes(me) || p.invited[me];
-    if (!involved && p.status === 'planning') delete w.plots[id];
+    // the head of the Security Service sees a plot they have an informer inside
+    const watching = p.status === 'planning' && (p.informers || []).length > 0 && (holderOf(full, 'security') || full.pm) === me;
+    if (!involved && !watching && p.status === 'planning') delete w.plots[id];
     else if (!p.members.includes(me)) p.invited = { [me]: p.invited[me] };
+    // who is informing is known to the informers themselves and to whoever they report to
+    if (w.plots[id]) {
+      p.informed = watching || (p.informers || []).includes(me);
+      if (!p.informed) p.informers = [];
+      if (!p.members.includes(me) && !watching) (p.paid = {}), (p.asked = {});
+    }
   });
+  // Security Service investigations: the asker's own
+  w.probes = (w.probes || []).filter((x: any) => x.by === me);
+  // a regime: its public face, minus who is striking, what the secret police know, the rigging, and open votes
+  const rg = w.regime;
+  if (rg) {
+    const inside = rg.leader === me || rg.council.includes(me);
+    rg.strikeN = rg.strike.length;
+    rg.strike = rg.strike.includes(me) ? [me] : [];
+    if (rg.police !== me && rg.leader !== me) rg.probes = [];
+    if (!inside && rg.police !== me && rg.rigged) rg.rigged = { election: null, at: rg.rigged.at, done: rg.rigged.done };
+    rg.breaks = Object.fromEntries(Object.entries(rg.breaks).filter(([, l]: any) => l.includes(me)));
+    rg.lastBlow = null;
+    if (rg.trial) (rg.trial.cast = Object.keys(rg.trial.votes).length), (rg.trial.votes = rg.trial.votes[me] !== undefined ? { [me]: rg.trial.votes[me] } : {});
+    if (rg.plebiscite) (rg.plebiscite.cast = Object.keys(rg.plebiscite.votes).length), (rg.plebiscite.votes = rg.plebiscite.votes[me] !== undefined ? { [me]: rg.plebiscite.votes[me] } : {});
+    if (rg.ouster) rg.ouster = rg.ouster.votes.includes(me) ? { by: rg.ouster.by, votes: [me] } : null;
+    rg.freeVotes = rg.freeVotes.includes(me) ? [me] : [];
+    if (!inside) rg.pending = rg.pending ? { id: rg.pending.id, kind: rg.pending.kind, dueAt: rg.pending.dueAt, votes: {} } : null;
+  }
+  // the fallen regime's files stay shut until the provisional government opens them
+  if (w.transition) w.transition.fallen.files = null;
+  if (w.reckoningDue) w.reckoningDue.files = null;
+  // an unsigned pamphlet stays unsigned, unless its author was found out
+  w.stories.forEach((s: any) => s.underground && !s.named && s.by !== me && (s.by = null));
   if (!canSeeIntel(full, me)) w.intel = [];
   // a breakaway being plotted is known only to its founder and whoever they asked
   Object.keys(w.breakaways || {}).forEach((id) => {
@@ -124,7 +156,7 @@ export function viewFor(full: W, me: Id): W {
     if (s.by !== me && s.ratings) s.ratings = Object.fromEntries(Object.entries(s.ratings).map(([k, v], i) => [k === me ? me : 'r' + i, v]));
   });
   // stories waiting for the editor, or spiked, are for the writer and the editor only
-  w.stories = w.stories.filter((s: any) => s.status === 'published' || s.by === me || full.papers[s.paper]?.editor === me);
+  w.stories = w.stories.filter((s: any) => s.status === 'published' || s.by === me || full.papers[s.paper]?.editor === me || (s.status === 'held' && !!full.regime && (full.regime.leader === me || full.regime.council.includes(me))));
   // the Red Box: your own answer and how many have answered today
   if (w.daily) {
     w.daily.answered = Object.keys(w.daily.votes).length;

@@ -20,7 +20,8 @@ export const TABS: Tab[] = [
     { id: 'bills', label: 'Bills', href: '#/proposals', routes: ['proposals', 'p', 'new', 'draft'], count: openProps },
     { id: 'questions', label: 'Questions', href: '#/questions', routes: ['questions'] },
     { id: 'government', label: 'Government', href: '#/government', routes: ['government', 'cabinet', 'offices', 'office', 'hos'] },
-    { id: 'laws', label: 'Laws', href: '#/laws', routes: ['laws', 'law'] }
+    { id: 'laws', label: 'Laws', href: '#/laws', routes: ['laws', 'law'] },
+    { id: 'regime', label: 'Regime', href: '#/regime', routes: ['regime'], show: (w) => !!(w.coup || w.regime || w.transition || w.reckoning || w.regimes?.length) }
   ] },
   { id: 'politics', label: 'Politics', icon: 'politics', href: '#/elections', sections: [
     { id: 'elections', label: 'Elections', href: '#/elections', routes: ['elections', 'election'], count: (w) => Object.values(w.elections).filter((e: any) => e.status === 'open').length },
@@ -77,6 +78,7 @@ const PARTS: [string, string, string, string][] = [
   ['#/press', 'The press', 'society', 'newspapers front page story leak scandal'],
   ['#/court', 'Supreme Court', 'society', 'case judge lawsuit sue justice'],
   ['#/plots', 'Plots', 'backroom', 'coup conspiracy overthrow'],
+  ['#/regime', 'Coups and regimes', 'regime', 'coup junta dictatorship martial law strike decree reckoning'],
   ['#/exile', 'Exile', 'backroom', 'banished traitor pardon'],
   ['#/season', 'This season', 'honours', 'leaderboard awards ranking'],
   ['#/fame', 'Hall of Fame', 'honours', 'records history past seasons'],

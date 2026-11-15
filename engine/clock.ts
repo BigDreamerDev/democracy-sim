@@ -5,7 +5,8 @@ import { openVote, closeVote, enact, closeOverride, dissolve, closePMQs, missFor
 import { payday, settleVenture } from './economy';
 import { actBots } from './bots';
 import { maybeOffers, answerAsk, resolveIntel, armyLoyalty } from './foreign';
-import { checkPlot, endMartialLaw } from './backroom';
+import { checkPlot, endMartialLaw, resolveCoup } from './backroom';
+import { regimeDay, regimePayday, fallRegime, closeTrial, closePlebiscite, planDue, lapseDecree, settleExit, transitionDay, setForm, callRestoration, closeReckoning, strikeOn, sync } from './regime';
 import { spawnCrisis, timeoutCrisis, fireQueued, rule, makeFrontPage } from './society';
 import { nationsTurn, settleUltimatum } from './foreign';
 import { expireContract, settleClaim, ghostBack, bountyDeadline, bountyDue, orderDeadline, openHunt, startHunt, finishHunt } from './streets';
@@ -40,7 +41,7 @@ function collect(w: W): D[] {
   if (w.induction && !w.induction.done) add(w.induction.until, () => endInduction(w));
   // practice bots take a turn every two hours during induction
   if (w.induction && !w.induction.done && w.induction.nextBotAt) add(w.induction.nextBotAt, () => ((w.induction.nextBotAt = w.now + 2 * HOUR), actBots(w, (id) => !!id && !!w.citizens[id]?.bot, 0.6)));
-  if (w.phase === 'running' && w.nextGeneralAt && !w.martial) add(w.nextGeneralAt - 2 * DAY, () => callGeneralElection(w, w.nextGeneralAt));
+  if (w.phase === 'running' && w.nextGeneralAt && !w.martial && !(w.regime && w.regime.type !== 'party') && !w.transition) add(w.nextGeneralAt - 2 * DAY, () => callGeneralElection(w, w.nextGeneralAt));
   Object.values(w.proposals).forEach((p: any) => {
     if (p.stage === 'debate') add(p.debateEndsAt, () => openVote(w, p), p.id);
     if (p.stage === 'vote') add(p.voteEndsAt, () => closeVote(w, p), p.id);
@@ -61,6 +62,26 @@ function collect(w: W): D[] {
   w.questions.forEach((q: any) => q.formal && q.status === 'open' && add(q.dueAt, () => missFormal(w, q), q.id));
   Object.values(w.cases).forEach((k: any) => k.status === 'open' && add(k.dueAt, () => rule(w, k, Object.values(k.votes).filter((v) => v === 'plaintiff').length > Object.values(k.votes).filter((v) => v === 'defence').length), k.id));
   if (w.martial) add(w.martial.until, () => endMartialLaw(w));
+  // coups, regimes, the provisional government and the reckoning
+  if (w.coup) add(w.coup.endsAt, () => resolveCoup(w));
+  const rg = w.regime;
+  if (rg) {
+    add(rg.nextTick, () => regimeDay(w));
+    add(rg.until, () => fallRegime(w, 'handback', null));
+    if (rg.pending) add(rg.pending.dueAt, () => lapseDecree(w));
+    if (rg.trial) add(rg.trial.closesAt, () => closeTrial(w));
+    if (rg.plebiscite) add(rg.plebiscite.closesAt, () => closePlebiscite(w));
+    if (rg.plan) add(rg.plan.dueAt, () => planDue(w));
+    if (rg.exit) add(rg.exit.dueAt, () => settleExit(w, true));
+  }
+  const tr = w.transition;
+  if (tr) {
+    add(tr.nextTick, () => transitionDay(w));
+    if (!tr.form) add(tr.formDue, () => setForm(w, tr, 'unity'));
+    add(tr.callAt, () => callRestoration(w));
+  }
+  if (w.reckoning) add(w.reckoning.closesAt, () => closeReckoning(w));
+  allCitizens(w).forEach((c: any) => c.detainedUntil && !c.detainedNoted && add(c.detainedUntil, () => ((c.detainedNoted = true), gazette(w, 'quiet', `${c.name} is released.`)), 'dt' + c.id));
   allCitizens(w).forEach((c: any) => c.exiledUntil && !c.exileNoted && add(c.exiledUntil, () => ((c.exileNoted = true), gazette(w, 'quiet', `${c.name}'s exile is over.`)), c.id));
   w.ventures.forEach((v: any) => v.status === 'out' && add(v.dueAt, () => settleVenture(w, v), v.id));
   // the Streets, the market and the betting pools
@@ -86,7 +107,9 @@ function collect(w: W): D[] {
 }
 function weeklyPayday(w: W) {
   w.lastEvent.payday = w.now;
-  payday(w);
+  // a general strike under a regime: nobody is paid, taxed or given a dividend
+  if (strikeOn(w)) gazette(w, 'money', 'The general strike holds. There is no payday this week.', '#/regime');
+  else (payday(w), regimePayday(w));
   (['prosperity', 'stability'] as const).forEach((k) => w.meters[k] !== 50 && meter(w, k, w.meters[k] < 50 ? 2 : -1, 'The realm settles back towards normal'));
   spawnCrisis(w);
   newObjectives(w);
@@ -129,6 +152,7 @@ export function advanceTo(w: W, t: number) {
       if (ran.has(due.key)) throw new Error('the deadline did not settle');
       ran.add(due.key);
       due.run();
+      sync(w);
       afterChange(w);
     } catch (e: any) {
       w.clockErrors = [{ key: due.key, at: due.at, when: w.now, error: String(e?.message || e).slice(0, 300) }, ...(w.clockErrors || [])].slice(0, 200);

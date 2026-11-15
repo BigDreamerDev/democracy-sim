@@ -1,6 +1,6 @@
 // Offices: every role in government is one of these. A law creates an office from a template or from
 // a list of powers; whoever holds it gets those powers as buttons.
-import { W, Id, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, exiled, holdsAnything, own, text, int } from './core';
+import { W, Id, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, exiled, barred, holdsAnything, own, text, int } from './core';
 
 export const POWERS: Record<string, { label: string; strong?: boolean }> = {
   grant: { label: 'Pay citizens from its weekly budget' },
@@ -73,6 +73,8 @@ export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
     const t = cit(w, target);
     if (!t.active) fail('They are no longer a citizen.');
     if (exiled(w, target)) fail('They are in exile.');
+    if (barred(w, target)) fail('They are barred from office for now.');
+    if (w.regime?.type === 'party' && t.party !== w.regime.party) fail('Only members of the Party may hold office.');
     const promised = Object.entries(w.coalition?.promises || {}).find(([k]) => k === officeId)?.[1];
     o.holder = target;
     t.stats.heldOffice = true;

@@ -1,14 +1,15 @@
 import { useState } from 'preact/hooks';
 import { useStore, act, ONLINE, unlockIntrigue } from '../store';
 import { Page, Sec, Card, Btn, Left, When, Empty, Field, Pick } from '../ui';
-import { nm, allCitizens, canSeeCard, intrigueOpen, exiled, fmtTime, fmtDay, fmtLeft, DAY } from '../../../engine/index';
-import { ASKS, plotNeeds } from '../../../engine/backroom';
+import { nm, allCitizens, canSeeCard, intrigueOpen, exiled, fmtTime, fmtDay, fmtLeft, DAY, hasPower, holderOf } from '../../../engine/index';
+import { ASKS, plotNeeds, watcher, CHEST_FULL } from '../../../engine/backroom';
+import { MOODS } from '../../../engine/foreign';
 
 // shown until the backroom opens: what's coming, and when
 const SEALED: [string, string, string][] = [
   ['Cards', 'Secrets about real players: a quiet loan, a leaked memo, a broken promise. Hold them, leak them to the press, or use one to make a demand.', 'I'],
   ['Deals', 'Private promises between two players. Nobody else sees them, unless one of you decides to expose the other.', 'II'],
-  ['Plots', 'Recruit enough of the right people and seize power for three days. Get reported and every plotter goes into exile.', 'III']
+  ['Plots', 'Recruit the right people, find the money and a backer, and seize power. Then try to keep it. Get reported and every plotter goes into exile.', 'III']
 ];
 function Closed({ title = 'The backroom' }: { title?: string }) {
   const { world: w } = useStore();
@@ -108,33 +109,68 @@ export function Plots() {
   const { world: w, me } = useStore();
   const [name, setName] = useState('Operation Nightjar');
   const [inv, setInv] = useState('');
+  const [amt, setAmt] = useState('30');
+  const [nat, setNat] = useState('');
+  const [probe, setProbe] = useState('');
   if (!intrigueOpen(w)) return <Closed title="Plots" />;
   const mine = Object.values(w.plots).find((p: any) => p.status === 'planning' && p.members.includes(me)) as any;
   const invites = Object.values(w.plots).filter((p: any) => p.status === 'planning' && p.invited[me] === 'pending') as any[];
+  const watched = Object.values(w.plots).filter((p: any) => p.status === 'planning' && p.informed && watcher(w) === me) as any[];
+  const director = !!w.offices.security && (hasPower(w, me, 'intel') || (w.pm === me && !holderOf(w, 'security')));
+  const answer = (p: any, how: string, done: string) => act('plot.answer', { plot: p.id, how }, done);
   return (
-    <Page dark back={['#/realm', 'The realm']} kicker="Treason" title="Plots" intro="Seize power: martial law for 3 days, then a Restoration election. If anyone reports it, or it is discovered, every plotter goes into exile for a week. Starting one costs 20 Influence; reporting one earns 10.">
-      {w.martial && <Card kind="warn" style={{ marginTop: 14 }}><b>Martial law.</b> {nm(w, w.martial.leader)} rules until <When at={w.martial.until} />.</Card>}
-      {invites.map((p) => <Card style={{ marginTop: 14 }}><b>You have been approached about {p.name}.</b><p class="small">{p.members.length} already in. Join, or report it.</p><div class="grid2"><Btn onClick={() => act('plot.answer', { plot: p.id, join: true }, 'You are in.')}>Join</Btn><Btn kind="danger" onClick={() => act('plot.answer', { plot: p.id, join: false }, 'Reported. +10 Influence.')}>Report it</Btn></div></Card>)}
+    <Page dark back={['#/realm', 'The realm']} kicker="Treason" title="Plots" intro="Recruit, prepare, and seize power. With two of the General, a foreign backer and a full war chest, a coup succeeds at once. Otherwise the realm gets a night to pick sides. If it is reported or found, every plotter goes into exile for a week. Starting one costs 20 Influence.">
+      {(w.coup || w.regime || w.transition) && <Card kind="warn" style={{ marginTop: 14 }}><b>{w.coup ? 'A coup is under way.' : w.regime ? `${nm(w, w.regime.leader)} holds the realm.` : 'A provisional government is in charge.'}</b> <a href="#/regime">See it</a>.</Card>}
+      {invites.map((p) => (
+        <Card style={{ marginTop: 14 }}>
+          <b>You have been approached about {p.name}.</b>
+          <p class="small">{p.members.length} already in. Join it; say no and keep the secret; report it, which ends it and exiles them (+10 Influence); or join and quietly tell the Security Service, who can raid it whenever they choose.</p>
+          <div class="grid2"><Btn onClick={() => answer(p, 'join', 'You are in.')}>Join</Btn><Btn kind="ghost" onClick={() => answer(p, 'silent', 'You said no, and nothing else.')}>Say no, keep quiet</Btn><Btn kind="danger" onClick={() => answer(p, 'report', 'Reported. +10 Influence.')}>Report it</Btn><Btn kind="danger ghost" onClick={() => answer(p, 'inform', 'You are in, and the Service knows.')}>Join as an informer</Btn></div>
+        </Card>
+      ))}
+      {watched.map((p) => (
+        <Card kind="tint" style={{ marginTop: 14 }}>
+          <b>You have someone inside {p.name}.</b>
+          <p class="small">Plotters: {p.members.map((m: string) => nm(w, m)).join(', ')}. Your informer{p.informers.length > 1 ? 's' : ''}: {p.informers.map((m: string) => nm(w, m)).join(', ')}. If they launch while you are watching, it fails. Raid now and everyone but your informers goes into exile.</p>
+          <Btn kind="danger" full onClick={() => act('plot.raid', { plot: p.id }, 'Raided.')}>Raid it</Btn>
+        </Card>
+      ))}
       {mine ? (() => {
         const r = plotNeeds(w, mine);
+        const isLeader = mine.leader === me;
         return (
           <Sec title={mine.name}>
             <Card>
               <div class="small">Plotters: {mine.members.map((m: string) => nm(w, m)).join(', ')} ({mine.members.length} of {r.need})</div>
-              <div class="small">The Army: {r.armyOk ? 'will not stop you' : 'would stop you'}</div>
-              <div class="small" style={{ color: 'var(--rose)' }}>Chance of discovery each day: {r.risk}%</div>
-              <div class="small">Approached: {Object.entries(mine.invited).map(([k, v]) => `${nm(w, k)} (${v})`).join(', ') || 'nobody'}</div>
+              <div class="small">Approached: {Object.entries(mine.invited).map(([k, v]) => `${nm(w, k)} (${v === 'silent' ? 'said no' : v})`).join(', ') || 'nobody'}</div>
+              <div class="small" style={{ marginTop: 6 }}><b>Preparations</b> ({r.preps} of 3; two make it swift)</div>
+              <div class="small">The General: {r.hasGeneral ? 'with you' : w.offices.army ? 'not with you' : 'there is no Army'}</div>
+              <div class="small">A foreign backer: {mine.backer ? w.nations[mine.backer].name : 'none'}{Object.keys(mine.asked || {}).filter((n) => mine.asked[n] === 'no').length ? ` (refused by ${Object.keys(mine.asked).filter((n) => mine.asked[n] === 'no').map((n) => w.nations[n].name).join(', ')})` : ''}</div>
+              <div class="small">The war chest: {r.chest} of {CHEST_FULL} crowns</div>
+              <div class="small" style={{ marginTop: 6 }}>{r.swift ? 'Launch now and it is over in a night: no vote, low legitimacy (5).' : `Launch now and the realm gets 12 hours to declare. You start with ${mine.members.length}${r.pretext ? ', +1 for a realm already in trouble' : ''}${mine.backer ? ', +1 for your backer' : ''}${r.chest >= CHEST_FULL / 2 ? `, +${r.chest >= CHEST_FULL ? 2 : 1} for the chest` : ''}. The more you win by, the more legitimacy you start with.`}</div>
+              <div class="small" style={{ color: 'var(--rose)', marginTop: 6 }}>Chance of discovery each day: {r.risk}%</div>
             </Card>
-            {mine.leader === me && (
-              <div class="stack" style={{ marginTop: 10 }}>
-                <div class="grid2"><Pick value={inv} onChange={setInv} empty="Approach someone" options={allCitizens(w).filter((c: any) => !mine.members.includes(c.id)).map((c: any) => [c.id, c.name])} /><Btn kind="ghost" onClick={() => act('plot.invite', { plot: mine.id, target: inv }, 'Approached.')}>Approach</Btn></div>
-                <Btn kind="danger" full onClick={() => act('plot.launch', { plot: mine.id })}>Launch the coup</Btn>
-                <Btn kind="plain" onClick={() => act('plot.abandon', { plot: mine.id }, 'Called off.')}>Call it off</Btn>
-              </div>
-            )}
+            <div class="stack" style={{ marginTop: 10 }}>
+              <div class="grid2"><Field label={`Pay into the chest (refunded if it is called off)`} type="number" value={amt} onInput={setAmt} /><Btn kind="ghost" style={{ alignSelf: 'end' }} onClick={() => act('plot.pay', { plot: mine.id, amount: Number(amt) }, 'Paid in.')}>Pay in</Btn></div>
+              {isLeader && (
+                <>
+                  <div class="grid2"><Pick value={inv} onChange={setInv} empty="Approach someone" options={allCitizens(w).filter((c: any) => !mine.members.includes(c.id) && !mine.invited[c.id]).map((c: any) => [c.id, c.name])} /><Btn kind="ghost" onClick={() => act('plot.invite', { plot: mine.id, target: inv }, 'Approached.')}>Approach</Btn></div>
+                  {!mine.backer && <div class="grid2"><Pick value={nat} onChange={setNat} empty="Ask a nation to back you" options={Object.values(w.nations).filter((n: any) => !mine.asked?.[n.id]).map((n: any) => [n.id, `${n.name} (${MOODS[n.mood].toLowerCase()})`])} /><Btn kind="ghost" onClick={() => act('plot.backer', { plot: mine.id, nation: nat }, 'Asked.')}>Ask</Btn></div>}
+                  <p class="small muted" style={{ margin: 0 }}>A backer wants 40 crowns from the Treasury once you win, and a refusal makes the plot easier to find.</p>
+                  <Btn kind="danger" full onClick={() => act('plot.launch', { plot: mine.id })}>Launch the coup</Btn>
+                  <Btn kind="plain" onClick={() => act('plot.abandon', { plot: mine.id }, 'Called off. The chest is refunded.')}>Call it off</Btn>
+                </>
+              )}
+            </div>
           </Sec>
         );
       })() : <Sec title="Start a plot"><div class="grid2"><Field label="Codename" value={name} onInput={setName} /><Btn kind="danger" style={{ alignSelf: 'end' }} onClick={() => act('plot.start', { name }, 'The plot begins.')}>Begin</Btn></div></Sec>}
+      {director && (
+        <Sec title="Investigate" sub="As head of the Security Service: one name a day. You learn, truthfully, whether they are in a plot. Only you see the answer.">
+          <div class="grid2"><Pick value={probe} onChange={setProbe} empty="Pick a name" options={allCitizens(w).filter((c: any) => c.id !== me).map((c: any) => [c.id, c.name])} /><Btn kind="ghost" onClick={() => act('security.investigate', { target: probe }, 'The answer is on your desk.')}>Investigate</Btn></div>
+          <ul class="list small" style={{ marginTop: 8 }}>{(w.probes || []).map((p: any) => <li><span><b>{nm(w, p.target)}</b>: {p.yes ? 'is in a plot' : 'clean'}<div class="muted">{fmtTime(w, p.at)}</div></span></li>)}</ul>
+        </Sec>
+      )}
     </Page>
   );
 }
@@ -146,7 +182,7 @@ export function Exile() {
   const ex = allCitizens(w).filter((x: any) => exiled(w, x.id));
   if (!intrigueOpen(w) && !exiled(w, me) && !ex.length) return <Closed title="Exile" />;
   return (
-    <Page dark back={['#/realm', 'The realm']} title="Exile" intro="Exiles cannot vote, stand or act for a week. They can seek asylum abroad and ask for a pardon.">
+    <Page dark back={['#/realm', 'The realm']} title="Exile" intro="Exiles cannot vote, stand or act until their exile ends. They can seek asylum abroad and ask for a pardon.">
       {exiled(w, me) && <Sec title="You are in exile"><Card><p style={{ margin: 0 }}>Until <When at={c.exiledUntil} />.{c.asylum ? ` Sheltered by ${w.nations[c.asylum].name}.` : ''}</p><div class="grid2" style={{ marginTop: 10 }}><Pick value={n} onChange={setN} options={Object.values(w.nations).map((x: any) => [x.id, x.name])} /><Btn onClick={() => act('exile.asylum', { nation: n }, 'Asylum granted.')}>Seek asylum</Btn></div><Btn kind="ghost" full style={{ marginTop: 8 }} onClick={() => act('exile.pardonRequest', {}, 'Request sent.')}>Ask for a pardon</Btn></Card></Sec>}
       <Sec title="Exiles"><ul class="list">{ex.map((x: any) => <li class="row"><span>{x.name}<div class="small">until {fmtTime(w, x.exiledUntil)}{x.pardonAsked ? ', asked for a pardon' : ''}</div></span></li>)}</ul>{!ex.length && <Empty>Nobody is in exile.</Empty>}</Sec>
     </Page>
