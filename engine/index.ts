@@ -75,6 +75,7 @@ export const COMMANDS: Record<string, Cmd> = {
   'prop.assent': (w, me, a) => L.assent(w, me, a.prop, a.yes),
   'prop.dissolve': (w, me, a) => L.answerDissolution(w, me, a.prop, a.yes),
   'prop.block': (w, me, a) => L.block(w, me, a.prop),
+  'prop.hasten': (w, me, a) => L.hasten(w, me, a.prop, a.mode),
   'prop.lobby': (w, me, a) => L.lobby(w, me, a.prop, a.mp, a.amount),
   'prop.amend': (w, me, a) => L.proposeAmendment(w, me, a.prop, a),
   'prop.amendment': (w, me, a) => L.answerAmendment(w, me, a.prop, a.amendment, a.accept),

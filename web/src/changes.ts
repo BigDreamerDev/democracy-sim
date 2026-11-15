@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 11, text: 'The Monarch can now hurry bills along: skip a debate straight to the vote, or halve the time left in a debate or a vote. A vote always gets at least an hour, and each is announced in the Gazette.' },
   { n: 10, text: 'Seven new kinds of clause for bills: the Realm Jail, rule by decree, an end to elections, a single legal party, protection of the government, a licensed press, and state security. Each only does anything once a bill containing it becomes law, and stops when that law is repealed. If the realm becomes a dictatorship in all but name, the site starts to look like one.' },
   { n: 9, text: 'Coups have been rebuilt, ready for when the backroom opens. A plot can be funded and backed from abroad, a coup can be fought out over a 12-hour night where everyone picks a side, and whoever wins has to choose how to rule and try to hold on.' },
   { n: 8, text: 'The pundit desk is open: call the winners of any election for free and earn Influence for each one you get right. Newsnight now has a swingometer, and newspaper editors can go on air under each exit poll. Fresh results play out as a live count the first time you open them.' },

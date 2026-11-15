@@ -730,6 +730,39 @@ export function assent(w: W, actor: Id, pid: Id, yes: boolean) {
     gazette(w, 'hos', `The President vetoes ${p.title}. MPs have 24 hours to override with ${superMajority(w)} votes.`, '#/p/' + p.id);
   }
 }
+// the Monarch's prerogative over the timetable: skip a bill's debate (once), or halve what's left of its debate or vote
+// (once per stage). A halved stage always keeps at least HASTE_FLOOR hours, so a vote is never closed on the spot.
+export const HASTE_FLOOR = 1;
+export const HASTE_KINDS = ['bill', 'referendum'];
+export function canHasten(w: W, id: Id, p: any): '' | string {
+  if (w.config.hos !== 'monarchy' || !isHOS(w, id)) return 'Only the Monarch can hurry a bill along.';
+  if (!p || !HASTE_KINDS.includes(p.kind)) return 'The Crown can only hurry bills and referendums.';
+  if (!['debate', 'vote'].includes(p.stage)) return 'It is not being debated or voted on.';
+  return '';
+}
+export function hasten(w: W, actor: Id, pid: Id, mode: string) {
+  const p = own(w.proposals, pid);
+  const no = canHasten(w, actor, p);
+  if (no) fail(no);
+  if (mode !== 'skip' && mode !== 'halve') fail('Choose to skip the debate or halve the time.');
+  p.hastened = p.hastened || {};
+  const who = `The ${w.config.hosTitle}`;
+  if (mode === 'skip') {
+    if (p.stage !== 'debate') fail('The debate is already over.');
+    if (p.hastened.skip) fail('The Crown has already cut this debate short.');
+    p.hastened.skip = true;
+    gazette(w, 'hos', `${who} cuts the debate short on ${p.title}. It goes straight to a vote.`, '#/p/' + p.id);
+    return openVote(w, p);
+  }
+  if (p.hastened[p.stage]) fail(`The Crown has already shortened this ${p.stage}.`);
+  const key = p.stage === 'debate' ? 'debateEndsAt' : 'voteEndsAt';
+  const left = p[key] - w.now;
+  if (left <= HASTE_FLOOR * HOUR) fail(`There is ${HASTE_FLOOR} hour or less left already.`);
+  p[key] = w.now + Math.max(HASTE_FLOOR * HOUR, Math.ceil(left / 2));
+  p.hastened[p.stage] = true;
+  if (p.stage === 'vote') Object.values(w.markets || {}).forEach((m: any) => m.kind === 'prop' && m.ref === p.id && m.status === 'open' && (m.closesAt = Math.min(m.closesAt, p[key])));
+  gazette(w, 'hos', `${who} halves the time left for the ${p.stage === 'debate' ? 'debate' : 'vote'} on ${p.title}. It now ends at the new time shown.`, '#/p/' + p.id);
+}
 export function closeOverride(w: W, p: any) {
   const { ayes } = tally(w, p, p.overrideVotes || {});
   if (ayes >= superMajority(w)) enact(w, p, 'veto overridden');

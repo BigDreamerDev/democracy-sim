@@ -49,6 +49,7 @@ export const CATALOG: Record<string, CmdInfo> = {
   'prop.casting': { about: 'Speaker: casting vote on a tie.', args: { prop: 'id', vote: "'aye' | 'no'" } },
   'prop.assent': { about: 'Head of state: grant or refuse assent.', args: { prop: 'id', yes: 'bool' } },
   'prop.dissolve': { about: 'Head of state: answer a dissolution request.', args: { prop: 'id', yes: 'bool' } },
+  'prop.hasten': { about: 'Monarch only, on a bill or referendum: skip the debate straight to the vote (once), or halve the time left in the debate or the vote (once each; at least 1 hour always remains).', args: { prop: 'id', mode: "'skip' | 'halve'" } },
   'prop.block': { about: 'Use a block power on a proposal.', args: { prop: 'id' } },
   'prop.lobby': { about: 'Pay an MP to lobby on a proposal (public).', args: { prop: 'id', mp: 'id (citizen)', amount: 'number' } },
   'prop.amend': { about: 'MPs other than the author, during the debate: propose changing, adding or removing one clause. Public.', args: { prop: 'id', op: "'change' | 'add' | 'remove'", index: 'clause number from 0 (change, remove)', clause: 'clause object (change, add)', why: 'text (optional)' } },

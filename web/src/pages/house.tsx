@@ -4,7 +4,7 @@ import { useStore, act, getState, toast as say } from '../store';
 import { go, Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Seg, Opt, Field, Pick, Stamp } from '../ui';
 import { nm, isMP, isPM, isHOS, inGovernment, mps, fmtTime, superMajority, majority, officeWithPower, hosTitle, nextAt, hasPower } from '../../../engine/index';
 import { leaderOfOpposition, HOS_METHODS } from '../../../engine/politics';
-import { describe, KINDS, SETTABLE, canVoteOn, passCheck, PASS_RULES, whipLine, canWhip, rebelsOn, amendmentLine, HOSTILE_BACKERS, LINKABLE } from '../../../engine/proposals';
+import { describe, KINDS, SETTABLE, canVoteOn, passCheck, PASS_RULES, whipLine, canWhip, rebelsOn, amendmentLine, HOSTILE_BACKERS, LINKABLE, canHasten, HASTE_FLOOR } from '../../../engine/proposals';
 import { TEMPLATES, POWERS, FILL } from '../../../engine/offices';
 import { ACT_KEYS, ACTS, describeAct } from '../../../engine/acts';
 
@@ -247,6 +247,18 @@ export function Proposal({ id }: { id: string }) {
             )}
             {p.stage === 'vote' && !canVoteOn(w, p, me) && w.speaker !== me && <p class="small muted" style={{ margin: 0 }}>Only MPs vote on this. You can still speak below.</p>}
             {p.result && <p style={{ margin: '8px 0 0' }}><b>{p.result.passed ? 'Passed' : 'Defeated'}</b> {p.result.ayes} to {p.result.noes}{p.result.note}.</p>}
+          </Card>
+        </Sec>
+      )}
+      {!canHasten(w, me, p) && ((p.stage === 'debate' && !p.hastened?.skip) || !p.hastened?.[p.stage]) && (
+        <Sec>
+          <Card kind="dashed">
+            <h2 class="h">The Crown’s prerogative</h2>
+            <p class="small" style={{ margin: '0 0 10px' }}>Hurry this along. Each can be used once, and the Gazette reports it. A shortened stage always keeps at least {HASTE_FLOOR} hour.</p>
+            <div class="grid2">
+              {p.stage === 'debate' && !p.hastened?.skip && <Btn kind="plain" onClick={() => act('prop.hasten', { prop: p.id, mode: 'skip' }, 'Debate skipped. Voting is open.')}>Skip the debate</Btn>}
+              {!p.hastened?.[p.stage] && <Btn kind="plain" onClick={() => act('prop.hasten', { prop: p.id, mode: 'halve' }, 'Time halved.')}>Halve the {p.stage === 'debate' ? 'debate' : 'voting'} time</Btn>}
+            </div>
           </Card>
         </Sec>
       )}
