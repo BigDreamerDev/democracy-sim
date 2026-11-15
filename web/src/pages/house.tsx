@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { drafts, getDraft, newDraftId, hasContent, saveDraft, deleteDraft, flushDraft, forgetDraft } from '../drafts';
 import { useStore, act, getState, toast as say } from '../store';
-import { go, Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Seg, Opt, Field, Pick, Stamp } from '../ui';
+import { go, Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Seg, Opt, Field, Pick, Stamp, BillText } from '../ui';
 import { nm, isMP, isPM, isHOS, inGovernment, mps, fmtTime, superMajority, majority, officeWithPower, hosTitle, nextAt, hasPower, HOUR } from '../../../engine/index';
 import { leaderOfOpposition, HOS_METHODS } from '../../../engine/politics';
 import { describe, KINDS, SETTABLE, canVoteOn, passCheck, PASS_RULES, whipLine, canWhip, rebelsOn, amendmentLine, HOSTILE_BACKERS, LINKABLE, canHasten, HASTE_FLOOR } from '../../../engine/proposals';
@@ -197,7 +197,7 @@ export function Proposal({ id }: { id: string }) {
       </ol>
       {p.clauses.length > 0 && (
         <Sec title={p.kind === 'referendum' ? 'If Yes wins' : 'What it does'}>
-          <ol class="stack" style={{ margin: 0, padding: 0, listStyle: 'none' }}>{p.clauses.map((e: any, i: number) => <li style={{ display: 'flex', gap: 14, fontSize: 16 }}><span class="serif" style={{ fontSize: 20, width: 16 }}>{i + 1}</span>{describe(w, e)}</li>)}</ol>
+          <ol class="stack" style={{ margin: 0, padding: 0, listStyle: 'none' }}>{p.clauses.map((e: any, i: number) => <li style={{ display: 'flex', gap: 14, fontSize: 16 }}><span class="serif" style={{ fontSize: 20, width: 16, flex: 'none' }}>{i + 1}</span><div style={{ minWidth: 0, flex: 1 }}>{e.t === 'text' ? <BillText text={e.text} /> : describe(w, e)}</div></li>)}</ol>
         </Sec>
       )}
       {p.kind !== 'bill' && p.kind !== 'referendum' && <p class="small muted" style={{ marginTop: 14 }}>{KINDS[p.kind].blurb}</p>}
@@ -673,6 +673,8 @@ export function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; 
         <Pick value={e.t} onChange={(t) => onChange(defaults[t])} options={CLAUSES} />
         {ACT_KEYS.includes(e.t) && <p class="small" style={{ margin: 0 }}>{w.acts?.[e.t] ? <b>Already law ({w.acts[e.t]}). </b> : 'The game carries all of this out the moment it becomes law. '}{describeAct(e.t)}</p>}
         {e.t === 'text' && <Field label="The rule" area value={e.text} onInput={(v) => onChange({ ...e, text: v })} placeholder="e.g. The second Friday of every month is a public holiday." />}
+        {e.t === 'text' && <p class="small muted" style={{ margin: 0 }}>Layout: a new line for each paragraph. “1  Section title” for a section, “(1)” and “(a)” for subsections, a line in CAPITALS for a title, **bold** and *italic*.</p>}
+        {e.t === 'text' && String(e.text || '').includes('\n') && <div class="bt-preview"><div class="small muted" style={{ marginBottom: 6 }}>Preview</div><BillText text={e.text} /></div>}
         {e.t === 'office' && (
           <>
             <Pick label="Which office" value={e.template || 'custom'} onChange={(v) => onChange(v === 'custom' ? { t: 'office', template: null, office: { name: '', fill: 'pm', powers: [], secrecy: 'public', budget: 0 } } : { t: 'office', template: v })} options={[...Object.entries(TEMPLATES).filter(([k]) => !w.offices[k] && k !== 'whip').map(([k, t]) => [k, `${t.name} (${t.act})`] as [string, string]), ['custom', 'A new office of your own']]} />

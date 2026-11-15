@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 13, text: 'Bills can now be laid out properly: sections, numbered subsections, titles and bold, on the bill and on the law.' },
   { n: 12, text: 'General bug fixes.' },
   { n: 11, text: 'The Monarch can now hurry bills along: skip a debate straight to the vote, or halve the time left in a debate or a vote. A vote always gets at least an hour, and each is announced in the Gazette.' },
   { n: 10, text: 'Seven new kinds of clause for bills: the Realm Jail, rule by decree, an end to elections, a single legal party, protection of the government, a licensed press, and state security. Each only does anything once a bill containing it becomes law, and stops when that law is repealed. If the realm becomes a dictatorship in all but name, the site starts to look like one.' },

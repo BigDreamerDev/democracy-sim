@@ -84,12 +84,20 @@ export function describe(w: W, e: any): string {
   return '';
 }
 
+// a clause in words keeps its layout: line breaks (at most one blank line in a row), tidy spaces within each line
+function clauseText(v: unknown) {
+  if (v !== undefined && v !== null && typeof v !== 'string') fail('The clause must be text.');
+  const t = String(v ?? '').replace(/\r/g, '').split('\n').map((l) => l.replace(/[ \t]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (t.length < 6) fail('Write the clause (at least 6 characters).');
+  if (t.length > 3000) fail('Keep the clause under 3000 characters.');
+  return t;
+}
 // every clause is checked in full when tabled, so enacting it later (often by the clock) can never fail
 function checkClause(w: W, e: any, byDecree = false) {
   const choose = (v: unknown, list: unknown[], msg: string) => (list.includes(v) ? v : fail(msg));
   switch (e.t) {
     case 'text':
-      e.text = text(e.text, 6, 1000, 'clause');
+      e.text = clauseText(e.text);
       break;
     case 'set':
       if (!own(SETTABLE, e.key)) fail('Pick a number to change.');

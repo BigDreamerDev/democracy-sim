@@ -575,3 +575,57 @@ export function PhotoPick({ value, onChange, label = 'Add a photo' }: { value: s
     </div>
   );
 }
+
+// A clause or law in words, laid out like a printed bill. Plain text with a few conventions:
+//   # Heading            a heading            CAPITALS ONLY LINE   a title in small capitals
+//   1  Section title     a numbered section   (1) / (a) / (i)      subsections, indented
+//   **bold**, *italic*   inline               a blank line         a gap
+// Anything else is a paragraph. Text is never parsed as HTML.
+function inline(t: string) {
+  const out: any[] = [];
+  const re = /\*\*(.+?)\*\*|\*(.+?)\*/g;
+  let last = 0, m: RegExpExecArray | null;
+  while ((m = re.exec(t))) {
+    if (m.index > last) out.push(t.slice(last, m.index));
+    out.push(m[1] !== undefined ? <b>{m[1]}</b> : <i>{m[2]}</i>);
+    last = re.lastIndex;
+  }
+  if (last < t.length) out.push(t.slice(last));
+  return out;
+}
+type Block = { k: 'gap' | 'head' | 'title' | 'sec' | 'sub' | 'sub2' | 'p'; mark?: string; text: string; inSec?: boolean };
+function blocks(text: string): Block[] {
+  const out: Block[] = [];
+  let inSec = false;
+  for (const raw of String(text || '').split('\n')) {
+    const l = raw.trim();
+    let m;
+    if (!l) { out.push({ k: 'gap', text: '' }); continue; }
+    if ((m = l.match(/^#{1,3}\s+(.*)$/))) { out.push({ k: 'head', text: m[1] }); continue; }
+    if (l.length <= 80 && /[A-Z]/.test(l) && l === l.toUpperCase() && !/^\(/.test(l)) { out.push({ k: 'title', text: l }); continue; }
+    if ((m = l.match(/^(\d{1,3})[.)]?\s+(.+)$/)) && m[2].length <= 90 && !/[.;:,]$/.test(m[2])) { inSec = true; out.push({ k: 'sec', mark: m[1], text: m[2] }); continue; }
+    if ((m = l.match(/^(\(\d{1,3}\))\s*(.*)$/))) { out.push({ k: 'sub', mark: m[1], text: m[2] }); continue; }
+    if ((m = l.match(/^(\((?:[ivx]{2,}|[a-z])\))\s*(.*)$/))) { out.push({ k: 'sub2', mark: m[1], text: m[2] }); continue; }
+    // a line that carries on the one above (a hard-wrapped sentence) joins it
+    const prev = out[out.length - 1];
+    if (prev && (prev.k === 'p' || prev.k === 'sub' || prev.k === 'sub2')) { prev.text += ' ' + l; continue; }
+    out.push({ k: 'p', text: l, inSec });
+  }
+  return out;
+}
+export function BillText({ text }: { text: string }) {
+  const bs = blocks(text);
+  if (bs.length === 1 && bs[0].k === 'p' && !/\*/.test(text)) return <span>{text}</span>;
+  return (
+    <div class="billtext">
+      {bs.map((b) => {
+        if (b.k === 'gap') return <div class="bt-gap" />;
+        if (b.k === 'head') return <div class="bt-head">{inline(b.text)}</div>;
+        if (b.k === 'title') return <div class="bt-title">{b.text}</div>;
+        if (b.k === 'sec') return <div class="bt-sec"><span class="bt-num">{b.mark}</span><span>{inline(b.text)}</span></div>;
+        if (b.k === 'sub' || b.k === 'sub2') return <div class={'bt-' + b.k}><span class="bt-mark">{b.mark}</span><span>{inline(b.text)}</span></div>;
+        return <p class={'bt-p' + (b.inSec ? ' in' : '')}>{inline(b.text)}</p>;
+      })}
+    </div>
+  );
+}

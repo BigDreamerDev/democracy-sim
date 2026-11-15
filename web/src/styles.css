@@ -913,3 +913,20 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 :root[data-state] .leader-name { color: #FFF6E8; }
 :root[data-state] .leader-kicker, :root[data-state] .leader-stamp { color: #E3C16F; }
 :root[data-state] .leader-poster { color: #FFF6E8; }
+
+/* a clause or law in words, laid out like a printed bill (BillText in ui.tsx) */
+.billtext { display:flex; flex-direction:column; gap:4px; line-height:1.5; }
+.billtext .bt-title { font-family:var(--serif); font-size:15px; letter-spacing:.12em; text-transform:uppercase; text-align:center; margin:4px 0; }
+.billtext .bt-head { font-family:var(--serif); font-size:19px; margin-top:6px; }
+.billtext .bt-sec { display:flex; gap:12px; align-items:baseline; font-weight:700; margin-top:8px; }
+.billtext .bt-num { font-family:var(--serif); font-weight:400; font-size:18px; min-width:22px; color:var(--teal); }
+.billtext .bt-sub { display:flex; gap:8px; padding-left:34px; }
+.billtext .bt-sub2 { display:flex; gap:8px; padding-left:64px; }
+.billtext .bt-mark { flex:none; min-width:26px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.billtext .bt-p { margin:0; }
+.billtext .bt-p.in { padding-left:34px; }
+.billtext .bt-gap { height:6px; }
+.bt-preview { border:1.5px dashed var(--rule); border-radius:3px; padding:10px 12px; background:var(--card); }
+/* a laid-out bill reads as one column across the page, at a comfortable measure */
+.page-body > .sec:has(.billtext) { column-span: all; }
+.billtext { max-width: 760px; }
