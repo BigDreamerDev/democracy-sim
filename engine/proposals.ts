@@ -629,6 +629,8 @@ export function closeVote(w: W, p: any) {
   gazette(w, 'proposal', `Passed ${ayes} to ${noes}${note}: ${p.title}.`, '#/p/' + p.id);
   approve(w, p.by, 3);
   if (p.kind === 'bill') {
+    // the head of state can't veto their own removal: a bill that removes them needs no assent
+    if (p.clauses.some((e: any) => e.t === 'removeHos')) return enact(w, p, 'no assent needed: the head of state cannot block their own removal');
     p.stage = 'assent';
     // under the Government Powers Act, assent follows within the hour whatever the head of state does
     p.assentDueAt = w.now + (inForce(w, 'decrees') ? 1 : 48) * HOUR;
@@ -729,6 +731,8 @@ export function assent(w: W, actor: Id, pid: Id, yes: boolean) {
   if (!p || p.stage !== 'assent') fail('Nothing is waiting for assent.');
   if (!isHOS(w, actor)) fail(`Only the ${hosTitle(w)} can do this.`);
   if (yes) return enact(w, p, w.config.hos === 'monarchy' ? 'Royal Assent' : 'signed by the President');
+  // (a removal bill already waiting for assent from before this rule: refusing it enacts it anyway)
+  if (p.clauses.some((e: any) => e.t === 'removeHos')) return enact(w, p, 'no assent needed: the head of state cannot block their own removal');
   if (inForce(w, 'decrees')) fail(`The ${hosTitle(w)} can no longer refuse assent. It becomes law within the hour.`);
   if (w.config.hos === 'monarchy') {
     p.stage = 'withheld';
