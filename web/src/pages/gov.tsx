@@ -105,6 +105,7 @@ export function Cabinet() {
             <div class="small">{co.kind === 'full' ? 'Full coalition' : 'Confidence and supply'}, {co.sides.reduce((n: number, s: string) => n + sideSeats(w, s), 0)} seats. {co.status === 'signed' ? 'Signed.' : 'Draft.'}</div>
             {co.terms.length > 0 && <ol style={{ margin: '8px 0', paddingLeft: 20 }}>{co.terms.map((t: string) => <li>{t}</li>)}</ol>}
             {mySide && co.status === 'draft' && !co.signed[mySide] && <Btn full style={{ marginTop: 8 }} onClick={() => act('coalition.sign', {}, 'Signed.')}>Sign</Btn>}
+            {mySide && co.status === 'draft' && <Btn full kind="plain" style={{ marginTop: 8 }} onClick={() => act('coalition.decline', {}, 'The talks are over.')}>{co.lead === mySide ? 'Call off the talks' : 'Turn it down'}</Btn>}
             {mySide && co.status === 'signed' && <Btn full kind="danger ghost" style={{ marginTop: 8 }} onClick={() => act('coalition.leave', {}, 'You walked out.')}>Walk out</Btn>}
             {leaderOfSide(w, co.lead) === me && (
               <div class="stack" style={{ marginTop: 10 }}>

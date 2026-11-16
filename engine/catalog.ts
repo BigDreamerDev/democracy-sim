@@ -35,6 +35,7 @@ export const CATALOG: Record<string, CmdInfo> = {
   'gov.shadow': { about: 'Opposition leader: name a shadow minister.', args: { post: 'id (office)', target: 'id (citizen)' } },
   'coalition.propose': { about: 'Propose a coalition or confidence-and-supply deal.', args: { partners: "list of sides ('p:<party id>' or 'i:<citizen id>')", kind: "'full' | 'cs' (confidence and supply)", terms: 'list of text' } },
   'coalition.sign': { about: 'Sign the coalition you were offered.', args: {} },
+  'coalition.decline': { about: 'Turn down the coalition talks you were invited to, or call off talks you opened.', args: {} },
   'coalition.leave': { about: 'Take your party out of the coalition.', args: {} },
   'coalition.promise': { about: 'Promise an office to a coalition partner.', args: { office: 'id (office)', target: 'id (citizen)' } },
   'hos.honour': { about: 'Head of state: give an honour.', args: { target: 'id (citizen)', title: 'text' } },

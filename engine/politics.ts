@@ -1014,7 +1014,13 @@ export function proposeCoalition(w: W, actor: Id, partners: string[], kind: 'ful
   const mine = sideOf(w, actor);
   if (leaderOfSide(w, mine) !== actor) fail('Only a party leader or an independent MP can lead coalition talks.');
   if (!Array.isArray(partners) || !partners.length) fail('Pick at least one partner.');
-  if (partners.some((p) => typeof p !== 'string' || !(p.startsWith('p:') ? own(w.parties, p.slice(2))?.status === 'active' : p.startsWith('i:') && own(w.citizens, p.slice(2))?.active))) fail('Pick parties or independent MPs.');
+  // a partner is an active party, or an MP who sits as an independent (not a party member under another name)
+  if (partners.some((p) => typeof p !== 'string' || !(p.startsWith('p:') ? own(w.parties, p.slice(2))?.status === 'active' : p.startsWith('i:') && own(w.citizens, p.slice(2))?.active && sideOf(w, p.slice(2)) === p && isMP(w, p.slice(2))))) fail('Pick parties or independent MPs.');
+  if (!partners.some((p) => p !== mine)) fail('Pick at least one partner other than your own side.');
+  // one deal at a time: a signed one stands until someone in it walks out, and fresh talks get a day before anyone else can replace them
+  const old = w.coalition;
+  if (old?.status === 'signed') fail(old.sides.includes(mine) ? 'You are in a signed coalition. Walk out of it first.' : `${old.sides.map((s: string) => sideName(w, s)).join(' and ')} have a signed coalition. It stands until one of them walks out.`);
+  if (old?.status === 'draft' && old.lead !== mine && w.now - old.at < DAY) fail(`${sideName(w, old.lead)} opened talks less than a day ago. Wait for them to be signed, declined or a day to pass.`);
   if (kind !== 'full' && kind !== 'cs') fail('Pick a full coalition or confidence and supply.');
   if (!Array.isArray(terms)) fail('Terms are a list of lines.');
   const sides = [mine, ...new Set(partners.filter((p) => p !== mine))];
@@ -1035,6 +1041,15 @@ export function signCoalition(w: W, actor: Id) {
     if (w.pm) w.minority = supportFor(w, w.pm) < majority(w);
   }
 }
+// an invited leader turns the talks down, or the leader running them calls them off
+export function declineCoalition(w: W, actor: Id) {
+  const co = w.coalition;
+  if (!co || co.status !== 'draft') fail('There are no coalition talks to turn down.');
+  const side = co.sides.find((s: string) => leaderOfSide(w, s) === actor);
+  if (!side) fail('Only the leaders in the talks can end them.');
+  w.coalition = null;
+  gazette(w, 'government', side === co.lead ? `${sideName(w, side)} calls off its coalition talks.` : `${sideName(w, side)} turns down a coalition with ${sideName(w, co.lead)}. The talks are over.`, '#/cabinet');
+}
 export function leaveCoalition(w: W, actor: Id) {
   const co = w.coalition;
   if (!co || co.status !== 'signed') fail('There is no coalition to leave.');
@@ -1047,7 +1062,7 @@ export function leaveCoalition(w: W, actor: Id) {
 }
 export function promisePost(w: W, actor: Id, officeId: string, target: Id) {
   const co = w.coalition;
-  if (!co || leaderOfSide(w, co.lead) !== actor) fail('Only the leader running the talks can promise posts.');
+  if (!co || co.status === 'broken' || leaderOfSide(w, co.lead) !== actor) fail('Only the leader running the talks can promise posts.');
   if (own(w.offices, officeId)?.fill !== 'pm') fail('Pick a post the PM appoints.');
   cit(w, target);
   co.promises[officeId] = target;

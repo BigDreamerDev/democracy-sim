@@ -59,6 +59,7 @@ export const COMMANDS: Record<string, Cmd> = {
   'gov.shadow': (w, me, a) => P.setShadow(w, me, a.post, a.target),
   'coalition.propose': (w, me, a) => P.proposeCoalition(w, me, a.partners, a.kind, a.terms),
   'coalition.sign': (w, me) => P.signCoalition(w, me),
+  'coalition.decline': (w, me) => P.declineCoalition(w, me),
   'coalition.leave': (w, me) => P.leaveCoalition(w, me),
   'coalition.promise': (w, me, a) => P.promisePost(w, me, a.office, a.target),
   'hos.honour': (w, me, a) => P.honour(w, me, a.target, a.title),

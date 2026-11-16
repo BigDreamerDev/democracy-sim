@@ -267,7 +267,8 @@ export function sideName(w: W, side: string) {
 export function govSides(w: W): string[] {
   if (!w.pm) return [];
   const s = new Set([sideOf(w, w.pm)]);
-  if (w.coalition?.status === 'signed') w.coalition.sides.forEach((x: string) => s.add(x));
+  // a signed deal only puts its sides in government if the Prime Minister's side is part of it
+  if (w.coalition?.status === 'signed' && w.coalition.sides.includes(sideOf(w, w.pm))) w.coalition.sides.forEach((x: string) => s.add(x));
   return [...s];
 }
 export const inGovernment = (w: W, id: Id) => govSides(w).includes(sideOf(w, id));
