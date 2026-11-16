@@ -5,6 +5,8 @@ import { nm, isMP, isPM, isHOS, mps, sideOf, sideName, majority, allCitizens, ex
 import { leaderOfOpposition, leaderOfSide, sideSeats, supportFor, members, HOS_METHODS , commands, FORM_DAYS, challengeNeed, BREAKAWAY_MPS } from '../../../engine/politics';
 import { POWERS, TEMPLATES, FILL } from '../../../engine/offices';
 import { RoleChips } from '../Roles';
+import { OATHS, regnal, claimNeed, sworn, CORONATION_BOUNTY } from '../../../engine/crown';
+import { watchCoronation } from '../Coronation';
 
 export function Offices() {
   const { world: w } = useStore();
@@ -154,12 +156,88 @@ export function HOS() {
         </Sec>
       )}
       <Sec title="Waiting for you"><ul class="list">{waiting.map((p) => <LinkRow href={'#/p/' + p.id} title={p.title} sub={p.stage === 'hos' ? 'Dissolution request' : <>Becomes law anyway in <Left at={p.assentDueAt} /></>} />)}</ul>{!waiting.length && <Empty>Nothing waiting.</Empty>}</Sec>
-      <Sec title="Honours" sub="One a week: a title and a stamp for any citizen, plus 5 Influence.">
+      {mon && <Crown />}
+      <Sec title="Honours" sub={w.crown?.reign?.honours > 0 && mine ? `One a week, and ${w.crown.reign.honours} coronation honour${w.crown.reign.honours === 1 ? '' : 's'} left to give now.` : 'One a week: a title and a stamp for any citizen, plus 5 Influence.'}>
         {mine ? <Card><div class="stack"><Pick value={hon.target} onChange={(v) => setHon({ ...hon, target: v })} empty="Honour whom?" options={allCitizens(w).map((c: any) => [c.id, c.name])} /><Field label="Honour" value={hon.title} onInput={(v) => setHon({ ...hon, title: v })} /><Btn onClick={() => act('hos.honour', hon, 'Honoured.')}>Award</Btn></div></Card> : <Empty>The head of state awards these.</Empty>}
       </Sec>
       <Sec title="Pardons"><ul class="list">{exiles.map((c: any) => <li class="row"><span><b>{c.name}</b><div class="small muted">{c.pardonAsked ? 'Has asked for a pardon' : 'In exile'}</div></span>{mine && <Btn small onClick={() => act('hos.pardon', { target: c.id }, 'Pardoned.')}>Pardon</Btn>}</li>)}</ul>{!exiles.length && <Empty>Nobody is in exile.</Empty>}</Sec>
-      {mon && mine && <Sec title="Your title"><Seg value={w.config.hosTitle} onChange={(v) => act('hos.title', { title: v })} options={[['Queen', 'Queen'], ['King', 'King']]} /></Sec>}
+      {mon && mine && !!w.crown?.reign?.crownedAt && <Sec title="Your title"><Seg value={w.config.hosTitle} onChange={(v) => act('hos.title', { title: v })} options={[['Queen', 'Queen'], ['King', 'King']]} /></Sec>}
     </Page>
+  );
+}
+
+// The Crown: the coronation, homage, abdication, a pretender's claim, and the line of monarchs
+function Crown() {
+  const { world: w, me } = useStore();
+  const r = w.crown?.reign;
+  const offer = w.crown?.offer;
+  const line = [...(w.fame?.monarchs || [])].reverse();
+  const mine = !!r && r.id === me;
+  const [f, setF] = useState({ name: r?.name || '', title: w.config.hosTitle, oath: r?.oath || 'people' });
+  const [heir, setHeir] = useState('');
+  if (!r && !line.length) return null;
+  const who = r ? regnal(w, r) : '';
+  const answered = r ? r.homage[me] : undefined;
+  const roll = r ? Object.keys(r.homage) : [];
+  const c = r?.claim;
+  return (
+    <>
+      {r && !r.crownedAt && (
+        <Sec title="The coronation" sub={<>{who} is crowned in <Left at={r.crownAt} />. Every citizen gets {CORONATION_BOUNTY} crowns and a stamp, then a day to swear homage.</>}>
+          {mine ? (
+            <Card><div class="stack">
+              <Field label="Regnal name" value={f.name} onInput={(v) => setF({ ...f, name: v })} placeholder="The name you reign under" />
+              <Seg value={f.title} onChange={(v) => setF({ ...f, title: v })} options={[['Queen', 'Queen'], ['King', 'King']]} />
+              <b>Your oath</b>
+              {Object.entries(OATHS).map(([id, o]) => <Opt on={f.oath === id} onClick={() => setF({ ...f, oath: id })} title={o.label} hint={<>“{o.text}” {o.effect}.</>} />)}
+              <Btn full onClick={() => act('crown.style', f, 'Your name and oath are set.')}>{r.styled ? 'Change them' : 'Set name and oath'}</Btn>
+              <Btn full kind="ghost" onClick={() => confirm('Hold the coronation now? Your regnal name is then fixed for life.') && act('crown.hold', {}, 'You are crowned.')}>Hold the coronation now</Btn>
+            </div></Card>
+          ) : <Card kind="tint">{r.styled ? <>They will swear the oath {OATHS[r.oath]?.label.toLowerCase()}: “{OATHS[r.oath]?.text}”</> : 'The regnal name and the oath are yet to be chosen.'}</Card>}
+        </Sec>
+      )}
+      {r?.crownedAt && (
+        <Sec title={who} sub={<>Crowned <When at={r.crownedAt} />. Sworn {OATHS[r.oath]?.label.toLowerCase()}: “{OATHS[r.oath]?.text}”{r.jubilees ? ` ${r.jubilees} jubilee${r.jubilees === 1 ? '' : 's'}.` : ''}</>}>
+          <div class="stack">
+            <Btn kind="ghost" onClick={watchCoronation}>Watch the coronation</Btn>
+            {r.homageUntil && !mine && answered === undefined && (
+              <Card><div class="stack">
+                <b>Homage</b>
+                <span class="small">Swear to {who}, or refuse in public. The roll closes in <Left at={r.homageUntil} />. Only those who refuse may later claim the throne.</span>
+                <div class="grid2"><Btn onClick={() => act('crown.homage', { swear: true }, 'You have sworn homage.')}>Swear homage</Btn><Btn kind="plain" onClick={() => act('crown.homage', { swear: false }, 'You have refused homage.')}>Refuse</Btn></div>
+              </div></Card>
+            )}
+            {roll.length > 0 && <Card kind="tint"><b>The homage roll</b><div class="small" style={{ marginTop: 4 }}>Sworn: {roll.filter((id) => r.homage[id]).map((id) => nm(w, id)).join(', ') || 'nobody yet'}.<br />Refused: {roll.filter((id) => !r.homage[id]).map((id) => nm(w, id)).join(', ') || 'nobody'}.</div></Card>}
+            {c && (
+              <Card kind="warn"><div class="stack">
+                <b><Who id={c.by} /> claims the throne</b>
+                <span class="small">{c.backers.length} behind the claim ({c.backers.map((id: string) => nm(w, id)).join(', ')}), {sworn(w, r).length} still sworn to {who}. It needs {claimNeed(w)} backers and more than the sworn. Settled in <Left at={c.until} />.</span>
+                {!mine && !c.backers.includes(me) && <Btn kind="danger" onClick={() => confirm(answered === true ? 'You swore homage. Backing the claim breaks your oath and costs you approval. Go on?' : 'Back the claim in public?') && act('crown.back', {}, 'You back the claim.')}>Back the claim</Btn>}
+              </div></Card>
+            )}
+            {!c && !mine && answered === false && !r.claimed.includes(me) && <Btn kind="danger ghost" onClick={() => confirm('Claim the throne? It is public, and it costs you approval if it fails.') && act('crown.claim', {}, 'You have claimed the throne.')}>Claim the throne</Btn>}
+          </div>
+        </Sec>
+      )}
+      {offer && (
+        <Sec title="Abdication">
+          <Card kind="warn"><div class="stack">
+            <span>{who} offers the throne to <Who id={offer.heir} />, who has <Left at={offer.until} /> to answer.</span>
+            {offer.heir === me && <div class="grid2"><Btn onClick={() => act('crown.heir', { yes: true }, 'The throne is yours.')}>Accept the crown</Btn><Btn kind="plain" onClick={() => act('crown.heir', { yes: false }, 'Declined.')}>Decline</Btn></div>}
+            {offer.by === me && <Btn kind="plain" onClick={() => act('crown.withdraw', {}, 'Withdrawn.')}>Withdraw the offer</Btn>}
+          </div></Card>
+        </Sec>
+      )}
+      {mine && !offer && (
+        <Sec title="Abdicate" sub="Name an heir, who is crowned without an election if they accept. Or leave the throne empty for the realm to fill.">
+          <Card><div class="stack">
+            <Pick value={heir} onChange={setHeir} empty="No heir: leave the throne empty" options={allCitizens(w).filter((x: any) => x.id !== me && !x.bot && !exiled(w, x.id)).map((x: any) => [x.id, x.name])} />
+            <Btn kind="danger ghost" onClick={() => confirm(heir ? `Offer the throne to ${nm(w, heir)}?` : 'Abdicate and leave the throne empty? This cannot be undone.') && act('crown.abdicate', { heir: heir || null }, heir ? 'Offer made.' : 'You have abdicated.')}>{heir ? 'Offer the throne' : 'Abdicate'}</Btn>
+          </div></Card>
+        </Sec>
+      )}
+      {line.length > 0 && <Sec title="The line of monarchs"><ul class="list">{line.map((m: any) => <li><span><b>{m.title} {m.name} {m.numeral}</b> <span class="muted">({m.who})</span><div class="small muted">{m.crownedAt ? 'Crowned' : 'Never crowned'}, reigned {Math.max(1, Math.round((m.until - m.at) / 86400000))} day{Math.round((m.until - m.at) / 86400000) > 1 ? 's' : ''}; {m.end}.</div></span></li>)}</ul></Sec>}
+    </>
   );
 }
 

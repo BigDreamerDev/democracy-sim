@@ -152,6 +152,16 @@ export function needs(w: W, me: Id): Alert[] {
     Object.values(w.demands).forEach((d: any) => d.status === 'sent' && d.target === me && out.push({ key: 'demand:' + d.id, href: '#/backroom', label: 'Private', title: 'Someone has a card on you', at: d.dueAt, urgent: true }));
     Object.values(w.plots).forEach((p: any) => p.status === 'planning' && p.invited[me] === 'pending' && out.push({ key: 'plot:' + p.id, href: '#/plots', label: 'Private', title: 'You have been approached' }));
   }
+  // the Crown: your coronation, homage, an offered throne, a pretender
+  const kr = w.crown?.reign;
+  if (kr) {
+    const who = `${w.config.hosTitle} ${kr.name} ${kr.numeral}`;
+    if (kr.id === me && !kr.crownedAt && !kr.styled) out.push({ key: 'crownstyle:' + kr.at, href: '#/hos', label: 'Your coronation', title: 'Choose your regnal name and your oath', at: kr.crownAt, urgent: true });
+    if (kr.id !== me && kr.homageUntil && kr.homage[me] === undefined) out.push({ key: 'homage:' + kr.at, href: '#/hos', label: 'Homage', title: `Swear homage to ${who}, or refuse`, at: kr.homageUntil });
+    if (kr.claim && kr.id === me) out.push({ key: 'claim:' + kr.claim.at, href: '#/hos', label: 'A pretender', title: `${nm(w, kr.claim.by)} claims your throne`, at: kr.claim.until, urgent: true });
+    if (kr.claim && kr.id !== me && !kr.claim.backers.includes(me)) out.push({ key: 'claimside:' + kr.claim.at, href: '#/hos', label: 'A pretender', title: `${nm(w, kr.claim.by)} claims the throne. Back the claim, or don't`, at: kr.claim.until });
+  }
+  if (w.crown?.offer?.heir === me) out.push({ key: 'heir:' + w.crown.offer.until, href: '#/hos', label: 'The throne is offered', title: 'Accept the crown, or decline', at: w.crown.offer.until, urgent: true });
   return out;
 }
 

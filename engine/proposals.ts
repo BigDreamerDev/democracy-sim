@@ -730,7 +730,11 @@ export function assent(w: W, actor: Id, pid: Id, yes: boolean) {
   const p = own(w.proposals, pid);
   if (!p || p.stage !== 'assent') fail('Nothing is waiting for assent.');
   if (!isHOS(w, actor)) fail(`Only the ${hosTitle(w)} can do this.`);
-  if (yes) return enact(w, p, w.config.hos === 'monarchy' ? 'Royal Assent' : 'signed by the President');
+  if (yes) {
+    // the gold seal on the law: who gave Royal Assent
+    if (w.config.hos === 'monarchy') p.royal = w.crown?.reign?.crownedAt ? `${w.config.hosTitle} ${w.crown.reign.name} ${w.crown.reign.numeral}` : `${w.config.hosTitle} ${nm(w, actor)}`;
+    return enact(w, p, w.config.hos === 'monarchy' ? 'Royal Assent' : 'signed by the President');
+  }
   // (a removal bill already waiting for assent from before this rule: refusing it enacts it anyway)
   if (p.clauses.some((e: any) => e.t === 'removeHos')) return enact(w, p, 'no assent needed: the head of state cannot block their own removal');
   if (inForce(w, 'decrees')) fail(`The ${hosTitle(w)} can no longer refuse assent. It becomes law within the hour.`);

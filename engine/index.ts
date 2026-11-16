@@ -15,6 +15,7 @@ import * as G from './glory';
 import * as D from './drafts';
 import * as X from './regime';
 import * as K from './acts';
+import * as Cr from './crown';
 
 export * from './core';
 export { createWorld, createLiveWorld, NAMES } from './world';
@@ -65,6 +66,14 @@ export const COMMANDS: Record<string, Cmd> = {
     if (w.hos.holder !== me || w.config.hos !== 'monarchy') fail('Only the Monarch picks their title.');
     w.config.hosTitle = a.title === 'King' ? 'King' : 'Queen';
   },
+  'crown.style': (w, me, a) => Cr.style(w, me, a),
+  'crown.hold': (w, me) => Cr.hold(w, me),
+  'crown.homage': (w, me, a) => Cr.homage(w, me, a.swear),
+  'crown.abdicate': (w, me, a) => Cr.abdicate(w, me, a.heir),
+  'crown.withdraw': (w, me) => Cr.withdrawOffer(w, me),
+  'crown.heir': (w, me, a) => Cr.answerHeir(w, me, a.yes),
+  'crown.claim': (w, me) => Cr.claim(w, me),
+  'crown.back': (w, me) => Cr.back(w, me),
   'prop.new': (w, me, a) => L.propose(w, me, a),
   'prop.speak': (w, me, a) => L.speak(w, me, a.prop, a.side, a.text),
   'prop.vote': (w, me, a) => L.vote(w, me, a.prop, a.vote),
@@ -267,6 +276,7 @@ export function run(world: W, actor: Id, cmd: string, args: any = {}): W {
   const who = cit(w, actor);
   if (who.suspended) fail('Your account is suspended. Ask the Returning Officer.');
   if (ghost(w, actor) && !R.isGhostOk(cmd)) fail(`You were assassinated. Until ${fmtTime(w, w.citizens[actor].ghostUntil)} you are a ghost: you can vote, and nothing else.`);
+  Cr.syncCrown(w);
   X.gate(w, actor, cmd);
   f(w, actor, args || {});
   X.sync(w);

@@ -8,6 +8,7 @@ import { SignIn } from './pages/signin';
 import { Icon, getTheme, themeBar } from './ui';
 import { DemoPanel, DemoRail } from './DemoPanel';
 import { Sidebar } from './Sidebar';
+import { Coronation } from './Coronation';
 import { TABS, where } from './nav';
 import { Search } from './search';
 import { markSeen } from './pages/today';
@@ -128,6 +129,7 @@ function Game() {
       </div></nav>
       {toast && <div class={'toast' + (toast.err ? ' err' : '')} role="status">{toast.text}</div>}
       {offline && <div class="toast err" role="status">Can't reach the server. Retrying…</div>}
+      <Coronation />
       <UpdateBar />
       <Tour />
       {!ONLINE && <DemoPanel />}

@@ -46,6 +46,8 @@ export function migrate(w: W): W {
   w.probeAt ??= 0;
   w.scars ??= null;
   w.fame.regimes ??= [];
+  w.fame.monarchs ??= [];
+  w.crown ??= { reign: null, offer: null };
   // Acts that change how the realm is governed (acts.ts)
   w.acts ??= { jail: null, decrees: null, continuity: null, unity: null, national: null };
   w.bannedParties ??= [];

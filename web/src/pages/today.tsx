@@ -636,6 +636,7 @@ export function Law({ refId }: { refId: string }) {
   if (!l) return <Page title="No such law" back={['#/laws', 'Laws']} />;
   return (
     <Page back={['#/laws', 'Laws']} kicker={`${l.ref}, ${fmtDay(l.at)}, ${l.how}`} title={l.classified ? 'Classified Act' : l.title} intro={l.classified ? 'This Act created a secret body. Its contents are known only to its members.' : l.summary}>
+      {!l.classified && w.proposals[l.propId]?.royal && <div class="royal-seal" title="Royal Assent"><span aria-hidden="true">♛</span><b>Royal Assent</b><small>{w.proposals[l.propId].royal}</small></div>}
       {!l.classified && <Sec><ol class="stack" style={{ paddingLeft: 22, margin: 0 }}>{l.text.map((t: string) => <li style={{ fontSize: 17 }}><BillText text={t} /></li>)}</ol></Sec>}
       {l.rulings.length > 0 && <Sec title="Court rulings"><ul class="list">{l.rulings.map((r: string) => <li>{r}</li>)}</ul></Sec>}
       {l.repealed && <p class="err-line">Repealed.</p>}

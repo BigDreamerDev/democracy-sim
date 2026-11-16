@@ -37,7 +37,7 @@ function blank(seed: number, now: number): W {
     season: { n: 0, startedAt: now }, archive: [], gazette: [], adminLog: [],
     streets: { zones: SAFE_ZONES.map((text, i) => ({ id: 'z' + i, text, by: 'default' })), contracts: {}, protect: null, meets: [] },
     bounties: {}, stalls: {}, orders: {}, jobs: {}, jobClaims: [], markets: {}, ultimatums: [],
-    daily: freshDaily(now), dailyPast: [], polls: [], fame: { pms: [], seasons: [], records: {}, regimes: [] }, hunt: null, clockErrors: []
+    daily: freshDaily(now), dailyPast: [], polls: [], fame: { pms: [], seasons: [], records: {}, regimes: [], monarchs: [] }, crown: { reign: null, offer: null }, hunt: null, clockErrors: []
   };
 }
 function addCitizen(w: W, name: string, admin = false) {

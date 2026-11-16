@@ -114,6 +114,9 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
     if (pr.stage === 'assent' && w.hos.holder && isBot(w.hos.holder) && p(0.6)) go(w.hos.holder, 'prop.assent', { prop: pr.id, yes: chance(w, 0.92) });
     if (pr.stage === 'hos' && w.hos.holder && isBot(w.hos.holder) && p(0.6)) go(w.hos.holder, 'prop.dissolve', { prop: pr.id, yes: w.minority || chance(w, 0.4) });
   });
+  // homage after a coronation
+  const kr = w.crown?.reign;
+  if (kr?.homageUntil) bots.forEach((x: any) => x.id !== kr.id && kr.homage[x.id] === undefined && p(0.3) && go(x.id, 'crown.homage', { swear: chance(w, 0.8) }));
   // MPs vote on House crises
   Object.values(w.crises).forEach((c: any) => c.status === 'open' && c.house && w.seats.filter((m: string) => m && isBot(m) && c.votes[m] === undefined).forEach((m: string) => p(0.35) && go(m, 'crisis.vote', { id: c.id, choice: Math.floor(rand(w) * CRISES.find((x) => x.id === c.type)!.options.length) })));
   // an MP occasionally puts a bill forward

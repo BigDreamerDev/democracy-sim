@@ -930,3 +930,14 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 /* a laid-out bill reads as one column across the page, at a comfortable measure */
 .page-body > .sec:has(.billtext) { column-span: all; }
 .billtext { max-width: 760px; }
+
+/* the coronation film, full screen above everything */
+.coro { position: fixed; inset: 0; z-index: 1000; background: #0E0B0A; }
+.coro iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.coro-x { position: absolute; top: max(12px, env(safe-area-inset-top)); right: 14px; font: 700 12px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: #E3C16F; background: rgba(14,11,10,.6); border: 1px solid #A9792A; border-radius: 2px; padding: 8px 12px; cursor: pointer; }
+/* Royal Assent: the gold seal on a law the monarch signed */
+.royal-seal { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 124px; height: 124px; margin: 14px 0 0; border-radius: 50%; text-align: center; transform: rotate(-6deg); color: #5A3D0C;
+  background: radial-gradient(circle at 35% 30%, #F9EEC4, #E3C16F 55%, #A9792A); border: 2px solid #A9792A; box-shadow: inset 0 0 0 3px #F6E7B4, inset 0 0 0 4px #A9792A, 0 2px 6px rgba(0,0,0,.25); }
+.royal-seal span { font-size: 26px; line-height: 1; }
+.royal-seal b { font-family: var(--serif); font-weight: 400; font-size: 15px; line-height: 1.1; }
+.royal-seal small { font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; max-width: 96px; line-height: 1.15; margin-top: 2px; }

@@ -1,4 +1,5 @@
 // The Founding Convention, national elections (top N win, countback fills gaps), the head of state,
+import { syncCrown } from './crown';
 // parties, forming a government, coalitions, the shadow cabinet, seasons, ambitions and weekly objectives.
 import {
   W, Id, DAY, HOUR, fail, newId, pick, rand, shuffle, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, stamp, approve,
@@ -654,10 +655,11 @@ export function vacateSeat(w: W, id: Id, why: string) {
 // ================= Head of state =================
 export function setHos(w: W, id: Id | null, until: number | null) {
   w.hos = { holder: id, since: w.now, until };
-  if (!id) return;
+  if (!id) return syncCrown(w);
   if (isMP(w, id)) vacateSeat(w, id, `became ${hosTitle(w)}`);
   stamp(w, id, w.config.hos === 'monarchy' ? 'Crowned' : 'President', 'Head of state', 'ink');
   gazette(w, 'hos', `${nm(w, id)} becomes ${hosTitle(w)}.`, '#/hos');
+  syncCrown(w);
 }
 export function startHosSelection(w: W) {
   // under the Protection of the State Act the Prime Minister appoints the next head of state
@@ -676,10 +678,14 @@ export function startHosSelection(w: W) {
 }
 export function honour(w: W, actor: Id, target: Id, title: string) {
   if (!isHOS(w, actor)) fail(`Only the ${hosTitle(w)} awards honours.`);
-  if (w.hos.lastHonour && w.now - w.hos.lastHonour < 7 * DAY) fail('One honour a week.');
+  // coronation honours: three on top of the weekly one
+  const r = w.crown?.reign;
+  const free = !!r && r.id === actor && r.honours > 0;
+  if (!free && w.hos.lastHonour && w.now - w.hos.lastHonour < 7 * DAY) fail('One honour a week.');
   title = text(title, 2, 40, 'honour');
   const t = cit(w, target);
-  w.hos.lastHonour = w.now;
+  if (free) r.honours -= 1;
+  else w.hos.lastHonour = w.now;
   t.titles.push(title.trim());
   t.stats.honoured = true;
   stamp(w, target, title.trim(), `From the ${hosTitle(w)}`, 'good');
