@@ -1027,27 +1027,25 @@ export function proposeCoalition(w: W, actor: Id, partners: string[], kind: 'ful
   w.coalition = { id: newId(w, 'co'), lead: mine, sides, kind, terms: terms.map((t) => text(t, 0, 300, 'term')).filter(Boolean), signed: { [mine]: true }, status: 'draft', promises: {}, at: w.now };
   gazette(w, 'government', `${sideName(w, mine)} opens coalition talks with ${partners.map((p) => sideName(w, p)).join(' and ')}.`, '#/cabinet');
 }
-// a signed coalition with a majority governs: if the Prime Minister is not part of it the government falls, and its
-// leader becomes Prime Minister. Checked when a deal is signed and after every command and deadline, so a deal signed
-// earlier, or one that gains its majority later, takes over too. Not where the law fixes who governs.
+// whoever commands a majority of the House governs: a party with one on its own, or the lead side of a signed
+// coalition. If the Prime Minister has lost their majority and someone else now commands one, the government falls
+// and that leader becomes Prime Minister; with no Prime Minister, they are invited at once. Checked after every
+// command and deadline, so defections, by-elections and deals all count. Not where the law fixes who governs.
 export function coalitionGoverns(w: W) {
-  const co = w.coalition;
-  if (!co || co.status !== 'signed' || w.phase !== 'running') return;
+  if (w.phase !== 'running') return;
   if (inForce(w, 'protection') || (inForce(w, 'crown') && !!w.hos.holder) || (!!w.regime && w.regime.type !== 'civil') || !!w.transition) return;
   if (Object.values(w.elections).some((e: any) => e.kind === 'general' && e.status === 'open')) return;
-  const seats = co.sides.reduce((n: number, x: string) => n + sideSeats(w, x), 0);
-  if (seats < majority(w) || (w.pm && co.sides.includes(sideOf(w, w.pm)))) return;
-  const lead = leaderOfSide(w, co.lead);
-  if (!lead || !commands(w, lead) || !w.citizens[lead]?.active || exiled(w, lead) || detained(w, lead) || barred(w, lead)) return;
+  if (w.pm && supportFor(w, w.pm) >= majority(w)) return;
+  const next = contenders(w).filter((l) => l !== w.pm && commands(w, l) && !barred(w, l)).sort((a, b) => supportFor(w, b) - supportFor(w, a))[0];
+  if (!next) return;
   if (w.pm) {
-    gazette(w, 'government', `${nm(w, w.pm)}'s government falls: the coalition holds ${seats} of ${w.config.seats} seats.`, '#/cabinet');
-    meter(w, 'stability', -3, 'A coalition replaced the government');
+    gazette(w, 'government', `${nm(w, w.pm)}'s government falls: ${sideName(w, sideOf(w, next))}${w.coalition?.status === 'signed' && w.coalition.sides.includes(sideOf(w, next)) ? ' and its coalition' : ''} now holds ${supportFor(w, next)} of ${w.config.seats} seats.`, '#/cabinet');
+    meter(w, 'stability', -3, 'The government lost its majority');
     w.pm = null;
     clearMinisters(w);
     w.confidence = null;
   }
-  invitePM(w, null, lead);
-  w.minority = false;
+  invitePM(w, null, next);
 }
 export function signCoalition(w: W, actor: Id) {
   const co = w.coalition;
