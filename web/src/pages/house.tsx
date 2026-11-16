@@ -417,8 +417,8 @@ export function NewProposal({ query }: { query: URLSearchParams }) {
       <Sec title="Send it">
         <Card>
           {(kind === 'bill' || kind === 'referendum') && clauses.length > 0 && <ol style={{ margin: '0 0 10px', paddingLeft: 20 }}>{clauses.map((e) => <li>{safe(w, e)}</li>)}</ol>}
-          {kind !== 'dissolution' && <Opt on={fast} onClick={() => setFast(!fast)} title="Fast-track: 12-hour debate" hint="Costs 15 Influence." />}
-          <p class="small" style={{ fontWeight: 700, margin: '10px 0' }}>{constitutional ? `Constitutional: needs ${superMajority(w)} of ${w.config.seats} MPs. ` : ''}{cost ? `Costs ${cost} Influence.` : 'Free.'} {kind === 'dissolution' ? 'Goes straight to the head of state.' : `Debate ${fast ? 12 : w.config.debateHours}h, then ${w.config.voteHours}h to vote.`}</p>
+          {kind !== 'dissolution' && <Opt on={fast} onClick={() => setFast(!fast)} title="Fast-track: half the debate and voting time" hint="Costs 15 Influence." />}
+          <p class="small" style={{ fontWeight: 700, margin: '10px 0' }}>{constitutional ? `Constitutional: needs ${superMajority(w)} of ${w.config.seats} MPs. ` : ''}{cost ? `Costs ${cost} Influence.` : 'Free.'} {kind === 'dissolution' ? 'Goes straight to the head of state.' : `Debate ${fast ? w.config.debateHours / 2 : w.config.debateHours}h, then ${fast ? w.config.voteHours / 2 : w.config.voteHours}h to vote.`}</p>
           {kind !== 'dissolution' && kind !== 'confidence' && <Sponsors draftId={draftId} keep={keep} />}
           <Btn full onClick={submit}>Put it to the House</Btn>
           <p class="small muted" style={{ margin: '8px 0 0' }}>{savedAt ? `Draft saved ${when(savedAt)}. ` : 'Drafts save as you type. '}<a href={'#/new?fresh=' + draftId}>Start another</a></p>

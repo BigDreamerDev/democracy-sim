@@ -227,7 +227,8 @@ export function propose(w: W, actor: Id, a: any) {
   // tabled from a saved draft: it's used up, and the MPs who signed this exact wording become co-sponsors
   const fromDraft = own(w.drafts, a.draft)?.by === actor ? (a.draft as string) : null;
   const sponsors = fromDraft ? takeDraft(w, actor, a.draft, { kind, title, summary, clauses: a.clauses ?? [], target: a.target || '' }) : [];
-  const debateH = a.fast ? 12 : kind === 'no_confidence' || kind === 'confidence' || kind === 'censure' ? 12 : w.config.debateHours;
+  const baseDebateH = kind === 'no_confidence' || kind === 'confidence' || kind === 'censure' ? 12 : w.config.debateHours;
+  const debateH = a.fast ? baseDebateH / 2 : baseDebateH;
   w.proposals[id] = {
     id, n: w.propCount, kind, title: own(titles, kind) || title, summary, by: actor, clauses, target: a.target || null,
     constitutional, voters: kind === 'referendum' || (kind === 'bill' && w.config.billVoters === 'all') ? 'all' : 'mps', rule: w.config.passRule || 'cast',
@@ -581,7 +582,8 @@ export function openVote(w: W, p: any) {
   p.stage = 'vote';
   if (lapseAmendments(p)) gazette(w, 'proposal', `Amendments not taken up on ${p.title} lapse as voting opens.`, '#/p/' + p.id);
   judgePledges(w);
-  p.voteEndsAt = w.now + (['no_confidence', 'confidence', 'censure'].includes(p.kind) ? 12 : p.fast ? Math.min(24, w.config.voteHours) : w.config.voteHours) * HOUR;
+  const baseVoteH = ['no_confidence', 'confidence', 'censure'].includes(p.kind) ? 12 : w.config.voteHours;
+  p.voteEndsAt = w.now + (p.fast ? baseVoteH / 2 : baseVoteH) * HOUR;
   gazette(w, 'proposal', `Voting opens: ${p.title}. ${p.voters === 'all' ? 'Every citizen votes.' : 'MPs vote.'}`, '#/p/' + p.id);
   openMarket(w, 'prop', p.id, `Will “${p.title}” pass the vote?`, [{ key: 'yes', label: 'Passes' }, { key: 'no', label: 'Fails' }], p.voteEndsAt);
 }
