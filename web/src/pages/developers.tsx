@@ -240,7 +240,28 @@ export function Authorize({ query }: { query: URLSearchParams }) {
   const framed = window.top !== window.self; // never inside someone else's page: they could hide what you're agreeing to
   useEffect(() => void (framed ? setProblem('Open this page in its own tab to sign in.') : ONLINE ? appInfo(id).then(setApp).catch((e) => setProblem(e.message)) : setProblem('Sign-in works only on the live realm.')), [id]);
   const scope = (asked || app?.scope) === 'act' ? 'act' : 'read';
+  const act = scope === 'act';
+  const myName = w.citizens[me].name;
+  // an app that can act as you is the same as handing someone your vote, so saying yes takes some doing:
+  // every box ticked, your own name typed out, and a short wait before the button works
+  const TICKS = act
+    ? [`I am letting ${app?.by} read everything I can see and do anything I can do.`, `I know ${app?.by} could cast or change my secret ballots, and nobody would see it.`, 'I know this lasts until I revoke it. Changing my password does not stop it.']
+    : [`I am letting ${app?.by} read everything I can see, secrets included.`];
+  const [ticks, setTicks] = useState<boolean[]>([]);
+  const [typed, setTyped] = useState('');
+  const [wait, setWait] = useState(0);
+  useEffect(() => {
+    if (!app) return;
+    setTicks([]);
+    setTyped('');
+    setWait(act ? 10 : 4);
+    const iv = setInterval(() => setWait((n) => Math.max(0, n - 1)), 1000);
+    return () => clearInterval(iv);
+  }, [app, act]);
+  const same = (x: string, y: string) => x.replace(/\s+/g, ' ').trim().toLowerCase() === y.replace(/\s+/g, ' ').trim().toLowerCase();
+  const ready = !!app?.redirect && TICKS.every((_, i) => ticks[i]) && (!act || same(typed, myName)) && wait === 0;
   const go = () => {
+    if (!ready) return;
     setBusy(true);
     authorizeApp({ app: id, scope: scope, state: query.get('state') || '', redirect: query.get('redirect') || undefined })
       .then((r) => location.assign(r.redirect))
@@ -251,25 +272,48 @@ export function Authorize({ query }: { query: URLSearchParams }) {
       <div class="card door-card">
         <div style={{ textAlign: 'center' }}>
           <Seal size={60} />
-          <div class="kicker" style={{ marginTop: 8 }}>Sign in with {w.config.realmName}</div>
-          <h1 class="title" style={{ margin: '4px 0 0' }}>{app ? app.name : problem ? 'Can’t sign in' : '…'}</h1>
-          {app && <p class="small muted" style={{ margin: '2px 0 0' }}>made by {app.by}</p>}
+          <div class="kicker" style={{ marginTop: 8 }}>{app ? (act ? 'Hand over your account' : 'Share what you can see') : `Sign in with ${w.config.realmName}`}</div>
+          <h1 class="title" style={{ margin: '4px 0 0' }}>{app ? (act ? `Let ${app.by} act as you?` : `Let ${app.by} see the realm as you?`) : problem ? 'Can’t sign in' : '…'}</h1>
+          {app && <p class="small muted" style={{ margin: '2px 0 0' }}>through the app “{app.name}”, made by {app.by}</p>}
         </div>
         {problem && <p class="small bad">{problem}</p>}
         {app && (
           <>
-            {app.description && <p style={{ margin: 0 }}>{app.description}</p>}
-            <Card kind={scope === 'act' ? 'warn' : 'tint'}>
-              <b>{app.name} wants to {scope === 'act' ? 'see and act as' : 'see the realm as'} {w.citizens[me].name}.</b>
-              <ul class="small" style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-                <li>It sees what you see: your wallet, cards and deals included.</li>
-                {scope === 'act' ? <li>It can vote, speak, spend and plot as you. Its actions are marked "via {app.name}".</li> : <li>It can't do anything as you.</li>}
-                <li>It never sees your password. Revoke it any time under You → Build your own app.</li>
-              </ul>
+            <Card kind={act ? 'warn' : 'tint'}>
+              {act ? (
+                <>
+                  <b>This gives {app.by} a key to your account, {myName}. It is not limited to what the app says it does.</b>
+                  <ul class="small" style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                    <li><b>Your vote.</b> Cast or change your ballot in any election, and vote on every bill. Ballots are secret, so nobody sees an app did it.</li>
+                    <li><b>Your money.</b> Send your crowns to anyone, bet them, spend them.</li>
+                    <li><b>Your voice.</b> Speak, table bills, join or leave a party, resign your offices.</li>
+                    <li><b>Your secrets.</b> Read your wallet, cards, deals and plots, and join or betray a plot as you.</li>
+                  </ul>
+                  <p class="small" style={{ margin: '8px 0 0' }}>It can’t see or change your password. It works until you revoke it under You → Build your own app.</p>
+                </>
+              ) : (
+                <>
+                  <b>This lets {app.by} read the realm exactly as you see it, {myName}.</b>
+                  <ul class="small" style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                    <li><b>It reads your secrets:</b> your wallet, cards, deals, plots and your own ballots.</li>
+                    <li><b>It can’t do anything as you:</b> no voting, no spending, no speaking.</li>
+                  </ul>
+                  <p class="small" style={{ margin: '8px 0 0' }}>It can’t see your password. It works until you revoke it under You → Build your own app.</p>
+                </>
+              )}
             </Card>
-            <p class="small muted" style={{ margin: 0 }}>You'll be sent to <code style={{ wordBreak: 'break-all' }}>{app.redirect ? new URL(app.redirect).host : 'nowhere'}</code></p>
-            <Btn full disabled={busy || !app.redirect} onClick={go}>{busy ? 'One moment…' : `Allow ${app.name}`}</Btn>
-            <Btn full kind="plain" href="#/">Cancel</Btn>
+            {app.description && <p class="small muted" style={{ margin: 0 }}>What {app.by} says about it: “{app.description}” The realm hasn’t checked this.</p>}
+            {act && app.scope !== 'act' && <p class="small err-line" style={{ margin: 0 }}>This app is registered as read-only, but this link asks to act as you.</p>}
+            <p class="small muted" style={{ margin: 0 }}>The key goes to <code style={{ wordBreak: 'break-all' }}>{app.redirect ? new URL(app.redirect).host : 'nowhere'}</code>, a site the realm doesn’t run.</p>
+            <Btn full href="#/">No, take me back</Btn>
+            <div class="consent">
+              <b class="small">{act ? 'Still want to? Tick each line, then type your name.' : 'Still want to? Tick the line.'}</b>
+              {TICKS.map((text, i) => (
+                <label class="tick small"><input type="checkbox" checked={!!ticks[i]} onChange={(e: any) => setTicks(TICKS.map((_, j) => (j === i ? !!e.target.checked : !!ticks[j])))} /><span>{text}</span></label>
+              ))}
+              {act && <Field label={<span>Type your name, <b>{myName}</b>, to agree</span>} value={typed} onInput={setTyped} placeholder={myName} />}
+              <Btn full kind={act ? 'danger' : 'ghost'} disabled={busy || !ready} onClick={go}>{busy ? 'One moment…' : wait > 0 ? `Read the above (${wait})` : act ? `Let ${app.by} act as me` : `Let ${app.by} see as me`}</Btn>
+            </div>
           </>
         )}
       </div>
