@@ -1038,6 +1038,25 @@ export function signCoalition(w: W, actor: Id) {
     gazette(w, 'government', `Coalition signed: ${co.sides.map((s: string) => sideName(w, s)).join(' and ')}. ${co.kind === 'full' ? 'Full coalition.' : 'Confidence and supply.'}`, '#/cabinet');
     if (Object.keys(co.promises).length)
       addCard(w, { title: `Before the coalition was signed, posts were promised: ${Object.entries(co.promises).map(([o, t]: any) => `${w.offices[o]?.title ?? o} to ${nm(w, t)}`).join(', ')}.`, about: leaderOfSide(w, co.lead), from: 'Coalition talks', level: 'restricted', viewers: co.sides.map((s: string) => 'cit:' + leaderOfSide(w, s)) });
+    // a coalition with a majority that the Prime Minister is not part of takes over: the government falls and
+    // the coalition's leader forms the next one. Not where the law fixes who governs (Crown, Protection, a regime).
+    const seats = co.sides.reduce((n: number, x: string) => n + sideSeats(w, x), 0);
+    const fixed = inForce(w, 'protection') || (inForce(w, 'crown') && !!w.hos.holder) || (!!w.regime && w.regime.type !== 'civil') || !!w.transition;
+    if (w.pm && !fixed && seats >= majority(w) && !co.sides.includes(sideOf(w, w.pm))) {
+      const lead = leaderOfSide(w, co.lead);
+      gazette(w, 'government', `${nm(w, w.pm)}'s government falls: the new coalition holds ${seats} of ${w.config.seats} seats.`, '#/cabinet');
+      meter(w, 'stability', -3, 'A coalition replaced the government');
+      w.pm = null;
+      clearMinisters(w);
+      w.confidence = null;
+      w.pmInviteDue = w.now + DAY;
+      w.formingSince = w.now;
+      try {
+        if (lead) invitePM(w, null, lead);
+      } catch {
+        // the leader can't take office just now: the head of state invites someone within the day
+      }
+    }
     if (w.pm) w.minority = supportFor(w, w.pm) < majority(w);
   }
 }
