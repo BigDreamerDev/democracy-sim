@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 14, text: 'Letting an app into your account now spells out exactly what you’re handing over, and to whom. An app that can act as you needs every box ticked and your name typed before it gets a key.' },
   { n: 13, text: 'Bills can now be laid out properly: sections, numbered subsections, titles and bold, on the bill and on the law.' },
   { n: 12, text: 'General bug fixes.' },
   { n: 11, text: 'The Monarch can now hurry bills along: skip a debate straight to the vote, or halve the time left in a debate or a vote. A vote always gets at least an hour, and each is announced in the Gazette.' },
