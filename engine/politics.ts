@@ -666,7 +666,7 @@ export function startHosSelection(w: W) {
   const pool = allCitizens(w).filter((c: any) => !exiled(w, c.id) && !detained(w, c.id)).map((c: any) => c.id);
   if (m === 'life' || m === 'citizens') {
     if (!Object.values(w.elections).some((e: any) => e.kind === 'hos' && e.status === 'open'))
-      newElection(w, { kind: 'hos', title: w.config.hos === 'monarchy' ? 'Election of the Monarch, for life' : 'Election for President', closesAt: w.now + 2 * DAY });
+      newElection(w, { kind: 'hos', title: w.config.hos === 'monarchy' ? 'Election of the Monarch, for life' : 'Election for President', closesAt: w.now + (w.config.hos === 'monarchy' ? 1 : 2) * DAY });
   } else if (m === 'house') newElection(w, { kind: 'hos', title: 'MPs elect the President', voters: 'mps', closesAt: w.now + DAY });
   else if (m === 'lot') setHos(w, pick(w, pool), w.now + (w.config.hos === 'monarchy' ? 28 : w.config.termDays) * DAY);
   else if (m === 'rotate') {
