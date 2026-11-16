@@ -4,8 +4,8 @@ import './styles.css';
 import { useStore, ONLINE, toast as say } from './store';
 import { When } from './ui';
 import { nm } from '../../engine/index';
-import { SignIn } from './pages/signin';
-import { Icon, getTheme, themeBar } from './ui';
+import { SignIn, ResetPassword } from './pages/signin';
+import { Icon, getTheme, themeBar, useRoute } from './ui';
 import { DemoPanel, DemoRail } from './DemoPanel';
 import { Sidebar } from './Sidebar';
 import { Coronation } from './Coronation';
@@ -90,6 +90,7 @@ function route(hash: string) {
     nation: () => <Nation id={b} />, case: () => <Case id={b} />, crisis: () => <Crisis id={b} />,
     regime: () => <Regime />, jail: () => <Jail />, powers: () => <Powers />, backroom: () => <BackroomAll />, plots: () => <BackroomAll focus="plots" />, exile: () => <BackroomAll focus="exile" />, admin: () => <Admin />, learn: () => <Learn />, rolog: () => <RoLog />, developers: () => <Developers />, apps: () => <Apps />, app: () => <AppPage id={b} />, authorize: () => <Authorize query={q} />,
     // an invitation link opened while already signed in: nothing to do but say so
+    reset: () => <ResetPassword code={b || ''} />,
     join: () => (setTimeout(() => (say('You are already signed in. Invitations are for new players.'), (location.hash = '#/')), 0), <Today />),
     streets: () => <Streets />, hunt: () => <Hunt />, tag: () => <TagLanding code={b || ''} />, meet: () => <Meet code={b} />, market: () => <Market />, polls: () => <Polls />,
     // the copy desk only exists on the development server (npm run dev)
@@ -103,7 +104,9 @@ function App() {
   const s = useStore();
   // in development, "Edit text" lets you reword any line in place (see copyEdit.tsx)
   const dev = import.meta.env.DEV && <CopyOverlay />;
-  if (!s.world) return <><SignIn />{s.toast && <div class={'toast' + (s.toast.err ? ' err' : '')} role="status">{s.toast.text}</div>}{dev}</>;
+  const r = useRoute();
+  const resetCode = r[0] === 'reset' && /^[A-Za-z0-9]{16,40}$/.test(r[1] || '') ? r[1] : '';
+  if (!s.world) return <>{resetCode && !s.loading ? <ResetPassword code={resetCode} /> : <SignIn />}{s.toast && <div class={'toast' + (s.toast.err ? ' err' : '')} role="status">{s.toast.text}</div>}{dev}</>;
   return <><Game />{dev}</>;
 }
 

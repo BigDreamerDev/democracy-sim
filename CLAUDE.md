@@ -164,7 +164,8 @@ copy/        STYLE.md (the house voice), edits.json (reviewed rewording in progr
 | `GET /api/admin/log?failed=1` | RO | last 200 `v2_log` rows with names (args can be private: RO only) |
 | `GET /api/admin/snapshots`, `POST /api/admin/snapshots/restore` `{id, confirm:'RESTORE'}` | RO | daily snapshots (7 kept) plus pre-reset/restore ones (5 kept); a restore snapshots first and is announced |
 | `GET /api/public/digest.txt`, `/status.json`, `/widget.svg` | — | public summary only (from `digest()` and public fields), `*` CORS, 60/min/IP |
-| `POST /api/admin/password` | RO | `{citizen}` → `{temp}`; announced in the Gazette |
+| `POST /api/admin/password` | RO | `{citizen}` → `{code, expiresAt, name}`: a one-time reset link (`#/reset/<code>`, `v2_resets`, sha256, 24 h, a new one voids the old; the old password works until it's used); announced in the Gazette |
+| `GET /api/reset/check?code=`, `POST /api/reset` `{code, password}` | — | `{username, name}` / `{token, me}`: spends the link, sets the password, clears lockout, signs out every other session |
 | `POST /api/admin/reset` | RO | `{confirm:'RESET THE REALM'}`; snapshots first |
 | `GET /api/keys` | user | the caller's live API keys (no secrets) |
 | `POST /api/keys` | user | `{name, scope:'read'\|'act'}` → row + `key` (shown once). Max 5. |

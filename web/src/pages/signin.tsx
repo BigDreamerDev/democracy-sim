@@ -2,7 +2,7 @@
 // Discord, Google, Microsoft or Apple account, or a passkey added from their passport.
 import { useEffect, useState } from 'preact/hooks';
 import { Seal, Btn, ThemeSwitch, PasswordField, Icon, DiscordLogo } from '../ui';
-import { signIn, signUp, useStore, oauthProviders, beginOAuth, passkeysWork, signInWithPasskey, checkInvite } from '../store';
+import { signIn, signUp, useStore, oauthProviders, beginOAuth, passkeysWork, signInWithPasskey, checkInvite, checkReset, useResetLink, getToken } from '../store';
 
 const MARK: Record<string, string> = { discord: 'D', google: 'G', microsoft: 'M', apple: 'A' };
 
@@ -106,6 +106,45 @@ export function SignIn() {
         <button class="btn full" type="submit" disabled={!!busy || !u || !p}>{busy === 'form' ? 'One moment…' : mode === 'in' ? 'Sign in' : invite ? 'Join the realm' : 'Apply'}</button>
         <Btn kind="plain" full onClick={() => (setMode(mode === 'in' ? 'up' : 'in'), setMsg(null))}>{mode === 'in' ? 'New here? Apply for citizenship' : 'Have an account? Sign in'}</Btn>
         {(provs.length > 0 || keys) && mode === 'in' && <p class="small muted" style={{ margin: 0, textAlign: 'center' }}>Already have an account? Sign in with your password once, then add a passkey{provs.length > 0 ? ' or link ' + provs.map((x) => x.name).join(provs.length > 2 ? ', ' : ' or ').replace(/, ([^,]*)$/, ' or $1') : ''} from your passport.</p>}
+        <div style={{ display: 'flex', justifyContent: 'center' }}><ThemeSwitch /></div>
+      </form>
+    </div>
+  );
+}
+
+// a password reset link from the Returning Officer: #/reset/<code>. Works signed in or out.
+export function ResetPassword({ code }: { code: string }) {
+  const [who, setWho] = useState<{ username: string; name: string } | null>(null);
+  const [p, setP] = useState('');
+  const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => void checkReset(code).then(setWho).catch((e) => setMsg({ text: e.message, err: true })), [code]);
+  const submit = async (e: Event) => {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    try {
+      await useResetLink(code, p);
+      location.hash = '#/';
+    } catch (e: any) {
+      setMsg({ text: e.message, err: true });
+      setBusy(false);
+    }
+  };
+  return (
+    <div class="door">
+      <form class="card door-card" onSubmit={submit} autoComplete="on">
+        <div style={{ textAlign: 'center' }}>
+          <Seal size={72} />
+          <div class="kicker" style={{ marginTop: 10 }}>By order of the Returning Officer</div>
+          <h1 class="title" style={{ margin: '4px 0 2px' }}>{who ? `New password for ${who.name}` : 'Reset your password'}</h1>
+          <p class="small muted" style={{ margin: 0 }}>{who ? 'Choose a new password. You’ll be signed in straight away, and signed out everywhere else.' : 'Checking your link…'}</p>
+        </div>
+        {who && <input type="text" name="username" value={who.username} autoComplete="username" readOnly hidden />}
+        {who && <PasswordField label="New password" value={p} onInput={setP} autoComplete="new-password" hint="At least 10 characters. A short sentence is easy to remember and hard to guess." />}
+        {msg && <p class={'small ' + (msg.err ? 'bad' : 'good')} role="alert">{msg.text}</p>}
+        {who && <button class="btn full" type="submit" disabled={busy || !p}>{busy ? 'One moment…' : 'Set password and sign in'}</button>}
+        <Btn kind="plain" full onClick={() => (location.hash = '#/')}>{getToken() ? 'Back' : 'Back to sign in'}</Btn>
         <div style={{ display: 'flex', justifyContent: 'center' }}><ThemeSwitch /></div>
       </form>
     </div>

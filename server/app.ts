@@ -11,6 +11,7 @@ import { providers, authorizeUrl, exchange, random } from './oauth';
 import { randomInt } from 'node:crypto';
 import { passkeys, PASSKEY_SCHEMA } from './passkeys';
 import { IMAGES_SCHEMA, imageGet, imageRoutes, photoProblem } from './images';
+import { RESETS_SCHEMA, createReset, validReset, useReset } from './resets';
 import { INVITES_SCHEMA, inviteRoutes, claimInvite, releaseInvite, useInvite } from './invites';
 import { VETTING_SCHEMA, vettingRoutes, recordDevice, sameDevice, allowanceOf } from './vetting';
 import { run, viewFor, advanceTo, nextDeadline, createLiveWorld, GameError, gazette, migrate, needs, adminDid, nm, digest } from '../engine/index';
@@ -27,6 +28,7 @@ export async function makeApp(o: Options) {
   await q(PASSKEY_SCHEMA);
   await q(IMAGES_SCHEMA);
   await q(INVITES_SCHEMA);
+  await q(RESETS_SCHEMA);
   await q(VETTING_SCHEMA);
   const env = o.env || process.env;
   const OAUTH = providers(env);
@@ -677,21 +679,43 @@ export async function makeApp(o: Options) {
     });
     return { ok: true };
   }));
-  // a forgotten password: the RO gets a temporary one to send privately, and the realm sees that it happened
+  // a forgotten password: the RO gets a one-time link to forward privately, and the realm sees that it happened
   app.post('/api/admin/password', auth, admin, async (req: any, res) => {
     const cid = String(req.body?.citizen || '');
     const u = (await q('SELECT id, display_name FROM users WHERE id = $1', [Number(cid.replace(/^u/, '')) || 0])).rows[0];
     if (!u) return res.status(404).json({ error: 'No such account.' });
-    const temp = Array.from({ length: 3 }, () => Array.from({ length: 4 }, () => 'abcdefghjkmnpqrstuvwxyz23456789'[randomInt(31)]).join('')).join('-');
-    await q('UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2', [await hash(temp), u.id]);
-    await account(q, u.id);
-    await q('UPDATE v2_accounts SET failures = 0, locked_until = NULL, no_password = FALSE WHERE user_id = $1', [u.id]);
-    userCache.delete(u.id);
+    const r = await createReset(q, u.id, req.user.id);
     await serial(async () => {
-      adminDid(world, req.cid, `reset ${u.display_name}'s password, which would let them sign in as ${u.display_name}`);
+      adminDid(world, req.cid, `made a password reset link for ${u.display_name}, which would let whoever opens it sign in as ${u.display_name}`);
       await save();
     });
-    res.json({ temp });
+    res.json({ code: r.code, expiresAt: r.expiresAt, name: u.display_name });
+  });
+  // the link itself: who it's for, then a new password and straight in
+  app.get('/api/reset/check', async (req: any, res) => {
+    if (limited('reset:' + req.ip, 20)) return res.status(429).json({ error: 'Too many attempts. Wait a minute.' });
+    const r = await validReset(q, req.query.code);
+    const u = r && (await q('SELECT username, display_name, is_active, approved FROM users WHERE id = $1', [r.user_id])).rows[0];
+    if (!u || !u.is_active || !u.approved) return res.status(404).json({ error: 'That link has been used, has expired, or was never real. Ask the Returning Officer for a new one.' });
+    res.json({ username: u.username, name: u.display_name });
+  });
+  app.post('/api/reset', async (req: any, res) => {
+    if (limited('reset:' + req.ip, 20)) return res.status(429).json({ error: 'Too many attempts. Wait a minute.' });
+    const gone = 'That link has been used, has expired, or was never real. Ask the Returning Officer for a new one.';
+    const pw = String(req.body?.password || '');
+    const r = await validReset(q, req.body?.code);
+    const u0 = r && (await q('SELECT * FROM users WHERE id = $1', [r.user_id])).rows[0];
+    if (!u0 || !u0.is_active || !u0.approved) return res.status(404).json({ error: gone });
+    const bad = passwordProblem(pw, u0.username);
+    if (bad) return res.status(400).json({ error: bad });
+    if (!(await useReset(q, req.body?.code))) return res.status(404).json({ error: gone });
+    await q('UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2', [await hash(pw), u0.id]);
+    await account(q, u0.id);
+    await q('UPDATE v2_accounts SET failures = 0, locked_until = NULL, no_password = FALSE WHERE user_id = $1', [u0.id]);
+    userCache.delete(u0.id);
+    audit('u' + u0.id, 'auth.reset', true);
+    const u = (await q('SELECT * FROM users WHERE id = $1', [u0.id])).rows[0];
+    res.json(await welcome(u, req));
   });
   app.post('/api/admin/reset', auth, admin, async (req: any, res) => {
     if (req.body?.confirm !== 'RESET THE REALM') return res.status(400).json({ error: 'Type RESET THE REALM to confirm.' });

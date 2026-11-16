@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { useEffect } from 'preact/hooks';
-import { useStore, act, ONLINE, resetRealm, downloadExport, resetPassword, adminApps, removeApp, restoreApp, toast, adminInvites, makeInvite, makeInvites, revokeInvite, inviteLink, removeDuplicate, adminNotes, saveNote, adminAllowances, setAllowance, adminDevices, pauseClock, resyncClock, suspendCitizen, setRO, actionLog, listSnapshots, restoreSnapshot } from '../store';
+import { useStore, act, ONLINE, resetRealm, downloadExport, resetPassword, resetLink, adminApps, removeApp, restoreApp, toast, adminInvites, makeInvite, makeInvites, revokeInvite, inviteLink, removeDuplicate, adminNotes, saveNote, adminAllowances, setAllowance, adminDevices, pauseClock, resyncClock, suspendCitizen, setRO, actionLog, listSnapshots, restoreSnapshot } from '../store';
 import { Page, Sec, Card, Btn, Empty, LinkRow, Field, Pick, When, Seg } from '../ui';
 import { CRISES } from '../../../engine/crises';
 import { BUILD, BUILT, checkNow } from '../update';
@@ -59,12 +59,26 @@ export function Admin() {
       {ONLINE && <Snapshots />}
       <Sec title="Admin log" sub="Everyone can read this."><LinkRow href="#/rolog" title="The public log" sub={`${w.adminLog.length} entries`} /></Sec>
       {ONLINE && (
-        <Sec title="Forgotten password" sub="Gives you a temporary password to DM them. The Gazette records that you did it.">
+        <Sec title="Forgotten password" sub="Gives you a one-time link to DM them. It lets them choose a new password and signs them in. It lasts 24 hours, works once, and their old password keeps working until they use it. The Gazette records that you made it.">
           <div class="grid2">
             <Pick value={who} onChange={setWho} empty="Whose" options={Object.values(w.citizens).filter((c: any) => c.id !== me).map((c: any) => [c.id, c.name])} />
-            <Btn disabled={!who} onClick={() => resetPassword(who).then((t) => setTemp(`${nm(w, who)}: ${t}`)).catch((e) => toast(e.message, true))}>Reset it</Btn>
+            <Btn disabled={!who} onClick={() => resetPassword(who).then((r) => setTemp(`${r.name}|${resetLink(r.code)}`)).catch((e) => toast(e.message, true))}>Make a link</Btn>
           </div>
-          {temp && <Card kind="tint" style={{ marginTop: 10 }}><b class="tnum" style={{ userSelect: 'all' }}>{temp}</b><div class="small muted">Send it privately. They can change it on their passport.</div></Card>}
+          {temp && (() => {
+            const [name, link] = temp.split('|');
+            const text = `Here’s a link to reset your password for the Realm. It works once, for 24 hours. Don’t share it.\n${link}`;
+            return (
+              <Card kind="tint" style={{ marginTop: 10 }}>
+                <div class="small">For <b>{name}</b></div>
+                <b class="tnum" style={{ userSelect: 'all', wordBreak: 'break-all' }}>{link}</b>
+                <div class="row" style={{ marginTop: 8, gap: 8, justifyContent: 'flex-start' }}>
+                  <Btn small onClick={() => navigator.clipboard?.writeText(text).then(() => toast('Copied. Send it to them privately.'), () => toast('Copy failed. Select the link instead.', true))}>Copy message</Btn>
+                  {typeof navigator.share === 'function' && <Btn small kind="ghost" onClick={() => navigator.share({ text }).catch(() => {})}>Share</Btn>}
+                </div>
+                <div class="small muted">Send it privately: whoever opens it can get into {name}’s account.</div>
+              </Card>
+            );
+          })()}
         </Sec>
       )}
       {ONLINE && (

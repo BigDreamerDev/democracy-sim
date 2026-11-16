@@ -290,6 +290,23 @@ try {
   assert.equal(joined.status, 200, JSON.stringify(joined.body));
   assert.ok(joined.body.token, 'an invitation needs no approval');
   assert.equal((await call('/api/signup', { username: 'devp2', display_name: 'Dev 2', password: 'a long enough passphrase', invite: inv.body.code })).status, 403, 'an invitation works once');
+  // password reset links: RO only, single-use, old password works until used, new one signs you in
+  assert.equal((await call('/api/admin/password', { citizen: joined.body.me }, C)).status, 403, 'RO only');
+  const rl = await call('/api/admin/password', { citizen: joined.body.me }, RI);
+  assert.equal(rl.status, 200, JSON.stringify(rl.body));
+  assert.ok(rl.body.code && !rl.body.temp, 'a link, not a temporary password');
+  assert.equal((await call('/api/login', { username: 'devp', password: 'a long enough passphrase' })).status, 200, 'old password still works until the link is used');
+  assert.equal((await call('/api/reset/check?code=' + rl.body.code)).body.username, 'devp');
+  assert.equal((await call('/api/reset', { code: rl.body.code, password: 'short' })).status, 400, 'weak password refused');
+  const rsp = await call('/api/reset', { code: rl.body.code, password: 'a brand new passphrase' });
+  assert.equal(rsp.status, 200, JSON.stringify(rsp.body));
+  assert.equal(rsp.body.me, joined.body.me);
+  assert.equal((await call('/api/reset', { code: rl.body.code, password: 'another new passphrase' })).status, 404, 'a link works once');
+  assert.equal((await call('/api/state', undefined, joined.body.token)).status, 401, 'old sessions signed out');
+  assert.equal((await call('/api/login', { username: 'devp', password: 'a brand new passphrase' })).status, 200);
+  const r1 = (await call('/api/admin/password', { citizen: joined.body.me }, RI)).body.code;
+  await call('/api/admin/password', { citizen: joined.body.me }, RI);
+  assert.equal((await call('/api/reset/check?code=' + r1)).status, 404, 'a new link voids the old one');
   // duplicates: struck out, crowns moved, login off
   const dupId = joined.body.me;
   const keepBal = getWorld().accounts['c:u3'] || 0;

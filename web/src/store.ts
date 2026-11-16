@@ -158,7 +158,7 @@ export { HOUR, DAY };
 export const getState = () => state;
 
 // ---------------- online ----------------
-function getToken() {
+export function getToken() {
   try {
     return localStorage.getItem(TOKEN) || '';
   } catch {
@@ -291,10 +291,18 @@ export async function changePassword(current: string, next: string) {
 export async function resetRealm(confirm: string, clearFame = false) {
   receive(await api('/api/admin/reset', { confirm, ...(clearFame ? { fame: 'clear' } : {}) }));
 }
-export async function resetPassword(citizen: string): Promise<string> {
+export async function resetPassword(citizen: string): Promise<{ code: string; expiresAt: string; name: string }> {
   const d = await api('/api/admin/password', { citizen });
   refresh();
-  return d.temp;
+  return d;
+}
+export const resetLink = (code: string) => location.origin + location.pathname + '#/reset/' + code;
+export const checkReset = (code: string): Promise<{ username: string; name: string }> => api('/api/reset/check?code=' + encodeURIComponent(code));
+export async function useResetLink(code: string, password: string) {
+  const d = await api('/api/reset', { code, password });
+  setToken(d.token);
+  set({ signedIn: true, loading: true });
+  await refresh();
 }
 export const API_URL = API;
 export const listKeys = () => api('/api/keys');
