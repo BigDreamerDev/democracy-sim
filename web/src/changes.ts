@@ -1,7 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
-  { n: 14, text: 'Coronations. A new monarch picks a regnal name and an oath, and is crowned a day later, with a film to watch, 10 crowns for everyone and a day to swear homage or refuse. Monarchs can abdicate to an heir, hold a jubilee every 30 days, and face pretenders. Laws the monarch signs carry a gold seal.' },
+  { n: 14, text: 'A coronation animation has been added.' },
   { n: 13, text: 'Bills can now be laid out properly: sections, numbered subsections, titles and bold, on the bill and on the law.' },
   { n: 12, text: 'General bug fixes.' },
   { n: 11, text: 'The Monarch can now hurry bills along: skip a debate straight to the vote, or halve the time left in a debate or a vote. A vote always gets at least an hour, and each is announced in the Gazette.' },
