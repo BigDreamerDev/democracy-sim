@@ -10,7 +10,7 @@
 //   reckoning (w.reckoning) on the people who ran it.
 import { W, Id, DAY, HOUR, fail, newId, chance, pick, cit, nm, own, text as txt, int, clamp, allCitizens, exiled, detained, held, jailed, inForce, isPM, mustBeFree, gazette, earn, spend, stamp, approve, meter, legit, isHOS, isMP, mps, holderOf, transfer, bal, ca, bump, DAYNO, hosTitle } from './core';
 import { syncCrown } from './crown';
-import { clearMinisters, callGeneralElection, vacateSeat, members, VOTING } from './politics';
+import { clearMinisters, coalitionGoverns, callGeneralElection, vacateSeat, members, VOTING } from './politics';
 import { armyLoyalty } from './foreign';
 import { spawnCrisis } from './crises';
 import { syncActs, formFromHouse } from './acts';
@@ -804,6 +804,7 @@ export function regimePayday(w: W) {
 export function sync(w: W) {
   syncActs(w);
   syncCrown(w);
+  coalitionGoverns(w);
   const r = w.regime;
   // rule by decree follows whoever is Prime Minister; nothing about it can fall
   if (r && r.type === 'civil') {
