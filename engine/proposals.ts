@@ -581,7 +581,7 @@ export function openVote(w: W, p: any) {
   p.stage = 'vote';
   if (lapseAmendments(p)) gazette(w, 'proposal', `Amendments not taken up on ${p.title} lapse as voting opens.`, '#/p/' + p.id);
   judgePledges(w);
-  p.voteEndsAt = w.now + (p.fast || ['no_confidence', 'confidence', 'censure'].includes(p.kind) ? 12 : w.config.voteHours) * HOUR;
+  p.voteEndsAt = w.now + (['no_confidence', 'confidence', 'censure'].includes(p.kind) ? 12 : p.fast ? Math.min(24, w.config.voteHours) : w.config.voteHours) * HOUR;
   gazette(w, 'proposal', `Voting opens: ${p.title}. ${p.voters === 'all' ? 'Every citizen votes.' : 'MPs vote.'}`, '#/p/' + p.id);
   openMarket(w, 'prop', p.id, `Will “${p.title}” pass the vote?`, [{ key: 'yes', label: 'Passes' }, { key: 'no', label: 'Fails' }], p.voteEndsAt);
 }

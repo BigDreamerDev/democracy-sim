@@ -48,6 +48,12 @@ export function migrate(w: W): W {
   w.fame.regimes ??= [];
   w.fame.monarchs ??= [];
   w.crown ??= { reign: null, offer: null };
+  // once: every proposal gets 12 hours of debate and 24 hours of voting (Parliament can still change the setting by bill)
+  w.flags ??= {};
+  if (!w.flags.timing1224) {
+    w.flags.timing1224 = true;
+    if (w.config) ((w.config.debateHours = 12), (w.config.voteHours = 24));
+  }
   // Acts that change how the realm is governed (acts.ts)
   w.acts ??= { jail: null, decrees: null, continuity: null, unity: null, national: null };
   w.bannedParties ??= [];
