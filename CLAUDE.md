@@ -220,7 +220,7 @@ Citizen id = `'u' + users.id`.
    server. Hiding a button is cosmetic.
 4. **Rules change only through Parliament.** The RO's powers are exactly: approve sign-ups,
    toggle `requireApproval`/`openSignup`, move the calendar, start a crisis, force-enact a stuck
-   bill, link a bill to one of the Acts in acts.ts (`admin.linkAct`, any stage up to enacted), reset a password, make or revoke an invitation, give a player invitations, remove a duplicate account, remove or restore a player app, add or remove a Streets safe zone, take down a
+   bill, link a bill to one of the Acts in acts.ts (`admin.linkAct`, any stage up to enacted), reset a password, make or revoke an invitation, give a player invitations, remove a duplicate account, remove or restore a player app, add or remove a Streets safe zone, withdraw a candidate from an open election at their request (`admin.withdraw`), take down a
    bounty or a photo, export, reset the realm, suspend or restore a player, make or remove a second RO, pause the
    clock, restore a snapshot. The safe-zone, bounty and photo powers exist for real-world safety only. Don't add RO
    powers over game rules. **Every one of them goes through `adminDid()`** (engine/core.ts), which
