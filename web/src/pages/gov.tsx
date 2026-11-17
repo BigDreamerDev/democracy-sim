@@ -64,7 +64,7 @@ export function Office({ id }: { id: string }) {
       </Sec>
       {o.nominee && <Sec><Card kind="warn"><b>{nm(w, o.nominee.by)}</b> proposes {o.nominee.target ? <><b>{nm(w, o.nominee.target)}</b> as {o.title}</> : `leaving the post vacant`}. Another officer of state must make the same choice.</Card></Sec>}
       {canAppoint(w, me, o) && <Sec title="Appoint" sub={isPM(w, me) ? undefined : 'As an officer of state you propose; a second officer must agree.'}><Pick value={o.holder || ''} onChange={(v) => act('gov.appoint', { office: o.id, target: v || null }, 'Appointed.')} empty="Leave vacant" options={allCitizens(w).filter((c: any) => !c.admin).map((c: any) => [c.id, c.name])} /></Sec>}
-      <Sec><Btn href={'#/law/' + o.law} kind="plain" small>Read the law that created it</Btn></Sec>
+      {o.fill !== 'crown' && <Sec><Btn href={'#/law/' + o.law} kind="plain" small>Read the law that created it</Btn></Sec>}
     </Page>
   );
 }
@@ -73,7 +73,7 @@ export function Cabinet() {
   const { world: w, me } = useStore();
   const pm = isPM(w, me);
   const lo = leaderOfOpposition(w);
-  const posts = Object.values(w.offices).filter((o: any) => o.fill === 'pm') as any[];
+  const posts = Object.values(w.offices).filter((o: any) => o.fill === 'pm' || o.fill === 'crown') as any[];
   const opts = allCitizens(w).filter((c: any) => !c.admin).map((c: any) => [c.id, c.name]) as any;
   const co = w.coalition;
   const sides = [...new Set(mps(w).map((m: string) => sideOf(w, m)))] as string[];

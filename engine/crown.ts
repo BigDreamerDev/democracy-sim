@@ -4,6 +4,7 @@
 import { W, Id, DAY, fail, cit, nm, own, text, allCitizens, exiled, detained, mustBeFree, gazette, stamp, approve, meter, bump, transfer, ca, earn } from './core';
 import { setHos, startHosSelection } from './politics';
 import { fame } from './glory';
+import { household } from './offices';
 
 export const OATHS: Record<string, { label: string; text: string; effect: string }> = {
   parliament: { label: 'To Parliament', text: 'I will govern by the laws this House makes, and by no others.', effect: 'Stability +4' },
@@ -48,6 +49,9 @@ export function syncCrown(w: W) {
       homage: {}, homageUntil: null, honours: 0, jubileeAt: null, jubilees: 0, claim: null, claimed: [] };
     gazette(w, 'hos', `${nm(w, h)} takes the throne. The coronation is in 24 hours.`, '#/hos');
   }
+  // the Royal Household: made (or emptied) once per reign, gone when there is no monarch
+  if (k.reign && k.householdFor !== k.reign.at) (k.householdFor = k.reign.at), household(w, true);
+  if (!k.reign && k.householdFor) (k.householdFor = null), household(w, false);
 }
 function endReign(w: W, end: string) {
   const k = crown(w);

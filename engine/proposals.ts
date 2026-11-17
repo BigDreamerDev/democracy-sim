@@ -122,7 +122,7 @@ function checkClause(w: W, e: any, byDecree = false) {
         name: text(e.office.name, 3, 40, 'office name'),
         // (detaining and releasing come only with the Public Order and Detention Act's own Ministry)
         powers: Array.isArray(e.office.powers) ? [...new Set(e.office.powers.filter((p: unknown) => own(POWERS, p) && p !== 'detain' && p !== 'release'))] : fail('Pick the office’s powers.'),
-        fill: choose(e.office.fill ?? 'pm', Object.keys(FILL), 'Pick how the office is filled.'),
+        fill: choose(e.office.fill ?? 'pm', Object.keys(FILL).filter((k) => k !== 'crown'), 'Pick how the office is filled.'),
         secrecy: choose(e.office.secrecy ?? 'public', ['public', 'restricted', 'secret'], 'Pick public, restricted or secret.'),
         budget: int(e.office.budget ?? 0, 0, 200, 'weekly budget')
       };

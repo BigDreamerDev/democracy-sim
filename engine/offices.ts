@@ -1,6 +1,6 @@
 // Offices: every role in government is one of these. A law creates an office from a template or from
 // a list of powers; whoever holds it gets those powers as buttons.
-import { W, Id, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, hasPower, exiled, barred, detained, holdsAnything, own, text, int } from './core';
+import { W, Id, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, isHOS, hasPower, exiled, barred, detained, holdsAnything, own, text, int } from './core';
 
 export const POWERS: Record<string, { label: string; strong?: boolean }> = {
   grant: { label: 'Pay citizens from its weekly budget' },
@@ -22,7 +22,7 @@ export const POWERS: Record<string, { label: string; strong?: boolean }> = {
 
 // officers of state: the holders of offices with the govern power. With two or more, an appointment needs two of them.
 export const officers = (w: W): Id[] => [...new Set(Object.values(w.offices).filter((o: any) => o.holder && o.powers.includes('govern')).map((o: any) => o.holder as Id))];
-export const canAppoint = (w: W, id: Id, o: any) => o.fill === 'pm' && (isPM(w, id) || (hasPower(w, id, 'govern') && !o.powers.includes('govern')));
+export const canAppoint = (w: W, id: Id, o: any) => (o.fill === 'crown' && isHOS(w, id)) || (o.fill === 'pm' && (isPM(w, id) || (hasPower(w, id, 'govern') && !o.powers.includes('govern'))));
 
 export const TEMPLATES: Record<string, { name: string; title: string; act: string; powers: string[]; fill: string; budget: number; secrecy: string; blurb: string; constitutional?: boolean }> = {
   treasury: { name: 'Treasury', title: 'Chancellor', act: 'Treasury Act', powers: ['grant', 'files'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'The Treasury maintains financial aspects of the government' },
@@ -35,7 +35,7 @@ export const TEMPLATES: Record<string, { name: string; title: string; act: strin
   whip: { name: 'Chief Whip', title: 'Chief Whip', act: 'Founding Act', powers: ['files'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'Keeps government MPs voting together. Sees who rebels.' }
 };
 
-export const FILL: Record<string, string> = { pm: 'The Prime Minister appoints', house: 'MPs elect', citizens: 'Every citizen elects', lot: 'Drawn by lot' };
+export const FILL: Record<string, string> = { pm: 'The Prime Minister appoints', crown: 'The monarch appoints', house: 'MPs elect', citizens: 'Every citizen elects', lot: 'Drawn by lot' };
 
 export function createOffice(w: W, spec: any, law: string) {
   const t = spec.template ? own(TEMPLATES, spec.template) : null;
@@ -73,12 +73,30 @@ export function createOffice(w: W, spec: any, law: string) {
   return o;
 }
 
+// the Royal Household: while a monarch reigns, two officers of state the monarch appoints without a law.
+// Each new reign starts with both posts empty. Parliament can abolish them by bill; they return with the next reign.
+export const HOUSEHOLD: Record<string, string> = { chamberlain: 'Lord Chamberlain', privyseal: 'Lord Privy Seal' };
+export const HOUSEHOLD_LAW = 'The Royal Household';
+export function household(w: W, on: boolean) {
+  Object.entries(HOUSEHOLD).forEach(([id, name]) => {
+    const o = w.offices[id];
+    if (!on) return void (o && o.law === HOUSEHOLD_LAW && delete w.offices[id]);
+    if (o) return void ((o.holder = null), (o.nominee = null));
+    const made = createOffice(w, { name, powers: ['propose', 'govern'], fill: 'crown' }, HOUSEHOLD_LAW);
+    delete w.offices[made.id];
+    made.id = id;
+    w.offices[id] = made;
+  });
+}
+
 export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
-  const pm = isPM(w, actor);
-  if (!pm && !hasPower(w, actor, 'govern')) fail('Only the Prime Minister makes appointments.');
   const o = own(w.offices, officeId);
   if (!o) fail('No such office.');
-  if (o.fill !== 'pm') fail(`The ${o.name} is not appointed by the PM.`);
+  if (o.fill === 'crown' && !isHOS(w, actor)) fail(`Only the monarch appoints the ${o.title}.`);
+  // the monarch alone, at once; otherwise the usual rules for the PM's posts
+  const pm = o.fill === 'crown' || isPM(w, actor);
+  if (!pm && !hasPower(w, actor, 'govern')) fail('Only the Prime Minister makes appointments.');
+  if (o.fill !== 'pm' && o.fill !== 'crown') fail(`The ${o.name} is not appointed by the PM.`);
   if (!pm && o.powers.includes('govern')) fail('Only the Prime Minister fills the offices of state.');
   if (!pm && target === actor) fail('You cannot appoint yourself.');
   target = target || null;
@@ -153,7 +171,7 @@ export function fundOffices(w: W) {
 }
 
 export function officePay(w: W) {
-  return Object.values(w.offices).filter((o: any) => o.holder && o.fill === 'pm').map((o: any) => ({ id: o.holder, why: `${o.title} pay` }));
+  return Object.values(w.offices).filter((o: any) => o.holder && (o.fill === 'pm' || o.fill === 'crown')).map((o: any) => ({ id: o.holder, why: `${o.title} pay` }));
 }
 
 export function lotOfficeRefresh(w: W, o: any) {
