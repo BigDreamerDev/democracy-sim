@@ -375,7 +375,7 @@ html[data-nav="theme"]::view-transition-new(root) { animation: vt-wipe .6s var(-
 
   /* Today becomes a dashboard: work on the left, the state of the realm on the right */
   .page.today { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); column-gap: 36px; align-items: start; }
-  .page.today > .today-head, .page.today > .card { grid-column: 1 / -1; }
+  .page.today > .today-head, .page.today > .card, .page.today > .leader-poster { grid-column: 1 / -1; }
   .today-a, .today-b { display: flex; flex-direction: column; }
   .today-b { position: sticky; top: 24px; }
   .today-title { font-size: 64px; margin-top: 8px !important; }
