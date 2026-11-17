@@ -18,7 +18,7 @@ export function Sidebar({ tabs, current }: { tabs: [string, string, string, bool
     <aside class="side" aria-label="Sections">
       <a class="side-brand" href="#/">
         <Seal size={46} />
-        <span><b class="serif">{stateMode(w)?.realm || w.config.realmName}</b><small>{stateMode(w) ? `${stateMode(w)!.title.replace(/^The /, '')}: ${nm(w, stateMode(w)!.leader)}` : w.phase === 'convention' ? 'Founding Convention' : w.induction && !w.induction.done ? 'Induction week' : `${ordinal(Math.max(1, w.season.n))} Parliament`}</small></span>
+        <span><b class="serif">{stateMode(w)?.realm || w.config.realmName}</b><small>{stateMode(w) ? `${stateMode(w)!.title.replace(/^The /, '')}: ${stateMode(w)!.name}` : w.phase === 'convention' ? 'Founding Convention' : w.induction && !w.induction.done ? 'Induction week' : `${ordinal(Math.max(1, w.season.n))} Parliament`}</small></span>
       </a>
       {w.phase === 'running' && (
         <div class="side-meters" aria-label="National meters">

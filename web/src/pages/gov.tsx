@@ -7,6 +7,7 @@ import { POWERS, TEMPLATES, FILL, canAppoint } from '../../../engine/offices';
 import { RoleChips } from '../Roles';
 import { OATHS, regnal, claimNeed, sworn, CORONATION_BOUNTY } from '../../../engine/crown';
 import { watchCoronation } from '../Coronation';
+import { sovereign, stateMode } from '../state';
 
 export function Offices() {
   const { world: w } = useStore();
@@ -85,7 +86,7 @@ export function Cabinet() {
   const [terms, setTerms] = useState('');
   const [pp, setPp] = useState({ office: posts[0]?.id || '', target: '' });
   return (
-    <Page back={['#/house', 'The House']} kicker={w.pm ? (w.minority ? 'Minority government' : 'Majority government') : 'No government'} title="Cabinet" intro={w.pm ? <>Prime Minister <Who id={w.pm} />, with {supportFor(w, w.pm)} of {w.config.seats} seats. {majority(w)} makes a majority.</> : `The ${hosTitle(w)} invites a Prime Minister after each election.`}>
+    <Page back={['#/house', 'The House']} kicker={sovereign(w) ? `${stateMode(w)!.maj}’s Government` : w.pm ? (w.minority ? 'Minority government' : 'Majority government') : 'No government'} title="Cabinet" intro={sovereign(w) ? <>{stateMode(w)!.name} leads the government as Sovereign under the Crown Act. All authority is vested in the Crown; every minister holds only what the Crown lends them.</> : w.pm ? <>Prime Minister <Who id={w.pm} />, with {supportFor(w, w.pm)} of {w.config.seats} seats. {majority(w)} makes a majority.</> : `The ${hosTitle(w)} invites a Prime Minister after each election.`}>
       {w.confidence && <Card kind="warn" style={{ marginTop: 14 }}><b>Confidence lost.</b> The government must win a confidence vote within <Left at={w.confidence.deadline} /> or it falls.</Card>}
       <Sec title="Ministers" sub="The Prime Minister nominates different ministers over offices">
         <ul class="list">
@@ -149,7 +150,7 @@ export function HOS() {
   const exiles = allCitizens(w).filter((c: any) => exiled(w, c.id));
   const leaders = [...new Set([...Object.values(w.parties).filter((p: any) => p.status === 'active').map((p: any) => p.leader), ...mps(w)])].filter((x) => x && x !== w.hos.holder) as string[];
   return (
-    <Page back={['#/realm', 'The realm']} kicker={mon ? 'The Crown' : 'The Presidency'} title={<>{hosTitle(w)} <Who id={w.hos.holder} /></>} intro={`${HOS_METHODS[w.config.hos].find((m) => m.id === w.config.hosMethod)?.label}. ${mon ? 'Reigns, does not rule: grants assent, invites the PM, honours, pardons.' : 'Signs or vetoes bills, invites the PM, honours, pardons.'}`}>
+    <Page back={['#/realm', 'The realm']} kicker={mon ? 'The Crown' : 'The Presidency'} title={sovereign(w) ? stateMode(w)!.name : <>{hosTitle(w)} <Who id={w.hos.holder} /></>} intro={sovereign(w) ? `The Sovereign. Reigns and rules: Head of State and Prime Minister under the Crown Act. ${nm(w, w.hos.holder)} on the throne.` : `${HOS_METHODS[w.config.hos].find((m) => m.id === w.config.hosMethod)?.label}. ${mon ? 'Reigns, does not rule: grants assent, invites the PM, honours, pardons.' : 'Signs or vetoes bills, invites the PM, honours, pardons.'}`}>
       {!mine && <Card kind="dashed" style={{ marginTop: 14 }}>Switch to {nm(w, w.hos.holder)} in the demo controls to act as head of state.</Card>}
       {!w.pm && w.phase === 'running' && (
         <Sec title="Invite a Prime Minister" sub={<>A government needs {majority(w)} of {w.config.seats} seats. Only the leader of a party or signed coalition with that many can be invited.{w.pmInviteDue ? <> If you haven't acted within <Left at={w.pmInviteDue} />, whoever commands a majority is invited for you.</> : null} {w.formingSince ? <>With no majority, Parliament is dissolved <When at={w.formingSince + FORM_DAYS * 86400000} />.</> : null}</>}>
@@ -182,8 +183,18 @@ function Crown() {
   const answered = r ? r.homage[me] : undefined;
   const roll = r ? Object.keys(r.homage) : [];
   const c = r?.claim;
+  const house = ['chamberlain', 'privyseal'].map((k) => w.offices[k]).filter(Boolean) as any[];
   return (
     <>
+      {sovereign(w) && (
+        <Sec title="The Sovereign" sub="All authority in the realm is vested in the Crown. Every other office holds only what the Crown lends it.">
+          <Card kind="tint">
+            <b class="serif" style={{ fontSize: 22 }}>{stateMode(w)!.name}</b>
+            <div class="small" style={{ marginTop: 4 }}>Head of State and Prime Minister, for life.{w.acts?.decrees ? ' Law is made by royal decree.' : ''}{w.acts?.protection ? ' Nothing is tabled in the House without the Crown’s consent.' : ''}</div>
+            {house.length > 0 && <ul class="list" style={{ marginTop: 8 }}>{house.map((o) => <LinkRow href={'#/office/' + o.id} title={o.title} sub={o.holder ? nm(w, o.holder) : 'Vacant: the Crown appoints'} />)}</ul>}
+          </Card>
+        </Sec>
+      )}
       {r && !r.crownedAt && (
         <Sec title="The coronation" sub={<>{who} is crowned in <Left at={r.crownAt} />. Every citizen gets {CORONATION_BOUNTY} crowns and a stamp, then a day to swear homage.</>}>
           {mine ? (

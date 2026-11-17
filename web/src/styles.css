@@ -917,6 +917,12 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 :root[data-state] .leader-name { color: #FFF6E8; }
 :root[data-state] .leader-kicker, :root[data-state] .leader-stamp { color: #E3C16F; }
 :root[data-state] .leader-poster { color: #FFF6E8; }
+/* the Crown: the same poster in gold leaf */
+.leader-poster.royal { border-color: #A9792A; box-shadow: 4px 4px 0 #A9792A; }
+.leader-poster.royal > .leader-stamp { position: absolute; }
+.leader-poster.royal .leader-body { flex: 1; min-width: 0; padding-right: 48px; }
+.leader-poster.royal .leader-name { color: #FFF6E8; font-size: 32px; overflow-wrap: break-word; }
+.leader-poster.royal .leader-kicker, .leader-poster.royal .leader-stamp { color: #E3C16F; }
 
 /* a clause or law in words, laid out like a printed bill (BillText in ui.tsx) */
 .billtext { display:flex; flex-direction:column; gap:4px; line-height:1.5; }

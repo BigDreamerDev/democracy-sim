@@ -134,12 +134,27 @@ function Leader() {
   if (!s || !s.leader) return null;
   const jailedN = Object.values(w.citizens).filter((c: any) => c.jail && (c.jail.until == null || c.jail.until > w.now)).length;
   const laws = w.laws.filter((l: any) => l.decree).length;
+  if (s.crown) {
+    const officers = ['chamberlain', 'privyseal'].map((k) => w.offices[k]).filter((o: any) => o?.holder).map((o: any) => `${o.title} ${nm(w, o.holder)}`);
+    return (
+      <a class="leader-poster royal" href="#/hos">
+        <Seal size={64} />
+        <div class="leader-body">
+          <div class="leader-kicker">The Sovereign</div>
+          <div class="leader-name">{s.name}</div>
+          <div class="leader-line">{[`${nm(w, s.leader)}, Head of State and of Government`, 'All authority is vested in the Crown', laws ? `${laws} royal decree${laws === 1 ? '' : 's'}` : null, ...officers].filter(Boolean).join(' · ')}</div>
+        </div>
+        <span class="leader-stamp" aria-hidden="true">By command</span>
+        <span class="leader-rays" aria-hidden="true" />
+      </a>
+    );
+  }
   return (
     <a class="leader-poster" href="#/powers">
       <Seal size={64} />
       <div>
         <div class="leader-kicker">{s.title}</div>
-        <div class="leader-name">{nm(w, s.leader)}</div>
+        <div class="leader-name">{s.name}</div>
         <div class="leader-line">{[laws ? `${laws} law${laws === 1 ? '' : 's'} by decree` : null, jailedN ? `${jailedN} in the Realm Jail` : null, w.acts?.continuity ? 'No elections' : null, w.acts?.unity ? 'One party' : null].filter(Boolean).join(' · ') || 'Order. Unity. Continuity.'}</div>
       </div>
       <span class="leader-stamp" aria-hidden="true">By order</span>
@@ -159,13 +174,13 @@ export function Today() {
           <Seal />
           <div>
             <div class="serif" style={{ fontSize: 19, lineHeight: 1.15 }}>{stateMode(w)?.realm || w.config.realmName}</div>
-            <div class="small muted">{stateMode(w) ? `${stateMode(w)!.title}: ${nm(w, stateMode(w)!.leader)}. ${w.acts?.continuity ? 'There are no elections.' : ''}` : w.phase === 'convention' ? 'Founding Convention' : w.induction && !w.induction.done ? 'Induction week: practice, resets at the end' : `${ordinal(Math.max(1, w.season.n))} Parliament. ${w.pm ? nm(w, w.pm) + ' is Prime Minister' : 'No government'}.`}</div>
+            <div class="small muted">{stateMode(w) ? `${stateMode(w)!.title}: ${stateMode(w)!.name}. ${w.acts?.continuity ? 'There are no elections.' : ''}` : w.phase === 'convention' ? 'Founding Convention' : w.induction && !w.induction.done ? 'Induction week: practice, resets at the end' : `${ordinal(Math.max(1, w.season.n))} Parliament. ${w.pm ? nm(w, w.pm) + ' is Prime Minister' : 'No government'}.`}</div>
           </div>
         </div>
         <div style={{ marginTop: 18 }}><SectionNav /></div>
         <h1 class="title today-title" style={{ marginTop: 18 }}>{list.length ? `${list.length} thing${list.length > 1 ? 's' : ''} need${list.length > 1 ? '' : 's'} you` : 'All caught up'}</h1>
         <ShareRealm />
-        <p class="intro">{w.phase === 'convention' ? <>Write the constitution together. The Convention closes in <Left at={w.convention.closesAt} />.</> : stateMode(w) ? 'Order is kept. Your duties to the State are listed below.' : 'Democracy won\'t halt for anything, make sure to cast your vote and propose your bills before they close'}</p>
+        <p class="intro">{w.phase === 'convention' ? <>Write the constitution together. The Convention closes in <Left at={w.convention.closesAt} />.</> : stateMode(w) ? (stateMode(w)!.crown ? `All authority is vested in the Crown. Your duties to ${stateMode(w)!.maj} are listed below.` : 'Order is kept. Your duties to the State are listed below.') : 'Democracy won\'t halt for anything, make sure to cast your vote and propose your bills before they close'}</p>
       </div>
       <Leader />
       <InductionBanner />
@@ -349,7 +364,7 @@ export function Gazette() {
   const [kind, setKind] = useState('all');
   const kinds: [string, string][] = [['all', 'Everything'], ['law', 'Laws'], ['proposal', 'Proposals'], ['election', 'Elections'], ['government', 'Government'], ['scandal', 'Scandals'], ['money', 'Money']];
   return (
-    <Page title={stateMode(w) ? 'The State Gazette' : `The ${w.config.realmName.split(' of ')[1] || 'Realm'} Gazette`} kicker={stateMode(w) ? 'Approved for publication' : 'The official record'} intro="The Gazette acts as the official record of what has happened in the nation, printing exactly what has happened">
+    <Page title={stateMode(w)?.crown ? 'The Royal Gazette' : stateMode(w) ? 'The State Gazette' : `The ${w.config.realmName.split(' of ')[1] || 'Realm'} Gazette`} kicker={stateMode(w)?.crown ? 'Published by authority' : stateMode(w) ? 'Approved for publication' : 'The official record'} intro="The Gazette acts as the official record of what has happened in the nation, printing exactly what has happened">
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 16 }}>{kinds.map(([k, l]) => <Btn small kind={k === kind ? undefined : 'plain'} onClick={() => setKind(k)}>{l}</Btn>)}</div>
       {w.phase === 'running' && <WeekRecap />}
       <Sec title="Front pages" sub="Every Friday, the week on one page.">
