@@ -410,6 +410,31 @@ export function withdraw(w: W, actor: Id, eid: Id) {
   delete e.candidates[actor];
   e.withdrawn = [...(e.withdrawn || []), actor];
 }
+// Returning Officer: take a candidate off the ballot at their request, even after votes are in.
+// Votes for them are struck out (a ranked/approval ballot keeps its other names); those voters can vote again.
+export function adminWithdraw(w: W, actor: Id, eid: Id, cand: Id, reason: unknown) {
+  if (!w.citizens[actor]?.admin) fail('Only the Returning Officer can do this.');
+  const e = own(w.elections, eid);
+  if (!e || e.status !== 'open') fail('That election is not open.');
+  if (!own(e.candidates, cand)) fail('They are not standing.');
+  if (own(e.candidates, actor)) fail('You are standing in this election, so you cannot use admin tools on it.');
+  const why = text(reason, 6, 200, 'reason');
+  let struck = 0;
+  Object.keys(e.ballots).forEach((v) => {
+    const b = e.ballots[v];
+    if (b === cand) { delete e.ballots[v]; struck++; return; }
+    if (Array.isArray(b) && b.includes(cand)) {
+      struck++;
+      const rest = b.filter((c: Id) => c !== cand);
+      if (rest.length) e.ballots[v] = rest; else delete e.ballots[v];
+    }
+  });
+  delete e.candidates[cand];
+  e.withdrawn = [...(e.withdrawn || []), cand];
+  e.moves = (e.moves || 0) + 1;
+  adminDid(w, actor, `withdrew ${nm(w, cand)} from the ${e.title.replace(/^./, (x: string) => x.toLowerCase())}: ${why}`, '#/election/' + e.id);
+  if (struck) gazette(w, 'election', `${struck} ballot${struck === 1 ? '' : 's'} naming ${nm(w, cand)} ${struck === 1 ? 'was' : 'were'} struck out. Check your ballot and vote again.`, '#/election/' + e.id);
+}
 // ---------- how ballots are cast and counted: chosen at the Convention (config.voting) ----------
 export const VOTING: Record<string, { label: string; short: string; how: string; unit: string }> = {
   single: { label: 'One vote each: the most votes win', short: 'Single vote', how: 'Vote for one candidate.', unit: 'votes' },

@@ -217,6 +217,7 @@ export const COMMANDS: Record<string, Cmd> = {
   'hunt.enter': (w, me) => R.enterHunt(w, me),
   'hunt.withdraw': (w, me) => R.withdrawHunt(w, me),
   'admin.zone': (w, me, a) => R.adminZone(w, me, a),
+  'admin.withdraw': (w, me, a) => P.adminWithdraw(w, me, a.election, a.candidate, a.reason),
   'admin.duplicate': (w, me, a) => P.removeDuplicate(w, me, a.dup, a.keep),
   'admin.suspend': (w, me, a) => P.suspend(w, me, a.citizen, a.on, a.reason),
   'admin.ro': (w, me, a) => P.setRO(w, me, a.citizen, a.on),

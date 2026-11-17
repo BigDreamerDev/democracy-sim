@@ -94,6 +94,7 @@ export function Election({ id }: { id: string }) {
       </Sec>
       <Newsnight e={e} />
       <PunditDesk e={e} />
+      {w.citizens[me]?.admin && !e.candidates[me] && cands.length > 0 && <RoWithdraw e={e} cands={cands} />}
       <Sec title="Turnout so far"><Meter value={Object.keys(e.ballots).length} max={allCitizens(w).length} /><p class="small muted">{Object.keys(e.ballots).length} of {allCitizens(w).length} have voted.</p></Sec>
     </Page>
   );
@@ -416,5 +417,20 @@ function ClauseCard({ c, n, need }: { c: any; n: number; need: number }) {
         ) : <button type="button" class="clause-more" onClick={() => setAdding(true)}>+ Suggest another option</button>
       )}
     </section>
+  );
+}
+
+function RoWithdraw({ e, cands }: { e: any; cands: any[] }) {
+  const { world: w } = useStore();
+  const [who, setWho] = useState('');
+  const [why, setWhy] = useState('');
+  return (
+    <Sec title="Returning Officer: withdraw a candidate" sub="At their request, even after votes are in. Their votes are struck out and those voters are told to vote again. It goes in the Gazette.">
+      <div class="grid2">
+        <Pick value={who} onChange={setWho} empty="Pick a candidate" options={cands.map((x: any) => [x.id, nm(w, x.id)])} />
+        <Field label="Reason (published)" value={why} onInput={setWhy} placeholder="e.g. Asked to stand down in the group chat" />
+      </div>
+      <Btn kind="danger ghost" style={{ marginTop: 8 }} onClick={() => who && confirm(`Withdraw ${nm(w, who)}? Votes for them are struck out.`) && act('admin.withdraw', { election: e.id, candidate: who, reason: why }, 'Withdrawn and logged.') && setWho('')}>Withdraw</Btn>
+    </Sec>
   );
 }
