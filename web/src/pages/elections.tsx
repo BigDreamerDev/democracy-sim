@@ -95,6 +95,7 @@ export function Election({ id }: { id: string }) {
       <Newsnight e={e} />
       <PunditDesk e={e} />
       {w.citizens[me]?.admin && !e.candidates[me] && cands.length > 0 && <RoWithdraw e={e} cands={cands} />}
+      {w.citizens[me]?.admin && <RoClose e={e} />}
       <Sec title="Turnout so far"><Meter value={Object.keys(e.ballots).length} max={allCitizens(w).length} /><p class="small muted">{Object.keys(e.ballots).length} of {allCitizens(w).length} have voted.</p></Sec>
     </Page>
   );
@@ -431,6 +432,18 @@ function RoWithdraw({ e, cands }: { e: any; cands: any[] }) {
         <Field label="Reason (published)" value={why} onInput={setWhy} placeholder="e.g. Asked to stand down in the group chat" />
       </div>
       <Btn kind="danger ghost" style={{ marginTop: 8 }} onClick={() => who && confirm(`Withdraw ${nm(w, who)}? Votes for them are struck out.`) && act('admin.withdraw', { election: e.id, candidate: who, reason: why }, 'Withdrawn and logged.') && setWho('')}>Withdraw</Btn>
+    </Sec>
+  );
+}
+
+function RoClose({ e }: { e: any }) {
+  const [why, setWhy] = useState('');
+  return (
+    <Sec title="Returning Officer: close it now" sub="Counts the votes at once and declares the result. It goes in the Gazette with your reason and the turnout. If you’re standing, you can only do this once everyone has voted.">
+      <div class="grid2">
+        <Field label="Reason (published)" value={why} onInput={setWhy} placeholder="e.g. Everyone has voted" />
+        <Btn kind="danger ghost" style={{ alignSelf: 'end' }} onClick={() => confirm(`Close the ${e.title.toLowerCase()} now and count it? This can’t be undone.`) && act('admin.closeElection', { election: e.id, reason: why }, 'Closed and counted.')}>Close and count</Btn>
+      </div>
     </Sec>
   );
 }

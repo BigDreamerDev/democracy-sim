@@ -435,6 +435,20 @@ export function adminWithdraw(w: W, actor: Id, eid: Id, cand: Id, reason: unknow
   adminDid(w, actor, `withdrew ${nm(w, cand)} from the ${e.title.replace(/^./, (x: string) => x.toLowerCase())}: ${why}`, '#/election/' + e.id);
   if (struck) gazette(w, 'election', `${struck} ballot${struck === 1 ? '' : 's'} naming ${nm(w, cand)} ${struck === 1 ? 'was' : 'were'} struck out. Check your ballot and vote again.`, '#/election/' + e.id);
 }
+// Returning Officer: close an open election now and count it. Public, with a reason.
+// If you're standing in it, only once everyone who can vote has voted (closing early then changes nothing).
+export function adminClose(w: W, actor: Id, eid: Id, reason: unknown) {
+  if (!w.citizens[actor]?.admin) fail('Only the Returning Officer can do this.');
+  const e = own(w.elections, eid);
+  if (!e || e.status !== 'open') fail('That election is not open.');
+  const why = text(reason, 6, 200, 'reason');
+  const left = allCitizens(w).filter((c: any) => canVote(w, e, c.id) && e.ballots[c.id] === undefined).length;
+  if (own(e.candidates, actor) && left) fail(`You are standing in this election, so you can only close it once everyone has voted. ${left} still can.`);
+  const turnout = Object.keys(e.ballots).length;
+  e.closesAt = w.now;
+  adminDid(w, actor, `closed the ${e.title.replace(/^./, (x: string) => x.toLowerCase())} early, with ${turnout} ballot${turnout === 1 ? '' : 's'} in${left ? ` and ${left} not yet voted` : ''}: ${why}`, '#/election/' + e.id);
+  closeElection(w, e);
+}
 // ---------- how ballots are cast and counted: chosen at the Convention (config.voting) ----------
 export const VOTING: Record<string, { label: string; short: string; how: string; unit: string }> = {
   single: { label: 'One vote each: the most votes win', short: 'Single vote', how: 'Vote for one candidate.', unit: 'votes' },

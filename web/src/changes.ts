@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 20, text: 'The Returning Officer can now close an election early, with a published reason and the turnout. If they’re standing in it, only once everyone has voted.' },
   { n: 19, text: 'Changed your mind about standing after people have voted for you? Ask the Returning Officer to withdraw you. Votes for you are struck out, and those voters are told to vote again.' },
   { n: 18, text: 'Forgotten your password? The Returning Officer can now send you a one-time link to choose a new one yourself.' },
   { n: 17, text: 'A fast-tracked bill now gets half the debate and half the voting time of a regular bill.' },
