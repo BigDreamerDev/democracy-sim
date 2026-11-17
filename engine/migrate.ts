@@ -49,6 +49,9 @@ export function migrate(w: W): W {
   w.fame.regimes ??= [];
   w.fame.monarchs ??= [];
   w.crown ??= { reign: null, offer: null };
+  w.crown.court ??= {};
+  w.crown.circularAt ??= null;
+  if (w.crown.reign) (w.crown.reign.toasts ??= 0), (w.crown.reign.toastDay ??= null), (w.crown.reign.toastedToday ??= []);
   // once: every proposal gets 12 hours of debate and 24 hours of voting (Parliament can still change the setting by bill)
   w.flags ??= {};
   if (!w.flags.timing1224) {

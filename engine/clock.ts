@@ -8,7 +8,7 @@ import { maybeOffers, answerAsk, resolveIntel, armyLoyalty } from './foreign';
 import { checkPlot, endMartialLaw, resolveCoup, autoFind } from './backroom';
 import { regimeDay, regimePayday, fallRegime, closeTrial, closePlebiscite, planDue, lapseDecree, settleExit, transitionDay, setForm, callRestoration, closeReckoning, strikeOn, sync, endTransition } from './regime';
 import { seasonDue, freeFromJail, lapseLicence } from './acts';
-import { crownNow, closeHomage, lapseOffer, jubilee, settleClaim as settleThrone } from './crown';
+import { crownNow, closeHomage, lapseOffer, jubilee, circular, settleClaim as settleThrone } from './crown';
 import { spawnCrisis, timeoutCrisis, fireQueued, rule, makeFrontPage } from './society';
 import { nationsTurn, settleUltimatum } from './foreign';
 import { expireContract, settleClaim, ghostBack, bountyDeadline, bountyDue, orderDeadline, openHunt, startHunt, finishHunt } from './streets';
@@ -59,6 +59,7 @@ function collect(w: W): D[] {
     add(kr.crownAt, () => crownNow(w), 'coronation');
     add(kr.homageUntil, () => closeHomage(w), 'homage');
     add(kr.jubileeAt, () => jubilee(w), 'jubilee');
+    add(w.crown.circularAt, () => circular(w), 'circular');
     if (kr.claim) add(kr.claim.until, () => settleThrone(w), 'claim');
   }
   if (w.crown?.offer) add(w.crown.offer.until, () => lapseOffer(w), 'heir');

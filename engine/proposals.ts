@@ -951,10 +951,13 @@ export function enactDecree(w: W, actor: Id, title: string, summary: string, cla
     result: null, lawRef: ref, fast: false, sponsors: [], amendments: [], history: [], draft: null
   };
   const secret = clauses.some((e: any) => e.t === 'office' && e.office?.secrecy === 'secret');
-  w.laws.push({ ref, title, summary, text: clauses.map((e: any) => describe(w, e)), propId: id, at: w.now, classified: secret, how: 'By decree of the Prime Minister', decree: true, repealed: false, rulings: [] });
+  // a decree by a reigning monarch is a Royal Command, sealed in gold
+  const r = w.crown?.reign;
+  const royal = r && r.id === actor && w.config.hos === 'monarchy' ? `${w.config.hosTitle} ${r.name} ${r.numeral}` : null;
+  w.laws.push({ ref, title, summary, text: clauses.map((e: any) => describe(w, e)), propId: id, at: w.now, classified: secret, how: royal ? 'By Royal Command' : 'By decree of the Prime Minister', decree: true, ...(royal ? { royal } : {}), repealed: false, rulings: [] });
   clauses.forEach((e: any) => applyClause(w, e, ref));
   bump(w, actor, 'decrees');
-  gazette(w, 'law', `By decree of the Prime Minister: ${secret ? 'a classified decree' : title}.`, '#/law/' + ref);
+  gazette(w, 'law', `${royal ? `By Royal Command of ${royal}` : 'By decree of the Prime Minister'}: ${secret ? 'a classified decree' : title}.`, '#/law/' + ref);
   return ref;
 }
 // The Returning Officer links a bill to the Act its wording describes, so the game carries it out. Public, like every

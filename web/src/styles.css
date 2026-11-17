@@ -951,3 +951,8 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .royal-seal span { font-size: 26px; line-height: 1; }
 .royal-seal b { font-family: var(--serif); font-weight: 400; font-size: 15px; line-height: 1.1; }
 .royal-seal small { font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; max-width: 96px; line-height: 1.15; margin-top: 2px; }
+
+/* the royal cypher in the seal's place */
+.cypher-text { font-family: var(--serif); font-size: 40px; letter-spacing: -.02em; }
+.cypher-num { font-family: var(--sans); font-weight: 700; font-size: 11px; letter-spacing: .2em; }
+.royal-seal.command b { font-size: 13px; }

@@ -1,7 +1,7 @@
 // The Crown: a new monarch's accession and coronation, homage, coronation honours, abdication to an heir,
 // jubilees and pretenders. Everything here is public. State: w.crown = { reign, offer }, and the line of
 // monarchs in w.fame.monarchs. syncCrown() runs after every command and deadline and whenever the throne changes hands.
-import { W, Id, DAY, fail, cit, nm, own, text, allCitizens, exiled, detained, mustBeFree, gazette, stamp, approve, meter, bump, transfer, ca, earn } from './core';
+import { W, Id, DAY, HOUR, fail, cit, nm, own, text, allCitizens, exiled, detained, mustBeFree, gazette, stamp, approve, meter, bump, transfer, ca, earn } from './core';
 import { setHos, startHosSelection } from './politics';
 import { fame } from './glory';
 import { household } from './offices';
@@ -39,6 +39,7 @@ function payAll(w: W, n: number, memo: string) {
 
 export function syncCrown(w: W) {
   const k = crown(w);
+  k.court ??= {};
   const h = w.config.hos === 'monarchy' ? w.hos.holder : null;
   if (k.reign && k.reign.id !== h) endReign(w, k.ending || (h ? 'succeeded' : 'the throne fell vacant'));
   k.ending = null;
@@ -46,12 +47,70 @@ export function syncCrown(w: W) {
   if (h && !k.reign) {
     const name = String(nm(w, h)).trim().split(/\s+/)[0].slice(0, 24) || 'Nameless';
     k.reign = { id: h, at: w.now, name, numeral: numeralFor(w, name), styled: false, oath: null, crownAt: w.now + DAY, crownedAt: null, postponed: false,
-      homage: {}, homageUntil: null, honours: 0, jubileeAt: null, jubilees: 0, claim: null, claimed: [] };
+      homage: {}, homageUntil: null, honours: 0, jubileeAt: null, jubilees: 0, claim: null, claimed: [], toasts: 0, toastDay: null, toastedToday: [] };
     gazette(w, 'hos', `${nm(w, h)} takes the throne. The coronation is in 24 hours.`, '#/hos');
   }
   // the Royal Household: made (or emptied) once per reign, gone when there is no monarch
   if (k.reign && k.householdFor !== k.reign.at) (k.householdFor = k.reign.at), household(w, true);
   if (!k.reign && k.householdFor) (k.householdFor = null), household(w, false);
+  // the Court Circular: every evening at 18:00 while a monarch reigns
+  if (k.reign && !k.circularAt) {
+    let t = Math.floor(w.now / DAY) * DAY + 18 * HOUR;
+    if (t <= w.now) t += DAY;
+    k.circularAt = t;
+  }
+  if (!k.reign && k.circularAt) (k.circularAt = null), (k.court = {});
+}
+
+// ---------- the Court Circular: what the Sovereign and the officers of state did today (public acts only) ----------
+const COURT: Record<string, [string, string]> = {
+  'gov.decree': ['royal decree', 'royal decrees'], 'gov.edict': ['decree', 'decrees'], 'regime.decree': ['decree', 'decrees'],
+  'gov.appoint': ['appointment', 'appointments'], 'prop.new': ['bill tabled', 'bills tabled'], 'prop.assent': ['Royal Assent', 'Royal Assents'],
+  'prop.hasten': ['bill hastened', 'bills hastened'], 'gov.consent': ['bill ruled on', 'bills ruled on'], 'hos.honour': ['honour', 'honours'],
+  'hos.pardon': ['pardon', 'pardons'], 'q.approve': ['question ruled on', 'questions ruled on'], 'q.answer': ['question answered', 'questions answered'],
+  'army.readiness': ['order to the Army', 'orders to the Army'], 'gov.speaker': ['order on the Speaker', 'orders on the Speaker'],
+  'gov.seat': ['seat filled', 'seats filled'], 'gov.unseat': ['MP unseated', 'MPs unseated'], 'gov.deputy': ['Deputy named', 'Deputies named']
+};
+const courtier = (w: W, id: Id) => ['chamberlain', 'privyseal'].map((k) => w.offices[k]).find((o: any) => o?.holder === id);
+export function court(w: W, actor: Id, cmd: string) {
+  const k = crown(w);
+  if (!k.reign || practice(w) || !own(COURT, cmd)) return;
+  if (actor !== k.reign.id && !courtier(w, actor)) return;
+  const m = (k.court[actor] ??= {});
+  m[cmd] = (m[cmd] || 0) + 1;
+}
+export function circular(w: W) {
+  const k = crown(w);
+  const due = k.circularAt;
+  if (!due) return;
+  k.circularAt = due + DAY;
+  while (k.circularAt <= w.now) k.circularAt += DAY;
+  const r = k.reign;
+  const acts = k.court || {};
+  k.court = {};
+  if (!r) return void (k.courtToasts = 0);
+  const who = (id: Id) => (id === r.id ? regnal(w, r) : `The ${courtier(w, id)?.title ?? 'officer'}, ${nm(w, id)}`);
+  const lines = Object.entries(acts).map(([id, m]: [string, any]) => `${who(id)}: ${Object.entries(m).map(([cmd, n]: [string, any]) => `${n} ${COURT[cmd][n === 1 ? 0 : 1]}`).join(', ')}.`);
+  const toasts = k.courtToasts || 0;
+  k.courtToasts = 0;
+  if (!lines.length && !toasts) return;
+  gazette(w, 'hos', `Court Circular. ${lines.join(' ')}${toasts ? ` ${toasts} loyal toast${toasts === 1 ? ' was' : 's were'} raised to ${regnal(w, r)}.` : ''}`, '#/hos');
+}
+
+// ---------- the loyal toast: once a day, any citizen may raise a glass to the monarch ----------
+export function toast(w: W, actor: Id) {
+  const r = crown(w).reign;
+  if (!r || !r.crownedAt) fail('There is no crowned monarch to toast.');
+  if (actor === r.id) fail('You cannot toast yourself.');
+  mustBeFree(w, actor);
+  const day = Math.floor(w.now / DAY);
+  if (r.toastDay !== day) (r.toastDay = day), (r.toastedToday = []);
+  if (r.toastedToday.includes(actor)) fail('You have already raised a glass today.');
+  r.toastedToday.push(actor);
+  r.toasts = (r.toasts || 0) + 1;
+  crown(w).courtToasts = (crown(w).courtToasts || 0) + 1;
+  earn(w, actor, 1, 'A loyal toast');
+  bump(w, actor, 'toasts');
 }
 function endReign(w: W, end: string) {
   const k = crown(w);

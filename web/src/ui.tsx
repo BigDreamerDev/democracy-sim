@@ -6,7 +6,7 @@ import { where, visible, isSectionRoot } from './nav';
 import qrcode from 'qrcode-generator';
 import { useStore, ONLINE, photoUrl, uploadPhoto, removePhoto, toast } from './store';
 import { fmtLeft, fmtTime, nm } from '../../engine/index';
-import { leaderLine } from './state';
+import { leaderLine, sovereign } from './state';
 
 export function useRoute(): string[] {
   const get = () => (location.hash.replace(/^#\/?/, '') || '').split('/').filter(Boolean);
@@ -196,6 +196,21 @@ export function Stamp({ label, sub, red, style }: { label: string; sub?: string;
 }
 
 export function Seal({ size = 44, dark }: { size?: number; dark?: boolean }) {
+  const { world: w } = useStore();
+  // while the Crown rules, the monarch's royal cypher takes the seal's place: a crown over their initial and R
+  const r = sovereign(w) ? w.crown?.reign : null;
+  if (r) {
+    const initial = String(r.name || '?').charAt(0).toUpperCase();
+    return (
+      <svg class={'seal cypher' + (dark ? ' seal-out' : '')} role="img" aria-label={`Royal cypher of ${w.config.hosTitle} ${r.name} ${r.numeral}`} width={size} height={size} viewBox="0 0 120 120">
+        <circle class="seal-fill" cx="60" cy="60" r="59" stroke-width="2" />
+        <path class="seal-line" d={rosette(60, 42, 4, 16, 4, 3.4)} fill="none" stroke-width="0.9" />
+        <path class="seal-fg" d="M45 40L42 22l8 7 10-14 10 14 8-7-3 18z" />
+        <text class="seal-fg cypher-text" x="60" y="84" text-anchor="middle">{initial}R</text>
+        {r.numeral && <text class="seal-fg cypher-num" x="60" y="101" text-anchor="middle">{r.numeral}</text>}
+      </svg>
+    );
+  }
   return (
     <svg class={'seal' + (dark ? ' seal-out' : '')} role="img" aria-label="Seal of the realm" width={size} height={size} viewBox="0 0 120 120">
       <circle class="seal-fill" cx="60" cy="60" r="59" stroke-width="2" />

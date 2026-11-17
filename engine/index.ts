@@ -75,6 +75,7 @@ export const COMMANDS: Record<string, Cmd> = {
   'crown.heir': (w, me, a) => Cr.answerHeir(w, me, a.yes),
   'crown.claim': (w, me) => Cr.claim(w, me),
   'crown.back': (w, me) => Cr.back(w, me),
+  'crown.toast': (w, me) => Cr.toast(w, me),
   'prop.new': (w, me, a) => L.propose(w, me, a),
   'prop.speak': (w, me, a) => L.speak(w, me, a.prop, a.side, a.text),
   'prop.vote': (w, me, a) => L.vote(w, me, a.prop, a.vote),
@@ -282,6 +283,7 @@ export function run(world: W, actor: Id, cmd: string, args: any = {}): W {
   Cr.syncCrown(w);
   X.gate(w, actor, cmd);
   f(w, actor, args || {});
+  Cr.court(w, actor, cmd);
   X.sync(w);
   T.afterCommand(w, actor, cmd);
   P.checkObjectives(w, actor);

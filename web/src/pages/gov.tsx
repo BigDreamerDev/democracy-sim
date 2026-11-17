@@ -213,6 +213,8 @@ function Crown() {
         <Sec title={who} sub={<>Crowned <When at={r.crownedAt} />. Sworn {OATHS[r.oath]?.label.toLowerCase()}: “{OATHS[r.oath]?.text}”{r.jubilees ? ` ${r.jubilees} jubilee${r.jubilees === 1 ? '' : 's'}.` : ''}</>}>
           <div class="stack">
             <Btn kind="ghost" onClick={watchCoronation}>Watch the coronation</Btn>
+            {!mine && <Btn onClick={() => act('crown.toast', {}, `You raise a glass. Long live the ${w.config.hosTitle}!`)} disabled={r.toastDay === Math.floor(w.now / 86400000) && (r.toastedToday || []).includes(me)}>{r.toastDay === Math.floor(w.now / 86400000) && (r.toastedToday || []).includes(me) ? 'You have toasted today' : `Raise a loyal toast to ${who}`}</Btn>}
+            <div class="small muted">{r.toasts || 0} loyal toast{r.toasts === 1 ? '' : 's'} raised this reign{r.toastDay === Math.floor(w.now / 86400000) && r.toastedToday?.length ? `, ${r.toastedToday.length} today` : ''}.</div>
             {r.homageUntil && !mine && answered === undefined && (
               <Card><div class="stack">
                 <b>Homage</b>

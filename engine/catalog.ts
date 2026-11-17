@@ -48,6 +48,7 @@ export const CATALOG: Record<string, CmdInfo> = {
   'crown.heir': { about: 'Answer an offer of the throne.', args: { yes: 'boolean' } },
   'crown.claim': { about: 'Having refused homage: claim the throne as a pretender.', args: {} },
   'crown.back': { about: "Publicly back a pretender's claim.", args: {} },
+  'crown.toast': { about: 'Raise a loyal toast to the crowned monarch, once a day. Earns 1 Influence.', args: {} },
   'hos.pardon': { about: 'Head of state: pardon an exile.', args: { target: 'id (citizen)' } },
   'prop.new': { about: 'Table a proposal. See proposals.ts for kinds and clause shapes.', args: { kind: "'bill' | 'no_confidence' | 'confidence' | 'censure' | 'referendum' | 'dissolution'", title: 'text', clauses: "list of clause objects (bills). t: 'text' | 'office' | 'abolish' | 'budget' | 'set' | 'permit' | 'treaty' | 'breakTreaty' | 'repeal' | 'constitution' | 'removeHos' | 'war' | 'peace' | 'job' | 'zone' | 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security' | 'crown' (the last eight are whole Acts and need no other fields). A 'text' clause keeps its line breaks (up to 3000 characters)", target: 'id (censure)', summary: 'text (optional)', fast: 'bool (fast-track: half the debate and voting time, 15 Influence)', draft: 'id (optional): table one of your drafts; MPs who signed this exact wording become co-sponsors' } },
   'prop.speak': { about: 'Speak in a debate.', args: { prop: 'id', side: "'for' | 'against' | 'undecided' | 'order' (Speaker)", text: 'text' } },
