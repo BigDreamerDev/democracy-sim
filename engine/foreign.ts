@@ -122,7 +122,7 @@ export function armyLoyalty(w: W, d: number, why: string) {
 }
 export function setReadiness(w: W, actor: Id, level: string) {
   if (!w.offices.army) fail('There is no Army: pass the Defence Act first.');
-  if (!hasPower(w, actor, 'army') && !isPM(w, actor)) fail('Only the PM or the General sets readiness.');
+  if (!hasPower(w, actor, 'army') && !hasPower(w, actor, 'govern') && !isPM(w, actor)) fail('Only the PM, the General or an officer of state sets readiness.');
   if (!['down', 'ready', 'mobilised'].includes(level)) fail('Unknown readiness.');
   const prev = w.army.readiness;
   w.army.readiness = level;

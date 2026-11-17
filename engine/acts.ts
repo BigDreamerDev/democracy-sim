@@ -489,7 +489,7 @@ export function removeContent(w: W, actor: Id, a: any) {
 }
 export function approveQuestion(w: W, actor: Id, qid: unknown, yes: unknown) {
   if (!inForce(w, 'press')) fail('Questions need no approval.');
-  if (!isPM(w, actor)) fail('Only the Prime Minister approves questions.');
+  if (!isPM(w, actor) && !hasPower(w, actor, 'govern')) fail('Only the Prime Minister or an officer of state approves questions.');
   const q = w.questions.find((x: any) => x.id === qid);
   if (!q || q.status !== 'held') fail('That question isn’t waiting.');
   if (!yes) return void (q.status = 'refused');

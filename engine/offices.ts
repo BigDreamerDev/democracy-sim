@@ -1,6 +1,6 @@
 // Offices: every role in government is one of these. A law creates an office from a template or from
 // a list of powers; whoever holds it gets those powers as buttons.
-import { W, Id, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, exiled, barred, detained, holdsAnything, own, text, int } from './core';
+import { W, Id, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, hasPower, exiled, barred, detained, holdsAnything, own, text, int } from './core';
 
 export const POWERS: Record<string, { label: string; strong?: boolean }> = {
   grant: { label: 'Pay citizens from its weekly budget' },
@@ -15,8 +15,14 @@ export const POWERS: Record<string, { label: string; strong?: boolean }> = {
   block: { label: 'Send one passed bill back for 48 hours each term', strong: true },
   protect: { label: 'Guard one citizen from assassins each day' },
   detain: { label: 'Detain citizens in the Realm Jail', strong: true },
-  release: { label: 'Release detainees from the Realm Jail' }
+  release: { label: 'Release detainees from the Realm Jail' },
+  propose: { label: 'Put bills to the House' },
+  govern: { label: 'Run day-to-day government: approve held questions, set the Army’s readiness, and appoint to the PM’s offices with the other officers', strong: true }
 };
+
+// officers of state: the holders of offices with the govern power. With two or more, an appointment needs two of them.
+export const officers = (w: W): Id[] => [...new Set(Object.values(w.offices).filter((o: any) => o.holder && o.powers.includes('govern')).map((o: any) => o.holder as Id))];
+export const canAppoint = (w: W, id: Id, o: any) => o.fill === 'pm' && (isPM(w, id) || (hasPower(w, id, 'govern') && !o.powers.includes('govern')));
 
 export const TEMPLATES: Record<string, { name: string; title: string; act: string; powers: string[]; fill: string; budget: number; secrecy: string; blurb: string; constitutional?: boolean }> = {
   treasury: { name: 'Treasury', title: 'Chancellor', act: 'Treasury Act', powers: ['grant', 'files'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'The Treasury maintains financial aspects of the government' },
@@ -48,7 +54,8 @@ export function createOffice(w: W, spec: any, law: string) {
     law,
     at: w.now,
     blocksUsed: 0,
-    config: {}
+    config: {},
+    nominee: null
   };
   w.offices[id] = o;
   if (o.fill === 'lot') {
@@ -67,10 +74,14 @@ export function createOffice(w: W, spec: any, law: string) {
 }
 
 export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
-  if (!isPM(w, actor)) fail('Only the Prime Minister makes appointments.');
+  const pm = isPM(w, actor);
+  if (!pm && !hasPower(w, actor, 'govern')) fail('Only the Prime Minister makes appointments.');
   const o = own(w.offices, officeId);
   if (!o) fail('No such office.');
   if (o.fill !== 'pm') fail(`The ${o.name} is not appointed by the PM.`);
+  if (!pm && o.powers.includes('govern')) fail('Only the Prime Minister fills the offices of state.');
+  if (!pm && target === actor) fail('You cannot appoint yourself.');
+  target = target || null;
   if (target) {
     const t = cit(w, target);
     if (!t.active) fail('They are no longer a citizen.');
@@ -78,6 +89,21 @@ export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
     if (barred(w, target)) fail('They are barred from office for now.');
     if (detained(w, target)) fail('A detainee cannot hold office.');
     if (w.regime?.type === 'party' && t.party !== w.regime.party) fail('Only members of the Party may hold office.');
+  }
+  // an officer of state proposes; a second officer agreeing to the same choice makes it so
+  if (!pm) {
+    const others = officers(w).filter((id) => id !== actor);
+    const n = o.nominee;
+    if (others.length && !(n && n.target === target && n.by !== actor && others.includes(n.by))) {
+      if (n && n.by === actor && n.target === target) fail('You have already proposed that. Another officer of state must agree.');
+      o.nominee = { target, by: actor, at: w.now };
+      gazette(w, 'government', `${nm(w, actor)} proposes ${target ? nm(w, target) + ' as ' + o.title : 'leaving the post of ' + o.title + ' vacant'}. Another officer of state must agree.`, '#/office/' + o.id);
+      return;
+    }
+  }
+  o.nominee = null;
+  if (target) {
+    const t = cit(w, target);
     const promised = Object.entries(w.coalition?.promises || {}).find(([k]) => k === officeId)?.[1];
     o.holder = target;
     t.stats.heldOffice = true;

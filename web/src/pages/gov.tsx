@@ -3,7 +3,7 @@ import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, Empty, LinkRow, Seg, Opt, Field, Pick, Icon, ThemeSwitch, Locked , When } from '../ui';
 import { nm, isMP, isPM, isHOS, mps, sideOf, sideName, majority, allCitizens, exiled, intrigueOpen, bal, ca, hosTitle, holderOf, officesOf } from '../../../engine/index';
 import { leaderOfOpposition, leaderOfSide, sideSeats, supportFor, members, HOS_METHODS , commands, FORM_DAYS, challengeNeed, BREAKAWAY_MPS } from '../../../engine/politics';
-import { POWERS, TEMPLATES, FILL } from '../../../engine/offices';
+import { POWERS, TEMPLATES, FILL, canAppoint } from '../../../engine/offices';
 import { RoleChips } from '../Roles';
 import { OATHS, regnal, claimNeed, sworn, CORONATION_BOUNTY } from '../../../engine/crown';
 import { watchCoronation } from '../Coronation';
@@ -32,7 +32,7 @@ export function Offices() {
   );
 }
 
-const POWER_LINK: Record<string, [string, string]> = { rate: ['#/economy', 'Set the rate'], envoy: ['#/foreign', 'Send envoys'], intel: ['#/security', 'Request intelligence'], army: ['#/army', 'Set readiness'], question: ['#/questions', 'Ask a formal question'], files: ['#/backroom', 'See your cards'], judge: ['#/court', 'Hear cases'] };
+const POWER_LINK: Record<string, [string, string]> = { rate: ['#/economy', 'Set the rate'], envoy: ['#/foreign', 'Send envoys'], intel: ['#/security', 'Request intelligence'], army: ['#/army', 'Set readiness'], question: ['#/questions', 'Ask a formal question'], files: ['#/backroom', 'See your cards'], judge: ['#/court', 'Hear cases'], propose: ['#/new', 'Draft a bill'], govern: ['#/cabinet', 'Make appointments'] };
 export function Office({ id }: { id: string }) {
   const { world: w, me } = useStore();
   const o = w.offices[id];
@@ -62,7 +62,8 @@ export function Office({ id }: { id: string }) {
           {!o.powers.length && <Empty>This office has no powers yet. A law can give it some.</Empty>}
         </div>
       </Sec>
-      {isPM(w, me) && o.fill === 'pm' && <Sec title="Appoint"><Pick value={o.holder || ''} onChange={(v) => act('gov.appoint', { office: o.id, target: v || null }, 'Appointed.')} empty="Leave vacant" options={allCitizens(w).filter((c: any) => !c.admin).map((c: any) => [c.id, c.name])} /></Sec>}
+      {o.nominee && <Sec><Card kind="warn"><b>{nm(w, o.nominee.by)}</b> proposes {o.nominee.target ? <><b>{nm(w, o.nominee.target)}</b> as {o.title}</> : `leaving the post vacant`}. Another officer of state must make the same choice.</Card></Sec>}
+      {canAppoint(w, me, o) && <Sec title="Appoint" sub={isPM(w, me) ? undefined : 'As an officer of state you propose; a second officer must agree.'}><Pick value={o.holder || ''} onChange={(v) => act('gov.appoint', { office: o.id, target: v || null }, 'Appointed.')} empty="Leave vacant" options={allCitizens(w).filter((c: any) => !c.admin).map((c: any) => [c.id, c.name])} /></Sec>}
       <Sec><Btn href={'#/law/' + o.law} kind="plain" small>Read the law that created it</Btn></Sec>
     </Page>
   );
@@ -90,8 +91,8 @@ export function Cabinet() {
         <ul class="list">
           {posts.map((o) => (
             <li class="row">
-              <span style={{ minWidth: 0 }}><b>{o.title}</b><div class="small"><Who id={o.holder} />{co?.promises?.[o.id] && co.promises[o.id] !== o.holder ? <span class="err-line"> (promised to {nm(w, co.promises[o.id])})</span> : ''}</div></span>
-              {pm && <select class="input" style={{ width: 140 }} value={o.holder || ''} onChange={(e: any) => act('gov.appoint', { office: o.id, target: e.target.value || null })}><option value="">Vacant</option>{opts.map(([v, l]: any) => <option value={v}>{l}</option>)}</select>}
+              <span style={{ minWidth: 0 }}><b>{o.title}</b><div class="small"><Who id={o.holder} />{co?.promises?.[o.id] && co.promises[o.id] !== o.holder ? <span class="err-line"> (promised to {nm(w, co.promises[o.id])})</span> : ''}{o.nominee && <span class="muted"> · {nm(w, o.nominee.by)} proposes {o.nominee.target ? nm(w, o.nominee.target) : 'leaving it vacant'}</span>}</div></span>
+              {canAppoint(w, me, o) && <select class="input" style={{ width: 140 }} value={o.holder || ''} onChange={(e: any) => act('gov.appoint', { office: o.id, target: e.target.value || null })}><option value="">Vacant</option>{opts.map(([v, l]: any) => <option value={v}>{l}</option>)}</select>}
             </li>
           ))}
         </ul>

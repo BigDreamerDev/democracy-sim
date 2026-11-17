@@ -90,6 +90,8 @@ export function needs(w: W, me: Id): Alert[] {
     const left = bal(w, 'office:' + o.id);
     if (payday && left >= o.budget && payday - w.now < 2 * DAY) out.push({ key: `budget:${o.id}:${payday}`, href: '#/office/' + o.id, label: o.title, title: `${left} crowns of the ${o.name} budget unspent. It goes back to the Treasury at payday`, at: payday });
   });
+  // an officer of state's appointment waits for a second officer
+  if (hasPower(w, me, 'govern')) (Object.values(w.offices) as any[]).forEach((o) => o.nominee && o.nominee.by !== me && !o.powers.includes('govern') && out.push({ key: `nominee:${o.id}:${o.nominee.at}`, href: '#/office/' + o.id, label: 'Officer of state', title: `${nm(w, o.nominee.by)} proposes ${o.nominee.target ? nm(w, o.nominee.target) + ' as ' + o.title : 'leaving the ' + o.title + ' post vacant'}. Agree or choose otherwise` }));
   if (hasPower(w, me, 'rate') && (w.economy?.lastInflation || 0) > 5) out.push({ key: `rate:${payday}`, href: '#/economy', label: 'The Reserve', title: `Inflation is ${w.economy.lastInflation}%. Consider raising the rate`, at: payday || undefined });
   Object.values(w.cases || {}).forEach((k: any) => {
     if (k.status !== 'open') return;

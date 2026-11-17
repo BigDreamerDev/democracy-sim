@@ -180,7 +180,7 @@ function PressControl() {
           {ministry && <span class="row" style={{ gap: 6 }}>{p.licence !== 'granted' && <Btn small onClick={() => act('press.licence', { paper: p.id, grant: true }, 'Licensed.')}>Grant</Btn>}{p.licence !== 'withdrawn' && <Btn small kind="plain" onClick={() => act('press.licence', { paper: p.id, grant: false }, 'Withdrawn.')}>Withdraw</Btn>}</span>}</li>
       ))}</ul>
       {!Object.keys(w.papers).length && <Empty>There are no newspapers.</Empty>}
-      {pm && held.length > 0 && (
+      {(pm || hasPower(w, me, 'govern')) && held.length > 0 && (
         <div class="stack" style={{ marginTop: 10 }}>
           <div class="small" style={{ fontWeight: 700 }}>Questions waiting for your approval</div>
           {held.map((q: any) => <Card><p style={{ margin: 0 }}>“{q.text}”</p><div class="small muted">{nm(w, q.by)}{q.formal ? `, formally to ${nm(w, q.to)}` : ', at PMQs'}</div><div class="grid2" style={{ marginTop: 8 }}><Btn small onClick={() => act('q.approve', { id: q.id, yes: true }, 'Published.')}>Publish</Btn><Btn small kind="plain" onClick={() => act('q.approve', { id: q.id, yes: false }, 'Refused.')}>Refuse</Btn></div></Card>)}

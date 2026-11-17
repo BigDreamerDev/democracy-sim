@@ -170,10 +170,11 @@ export function viewFor(full: W, me: Id): W {
       o.powers = [];
       o.name = 'A classified office';
       o.title = 'Classified';
+      o.nominee = null;
     }
   });
   // questions held for the Prime Minister's approval (Press and Information Act): the asker and the PM only
-  w.questions = w.questions.filter((q: any) => !['held', 'refused'].includes(q.status) || q.by === me || full.pm === me);
+  w.questions = w.questions.filter((q: any) => !['held', 'refused'].includes(q.status) || q.by === me || full.pm === me || hasPower(full, me, 'govern'));
   // the Protection Act's record of who was last PM is internal
   w.lastPM = null;
   // the Returning Officer sees the sign-up queue; nobody else needs it

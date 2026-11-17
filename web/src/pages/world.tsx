@@ -109,7 +109,7 @@ export function Army() {
         <p class="small">{w.army.loyalty}/5. At 2 or below the Army will not stop a coup.</p>
         <ul class="list">{w.army.reasons.map((r: any) => <li><b style={{ color: r.sign === '+' ? 'var(--teal)' : 'var(--red)' }}>{r.sign}</b> {r.text}</li>)}</ul>
       </Sec>
-      <Sec title="Readiness" sub="The PM or the General. Mobilising worries the neighbours."><Seg value={w.army.readiness} onChange={(v) => act('army.readiness', { level: v })} options={[['down', 'Stood down (10)'], ['ready', 'Ready (25)'], ['mobilised', 'Mobilised (50)']]} /></Sec>
+      <Sec title="Readiness" sub="The PM, the General or an officer of state. Mobilising worries the neighbours."><Seg value={w.army.readiness} onChange={(v) => act('army.readiness', { level: v })} options={[['down', 'Stood down (10)'], ['ready', 'Ready (25)'], ['mobilised', 'Mobilised (50)']]} /></Sec>
       <Sec><p class="small muted">War and peace are declared by bill. <a href="#/new">Draft one</a>.</p></Sec>
     </Page>
   );

@@ -688,7 +688,7 @@ export function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; 
                 <div class="small" style={{ fontWeight: 700 }}>Who fills it?</div>
                 <Seg value={ob.fill || 'pm'} onChange={(v) => setOb('fill', v)} options={Object.entries(FILL).map(([k]) => [k, ({ pm: 'PM', house: 'MPs', citizens: 'Everyone', lot: 'Lot' } as any)[k]])} />
                 <div class="small" style={{ fontWeight: 700 }}>Powers</div>
-                <div class="stack" style={{ gap: 6 }}>{['grant', 'question', 'files', 'fine', 'block'].map((k) => <Opt on={(ob.powers || []).includes(k)} onClick={() => setOb('powers', (ob.powers || []).includes(k) ? ob.powers.filter((x: string) => x !== k) : [...(ob.powers || []), k])} title={POWERS[k].label} right={POWERS[k].strong ? <span class="chip red">Strong</span> : undefined} />)}</div>
+                <div class="stack" style={{ gap: 6 }}>{['grant', 'question', 'files', 'fine', 'block', 'propose', 'govern'].map((k) => <Opt on={(ob.powers || []).includes(k)} onClick={() => setOb('powers', (ob.powers || []).includes(k) ? ob.powers.filter((x: string) => x !== k) : [...(ob.powers || []), k])} title={POWERS[k].label} right={POWERS[k].strong ? <span class="chip red">Strong</span> : undefined} />)}</div>
                 <div class="grid2"><Field label="Weekly budget (0–200)" type="number" value={ob.budget ?? 0} onInput={(v) => setOb('budget', whole(v, 200))} /><div><div class="small" style={{ fontWeight: 700, marginBottom: 6 }}>Visibility</div><Seg value={ob.secrecy || 'public'} onChange={(v) => setOb('secrecy', v)} options={[['public', 'Public'], ['secret', 'Secret']]} /></div></div>
               </>
             )}

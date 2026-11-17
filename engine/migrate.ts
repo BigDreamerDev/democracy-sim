@@ -11,6 +11,7 @@ export function migrate(w: W): W {
   w.lastEvent ??= {};
   w.crisisQueue ??= [];
   w.clock ??= { offset: 0, pausedAt: null };
+  Object.values(w.offices || {}).forEach((o: any) => (o.nominee ??= null));
   if (!w.pm && w.phase === 'running') w.formingSince ??= w.now;
   w.config.inductionDays ??= 7;
   if (w.phase === 'convention') {
