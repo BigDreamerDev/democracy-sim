@@ -1,7 +1,8 @@
 import { defineConfig } from 'vite';
 import preact from '@preact/preset-vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
-import { rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import type { Plugin } from 'vite';
 import * as C from './scripts/copy';
 
@@ -83,7 +84,10 @@ export default defineConfig(({ mode }) => {
         transformIndexHtml(html: string) {
           // the live site: a strict Content Security Policy (GitHub Pages can't send headers, so it rides in a meta tag).
           // Scripts only from this site; the API anywhere over https; fonts from Google Fonts; nothing framed or embedded.
-          const csp = ["default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", "font-src https://fonts.gstatic.com", "img-src 'self' data: https:", "connect-src 'self' https:", "object-src 'none'", "base-uri 'self'", "form-action 'self'", "worker-src 'self'", "manifest-src 'self'"].join('; ');
+          // The coronation film runs in a srcdoc frame, which inherits this policy, so its one inline script is allowed by hash.
+          const film = readFileSync('web/src/coronation.html', 'utf8').match(/<script>([\s\S]*?)<\/script>/)![1];
+          const filmHash = `'sha256-${createHash('sha256').update(film, 'utf8').digest('base64')}'`;
+          const csp = ["default-src 'self'", `script-src 'self' ${filmHash}`, "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", "font-src https://fonts.gstatic.com", "img-src 'self' data: https:", "connect-src 'self' https:", "object-src 'none'", "base-uri 'self'", "form-action 'self'", "worker-src 'self'", "manifest-src 'self'"].join('; ');
           if (site) return html.replace('<meta charset="utf-8">', `<meta charset="utf-8">\n  <meta http-equiv="Content-Security-Policy" content="${csp}">\n  <meta name="referrer" content="strict-origin-when-cross-origin">`).replace('<script type="module"', '<script src="config.js"></script>\n  <script type="module"');
           if (mode === 'online') return html.replace('<script type="module"', '<script>window.API_BASE = "http://localhost:4321";</script>\n  <script type="module"');
           return html.replace(/<link rel="(manifest|icon|apple-touch-icon)"[^>]*>\n\s*/g, '');
