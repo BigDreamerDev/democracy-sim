@@ -938,11 +938,19 @@ export function applyClause(w: W, e: any, ref: string) {
       }
       if (e.key === 'hosMethod') w.config.hosMethod = e.value;
       break;
-    case 'removeHos':
+    case 'removeHos': {
+      // under the Protection of the State Act only a decree can remove the head of state: a bill's removal clause is void,
+      // even one tabled before that Act became law
+      const law = w.laws.find((l: any) => l.ref === ref);
+      if (inForce(w, 'protection') && !law?.decree) {
+        gazette(w, 'hos', `The clause removing the ${hosTitle(w)} in ${law?.title ?? 'the new law'} is void: under the Protection of the State Act only a decree can remove the head of state.`, '#/law/' + ref);
+        break;
+      }
       gazette(w, 'hos', `${nm(w, w.hos.holder)} is removed as ${hosTitle(w)}.`);
       w.hos = { holder: null, since: w.now, until: null };
       startHosSelection(w);
       break;
+    }
     case 'jail':
     case 'decrees':
     case 'continuity':
@@ -1150,7 +1158,8 @@ export function strike(w: W, actor: Id, pid: unknown) {
   const p = own(w.proposals, pid);
   if (!p || !['bill', 'referendum'].includes(p.kind)) fail('Pick a bill.');
   if (!['consent', 'debate', 'vote', 'assent', 'override'].includes(p.stage)) fail('That bill is not pending: it is already law, or it has fallen.');
-  if (p.clauses.some((e: any) => e.t === 'removeHos')) fail('A bill to remove the head of state cannot be struck.');
+  // a bill to remove the head of state cannot be struck, unless the Protection of the State Act already makes its removal void
+  if (p.clauses.some((e: any) => e.t === 'removeHos') && !inForce(w, 'protection')) fail('A bill to remove the head of state cannot be struck.');
   Object.values(w.markets || {}).forEach((m: any) => m.kind === 'prop' && m.ref === p.id && m.status === 'open' && voidMarket(w, m, 'Struck by Royal Command.'));
   p.stage = 'struck';
   p.struckAt = w.now;

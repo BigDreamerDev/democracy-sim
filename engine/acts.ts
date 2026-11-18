@@ -25,7 +25,7 @@ export const ACTS: Record<ActKey, { name: string; text: string }> = {
   // the monarch may strike a pending bill from the order paper
   veto: {
     name: 'Royal Veto',
-    text: 'The Monarch may strike any bill from the order paper at any stage before it becomes law: waiting for consent, in debate, at the vote, or awaiting assent. A struck bill falls and cannot become law; bets on it are refunded. A bill to remove the head of state cannot be struck.'
+    text: 'The Monarch may strike any bill from the order paper at any stage before it becomes law: waiting for consent, in debate, at the vote, or awaiting assent. A struck bill falls and cannot become law; bets on it are refunded. A bill to remove the head of state cannot be struck, unless the Protection of the State Act already makes its removal void.'
   },
   // assent is the monarch's to give or refuse again
   prerogative: {
