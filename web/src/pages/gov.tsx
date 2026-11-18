@@ -64,7 +64,15 @@ export function Office({ id }: { id: string }) {
         </div>
       </Sec>
       {o.nominee && <Sec><Card kind="warn"><b>{nm(w, o.nominee.by)}</b> proposes {o.nominee.target ? <><b>{nm(w, o.nominee.target)}</b> as {o.title}</> : `leaving the post vacant`}. Another officer of state must make the same choice.</Card></Sec>}
-      {canAppoint(w, me, o) && <Sec title="Appoint" sub={o.template === 'emeritus' ? 'Only someone who has reigned before.' : isPM(w, me) ? undefined : 'As an officer of state you propose; a second officer must agree.'}><Pick value={o.holder || ''} onChange={(v) => act('gov.appoint', { office: o.id, target: v || null }, 'Appointed.')} empty="Leave vacant" options={allCitizens(w).filter((c: any) => (o.template === 'emeritus' ? (w.fame?.monarchs || []).some((m: any) => m.id === c.id) && c.id !== w.hos.holder : !c.admin)).map((c: any) => [c.id, c.name])} /></Sec>}
+      {o.template === 'emeritus' && (
+        <Sec title="The emeriti" sub={`Every past monarch the Crown has granted it to. Each draws a royal pension of ${w.config.emeritusPay ?? 10} crowns each payday.`}>
+          <div class="stack">
+            {(o.members || []).length ? <ul class="list">{o.members.map((id: string) => <li class="row"><span><b><Who id={id} /></b><div class="small muted">{o.styles?.[id]}</div></span>{isHOS(w, me) && <Btn small kind="plain" onClick={() => confirm(`Take the office from ${nm(w, id)}? They lose the style and the pension.`) && act('crown.emeritus', { target: id, grant: false }, 'Taken away.')}>Remove</Btn>}</li>)}</ul> : <Empty>Nobody holds it yet.</Empty>}
+            {isHOS(w, me) && (() => { const past = [...new Set((w.fame?.monarchs || []).map((m: any) => m.id))].filter((id: any) => id !== w.hos.holder && w.citizens[id]?.active && !(o.members || []).includes(id)) as string[]; return past.length ? <Pick label="Grant it to" value="" onChange={(v) => v && act('crown.emeritus', { target: v }, 'Granted.')} empty="Choose a past monarch" options={past.map((id) => [id, nm(w, id)])} /> : <p class="small muted" style={{ margin: 0 }}>No other past monarch is here to grant it to.</p>; })()}
+          </div>
+        </Sec>
+      )}
+      {o.template !== 'emeritus' && canAppoint(w, me, o) && <Sec title="Appoint" sub={o.template === 'emeritus' ? 'Only someone who has reigned before.' : isPM(w, me) ? undefined : 'As an officer of state you propose; a second officer must agree.'}><Pick value={o.holder || ''} onChange={(v) => act('gov.appoint', { office: o.id, target: v || null }, 'Appointed.')} empty="Leave vacant" options={allCitizens(w).filter((c: any) => (o.template === 'emeritus' ? (w.fame?.monarchs || []).some((m: any) => m.id === c.id) && c.id !== w.hos.holder : !c.admin)).map((c: any) => [c.id, c.name])} /></Sec>}
       {o.fill !== 'crown' && <Sec><Btn href={'#/law/' + o.law} kind="plain" small>Read the law that created it</Btn></Sec>}
     </Page>
   );

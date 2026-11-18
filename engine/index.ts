@@ -76,6 +76,7 @@ export const COMMANDS: Record<string, Cmd> = {
   'crown.claim': (w, me) => Cr.claim(w, me),
   'crown.back': (w, me) => Cr.back(w, me),
   'crown.toast': (w, me) => Cr.toast(w, me),
+  'crown.emeritus': (w, me, a) => O.emeritus(w, me, a.target, a.grant !== false),
   'money.print': (w, me, a) => E.moneyMotion(w, me, { kind: 'print', amount: a.amount, use: a.use }),
   'money.bonds': (w, me, a) => E.moneyMotion(w, me, { kind: 'bonds', rate: a.rate, weeks: a.weeks, cap: a.cap }),
   'money.agree': (w, me) => (w.economy.motion && w.economy.motion.expiresAt > w.now ? E.moneyMotion(w, me, w.economy.motion.terms) : fail('There is nothing waiting to be agreed.')),

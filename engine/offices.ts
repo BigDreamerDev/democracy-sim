@@ -109,11 +109,11 @@ export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
     if (detained(w, target)) fail('A detainee cannot hold office.');
     if (w.regime?.type === 'party' && t.party !== w.regime.party) fail('Only members of the Party may hold office.');
   }
-  // the Monarch Emeritus: only someone who has reigned before, and not the one reigning now
-  if (o.template === 'emeritus' && target) {
-    const past = (w.fame?.monarchs || []).filter((m: any) => m.id === target).pop();
-    if (!past) fail('Only someone who has reigned before can be Monarch Emeritus.');
-    if (w.hos.holder === target) fail('The reigning monarch cannot be their own emeritus.');
+  // the Monarch Emeritus holds every past monarch the Crown grants it to: appoint adds one; "leave vacant" clears it
+  if (o.template === 'emeritus') {
+    if (target) return emeritus(w, actor, target, true);
+    [...(o.members || [])].forEach((id: Id) => revokeEmeritus(w, o, id, actor));
+    return;
   }
   // an officer of state proposes; a second officer agreeing to the same choice makes it so
   if (!pm) {
@@ -127,18 +127,11 @@ export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
     }
   }
   o.nominee = null;
-  // a Monarch Emeritus who loses the office loses the style that came with it (the honour and the stamp stay)
-  if (o.template === 'emeritus' && o.holder && o.holder !== target && o.style) {
-    const prev = w.citizens[o.holder];
-    if (prev?.titles) prev.titles = prev.titles.filter((x: string) => x !== o.style);
-    o.style = null;
-  }
   if (target) {
     const t = cit(w, target);
     const promised = Object.entries(w.coalition?.promises || {}).find(([k]) => k === officeId)?.[1];
     o.holder = target;
     t.stats.heldOffice = true;
-    if (o.template === 'emeritus') return grantEmeritus(w, o, target, actor);
     stamp(w, target, o.title, 'Appointed by ' + nm(w, actor), 'ink');
     gazette(w, 'government', `${t.name} is appointed ${o.title}.`, '#/offices');
     if (promised && promised !== target) gazette(w, 'government', `The PM broke a coalition promise: the ${o.title} post was promised to ${nm(w, promised as string)}.`, '#/cabinet');
@@ -186,20 +179,48 @@ export function fundOffices(w: W) {
 }
 
 export function officePay(w: W) {
-  return Object.values(w.offices).filter((o: any) => o.holder && (o.fill === 'pm' || o.fill === 'crown')).map((o: any) => (o.template === 'emeritus' ? { id: o.holder, why: 'Royal pension', amt: w.config.emeritusPay ?? 10 } : { id: o.holder, why: `${o.title} pay` }));
+  return Object.values(w.offices).filter((o: any) => o.holder && (o.fill === 'pm' || o.fill === 'crown')).flatMap((o: any) => (o.template === 'emeritus' ? (o.members || []).map((id: Id) => ({ id, why: 'Royal pension', amt: w.config.emeritusPay ?? 10 })) : [{ id: o.holder, why: `${o.title} pay` }]));
 }
-// a past monarch made Monarch Emeritus: a style for life in office (their old regnal name, emeritus), an honour and a stamp
-function grantEmeritus(w: W, o: any, target: Id, actor: Id) {
-  const t = cit(w, target);
-  const past = (w.fame?.monarchs || []).filter((m: any) => m.id === target).pop();
-  const style = past ? `${past.title} ${past.name} ${past.numeral}, Emeritus` : `${t.name}, Monarch Emeritus`;
-  o.style = style;
+// ---------- the Monarch Emeritus: every past monarch the reigning one grants it to, each with a pension, an honour and a style ----------
+// o.members: the emeriti; o.holder: the first of them (for older clients); o.styles[id]: the style that came with it
+export function emeritus(w: W, actor: Id, target: unknown, grant: unknown) {
+  const o = Object.values(w.offices).find((x: any) => x.template === 'emeritus') as any;
+  if (!o) fail('There is no Office of the Monarch Emeritus. A law can create it.');
+  if (!isHOS(w, actor) || w.config.hos !== 'monarchy') fail('Only the reigning monarch grants it.');
+  const id = String(target || '');
+  const t = cit(w, id);
+  o.members ??= [];
+  o.styles ??= {};
+  if (grant === false) {
+    if (!o.members.includes(id)) fail(`${t.name} is not a Monarch Emeritus.`);
+    return revokeEmeritus(w, o, id, actor);
+  }
+  const past = (w.fame?.monarchs || []).filter((m: any) => m.id === id).pop();
+  if (!past) fail('Only someone who has reigned before can be Monarch Emeritus.');
+  if (w.hos.holder === id) fail('The reigning monarch cannot be their own emeritus.');
+  if (!t.active) fail('They are no longer a citizen.');
+  if (o.members.includes(id)) fail(`${t.name} is already Monarch Emeritus.`);
+  const style = `${past.title} ${past.name} ${past.numeral}, Emeritus`;
+  o.members.push(id);
+  o.holder = o.members[0];
+  o.styles[id] = style;
   t.titles ??= [];
   if (!t.titles.includes(style)) t.titles.push(style);
-  stamp(w, target, 'Monarch Emeritus', `Granted by ${nm(w, actor)}`, 'good');
-  earn(w, target, 5, 'Made Monarch Emeritus');
-  approve(w, target, 3);
+  t.stats.heldOffice = true;
+  stamp(w, id, 'Monarch Emeritus', `Granted by ${nm(w, actor)}`, 'good');
+  earn(w, id, 5, 'Made Monarch Emeritus');
+  approve(w, id, 3);
   gazette(w, 'hos', `${t.name} is made Monarch Emeritus, to be styled ${style}, with a royal pension of ${w.config.emeritusPay ?? 10} crowns each payday.`, '#/office/' + o.id);
+}
+// losing the office loses the style (the honour and the stamp stay)
+export function revokeEmeritus(w: W, o: any, id: Id, actor: Id) {
+  o.members = (o.members || []).filter((x: Id) => x !== id);
+  o.holder = o.members[0] || null;
+  const style = o.styles?.[id];
+  if (o.styles) delete o.styles[id];
+  const c = w.citizens[id];
+  if (c?.titles && style) c.titles = c.titles.filter((x: string) => x !== style);
+  gazette(w, 'hos', `${nm(w, id)} is no longer Monarch Emeritus, by order of ${nm(w, actor)}.`, '#/office/' + o.id);
 }
 
 export function lotOfficeRefresh(w: W, o: any) {
