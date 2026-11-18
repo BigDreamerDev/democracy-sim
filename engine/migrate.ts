@@ -62,6 +62,7 @@ export function migrate(w: W): W {
   w.config.savingsTax ??= 0;
   w.config.savingsFloor ??= 200;
   w.conditions ??= [];
+  Object.values(w.crises || {}).forEach((c: any) => ((c.cast ??= []), (c.responses ??= {}), (c.helpers ??= {})));
   w.economy.fx ??= {};
   w.economy.fxPrev ??= {};
   w.crown ??= { reign: null, offer: null };

@@ -164,6 +164,8 @@ export function viewFor(full: W, me: Id): W {
   }
   // Treasury bonds: what each citizen holds is their own business; the issue and the total stay public
   if (w.bonds) w.bonds.holdings = (w.bonds.holdings || []).filter((h: any) => h.owner === me);
+  // crises: a cash-in is private until it comes out
+  Object.values(w.crises || {}).forEach((c: any) => Object.keys(c.responses || {}).forEach((id) => { const r = c.responses[id]; if (r.move === 'cashin' && id !== me && !r.exposed) c.responses[id] = { move: 'quiet', at: r.at }; }));
   // offices marked secret show only to their members
   Object.values(w.offices).forEach((o: any) => {
     if (o.secrecy === 'secret' && o.holder !== me && !o.members.includes(me)) {

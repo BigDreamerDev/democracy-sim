@@ -4,7 +4,7 @@ import { Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Field, Pick, Loc
 import { nm, isPM, allCitizens, fmtTime, fmtDay, bal, hasPower, holderOf, standing, isMP } from '../../../engine/index';
 import { MOODS, TREATIES, INTEL_Q } from '../../../engine/foreign';
 import { ARMY_COST } from '../../../engine/economy';
-import { CRISES } from '../../../engine/society';
+import { CRISES, MOVES } from '../../../engine/society';
 import { SeasonExtras } from './glory';
 
 const moodColour = ['var(--red)', 'var(--amber)', 'var(--muted)', 'var(--teal)', 'var(--teal)'];
@@ -217,6 +217,7 @@ export function Crisis({ id }: { id: string }) {
   return (
     <Page back={['#/crises', 'Crises']} kicker={open ? <>{t.extreme ? 'Emergency · ' : ''}{c.house ? 'House vote' : 'PM decides'} · closes in <Left at={c.decideBy} /></> : 'Decided'} title={t.title} intro={t.text}>
       {c.cause && <Card kind="warn" style={{ marginTop: 14 }}><b>This is a consequence.</b> <span class="small">{c.cause}</span></Card>}
+      <Caught c={c} />
       {c.house && <Sec><p class="small muted" style={{ margin: 0 }}>{open ? <>MPs vote. {need} votes for one response settle it at once; otherwise the most votes win when time runs out, and a tie or silence means the last option.</> : `Settled by the House, ${Object.keys(votes).length} MPs voting.`}</p></Sec>}
       <Sec>
         <div class="stack">
@@ -251,6 +252,50 @@ export function Crisis({ id }: { id: string }) {
         )}
       </Sec>
     </Page>
+  );
+}
+
+// the people caught up in a crisis, the moves they made, and the relief fund
+function Caught({ c }: { c: any }) {
+  const { world: w, me } = useStore();
+  const [target, setTarget] = useState('');
+  const [gift, setGift] = useState('5');
+  const open = c.status === 'open';
+  const cast = c.cast || [];
+  const mine = cast.find((x: any) => x.id === me);
+  const done = c.responses?.[me];
+  const said = (r: any) => !r ? (open ? 'has not said anything yet' : 'said nothing') : r.move === 'blame' ? `blamed ${nm(w, r.target)}` : r.move === 'cashin' ? (r.exposed ? 'cashed in, and was caught' : 'quietly cashed in (only you can see this)') : r.move === 'quiet' ? 'kept their head down' : MOVES[r.move]?.label.toLowerCase();
+  const helpers = Object.entries(c.helpers || {}).sort((a: any, b: any) => b[1] - a[1]) as [string, number][];
+  return (
+    <Sec title="Caught up in it" sub={cast.length ? 'Real people are in the middle of this. Each can make one move before it is decided.' : undefined}>
+      <div class="stack">
+        {cast.length ? <ul class="list">{cast.map((x: any) => <li class="row"><span><b><Who id={x.id} /></b> <span class="small muted">{x.role}</span></span><span class="small">{said(c.responses?.[x.id])}</span></li>)}</ul> : <Empty>Nobody in particular.</Empty>}
+        {open && mine && !done && (
+          <Card kind="warn">
+            <b>You are {mine.role}. What do you do?</b>
+            <div class="stack" style={{ marginTop: 8 }}>
+              {Object.entries(MOVES).map(([k, m]) => (
+                k === 'blame' ? (
+                  <div class="stack" style={{ gap: 6 }}>
+                    <span class="small"><b>{m.label}</b>. {m.what}</span>
+                    <div class="grid2"><Pick value={target} onChange={setTarget} empty="Whom?" options={allCitizens(w).filter((p: any) => p.id !== me && !p.bot).map((p: any) => [p.id, p.name])} /><Btn small style={{ alignSelf: 'end' }} onClick={() => act('crisis.respond', { id: c.id, move: k, target }, 'Done. It is settled when the crisis ends.')}>Blame them</Btn></div>
+                  </div>
+                ) : <div class="row" style={{ alignItems: 'flex-end', gap: 8 }}>
+                  <span class="small" style={{ flex: 1 }}><b>{m.label}</b>. {m.what}</span>
+                  <Btn small kind={k === 'cashin' ? 'danger ghost' : undefined} onClick={() => act('crisis.respond', k === 'blame' ? { id: c.id, move: k, target } : { id: c.id, move: k }, 'Done. It is settled when the crisis ends.')}>Do it</Btn>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+        <Card>
+          <b>The relief fund</b>
+          <p class="small muted" style={{ margin: '4px 0 6px' }}>{open ? 'Give up to 25 crowns to the Treasury for this crisis. +1 approval for every 5, up to +3. The biggest giver gets a stamp.' : 'Who gave.'}</p>
+          {helpers.length > 0 && <ul class="list small">{helpers.map(([id, n]) => <li class="row"><span><Who id={id} /></span><b class="tnum">{n}</b></li>)}</ul>}
+          {open && <div class="grid2" style={{ marginTop: 8 }}><Field label="Crowns" type="number" value={gift} onInput={setGift} /><Btn style={{ alignSelf: 'end' }} onClick={() => act('crisis.help', { id: c.id, amount: Number(gift) }, 'Thank you. It is in the fund.')}>Give</Btn></div>}
+        </Card>
+      </div>
+    </Sec>
   );
 }
 

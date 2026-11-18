@@ -6,7 +6,7 @@
 // - `chainOnly` crises never appear at random; `weight` makes a crisis rarer (default 1); `needs` limits where it fits.
 // `effects` is what players see before choosing, so keep it honest and in step with `run`.
 // Money only moves through transfer(), so the ledger balances.
-import { W, Id, DAY, HOUR, shuffle, clamp, fail, newId, transfer, meter, approve, earn, addCard, allCitizens, holderOf, chance, rand, ca, bal, gazette, legit, detained, exiled, isMP, isPM, mps, nm, mustBeFree, weekNo, tick, own } from './core';
+import { W, Id, DAY, HOUR, shuffle, bump, stamp, int, clamp, fail, newId, transfer, meter, approve, earn, addCard, allCitizens, holderOf, chance, rand, ca, bal, gazette, legit, detained, exiled, isMP, isPM, mps, nm, mustBeFree, weekNo, tick, own } from './core';
 import { armyLoyalty } from './foreign';
 import { openMarket, settleMarket } from './markets';
 import { callGeneralElection } from './politics';
@@ -25,13 +25,19 @@ const share = (w: W, from: string, ids: string[], n: number, memo: string) => id
 const approveAll = (w: W, ids: string[], d: number) => ids.forEach((id) => approve(w, id, d));
 const ministers = (w: W) => [...new Set(Object.values(w.offices).filter((o: any) => o.holder && (o.fill === 'pm' || o.fill === 'crown')).map((o: any) => o.holder as string))];
 const cond = addCondition;
+// strip someone of every post the PM or the Crown gave them
+const vacate = (w: W, id: Id | undefined) => id && Object.values(w.offices).forEach((o: any) => o.holder === id && (o.fill === 'pm' || o.fill === 'crown') && ((o.holder = null), gazette(w, 'government', `${nm(w, id)} loses the post of ${o.title}.`, '#/offices')));
+// two different people from a pool (or anyone)
+const pair = (w: W, kind: string, roles: [string, string]) => { const p = shuffle(w, pool(w, kind)); const a = p[0]; const b = shuffle(w, freeCitizens(w).filter((x) => x !== a))[0]; return [a && { id: a, role: roles[0] }, b && { id: b, role: roles[1] }].filter(Boolean) as { id: Id; role: string }[]; };
+const one = (w: W, kind: string, role: string) => { const a = shuffle(w, pool(w, kind))[0]; return a ? [{ id: a, role }] : []; };
 // n citizens picked at random (seeded)
 const some = (w: W, n: number) => shuffle(w, citizensNow(w).map((c: any) => c.id)).slice(0, n);
 // Standing comes from how the nations feel: move that many of them a step
 const standingShift = (w: W, d: number, why: string) => Object.keys(w.nations).slice(0, Math.abs(d)).forEach((n) => mood(w, n, Math.sign(d), why));
 
-type Option = { label: string; what: string; effects: string[]; run: (w: W) => any; then?: { type: string; days: number } };
-export type Crisis = { id: string; title: string; text: string; needs?: (w: W) => boolean; options: Option[]; house?: boolean; chainOnly?: boolean; weight?: number; extreme?: boolean };
+type Option = { label: string; what: string; effects: string[]; run: (w: W, c?: any) => any; then?: { type: string; days: number } };
+// cast: who is caught up in it (named players). Without one, castFor() picks people from the crisis's title.
+export type Crisis = { id: string; title: string; text: string; needs?: (w: W) => boolean; options: Option[]; house?: boolean; chainOnly?: boolean; weight?: number; extreme?: boolean; cast?: (w: W) => { id: Id; role: string }[] };
 
 // ---------- small helpers so each crisis reads like a sentence ----------
 const spend = (w: W, n: number, to: string, memo: string) => transfer(w, 'treasury', to, n, memo);
@@ -287,6 +293,115 @@ export const CRISES: Crisis[] = [
     options: [
       { label: 'A state funeral', what: 'The whole realm stops to mourn.', effects: ['Treasury −30', 'Mourning 1 week (Stability +1, Prosperity −1)', 'Every MP approval +1'], run: (w) => (spend(w, 30, 'reserve', 'State funeral'), cond(w, 'mourning', 1), approveAll(w, mps(w), 1)) },
       { label: 'A quiet family funeral', what: 'As they would have wanted.', effects: ['Stability −1'], run: (w) => meter(w, 'stability', -1, 'A hero buried quietly') }
+    ]
+  },
+  // ---------- chaos: crises built around named players ----------
+  {
+    id: 'affair', title: 'An affair at the top', text: 'Two of the realm’s best-known figures were photographed leaving a hotel together at dawn. The papers are calling it the scandal of the season.', weight: 0.8,
+    cast: (w) => pair(w, 'minister', ['in the photographs', 'the other one in the photographs']),
+    options: [
+      { label: 'Demand resignations', what: 'Both lose every post they hold.', effects: ['Both lose their posts', 'Stability +2'], run: (w, c) => (vacate(w, castOf(c, 0)), vacate(w, castOf(c, 1)), meter(w, 'stability', 2, 'Resignations over the affair')) },
+      { label: 'A private matter', what: 'The PM refuses to comment.', effects: ['Both approval −1', 'PM approval −2'], run: (w, c) => (approveAll(w, [castOf(c, 0), castOf(c, 1)].filter(Boolean) as Id[], -1), w.pm && approve(w, w.pm, -2)) },
+      { label: 'Let the tabloids run', what: 'Nobody steps in. It runs for weeks.', effects: ['Both approval −3', 'Stability −1'], run: (w, c) => (approveAll(w, [castOf(c, 0), castOf(c, 1)].filter(Boolean) as Id[], -3), meter(w, 'stability', -1, 'Tabloid frenzy')) }
+    ]
+  },
+  {
+    id: 'sting', title: 'Caught on camera', text: 'An undercover reporter posing as a Kessmark businessman filmed a minister offering to change a law for 50 crowns.', weight: 0.8,
+    cast: (w) => pair(w, 'minister', ['caught on camera', 'the reporter who ran the sting']),
+    options: [
+      { label: 'Sack them', what: 'Out of every post, and a fine.', effects: ['The minister loses their posts and 20 crowns', 'The reporter +5 Influence', 'Stability +2'], run: (w, c) => (vacate(w, castOf(c, 0)), levy(w, [castOf(c, 0)!].filter(Boolean), 20, 'treasury', 'Fined over the sting'), castOf(c, 1) && earn(w, castOf(c, 1)!, 5, 'Ran the sting'), meter(w, 'stability', 2, 'A corrupt minister sacked')) },
+      { label: 'Stand by them', what: 'It was a joke, taken out of context.', effects: ['PM approval −3', 'The minister approval −2', 'A secret card about the PM'], run: (w, c) => (w.pm && approve(w, w.pm, -3), castOf(c, 0) && approve(w, castOf(c, 0)!, -2), pmCard(w, 'The PM protected a minister filmed offering to sell a law.', 'The newsroom')) },
+      { label: 'Go after the reporter', what: 'Entrapment, says the government.', effects: ['The reporter −10', 'Stability −2', 'Standing −1'], run: (w, c) => (levy(w, [castOf(c, 1)!].filter(Boolean), 10, 'treasury', 'Prosecuted over the sting'), meter(w, 'stability', -2, 'A reporter prosecuted'), standingShift(w, -1, 'We prosecuted a journalist')) }
+    ]
+  },
+  {
+    id: 'chat_leak', extreme: true, title: 'The group chat leaks', text: 'Months of private messages have been posted online. Three people come out of it very badly. Nobody knows who leaked it.', weight: 0.7,
+    cast: (w) => shuffle(w, freeCitizens(w)).slice(0, 4).map((id, i) => ({ id, role: i < 3 ? 'whose messages leaked' : 'suspected of leaking it' })),
+    options: [
+      { label: 'Hunt the leaker', what: 'A full inquiry. Someone will be named.', effects: ['The suspect −3 approval and −10', 'Stability −1'], run: (w, c) => (castOf(c, 3) && (approve(w, castOf(c, 3)!, -3), levy(w, [castOf(c, 3)!], 10, 'treasury', 'Named as the leaker')), meter(w, 'stability', -1, 'A leak inquiry')) },
+      { label: 'Everyone apologises', what: 'The three say sorry in public.', effects: ['The three −1 approval', 'Stability +1'], run: (w, c) => (approveAll(w, [0, 1, 2].map((i) => castOf(c, i)).filter(Boolean) as Id[], -1), meter(w, 'stability', 1, 'Apologies all round')) },
+      { label: 'Ride it out', what: 'It will be forgotten by next week. Probably.', effects: ['The three −3 approval', 'Every citizen +1 Influence (gossip)'], run: (w, c) => (approveAll(w, [0, 1, 2].map((i) => castOf(c, i)).filter(Boolean) as Id[], -3), everyone(w, 1, 'Read the leaked chat')) }
+    ]
+  },
+  {
+    id: 'duel', title: 'A challenge to a duel', text: 'An insult in the House has turned into a formal challenge. Pistols at dawn, unless someone stops it.', weight: 0.6,
+    cast: (w) => pair(w, 'mp', ['who issued the challenge', 'who was challenged']),
+    options: [
+      { label: 'Let it happen', what: 'Honour must be satisfied. The loser pays the winner 20.', effects: ['One of them wins 20 from the other', 'The loser approval −2', 'Stability −1'], run: (w, c) => { const [a, b] = [castOf(c, 0), castOf(c, 1)]; if (!a || !b) return; const [win, lose] = chance(w, 0.5) ? [a, b] : [b, a]; const n = Math.min(20, bal(w, ca(lose))); if (n > 0) transfer(w, ca(lose), ca(win), n, 'Lost a duel'); approve(w, lose, -2); gazette(w, 'crisis', `${nm(w, win)} wins the duel against ${nm(w, lose)}.`, '#/crisis/' + c.id); meter(w, 'stability', -1, 'A duel'); } },
+      { label: 'Make them shake hands', what: 'In the chamber, in front of everyone.', effects: ['Both +1 approval', 'Stability +1'], run: (w, c) => (approveAll(w, [castOf(c, 0), castOf(c, 1)].filter(Boolean) as Id[], 1), meter(w, 'stability', 1, 'A duel averted')) },
+      { label: 'Ban duelling', what: 'Both are fined for even suggesting it.', effects: ['Both −5', 'Both −1 Influence'], run: (w, c) => [castOf(c, 0), castOf(c, 1)].filter(Boolean).forEach((id) => (levy(w, [id!], 5, 'treasury', 'Fined for a duel'), (w.citizens[id!].influence = Math.max(0, (w.citizens[id!].influence || 0) - 1)))) }
+    ]
+  },
+  {
+    id: 'kidnap', extreme: true, title: 'A minister is kidnapped', text: 'Bandits on the Kessmark road have taken a minister and want 40 crowns by tomorrow.', weight: 0.5, needs: (w) => ministers(w).length > 0,
+    cast: (w) => one(w, 'minister', 'held for ransom'),
+    options: [
+      { label: 'Pay the ransom', what: 'They come home. The bandits will be back.', effects: ['Treasury −40', 'The minister +2 approval', 'Pirates and bandits are encouraged'], run: (w, c) => (spend(w, 40, w.nations.kessmark ? 'nation:kessmark' : 'nation:' + Object.keys(w.nations)[0], 'Ransom'), castOf(c, 0) && approve(w, castOf(c, 0)!, 2)) },
+      { label: 'Send in the Army', what: 'A rescue at night. It might go wrong.', effects: ['Even chance: freed (+3 approval, Army loyalty +1)', 'Otherwise: they lose 20 and their posts'], run: (w, c) => { const id = castOf(c, 0); if (!id) return; if (chance(w, 0.5)) (approve(w, id, 3), army(w, 1, 'A daring rescue')); else (levy(w, [id], 20, 'reserve', 'Robbed by bandits'), vacate(w, id)); } },
+      { label: 'We do not negotiate', what: 'They are on their own.', effects: ['The minister loses 10 and their posts', 'Stability +1'], run: (w, c) => (levy(w, [castOf(c, 0)!].filter(Boolean), 10, 'reserve', 'Robbed by bandits'), vacate(w, castOf(c, 0)), meter(w, 'stability', 1, 'We did not pay')) }
+    ]
+  },
+  {
+    id: 'impostor', title: 'Someone is impersonating the Prime Minister', text: 'A fake account has been issuing “decrees” in the PM’s name, and half the realm believed them. The trail leads to a citizen.', weight: 0.6, needs: (w) => !!w.pm,
+    cast: (w) => { const p = shuffle(w, freeCitizens(w).filter((x) => x !== w.pm)); return p[0] ? [{ id: p[0], role: 'behind the fake account' }] : []; },
+    options: [
+      { label: 'Unmask and fine them', what: 'Named in the Gazette, and a fine.', effects: ['The impostor −15 and −3 approval', 'Stability +1'], run: (w, c) => (levy(w, [castOf(c, 0)!].filter(Boolean), 15, 'treasury', 'Fined for impersonating the PM'), castOf(c, 0) && approve(w, castOf(c, 0)!, -3), meter(w, 'stability', 1, 'The impostor unmasked')) },
+      { label: 'Hire them', what: 'Anyone that convincing should write the PM’s speeches.', effects: ['The impostor +10 and +3 Influence', 'PM approval −1'], run: (w, c) => (castOf(c, 0) && (share(w, 'treasury', [castOf(c, 0)!], 10, 'Hired as speechwriter'), earn(w, castOf(c, 0)!, 3, 'Hired by the PM')), w.pm && approve(w, w.pm, -1)) },
+      { label: 'Laugh it off', what: 'The PM posts a joke about it.', effects: ['PM approval +1', 'Stability −1', 'The impostor +2 Influence'], run: (w, c) => (w.pm && approve(w, w.pm, 1), meter(w, 'stability', -1, 'Fake decrees'), castOf(c, 0) && earn(w, castOf(c, 0)!, 2, 'Fooled the realm')) }
+    ]
+  },
+  {
+    id: 'lottery', title: 'A citizen wins the lottery three times', text: 'Three jackpots in a month. The odds are a billion to one. The winner says they are just lucky.', weight: 0.6,
+    cast: (w) => one(w, 'any', 'who keeps winning'),
+    options: [
+      { label: 'Investigate', what: 'Audit the draws.', effects: ['Even chance: rigged (they lose 20, −3 approval)', 'Otherwise: cleared (+2 approval)'], run: (w, c) => { const id = castOf(c, 0); if (!id) return; if (chance(w, 0.5)) (levy(w, [id], 20, 'treasury', 'Lottery fraud'), approve(w, id, -3)); else approve(w, id, 2); } },
+      { label: 'Let them keep it', what: 'Luck is luck.', effects: ['The winner +30 (new money)', 'Stability −1'], run: (w, c) => (castOf(c, 0) && share(w, 'reserve', [castOf(c, 0)!], 30, 'Lottery jackpot'), meter(w, 'stability', -1, 'A suspicious lottery')) },
+      { label: 'Tax the winnings', what: 'Half to the Treasury.', effects: ['The winner +15', 'Treasury +15'], run: (w, c) => (castOf(c, 0) && share(w, 'reserve', [castOf(c, 0)!], 15, 'Lottery jackpot, after tax'), transfer(w, 'reserve', 'treasury', 15, 'Lottery tax')) }
+    ]
+  },
+  {
+    id: 'viral', title: 'A citizen goes viral', text: 'A video of a citizen arguing with a goose has been watched by every country on the continent.', weight: 0.6,
+    cast: (w) => one(w, 'any', 'who argued with the goose'),
+    options: [
+      { label: 'Make them an ambassador', what: 'Soft power.', effects: ['They get +5 Influence', 'Two nations warm'], run: (w, c) => (castOf(c, 0) && earn(w, castOf(c, 0)!, 5, 'National treasure'), Object.keys(w.nations).slice(0, 2).forEach((n) => mood(w, n, 1, 'Loved the goose video'))) },
+      { label: 'Ban the video', what: 'It is embarrassing the realm.', effects: ['Stability −1', 'They get +3 Influence anyway'], run: (w, c) => (meter(w, 'stability', -1, 'A video banned'), castOf(c, 0) && earn(w, castOf(c, 0)!, 3, 'Banned and famous')) },
+      { label: 'Ignore it', what: 'It will pass.', effects: ['Nothing happens'], run: () => {} }
+    ]
+  },
+  {
+    id: 'traitor', extreme: true, house: true, title: 'An MP has been selling secrets', text: 'The Security Service says an MP has been passing papers to Kessmark for months. The evidence is strong but not certain.', weight: 0.5, needs: (w) => mps(w).length >= 2,
+    cast: (w) => pair(w, 'mp', ['accused of treason', 'who found the evidence']),
+    options: [
+      { label: 'A public trial', what: 'In the open. The accused may be acquitted.', effects: ['Even chance: guilty (−25, −5 approval, loses posts)', 'Otherwise: the accuser −3 approval', 'Stability +1'], run: (w, c) => { const a = castOf(c, 0), b = castOf(c, 1); if (!a) return; if (chance(w, 0.5)) (levy(w, [a], 25, 'treasury', 'Convicted of treason'), approve(w, a, -5), vacate(w, a), stamp(w, a, 'Convicted', 'Treason', 'ink')); else if (b) approve(w, b, -3); meter(w, 'stability', 1, 'A treason trial'); } },
+      { label: 'A quiet deal', what: 'Trade them back to Kessmark for our own spies.', effects: ['The accused +10 (Kessmark pays)', 'Kessmark warms', 'Stability −2'], run: (w, c) => (castOf(c, 0) && bal(w, 'nation:kessmark') >= 10 && transfer(w, 'nation:kessmark', ca(castOf(c, 0)!), 10, 'A quiet arrangement'), mood(w, 'kessmark', 1, 'A spy swap'), meter(w, 'stability', -2, 'A traitor walked free')) },
+      { label: 'Not enough evidence', what: 'Drop it.', effects: ['The accuser −2 approval', 'Kessmark keeps its source'], run: (w, c) => castOf(c, 1) && approve(w, castOf(c, 1)!, -2) }
+    ]
+  },
+  {
+    id: 'inside_job', title: 'Money missing from the Treasury', text: 'Eighty crowns have vanished from the Treasury’s accounts. Two people had the keys.', weight: 0.6, needs: (w) => !!w.offices.treasury && bal(w, 'treasury') >= 40,
+    cast: (w) => { const a = holderOf(w, 'treasury'); const rest = shuffle(w, freeCitizens(w).filter((x) => x !== a)); return [a && { id: a, role: 'who held the keys' }, rest[0] && { id: rest[0], role: 'the clerk with the other key' }].filter(Boolean) as any; },
+    options: [
+      { label: 'Call in auditors', what: 'Someone will be found out.', effects: ['One of the two is caught: −20, −3 approval'], run: (w, c) => { const id = castOf(c, chance(w, 0.5) ? 0 : 1) || castOf(c, 0); if (id) (levy(w, [id], 20, 'treasury', 'Caught taking Treasury money'), approve(w, id, -3)); } },
+      { label: 'Write it off', what: 'An accounting error, officially.', effects: ['Treasury −40', 'Stability −1'], run: (w) => (spend(w, 40, 'reserve', 'Written off'), meter(w, 'stability', -1, 'Money vanished')) },
+      { label: 'Blame the opposition', what: 'They were in charge last year, surely.', effects: ['PM approval +1', 'Stability −2', 'Every non-government MP −1 approval'], run: (w) => (w.pm && approve(w, w.pm, 1), meter(w, 'stability', -2, 'Blame games'), approveAll(w, mps(w).filter((m) => !ministers(w).includes(m) && m !== w.pm), -1)) }
+    ]
+  },
+  {
+    id: 'party_crash', title: 'A party during the crisis', text: 'Photographs show ministers drinking at a party in a government building while everyone else was told to stay home.', weight: 0.7, needs: (w) => ministers(w).length > 0,
+    cast: (w) => shuffle(w, pool(w, 'minister')).slice(0, 3).map((id) => ({ id, role: 'at the party' })),
+    options: [
+      { label: 'Fine everyone there', what: 'A fixed penalty each.', effects: ['Each partygoer −10', 'Stability +1'], run: (w, c) => (levy(w, (c.cast || []).map((x: any) => x.id), 10, 'treasury', 'Fined for the party'), meter(w, 'stability', 1, 'Partygoers fined')) },
+      { label: 'It was a work event', what: 'Cake was involved, but it was work.', effects: ['Each partygoer −2 approval', 'PM approval −3', 'Stability −2'], run: (w, c) => (approveAll(w, (c.cast || []).map((x: any) => x.id), -2), w.pm && approve(w, w.pm, -3), meter(w, 'stability', -2, 'It was a work event')) },
+      { label: 'Sack the lot', what: 'Every one of them loses their post.', effects: ['Every partygoer loses their posts', 'PM approval +2'], run: (w, c) => ((c.cast || []).forEach((x: any) => vacate(w, x.id)), w.pm && approve(w, w.pm, 2)) }
+    ]
+  },
+  {
+    id: 'secret_heir', house: true, title: 'A secret heir', text: 'A citizen has produced papers claiming to be the monarch’s secret child, and heir to the throne.', weight: 0.5, needs: (w) => monarchy(w) && !!w.hos.holder,
+    cast: (w) => { const p = shuffle(w, freeCitizens(w).filter((x) => x !== w.hos.holder)); return p[0] ? [{ id: p[0], role: 'claiming to be the heir' }] : []; },
+    options: [
+      { label: 'Recognise them', what: 'A royal title and an allowance.', effects: ['The claimant +20 and +5 Influence', 'Monarch approval −2'], run: (w, c) => (castOf(c, 0) && (share(w, 'treasury', [castOf(c, 0)!], 20, 'A royal allowance'), earn(w, castOf(c, 0)!, 5, 'Recognised as royal'), stamp(w, castOf(c, 0)!, 'Royal blood', 'Recognised heir', 'good')), w.hos.holder && approve(w, w.hos.holder, -2)) },
+      { label: 'Demand a DNA test', what: 'Even chance it is true.', effects: ['True: claimant +10, monarch −3 approval', 'False: claimant −10 and −3 approval'], run: (w, c) => { const id = castOf(c, 0); if (!id) return; if (chance(w, 0.5)) (share(w, 'treasury', [id], 10, 'Proved royal'), w.hos.holder && approve(w, w.hos.holder, -3)); else (levy(w, [id], 10, 'treasury', 'A false claim'), approve(w, id, -3)); } },
+      { label: 'Call it a fraud', what: 'The palace denies everything.', effects: ['The claimant −2 approval', 'Stability −1'], run: (w, c) => (castOf(c, 0) && approve(w, castOf(c, 0)!, -2), meter(w, 'stability', -1, 'A royal denial')) }
     ]
   },
   // ---------- more of the long tail ----------
@@ -897,9 +1012,11 @@ export function spawnCrisis(w: W, type?: string, cause?: string) {
   }
   const id = newId(w, 'cr');
   const house = !!t!.house && mps(w).length > 0;
-  w.crises[id] = { id, type: t!.id, status: 'open', at: w.now, decideBy: w.now + (house ? 36 : 24) * HOUR, choice: null, house, votes: {}, speeches: [], cause: cause || null, pmAtStart: w.pm };
+  w.crises[id] = { id, type: t!.id, status: 'open', at: w.now, decideBy: w.now + (house ? 36 : 24) * HOUR, choice: null, house, votes: {}, speeches: [], cause: cause || null, pmAtStart: w.pm, cast: castFor(w, t!), responses: {}, helpers: {} };
   openMarket(w, 'crisis', id, `How will “${t!.title}” end?`, t!.options.map((o, i) => ({ key: String(i), label: o.label })), w.crises[id].decideBy);
-  gazette(w, 'crisis', `${t!.extreme ? 'Emergency' : 'Crisis'}: ${t!.title}.${cause ? ` ${cause}` : ''} ${house ? 'The House has 36 hours to vote on a response.' : 'The Prime Minister has 24 hours to decide.'}`, '#/crisis/' + id);
+  const cast = w.crises[id].cast;
+  gazette(w, 'crisis', `${t!.extreme ? 'Emergency' : 'Crisis'}: ${t!.title}.${cause ? ` ${cause}` : ''}${cast.length ? ` Caught up in it: ${cast.map((x: any) => `${nm(w, x.id)} (${x.role})`).join(', ')}.` : ''} ${house ? 'The House has 36 hours to vote on a response.' : 'The Prime Minister has 24 hours to decide.'}`, '#/crisis/' + id);
+  cast.forEach((x: any) => bump(w, x.id, 'crisesCaught'));
   return id;
 }
 
@@ -971,8 +1088,9 @@ function settle(w: W, c: any, choice: number, how: 'pm' | 'house' | 'default', a
   c.how = how;
   let r: any;
   try {
-    r = o.run(w);
+    r = o.run(w, c);
   } catch {}
+  settleCast(w, c, choice === t.options.length - 1);
   if (how === 'pm') earn(w, actor!, 3, 'Handled a crisis');
   // for ambitions: MPs on the winning side, and a PM who is still standing afterwards
   if (how === 'house') Object.entries(c.votes).forEach(([m, v]) => v === choice && w.citizens[m] && (w.citizens[m].stats.crisisWins = (w.citizens[m].stats.crisisWins || 0) + 1));
@@ -1000,4 +1118,115 @@ export function fireQueued(w: W, q: any) {
   }
   w.crisisQueue = w.crisisQueue.filter((x: any) => x !== q);
   spawnCrisis(w, q.type, q.cause);
+}
+
+
+// ================= Caught up in it: every crisis pulls in named players =================
+// Who: picked when the crisis starts, from the crisis's own cast() or from what its title is about. Each can make one move
+// while it is open (deny, apologise, blame someone, or quietly cash in); what that move costs them is settled at the end.
+// Anyone can give to the relief fund. Cash-ins are private until they come out.
+export const MOVES: Record<string, { label: string; what: string }> = {
+  deny: { label: 'Deny everything', what: 'It may hold. If it comes out, it costs you more.' },
+  apologise: { label: 'Apologise', what: 'Approval −1 now; the public usually forgives (+2 at the end).' },
+  blame: { label: 'Blame someone else', what: 'They lose 2 approval now. It can backfire on you.' },
+  cashin: { label: 'Quietly cash in', what: '10 crowns now, in secret. Even odds it comes out: a 15-crown fine and −3 approval.' }
+};
+const freeCitizens = (w: W) => allCitizens(w).filter((c: any) => !c.bot && !c.suspended && !exiled(w, c.id) && !detained(w, c.id)).map((c: any) => c.id as Id);
+function pool(w: W, kind: string): Id[] {
+  const free = freeCitizens(w);
+  const pick = (ids: (Id | null | undefined)[]) => ids.filter((id): id is Id => !!id && free.includes(id));
+  const by = (ids: Id[]) => (ids.length ? ids : free);
+  if (kind === 'minister') return by(pick(ministers(w)));
+  if (kind === 'mp') return by(pick(mps(w)));
+  if (kind === 'rich') return by(pick(richest(w, 4)));
+  if (kind === 'poor') return by(pick(poorest(w, 5)));
+  if (kind === 'monarch') return by(pick([w.hos.holder]));
+  return free;
+}
+// what a crisis is about, from its title: who would really be caught up in it
+const ROLE_RULES: [RegExp, string, string][] = [
+  [/expenses|scandal|whistle|procurement|donor|bribe|corrupt|forg|banker|leak/i, 'minister', 'accused'],
+  [/strike|walk out|teachers|doctors|unions|miners|back pay/i, 'any', 'leading the walkout'],
+  [/flood|fire|quake|storm|wildfire|heat|drought|rains|harvest|famine|bridge|fever|cholera|plague|epidemic/i, 'poor', 'lost everything'],
+  [/boom|bubble|crash|bank|oil|gold|rail|machine|pension|rent|tax|crown|inflation|debt|lottery/i, 'rich', 'with the most money at stake'],
+  [/royal|wedding|jewel|heir|monarch|king|queen/i, 'any', 'the royal favourite'],
+  [/spy|envoy|embassy|border|ultimatum|pirate|smuggl|refugee|exodus|kessmark|varnholm|orrin|sundmere|tessaly|blockade/i, 'any', 'caught in the middle'],
+  [/riot|protest|mob|storm|prison|mutiny|attempt|secession|north|cult/i, 'any', 'blamed for stirring it up']
+];
+export function castFor(w: W, t: Crisis): { id: Id; role: string }[] {
+  if (t.cast) return t.cast(w).filter((x) => x.id && w.citizens[x.id]);
+  const [, kind, role] = ROLE_RULES.find(([re]) => re.test(t.title + ' ' + t.text)) || [null, 'any', 'at the centre of it'];
+  const p = pool(w, kind);
+  if (!p.length) return [];
+  const out = [{ id: shuffle(w, p)[0], role }];
+  // a scandal has someone who blew the whistle too
+  if (kind === 'minister') {
+    const rest = freeCitizens(w).filter((id) => id !== out[0].id);
+    if (rest.length) out.push({ id: shuffle(w, rest)[0], role: 'who blew the whistle' });
+  }
+  return out;
+}
+const castOf = (c: any, n: number): Id | undefined => c?.cast?.[n]?.id;
+
+export function respond(w: W, actor: Id, id: unknown, move: unknown, target: unknown) {
+  const c = own(w.crises, id);
+  if (!c || c.status !== 'open') fail('That crisis is over.');
+  if (!(c.cast || []).some((x: any) => x.id === actor)) fail('You are not caught up in this one.');
+  mustBeFree(w, actor);
+  if (c.responses[actor]) fail('You have already made your move.');
+  const m = own(MOVES, move) ? String(move) : fail('Pick a move.');
+  const t = crisisById(c.type)!;
+  if (m === 'blame') {
+    const who = String(target || '');
+    if (!w.citizens[who]?.active || who === actor) fail('Pick someone else to blame.');
+    c.responses[actor] = { move: m, target: who, at: w.now };
+    approve(w, who, -2);
+    gazette(w, 'crisis', `${nm(w, actor)} blames ${nm(w, who)} for ${t.title.charAt(0).toLowerCase() + t.title.slice(1)}.`, '#/crisis/' + c.id);
+    return;
+  }
+  c.responses[actor] = { move: m, at: w.now };
+  if (m === 'cashin') return void transfer(w, 'treasury', ca(actor), 10, 'A quiet arrangement');
+  if (m === 'apologise') approve(w, actor, -1);
+  gazette(w, 'crisis', m === 'deny' ? `${nm(w, actor)} denies everything over ${t.title.charAt(0).toLowerCase() + t.title.slice(1)}.` : `${nm(w, actor)} apologises over ${t.title.charAt(0).toLowerCase() + t.title.slice(1)}.`, '#/crisis/' + c.id);
+}
+export function help(w: W, actor: Id, id: unknown, amount: unknown) {
+  const c = own(w.crises, id);
+  if (!c || c.status !== 'open') fail('That crisis is over.');
+  mustBeFree(w, actor);
+  const n = int(amount, 1, 25, 'gift (1–25 crowns)');
+  if (bal(w, ca(actor)) < n) fail('You do not have that many crowns.');
+  if ((c.helpers[actor] || 0) + n > 25) fail('You can give up to 25 to each crisis.');
+  transfer(w, ca(actor), 'treasury', n, 'Crisis relief fund');
+  const before = Math.floor((c.helpers[actor] || 0) / 5);
+  c.helpers[actor] = (c.helpers[actor] || 0) + n;
+  const up = Math.min(3, Math.floor(c.helpers[actor] / 5)) - Math.min(3, before);
+  if (up > 0) approve(w, actor, up);
+  bump(w, actor, 'crisisGifts', n);
+}
+// the end of a crisis: what each move cost, a stamp for everyone caught up in it, and thanks to the biggest giver
+function settleCast(w: W, c: any, leftHanging: boolean) {
+  const t = crisisById(c.type)!;
+  const lines: string[] = [];
+  (c.cast || []).forEach((x: any) => {
+    if (!w.citizens[x.id]) return;
+    const r = c.responses?.[x.id];
+    stamp(w, x.id, 'Caught up in a crisis', t.title, 'ink');
+    if (r?.move === 'deny') {
+      if (chance(w, 0.4)) (approve(w, x.id, -4), lines.push(`${nm(w, x.id)}’s denial fell apart (approval −4)`), stamp(w, x.id, 'Caught lying', t.title, 'ink'));
+      else approve(w, x.id, 1);
+    } else if (r?.move === 'apologise') (approve(w, x.id, 2), meter(w, 'stability', 1, `${nm(w, x.id)} said sorry`));
+    else if (r?.move === 'blame') {
+      if (chance(w, 0.3)) (approve(w, x.id, -3), lines.push(`blaming ${nm(w, r.target)} backfired on ${nm(w, x.id)} (approval −3)`));
+    } else if (r?.move === 'cashin') {
+      if (chance(w, 0.5)) {
+        r.exposed = true;
+        levy(w, [x.id], 15, 'treasury', 'Fined for cashing in on a crisis');
+        approve(w, x.id, -3);
+        lines.push(`${nm(w, x.id)} was caught cashing in (fined 15, approval −3)`);
+      }
+    } else approve(w, x.id, leftHanging ? -1 : 1);
+  });
+  const top = Object.entries(c.helpers || {}).sort((a: any, b: any) => b[1] - a[1])[0] as [string, number] | undefined;
+  if (top) (lines.push(`${nm(w, top[0])} gave most to the relief fund (${top[1]})`), stamp(w, top[0], 'Crisis benefactor', t.title, 'good'));
+  if (lines.length) gazette(w, 'crisis', `After ${t.title.charAt(0).toLowerCase() + t.title.slice(1)}: ${lines.join('; ')}.`, '#/crisis/' + c.id);
 }

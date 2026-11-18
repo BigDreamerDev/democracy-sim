@@ -62,6 +62,7 @@ export function needs(w: W, me: Id): Alert[] {
   Object.values(w.crises).forEach((c: any) => {
     if (c.status !== 'open') return;
     if (!c.house && isPM(w, me)) out.push({ key: 'crisis:' + c.id, href: '#/crisis/' + c.id, label: 'Crisis', title: 'You must decide', at: c.decideBy, urgent: true });
+    if ((c.cast || []).some((x: any) => x.id === me) && !c.responses?.[me]) out.push({ key: 'caught:' + c.id, href: '#/crisis/' + c.id, label: 'You are caught up in a crisis', title: `You are ${(c.cast.find((x: any) => x.id === me) || {}).role}. Make your move`, at: c.decideBy, urgent: true });
     if (c.house && isMP(w, me) && c.votes?.[me] === undefined) out.push({ key: 'crisisvote:' + c.id, href: '#/crisis/' + c.id, label: 'Crisis vote', title: 'The House must choose a response', at: c.decideBy, urgent: true });
   });
   w.questions.forEach((q: any) => q.status === 'open' && ((q.to === 'pm' && isPM(w, me) && q.backers.length >= 3) || q.to === me) && out.push({ key: 'question:' + q.id, href: '#/questions', label: q.formal ? 'Formal question' : 'PMQ to answer', title: q.text, at: q.dueAt }));
