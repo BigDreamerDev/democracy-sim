@@ -204,6 +204,8 @@ export function checkClauses(w: W, kind: string, clauses: any, byDecree = false)
     if (e.t === 'permit' && w.permits.banks) fail('Banks are already allowed.');
   }
 }
+// a Crown bill: tabled by the reigning monarch or one of the Royal Household's officers
+export const crownBill = (w: W, id: Id) => w.config.hos === 'monarchy' && (w.hos.holder === id || ['chamberlain', 'privyseal'].some((k) => w.offices[k]?.holder === id));
 export function propose(w: W, actor: Id, a: any) {
   mustBeFree(w, actor);
   if (w.phase !== 'running') fail('Proposals start once the constitution is adopted.');
@@ -248,8 +250,10 @@ export function propose(w: W, actor: Id, a: any) {
   w.proposals[id] = {
     id, n: w.propCount, kind, title: own(titles, kind) || title, summary, by: actor, clauses, target: a.target || null,
     constitutional, voters: kind === 'referendum' || (kind === 'bill' && w.config.billVoters === 'all') ? 'all' : 'mps', rule: w.config.passRule || 'cast',
-    // under the Protection of the State Act, anyone but the Prime Minister waits for their consent first
-    stage: kind === 'dissolution' ? 'hos' : guarded && !isPM(w, actor) ? 'consent' : 'debate', consentH: debateH, at: w.now,
+    // under the Protection of the State Act, anyone but the Prime Minister waits for their consent first;
+    // the Crown's own officers (Lord Chamberlain, Lord Privy Seal) and the monarch go straight to debate
+    stage: kind === 'dissolution' ? 'hos' : guarded && !isPM(w, actor) && !crownBill(w, actor) ? 'consent' : 'debate', consentH: debateH, at: w.now,
+    crown: crownBill(w, actor),
     debateEndsAt: w.now + debateH * HOUR, voteEndsAt: null, assentDueAt: null, hosDueAt: kind === 'dissolution' ? w.now + DAY : null,
     speeches: [], votes: {}, casting: null, lobby: 0, result: null, lawRef: null, fast: !!a.fast,
     sponsors, amendments: [], draft: fromDraft
@@ -634,6 +638,7 @@ export function closeVote(w: W, p: any) {
   }
   p.result = { ayes, noes, passed, note };
   trackWhip(w, p);
+  royalWhipSettle(w, p);
   settleMarket(w, 'prop', p.id, passed ? 'yes' : 'no', Object.keys(p.votes).filter((k) => p.votes[k] === (passed ? 'aye' : 'no')).map((id) => ({ id, did: `voted ${passed ? 'for' : 'against'} it` })));
   if (passed && ayes - noes === 1) bump(w, p.by, 'squeakers');
   if (!passed && p.kind === 'no_confidence' && w.pm) bump(w, w.pm, 'survived');
@@ -1095,4 +1100,42 @@ export function missFormal(w: W, q: any) {
   approve(w, q.to, -5);
   stamp(w, q.to, 'Refused to answer', w.offices[q.office]?.name ?? 'A committee', 'bad');
   gazette(w, 'question', `${nm(w, q.to)} failed to answer the ${w.offices[q.office]?.name ?? 'committee'}.`, '#/questions');
+}
+
+
+// ================= The Crown and bills =================
+// The royal whip: the monarch sets a public line on a bill; MPs who vote against it lose 2 approval when the vote closes.
+export function royalWhip(w: W, actor: Id, pid: unknown, line: unknown) {
+  if (w.config.hos !== 'monarchy' || !isHOS(w, actor)) fail('Only the reigning monarch sets the royal line.');
+  const p = own(w.proposals, pid);
+  if (!p || !['debate', 'vote', 'consent'].includes(p.stage)) fail('That bill is not before the House.');
+  if (line !== 'aye' && line !== 'no' && line !== null && line !== 'none') fail('Choose aye, no or none.');
+  if (!line || line === 'none') return void ((p.royalLine = null), gazette(w, 'proposal', `The Crown lifts its line on ${p.title}.`, '#/p/' + p.id));
+  p.royalLine = line;
+  gazette(w, 'proposal', `The Crown wishes ${p.title} to ${line === 'aye' ? 'pass' : 'fail'}. MPs who vote ${line === 'aye' ? 'against' : 'for'} it will answer for it.`, '#/p/' + p.id);
+}
+function royalWhipSettle(w: W, p: any) {
+  if (!p.royalLine || p.voters !== 'mps') return;
+  const defied = Object.entries(p.votes || {}).filter(([, v]) => v === (p.royalLine === 'aye' ? 'no' : 'aye')).map(([id]) => id);
+  p.royalDefied = defied;
+  defied.forEach((id) => (approve(w, id, -2), stamp(w, id, 'Defied the Crown', p.title, 'ink')));
+  if (defied.length) gazette(w, 'proposal', `Defying the Crown on ${p.title}: ${defied.map((id) => nm(w, id)).join(', ')} (approval −2 each).`, '#/p/' + p.id);
+}
+// Enact by Royal Command: under the Government Powers Act the Prime Minister makes a tabled bill law at once, by decree
+export function command(w: W, actor: Id, pid: unknown) {
+  if (!inForce(w, 'decrees')) fail('Only the Government Powers Act allows a bill to be enacted by command.');
+  if (!isPM(w, actor)) fail('Only the Prime Minister can do that.');
+  const p = own(w.proposals, pid);
+  if (!p || p.kind !== 'bill') fail('Pick a bill.');
+  if (!['consent', 'debate', 'vote', 'assent', 'override', 'withheld'].includes(p.stage)) fail('That bill is not waiting on anything: it is already law, or it failed.');
+  const clauses = structuredClone(p.clauses || []);
+  checkClauses(w, 'bill', clauses, true);
+  Object.values(w.markets || {}).forEach((m: any) => m.kind === 'prop' && m.ref === p.id && m.status === 'open' && voidMarket(w, m, 'Enacted by command before the vote.'));
+  const ref = enactDecree(w, actor, p.title, p.summary || '', clauses);
+  const law = w.laws.find((l: any) => l.ref === ref);
+  if (law) law.commanded = p.id;
+  p.stage = 'commanded';
+  p.lawRef = ref;
+  history(w, p, actor, `Enacted by Royal Command as ${ref}`);
+  gazette(w, 'law', `${p.title}${p.by !== actor ? `, tabled by ${nm(w, p.by)},` : ''} is enacted by command as ${ref}, without a vote.`, '#/law/' + ref);
 }

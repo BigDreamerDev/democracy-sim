@@ -50,6 +50,8 @@ export const CATALOG: Record<string, CmdInfo> = {
   'crown.heir': { about: 'Answer an offer of the throne.', args: { yes: 'boolean' } },
   'crown.claim': { about: 'Having refused homage: claim the throne as a pretender.', args: {} },
   'crown.back': { about: "Publicly back a pretender's claim.", args: {} },
+  'gov.command': { about: 'Under the Government Powers Act, the Prime Minister: enact a tabled bill at once by decree ("by Royal Command"), without a vote. The bill’s stage becomes commanded.', args: { prop: 'id (proposal)' } },
+  'crown.whip': { about: 'Reigning monarch: set a public line on a bill before the House. MPs who vote against it lose 2 approval when the vote closes.', args: { prop: 'id (proposal)', line: "'aye' | 'no' | 'none'" } },
   'crown.emeritus': { about: 'Reigning monarch: grant the Office of the Monarch Emeritus to someone who has reigned before (grant true), or take it away (grant false). It holds any number of past monarchs, each with a royal pension, an honour and a style.', args: { target: 'id (citizen)', grant: 'bool (optional, default true)' } },
   'crown.toast': { about: 'Raise a loyal toast to the crowned monarch, once a day. Earns 1 Influence.', args: {} },
   'hos.pardon': { about: 'Head of state: pardon an exile.', args: { target: 'id (citizen)' } },
