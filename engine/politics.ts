@@ -720,11 +720,14 @@ export function honour(w: W, actor: Id, target: Id, title: string) {
   // coronation honours: three on top of the weekly one
   const r = w.crown?.reign;
   const free = !!r && r.id === actor && r.honours > 0;
-  if (!free && w.hos.lastHonour && w.now - w.hos.lastHonour < 7 * DAY) fail('One honour a week.');
+  // one a week, unless a law allows more (config.honoursPerWeek); counted over the last seven days
+  const per = Math.max(1, Math.round(Number(w.config.honoursPerWeek) || 1));
+  const recent = (w.hos.honoursAt || (w.hos.lastHonour ? [w.hos.lastHonour] : [])).filter((t: number) => w.now - t < 7 * DAY);
+  if (!free && recent.length >= per) fail(per === 1 ? 'One honour a week.' : `All ${per} of this week’s honours are given.`);
   title = text(title, 2, 40, 'honour');
   const t = cit(w, target);
   if (free) r.honours -= 1;
-  else w.hos.lastHonour = w.now;
+  else (w.hos.lastHonour = w.now), (w.hos.honoursAt = [...recent, w.now]);
   t.titles.push(title.trim());
   t.stats.honoured = true;
   stamp(w, target, title.trim(), `From the ${hosTitle(w)}`, 'good');
