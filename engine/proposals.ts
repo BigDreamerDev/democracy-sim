@@ -33,7 +33,7 @@ export const SETTABLE: Record<string, { label: string; unit: string; min: number
   voteHours: { label: 'Voting length', unit: ' hours', min: 12, max: 48 }
 };
 export const CONSTITUTIONAL = ['constitution', 'removeHos'];
-export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'currency', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative'];
+export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'currency', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto'];
 
 export function describe(w: W, e: any): string {
   switch (e.t) {
@@ -83,6 +83,7 @@ export function describe(w: W, e: any): string {
     case 'security':
     case 'crown':
     case 'prerogative':
+    case 'veto':
       return describeAct(e.t);
     case 'war':
       return `Declares war on ${w.nations[e.nation]?.name}.`;
@@ -174,6 +175,7 @@ function checkClause(w: W, e: any, byDecree = false) {
     case 'security':
     case 'crown':
     case 'prerogative':
+    case 'veto':
       if (inForce(w, e.t)) fail(`The ${ACTS[e.t as 'jail'].name} Act is already law.`);
       break;
     case 'war':
@@ -950,6 +952,7 @@ export function applyClause(w: W, e: any, ref: string) {
     case 'security':
     case 'crown':
     case 'prerogative':
+    case 'veto':
       applyAct(w, e.t, ref);
       break;
     case 'war':
@@ -1138,4 +1141,19 @@ export function command(w: W, actor: Id, pid: unknown) {
   p.lawRef = ref;
   history(w, p, actor, `Enacted by Royal Command as ${ref}`);
   gazette(w, 'law', `${p.title}${p.by !== actor ? `, tabled by ${nm(w, p.by)},` : ''} is enacted by command as ${ref}, without a vote.`, '#/law/' + ref);
+}
+
+// Strike by Royal Command: under the Royal Veto Act the monarch strikes a pending bill; it falls and cannot become law
+export function strike(w: W, actor: Id, pid: unknown) {
+  if (!inForce(w, 'veto')) fail('Only the Royal Veto Act lets the Crown strike a bill.');
+  if (w.config.hos !== 'monarchy' || !isHOS(w, actor)) fail('Only the reigning monarch can strike a bill.');
+  const p = own(w.proposals, pid);
+  if (!p || !['bill', 'referendum'].includes(p.kind)) fail('Pick a bill.');
+  if (!['consent', 'debate', 'vote', 'assent', 'override'].includes(p.stage)) fail('That bill is not pending: it is already law, or it has fallen.');
+  if (p.clauses.some((e: any) => e.t === 'removeHos')) fail('A bill to remove the head of state cannot be struck.');
+  Object.values(w.markets || {}).forEach((m: any) => m.kind === 'prop' && m.ref === p.id && m.status === 'open' && voidMarket(w, m, 'Struck by Royal Command.'));
+  p.stage = 'struck';
+  p.struckAt = w.now;
+  history(w, p, actor, 'Struck by Royal Command');
+  gazette(w, 'proposal', `${p.title}${p.by !== actor ? `, tabled by ${nm(w, p.by)},` : ''} is struck from the order paper by Royal Command. It falls.`, '#/p/' + p.id);
 }

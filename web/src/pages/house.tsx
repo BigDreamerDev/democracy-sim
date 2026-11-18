@@ -8,7 +8,7 @@ import { describe, KINDS, SETTABLE, canVoteOn, passCheck, PASS_RULES, whipLine, 
 import { TEMPLATES, POWERS, FILL } from '../../../engine/offices';
 import { ACT_KEYS, ACTS, describeAct } from '../../../engine/acts';
 
-const STAGE: Record<string, string> = { debate: 'Debate', vote: 'Voting', assent: 'Awaiting assent', override: 'Veto override', hos: 'With the head of state', enacted: 'Law', passed: 'Passed', failed: 'Defeated', vetoed: 'Vetoed', withheld: 'Assent refused', withdrawn: 'Withdrawn', consent: 'Waiting for the Prime Minister’s consent', refused: 'Consent refused', commanded: 'Enacted by Royal Command' };
+const STAGE: Record<string, string> = { debate: 'Debate', vote: 'Voting', assent: 'Awaiting assent', override: 'Veto override', hos: 'With the head of state', enacted: 'Law', passed: 'Passed', failed: 'Defeated', vetoed: 'Vetoed', withheld: 'Assent refused', withdrawn: 'Withdrawn', consent: 'Waiting for the Prime Minister’s consent', refused: 'Consent refused', commanded: 'Enacted by Royal Command', struck: 'Struck by Royal Command' };
 const LIVE = ['debate', 'vote', 'assent', 'override', 'hos'];
 // a whole number from 0 to max, for the bill form's crowns fields
 const whole = (v: string, max: number) => Math.min(max, Math.max(0, Math.round(Number(v)) || 0));
@@ -177,14 +177,16 @@ export function Proposal({ id }: { id: string }) {
       {['enacted', 'passed', 'failed', 'vetoed', 'withdrawn'].includes(p.stage) && <Stamp label={['enacted', 'passed'].includes(p.stage) ? 'Passed' : p.stage === 'vetoed' ? 'Vetoed' : p.stage === 'withdrawn' ? 'Withdrawn' : 'Defeated'} sub={p.lawRef || (p.result ? `${p.result.ayes} to ${p.result.noes}` : '')} red={failed} style={{ top: 70, right: 16, transformOrigin: '100% 0' }} />}
       {p.summary && <p class="intro">{p.summary}</p>}
       {p.crown && <p class="small" style={{ margin: '6px 0 0' }}><span class="chip gold">Crown bill</span> Tabled by the Crown’s household; it went straight to debate.</p>}
+      {p.stage === 'struck' && <Card kind="warn" style={{ marginTop: 12 }}><b>Struck by Royal Command.</b> It fell and cannot become law.</Card>}
       {p.stage === 'commanded' && <Card kind="tint" style={{ marginTop: 12 }}><b>Enacted by Royal Command</b> as <a href={'#/law/' + p.lawRef}>{p.lawRef}</a>, without a vote.</Card>}
       {p.royalLine && ['consent', 'debate', 'vote'].includes(p.stage) && <Card kind="warn" style={{ marginTop: 12 }}><b>The Crown’s line: {p.royalLine === 'aye' ? 'vote for it' : 'vote against it'}.</b> <span class="small">MPs who defy it lose 2 approval when the vote closes.</span></Card>}
       {(p.royalDefied || []).length > 0 && <p class="small muted" style={{ margin: '6px 0 0' }}>Defied the Crown: {p.royalDefied.map((id: string) => nm(w, id)).join(', ')}.</p>}
-      {p.kind === 'bill' && ['consent', 'debate', 'vote', 'assent', 'override', 'withheld'].includes(p.stage) && (isPM(w, me) && w.acts?.decrees || (isHOS(w, me) && w.config.hos === 'monarchy' && ['consent', 'debate', 'vote'].includes(p.stage))) && (
+      {p.kind === 'bill' && ['consent', 'debate', 'vote', 'assent', 'override', 'withheld'].includes(p.stage) && (isPM(w, me) && w.acts?.decrees || (isHOS(w, me) && w.config.hos === 'monarchy' && (['consent', 'debate', 'vote'].includes(p.stage) || w.acts?.veto))) && (
         <Card style={{ marginTop: 12 }}><div class="stack">
           <b>The Crown’s hand</b>
           {isHOS(w, me) && w.config.hos === 'monarchy' && ['consent', 'debate', 'vote'].includes(p.stage) && <div class="row" style={{ justifyContent: 'flex-start', gap: 8, flexWrap: 'wrap' }}><span class="small">Royal line:</span><Btn small kind={p.royalLine === 'aye' ? undefined : 'ghost'} onClick={() => act('crown.whip', { prop: p.id, line: 'aye' }, 'The Crown wants it passed.')}>For it</Btn><Btn small kind={p.royalLine === 'no' ? undefined : 'ghost'} onClick={() => act('crown.whip', { prop: p.id, line: 'no' }, 'The Crown wants it defeated.')}>Against it</Btn>{p.royalLine && <Btn small kind="plain" onClick={() => act('crown.whip', { prop: p.id, line: 'none' }, 'Line lifted.')}>No line</Btn>}</div>}
           {isPM(w, me) && w.acts?.decrees && <Btn small kind="danger ghost" onClick={() => confirm(`Enact “${p.title}” now by Royal Command, without a vote? It becomes law at once.`) && act('gov.command', { prop: p.id }, 'Enacted by Royal Command.')}>Enact by Royal Command</Btn>}
+          {isHOS(w, me) && w.acts?.veto && !removal && ['consent', 'debate', 'vote', 'assent', 'override'].includes(p.stage) && <Btn small kind="danger" onClick={() => confirm(`Strike “${p.title}” by Royal Command? It falls and cannot become law.`) && act('crown.strike', { prop: p.id }, 'Struck by Royal Command.')}>Strike by Royal Command</Btn>}
         </div></Card>
       )}
       {p.editedAt && <p class="small muted" style={{ margin: '4px 0 0' }}>Amended by its author {p.edits > 1 ? `${p.edits} times, last ` : ''}{fmtTime(w, p.editedAt)}.</p>}
@@ -345,7 +347,7 @@ export const CLAUSES: [string, string][] = [
   ['jail', 'Act: Public Order and Detention (the Realm Jail)'], ['decrees', 'Act: Government Powers (rule by decree)'],
   ['continuity', 'Act: Continuity of Parliament (no more elections)'], ['unity', 'Act: National Unity (one party)'],
   ['protection', 'Act: Protection of the State'], ['press', 'Act: Press and Information'], ['security', 'Act: State Security'],
-  ['crown', 'Act: The Crown (the head of state is Prime Minister)'], ['prerogative', 'Act: Royal Prerogative (assent can be refused)']
+  ['crown', 'Act: The Crown (the head of state is Prime Minister)'], ['prerogative', 'Act: Royal Prerogative (assent can be refused)'], ['veto', 'Act: Royal Veto (the Crown can strike bills)']
 ];
 export function NewProposal({ query }: { query: URLSearchParams }) {
   const { world: w, me } = useStore();
@@ -678,7 +680,8 @@ export function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; 
     press: { t: 'press' },
     security: { t: 'security' },
     crown: { t: 'crown' },
-    prerogative: { t: 'prerogative' }
+    prerogative: { t: 'prerogative' },
+    veto: { t: 'veto' }
   };
   const ob = e.office || {};
   const setOb = (k: string, v: any) => onChange({ ...e, template: null, office: { ...ob, [k]: v } });

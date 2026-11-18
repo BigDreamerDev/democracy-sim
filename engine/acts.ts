@@ -18,10 +18,15 @@ import { checkClauses, enactDecree } from './proposals';
 import { voidMarket } from './markets';
 import { endCivil } from './regime';
 
-export type ActKey = 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security' | 'crown' | 'prerogative';
-export const ACT_KEYS: ActKey[] = ['jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative'];
+export type ActKey = 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security' | 'crown' | 'prerogative' | 'veto';
+export const ACT_KEYS: ActKey[] = ['jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto'];
 export const PREROGATIVE_DAYS = 3;
 export const ACTS: Record<ActKey, { name: string; text: string }> = {
+  // the monarch may strike a pending bill from the order paper
+  veto: {
+    name: 'Royal Veto',
+    text: 'The Monarch may strike any bill from the order paper at any stage before it becomes law: waiting for consent, in debate, at the vote, or awaiting assent. A struck bill falls and cannot become law; bets on it are refunded. A bill to remove the head of state cannot be struck.'
+  },
   // assent is the monarch's to give or refuse again
   prerogative: {
     name: 'Royal Prerogative',
@@ -99,6 +104,7 @@ export function applyAct(w: W, key: ActKey, ref: string) {
     gazette(w, 'press', 'Every newspaper now needs a licence from the Ministry of Public Order. Papers not renewed within 24 hours lose theirs.', '#/press');
   }
   if (key === 'crown') gazette(w, 'law', `The Crown Act is law. The ${w.config.hos === 'monarchy' ? w.config.hosTitle : 'President'} is now the Prime Minister too.`, '#/cabinet');
+  if (key === 'veto') gazette(w, 'law', `The Royal Veto Act is law. The ${w.config.hos === 'monarchy' ? w.config.hosTitle : 'head of state'} may strike any bill before it becomes law.`, '#/powers');
   if (key === 'prerogative') {
     // bills already waiting no longer pass on their own: the monarch has the full time to decide
     Object.values(w.proposals).forEach((p: any) => p.stage === 'assent' && (p.assentDueAt = w.now + PREROGATIVE_DAYS * DAY));
@@ -126,6 +132,7 @@ export function repealAct(w: W, key: ActKey) {
     gazette(w, 'law', 'The government can be challenged again: no-confidence motions, censures and proposals need no one’s consent.', '#/laws');
   }
   if (key === 'press') gazette(w, 'law', 'The press is free again: newspapers need no licence, and questions are published as they are asked.', '#/press');
+  if (key === 'veto') gazette(w, 'law', 'The Royal Veto Act is repealed. The Crown can no longer strike bills.', '#/laws');
   if (key === 'prerogative') {
     if (w.acts.decrees) Object.values(w.proposals).forEach((p: any) => p.stage === 'assent' && (p.assentDueAt = Math.min(p.assentDueAt || Infinity, w.now + HOUR)));
     gazette(w, 'law', 'The Royal Prerogative Act is repealed. Assent follows the ordinary rules again.', '#/laws');

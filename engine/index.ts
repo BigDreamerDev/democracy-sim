@@ -178,6 +178,7 @@ export const COMMANDS: Record<string, Cmd> = {
   'party.expel': (w, me, a) => K.expelNational(w, me, a.target),
   'gov.consent': (w, me, a) => K.consent(w, me, a.prop, a.yes, a.amendment),
   'gov.command': (w, me, a) => L.command(w, me, a.prop),
+  'crown.strike': (w, me, a) => L.strike(w, me, a.prop),
   'crown.whip': (w, me, a) => L.royalWhip(w, me, a.prop, a.line),
   'gov.deputy': (w, me, a) => K.nameDeputy(w, me, a.target),
   'gov.hos': (w, me, a) => K.appointHos(w, me, a.target),
