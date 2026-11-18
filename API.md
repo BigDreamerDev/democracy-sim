@@ -48,6 +48,12 @@ Every action, what it does and its arguments:
 { "prop.vote": { "about": "Vote on a proposal.", "args": { "prop": "id", "vote": "'aye' | 'no' | 'abstain'" } }, … }
 ```
 
+Commands whose `kind` picks a sub-action (`gov.edict`, `regime.decree`) also carry `kinds`: for each kind its `name`, what it does (`what`) and which args it `needs`; any other args are ignored.
+
+```json
+{ "gov.edict": { "about": "…", "args": { "kind": "…", "target": "…", "n": "…" }, "kinds": { "arrest": { "name": "Arrest", "what": "Detain someone for up to 2 days…", "needs": ["target", "n"] } } } }
+```
+
 ### `GET /api/v1/me`
 You: `id`, `name`, `party`, `crowns`, `influence`, `approval`, plus the key's `scope` and `keyName`.
 

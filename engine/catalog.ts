@@ -1,7 +1,9 @@
 // The public list of player actions, for anyone building their own app. Every entry here must exist in COMMANDS.
 // Arg types: id = a citizen/party/proposal/etc id from the world, text, number, bool, list = array of ids.
 // admin.* actions are left out: they can't be done with an API key.
-export type CmdInfo = { about: string; args: Record<string, string> };
+import { DECREES } from './regime';
+// kinds: for commands whose `kind` picks a sub-action, what each kind is and which args it needs (the rest are ignored)
+export type CmdInfo = { about: string; args: Record<string, string>; kinds?: Record<string, { name: string; what: string; needs: string[] }> };
 
 export const CATALOG: Record<string, CmdInfo> = {
   'convention.rank': { about: 'Rank the options of a Convention clause (your first choice is also your vote). Used if the Convention adopts ranked choice for its close.', args: { clause: 'id', ranking: 'list of option indexes, best first' } },
@@ -140,7 +142,7 @@ export const CATALOG: Record<string, CmdInfo> = {
   'jail.release': { about: 'The Prime Minister or the Minister of Public Order: release a detainee from the Realm Jail.', args: { target: 'id (citizen)' } },
   'gov.decree': { about: 'Under the Government Powers Act, the Prime Minister: make law by decree, at once. Clauses as for a bill (prop.new). Only a later decree can repeal a decree.', args: { title: 'text', summary: 'text (optional)', clauses: 'list of clause objects' } },
   // gov.edict takes everything regime.decree does (filled in below the table), plus 'lift' with `what`
-  'gov.edict': { about: 'Under the Government Powers Act, the Prime Minister: issue a built-in regime decree, once a day, with no regime and no legitimacy cost. Arrest someone with kind \'arrest\', target and n (days, 1–2). kind \'lift\' with `what` ends one.', args: {} },
+  'gov.edict': { about: 'Under the Government Powers Act, the Prime Minister: issue a built-in regime decree (once a day, or as many as config.edictsPerDay allows), with no regime and no legitimacy cost. `kinds` says what each kind does and which args it needs. Arrest someone with kind \'arrest\', target and n (days, 1–2). kind \'lift\' with `what` ends one.', args: {} },
   'gov.speaker': { about: 'Under the Continuity of Parliament Act, the Prime Minister: appoint the Speaker (not an MP), or remove them (no target).', args: { target: 'id (citizen) or null' } },
   'gov.seat': { about: 'Under the Continuity of Parliament Act, the Prime Minister: appoint a citizen to an empty seat.', args: { target: 'id (citizen)' } },
   'gov.unseat': { about: 'Under the Continuity of Parliament Act, the Prime Minister: remove an MP from their seat.', args: { target: 'id (citizen)' } },
@@ -204,6 +206,11 @@ export const CATALOG: Record<string, CmdInfo> = {
   'hunt.withdraw': { about: 'Drop out of the Hunt before it starts.', args: {} }
 };
 // the Prime Minister's edict takes the same arguments as a regime decree, plus 'lift' to end one
+{
+  const kinds = (civil: boolean) => Object.fromEntries(Object.entries(DECREES).filter(([, d]) => !civil || d.types.includes('civil')).map(([k, d]) => [k, { name: d.name, what: d.what, needs: k === 'rewrite' ? ['key', 'value'] : d.arg || [] }]));
+  CATALOG['regime.decree'].kinds = kinds(false);
+  CATALOG['gov.edict'].kinds = kinds(true);
+}
 {
   const d = CATALOG['regime.decree'].args;
   CATALOG['gov.edict'].args = { ...d, kind: String(d.kind).replace(/"?$/, '') + " | 'lift'", what: "'censorship' | 'curfew' | 'parliament' | 'conscription' | 'trade' | 'banks' | 'police' | 'oath' | 'bans' | 'seized' | 'exiles' | 'tax' | 'rate' | 'constitution' (lift only)" };
