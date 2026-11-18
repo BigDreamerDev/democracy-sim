@@ -52,7 +52,13 @@ export function migrate(w: W): W {
   w.economy.printed ??= 0;
   w.economy.coinage ??= [];
   w.economy.motion ??= null;
-  w.bonds ??= { issue: null, holdings: [], outstanding: 0 };
+  w.economy.gold ??= 0;
+  w.economy.inflatingThisWeek ??= w.economy.printedThisWeek || 0;
+  w.economy.hotWeeks ??= 0;
+  w.economy.freezeUntil ??= null;
+  w.bonds ??= { issue: null, holdings: [], outstanding: 0, market: [] };
+  w.bonds.market ??= [];
+  w.config.currency ??= null;
   w.crown ??= { reign: null, offer: null };
   w.crown.court ??= {};
   w.crown.circularAt ??= null;

@@ -1,7 +1,7 @@
 // The state of the realm as plain text, ready to paste into the group chat. Reads public things only (who holds
 // which public office, what's open, the numbers), so it's the same from a player's view or the full world.
 // The site's Copy button and the server's /api/public/digest.txt both use this.
-import { W, Id, DAY, nm, fmtTime, fmtDay, ordinal, hosTitle, majority } from './core';
+import { W, Id, DAY, currencyText, nm, fmtTime, fmtDay, ordinal, hosTitle, majority } from './core';
 import { crisisById } from './crises';
 import { KINDS } from './proposals';
 import { SETTABLE } from './proposals';
@@ -23,7 +23,7 @@ export function digest(w: W): string {
   if (w.phase === 'convention') {
     const open = w.convention.clauses.filter((c: any) => c.adopted === null).length;
     L.push(`The Founding Convention is sitting: ${open} clause${open === 1 ? '' : 's'} still open, closing ${fmtTime(w, w.convention.closesAt)}.`);
-    return L.join('\n');
+    return currencyText(w, L.join('\n'));
   }
   L.push('');
   L.push(`${ordinal(Math.max(1, w.season?.n || 1))} Parliament, ${w.config.seats} seats (majority ${majority(w)}).`);
@@ -60,7 +60,7 @@ export function digest(w: W): string {
   }
   L.push('');
   L.push(`${w.laws.filter((l: any) => !l.repealed).length} laws in force.`);
-  return L.join('\n');
+  return currencyText(w, L.join('\n'));
 }
 
 // The week in one card: what passed, who rebelled, who's up. Public things only, so it reads the same from any view.
@@ -101,5 +101,5 @@ export function recapText(w: W, r = recap(w)): string {
   if (r.top) L.push(`⭐ Most influential: ${nm(w, r.top.id)} (${r.top.n} Influence).`);
   if (r.pm) L.push(`👔 PM ${nm(w, r.pm.id)}: ${r.pm.approval}% approval.`);
   L.push(r.meters.map((m) => `${m.key === 'prosperity' ? 'Prosperity' : 'Stability'} ${m.now} (${m.d >= 0 ? '+' : ''}${m.d})`).join(' · '));
-  return L.join('\n');
+  return currencyText(w, L.join('\n'));
 }

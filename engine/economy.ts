@@ -1,5 +1,5 @@
 // Money: wallets, the weekly payday, the Treasury, the Federal Reserve and prices, citizen banks and trade ventures.
-import { W, Id, DAY, fail, newId, rand, cit, nm, own, text, int, allCitizens, exiled, mustBeFree, gazette, earn, transfer, bal, ca, tick, meter, inDanger, hasPower, isPM, clamp, standing, holderOf, bump } from './core';
+import { W, Id, DAY, HOUR, fail, newId, rand, cit, nm, own, text, int, allCitizens, exiled, mustBeFree, gazette, earn, transfer, bal, ca, tick, meter, inDanger, hasPower, isPM, clamp, standing, holderOf, bump } from './core';
 import { fundOffices, officePay } from './offices';
 
 export function send(w: W, actor: Id, to: Id, amount: number, note: string) {
@@ -87,8 +87,10 @@ export function payday(w: W) {
   bankPayday(w);
   // prices move with borrowing and the rate
   const borrowed = w.economy.lentThisWeek || 0;
-  const printed = w.economy.printedThisWeek || 0;
-  const infl = clamp(1 + borrowed / 40 + printed / 25 - (w.economy.rate - 2) * 1.5, -2, 15);
+  const printed = w.economy.inflatingThisWeek || 0;
+  let infl = clamp(1 + borrowed / 40 + printed / 25 - (w.economy.rate - 2) * 1.5, -2, 15);
+  // a price freeze (the hyperinflation crisis) holds inflation down for a week
+  if ((w.economy.freezeUntil || 0) > w.now) infl = Math.min(infl, 1);
   w.economy.prices.push(Math.round(priceIndex(w) * (1 + infl / 100) * 100) / 100);
   if (w.economy.prices.length > 12) w.economy.prices.shift();
   w.economy.lastInflation = infl;
@@ -100,6 +102,12 @@ export function payday(w: W) {
   else if (infl < 2) meter(w, 'prosperity', 1, 'Prices held steady');
   w.economy.lentThisWeek = 0;
   w.economy.printedThisWeek = 0;
+  w.economy.inflatingThisWeek = 0;
+  // two hot weeks in a row: hyperinflation
+  w.economy.hotWeeks = infl > 10 ? (w.economy.hotWeeks || 0) + 1 : 0;
+  if (w.economy.hotWeeks >= 2 && !w.crisisQueue.some((q: any) => q.type === 'hyperinflation') && !Object.values(w.crises).some((c: any) => c.type === 'hyperinflation' && c.status === 'open')) {
+    w.crisisQueue.push({ type: 'hyperinflation', at: w.now + HOUR, cause: `Prices rose more than 10% two weeks running.` });
+  }
   gazette(w, 'money', recession ? `Payday in a recession: no dividend this week. Income tax raised ${tax}.` : `Payday: ${w.config.dividend} crowns to every citizen. Income tax raised ${tax}. Prices ${infl >= 0 ? 'up' : 'down'} ${Math.abs(infl).toFixed(1)}%.`, '#/wallet');
 }
 
@@ -248,6 +256,11 @@ function motionTerms(w: W, a: any) {
     if (w.bonds.issue && w.bonds.issue.closesAt > w.now) fail('A bond issue is already open.');
     return { kind, rate: int(a.rate, 1, 10, 'interest (1–10% a week)'), weeks: int(a.weeks, 1, 8, 'term (1–8 weeks)'), cap: int(a.cap, 10, 1000, 'size of the issue (10–1000 crowns)') };
   }
+  if (kind === 'gold') {
+    const amount = int(a.amount, 10, 200, 'gold to buy (10–200 crowns)');
+    if (bal(w, 'treasury') < amount) fail(`The Treasury has only ${bal(w, 'treasury')} crowns.`);
+    return { kind, amount };
+  }
   return fail('Unknown kind of motion.');
 }
 export function moneyMotion(w: W, actor: Id, a: any) {
@@ -269,9 +282,11 @@ export function moneyMotion(w: W, actor: Id, a: any) {
   w.economy.motion = null;
   const who = [...new Set([m.signed.treasury, m.signed.reserve])].map((id: Id) => nm(w, id)).join(' and ');
   if (terms.kind === 'print') return print(w, terms.amount, terms.use, who);
+  if (terms.kind === 'gold') return buyGold(w, terms.amount, who);
   openBonds(w, terms, who);
 }
 export function describeMotion(w: W, t: any) {
+  if (t.kind === 'gold') return `buying ${t.amount} crowns of gold abroad for the reserve`;
   return t.kind === 'print'
     ? `printing ${t.amount} new crowns ${t.use === 'debt' ? 'to pay down the debt to the Reserve' : 'into the Treasury'}`
     : `a Treasury bond issue of up to ${t.cap} crowns at ${t.rate}% a week for ${t.weeks} week${t.weeks === 1 ? '' : 's'}`;
@@ -280,6 +295,10 @@ export function describeMotion(w: W, t: any) {
 function print(w: W, amount: number, use: string, who: string) {
   const crown = sovereignName(w);
   transfer(w, 'reserve', 'treasury', amount, crown ? `New crowns struck bearing the head of ${crown}` : 'New crowns printed by the Federal Reserve');
+  // the gold reserve backs new money first: backed crowns cause no inflation
+  const backed = Math.min(amount, w.economy.gold || 0);
+  w.economy.gold = (w.economy.gold || 0) - backed;
+  w.economy.inflatingThisWeek = (w.economy.inflatingThisWeek || 0) + (amount - backed);
   w.economy.printedThisWeek = (w.economy.printedThisWeek || 0) + amount;
   w.economy.printed = (w.economy.printed || 0) + amount;
   w.economy.coinage.unshift({ at: w.now, amt: amount, by: crown || 'the Realm', use });
@@ -292,7 +311,7 @@ function print(w: W, amount: number, use: string, who: string) {
       w.economy.lent -= paid;
     }
   }
-  gazette(w, 'money', `The Federal Reserve prints ${amount} new crowns${crown ? ` bearing the head of ${crown}` : ''}, agreed by ${who}.${paid ? ` ${paid} go to paying down the debt, which is now ${w.economy.lent}.` : ''} Expect prices to rise.`, '#/economy');
+  gazette(w, 'money', `The Federal Reserve prints ${amount} new crowns${crown ? ` bearing the head of ${crown}` : ''}, agreed by ${who}.${paid ? ` ${paid} go to paying down the debt, which is now ${w.economy.lent}.` : ''}${backed ? ` ${backed} are backed by the gold reserve.` : ''}${amount > backed ? ' Expect prices to rise.' : ''}`, '#/economy');
 }
 
 // ---------- Treasury bonds: citizens lend the Treasury crowns and are repaid with interest ----------
@@ -309,7 +328,7 @@ export function buyBond(w: W, actor: Id, amount: unknown) {
   if (bal(w, ca(actor)) < amt) fail('You do not have that many crowns.');
   transfer(w, ca(actor), 'treasury', amt, `Bought Treasury bonds (${s.rate}% a week, ${s.weeks} weeks)`);
   s.sold += amt;
-  w.bonds.holdings.push({ id: newId(w, 'bh'), issue: s.id, owner: actor, amt, payout: Math.round(amt * (1 + (s.rate * s.weeks) / 100)), at: w.now, dueAt: w.now + s.weeks * 7 * DAY });
+  w.bonds.holdings.push({ id: newId(w, 'bh'), issue: s.id, owner: actor, ask: null, amt, payout: Math.round(amt * (1 + (s.rate * s.weeks) / 100)), at: w.now, dueAt: w.now + s.weeks * 7 * DAY });
   w.bonds.outstanding = (w.bonds.outstanding || 0) + amt;
   bump(w, actor, 'bonds');
 }
@@ -318,6 +337,46 @@ export function redeemBond(w: W, h: any) {
   const i = w.bonds.holdings.indexOf(h);
   if (i < 0) return;
   w.bonds.holdings.splice(i, 1);
+  w.bonds.market = (w.bonds.market || []).filter((m: any) => m.id !== h.id);
   w.bonds.outstanding = Math.max(0, (w.bonds.outstanding || 0) - h.amt);
   if (w.citizens[h.owner]) transfer(w, 'treasury', ca(h.owner), h.payout, 'Treasury bond repaid with interest');
+}
+
+// ---------- the gold reserve: crowns spent abroad on gold let the Reserve print that much without inflation ----------
+function buyGold(w: W, amount: number, who: string) {
+  if (bal(w, 'treasury') < amount) fail(`The Treasury has only ${bal(w, 'treasury')} crowns.`);
+  const seller = Object.keys(w.nations)[0];
+  transfer(w, 'treasury', 'nation:' + seller, amount, 'Gold bought abroad for the reserve');
+  w.economy.gold = (w.economy.gold || 0) + amount;
+  gazette(w, 'money', `The Treasury buys ${amount} crowns of gold from ${w.nations[seller]?.name ?? 'abroad'}, agreed by ${who}. The gold reserve is now ${w.economy.gold}: the Reserve can print that much without raising prices.`, '#/economy');
+}
+
+// ---------- the bond market: holders sell bonds to each other before they mature. Sellers stay anonymous. ----------
+export function listBond(w: W, actor: Id, hid: unknown, price: unknown) {
+  mustBeFree(w, actor);
+  const h = w.bonds.holdings.find((x: any) => x.id === hid);
+  if (!h || h.owner !== actor) fail('That is not your bond.');
+  const p = int(price, 1, 5000, 'price');
+  h.ask = p;
+  w.bonds.market = w.bonds.market.filter((m: any) => m.id !== h.id);
+  w.bonds.market.push({ id: h.id, price: p, amt: h.amt, payout: h.payout, dueAt: h.dueAt, at: w.now });
+}
+export function unlistBond(w: W, actor: Id, hid: unknown) {
+  const h = w.bonds.holdings.find((x: any) => x.id === hid);
+  if (!h || h.owner !== actor) fail('That is not your bond.');
+  h.ask = null;
+  w.bonds.market = w.bonds.market.filter((m: any) => m.id !== h.id);
+}
+export function takeBond(w: W, actor: Id, hid: unknown) {
+  mustBeFree(w, actor);
+  const m = w.bonds.market.find((x: any) => x.id === hid);
+  const h = m && w.bonds.holdings.find((x: any) => x.id === m.id);
+  if (!m || !h) fail('That bond is no longer for sale.');
+  if (h.owner === actor) fail('That bond is already yours.');
+  if (bal(w, ca(actor)) < m.price) fail('You do not have that many crowns.');
+  transfer(w, ca(actor), ca(h.owner), m.price, 'A Treasury bond changed hands');
+  h.owner = actor;
+  h.ask = null;
+  w.bonds.market = w.bonds.market.filter((x: any) => x.id !== h.id);
+  bump(w, actor, 'bonds');
 }

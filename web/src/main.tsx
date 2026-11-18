@@ -30,6 +30,7 @@ import { watchForUpdates, UpdateBar } from './update';
 import { Regime } from './pages/regime';
 import { Jail, Powers } from './pages/acts';
 import { stateMode, slogans } from './state';
+import { useCurrency } from './currency';
 
 const ROOTS = ['', 'house', 'realm', 'laws', 'you', 'gazette'];
 function level(hash: string) {
@@ -121,6 +122,7 @@ function Game() {
   const { world } = useStore();
   const state = !!stateMode(world);
   useEffect(() => void document.documentElement.toggleAttribute('data-state', state), [state]);
+  useCurrency(world);
   return (
     <div class={'app' + (ONLINE ? ' online' : '')}>
       <Sidebar tabs={marked} current={'#/' + hash.replace(/^#\/?/, '').split('?')[0]} />

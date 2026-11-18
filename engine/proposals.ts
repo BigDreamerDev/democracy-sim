@@ -28,7 +28,7 @@ export const SETTABLE: Record<string, { label: string; unit: string; min: number
   voteHours: { label: 'Voting length', unit: ' hours', min: 12, max: 48 }
 };
 export const CONSTITUTIONAL = ['constitution', 'removeHos'];
-export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative'];
+export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'currency', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative'];
 
 export function describe(w: W, e: any): string {
   switch (e.t) {
@@ -67,6 +67,8 @@ export function describe(w: W, e: any): string {
       return `Creates a civic job: ${e.title}. The Treasury pays ${e.pay} crowns each time someone does it, once a week each, signed off by the Chancellor.`;
     case 'zone':
       return `Adds a safe zone to the Streets: ${e.text}.`;
+    case 'currency':
+      return `Renames the currency: the crown becomes the ${e.one} (plural ${e.many}).`;
     case 'jail':
     case 'decrees':
     case 'continuity':
@@ -135,6 +137,13 @@ function checkClause(w: W, e: any, byDecree = false) {
     case 'zone':
       e.text = text(e.text, 4, 120, 'safe zone');
       break;
+    case 'currency': {
+      e.one = text(e.one, 2, 20, 'currency name').trim().toLowerCase();
+      e.many = e.many ? text(e.many, 2, 22, 'plural').trim().toLowerCase() : e.one + 's';
+      if (![e.one, e.many].every((x: string) => /^[a-z][a-z' -]*$/.test(x))) fail('A currency name is letters only.');
+      if (e.one === 'crown') fail('It is already the crown.');
+      break;
+    }
     case 'treaty':
       if (typeof e.offer !== 'string') fail('Pick a treaty offer.');
       break;
@@ -859,6 +868,10 @@ export function applyClause(w: W, e: any, ref: string) {
     case 'zone':
       addZone(w, e.text, 'law');
       break;
+    case 'currency':
+      w.config.currency = { one: e.one, many: e.many, law: ref };
+      gazette(w, 'law', `The crown is no more. From today the currency of the realm is the ${e.one}: each old crown becomes one ${e.one}.`, '#/economy');
+      break;
     case 'permit':
       w.permits.banks = true;
       gazette(w, 'money', 'Banks are now allowed. Any citizen can open one.', '#/banks');
@@ -892,6 +905,7 @@ export function applyClause(w: W, e: any, ref: string) {
       src?.clauses.forEach((x: any) => {
         if (x.t === 'office') Object.values(w.offices).forEach((o: any) => o.law === e.ref && delete w.offices[o.id]);
         if (x.t === 'permit') w.permits.banks = false;
+        if (x.t === 'currency' && w.config.currency?.law === e.ref) w.config.currency = null;
         if (x.t === 'job') Object.values(w.jobs).forEach((j: any) => j.law === e.ref && (j.active = false));
         if (ACT_KEYS.includes(x.t) && w.acts?.[x.t] === e.ref) repealAct(w, x.t);
       });

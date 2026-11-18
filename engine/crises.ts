@@ -155,9 +155,19 @@ export const CRISES: Crisis[] = [
     ]
   },
   {
+    // set off by the economy, not by chance: prices rose more than 10% two weeks running (economy.ts, payday)
+    id: 'hyperinflation', chainOnly: true, extreme: true, title: 'Hyperinflation', text: 'Prices are rising faster than wages. Shops change their price tags twice a day, and people are spending their crowns before they lose their value.',
+    options: [
+      { label: 'Issue a new currency', what: 'Strike off the zeros and start the price index again. Savers are furious.', effects: ['Prices reset', 'Stability −5', 'Prosperity −2'], run: (w) => ((w.economy.prices = [2]), (w.economy.hotWeeks = 0), meter(w, 'stability', -5, 'A new currency'), meter(w, 'prosperity', -2, 'A new currency')) },
+      { label: 'Raise the rate to 15%', what: 'The Reserve slams on the brakes. Borrowing gets dear.', effects: ['Rate 15%', 'Prosperity −4'], run: (w) => ((w.economy.rate = 15), (w.economy.hotWeeks = 0), meter(w, 'prosperity', -4, 'Interest at 15%')) },
+      { label: 'Freeze prices for a week', what: 'By order, nothing costs more than it did today. Shelves empty.', effects: ['Inflation held to 1% next payday', 'Prosperity −3', 'Stability −1'], run: (w) => ((w.economy.freezeUntil = w.now + 7 * DAY), (w.economy.hotWeeks = 0), meter(w, 'prosperity', -3, 'Empty shelves under the price freeze'), meter(w, 'stability', -1, 'The price freeze')) },
+      { label: 'Ride it out', what: 'Do nothing and hope it burns out.', effects: ['Prosperity −6', 'Stability −4'], run: (w) => (meter(w, 'prosperity', -6, 'Hyperinflation unchecked'), meter(w, 'stability', -4, 'Hyperinflation unchecked')) }
+    ]
+  },
+  {
     id: 'gold', house: true, title: 'Gold in the hills', text: 'Prospectors have struck a seam. Everyone wants a share.',
     options: [
-      { label: 'Nationalise the mine', what: 'The Reserve mints the gold into the Treasury. Kessmark is jealous, and the miners want their cut.', effects: ['Treasury +60', 'Prices +3%', 'Kessmark cools', 'The miners may revolt'], run: (w) => (transfer(w, 'reserve', 'treasury', 60, 'Gold from the state mine'), prices(w, 3), mood(w, 'kessmark', -1, 'Jealous of our gold')), then: { type: 'miners', days: 7 } },
+      { label: 'Nationalise the mine', what: 'The Reserve mints the gold into the Treasury. Kessmark is jealous, and the miners want their cut.', effects: ['Treasury +60', 'Gold reserve +40', 'Prices +3%', 'Kessmark cools', 'The miners may revolt'], run: (w) => (transfer(w, 'reserve', 'treasury', 60, 'Gold from the state mine'), (w.economy.gold = (w.economy.gold || 0) + 40), prices(w, 3), mood(w, 'kessmark', -1, 'Jealous of our gold')), then: { type: 'miners', days: 7 } },
       { label: 'License private miners', what: 'A rush of jobs and money.', effects: ['Everyone +3 crowns', 'Prosperity +3', 'Prices +2%'], run: (w) => (allCitizens(w).forEach((c: any) => transfer(w, 'reserve', ca(c.id), 3, 'Gold rush')), meter(w, 'prosperity', 3, 'A gold rush'), prices(w, 2)) },
       { label: 'Leave it in the ground', what: 'Peace and quiet.', effects: ['Nothing happens'], run: () => {} }
     ]

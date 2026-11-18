@@ -14,6 +14,16 @@ export type Id = string;
 export type W = any; // the world is plain JSON; see world.ts for its shape
 
 // ---------- ids and deterministic randomness ----------
+// the currency's name: a law can rename the crown. Text shown to players goes through this; "the Crown" (the monarchy) is left alone.
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+export function currencyText(w: any, s: string): string {
+  const c = w?.config?.currency;
+  if (!c || !s || !/rown/.test(s)) return s;
+  return s
+    .replace(/\bCrowns\b/g, cap(c.many))
+    .replace(/\bcrowns\b/g, c.many)
+    .replace(/\b(\d[\d,]*|One|one|a|A|per|each|Each|every|Every)\s+([Cc])rown\b/g, (_: string, pre: string, C: string) => `${pre} ${C === 'C' ? cap(c.one) : c.one}`);
+}
 export function newId(w: W, prefix: string): Id {
   w.nextId += 1;
   return prefix + w.nextId;

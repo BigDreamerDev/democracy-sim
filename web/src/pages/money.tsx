@@ -86,7 +86,7 @@ export function Economy() {
 function DebtClock() {
   const { world: w } = useStore();
   const e = w.economy;
-  const cells: [string, string | number][] = [['Owed to the Reserve', e.lent], ['Bonds outstanding', w.bonds?.outstanding || 0], ['Printed this week', `${e.printedThisWeek || 0} / ${MINT_WEEK}`], ['Printed in all', e.printed || 0], ['Prices last week', `${e.lastInflation >= 0 ? '+' : ''}${Number(e.lastInflation || 0).toFixed(1)}%`], ['Price index', priceIndex(w).toFixed(2)]];
+  const cells: [string, string | number][] = [['Owed to the Reserve', e.lent], ['Gold reserve', e.gold || 0], ['Bonds outstanding', w.bonds?.outstanding || 0], ['Printed this week', `${e.printedThisWeek || 0} / ${MINT_WEEK}`], ['Printed in all', e.printed || 0], ['Prices last week', `${e.lastInflation >= 0 ? '+' : ''}${Number(e.lastInflation || 0).toFixed(1)}%`], ['Price index', priceIndex(w).toFixed(2)]];
   return (
     <Sec title="The debt clock" sub="Printing clears debt but raises prices; borrowing costs interest every payday.">
       <div class="corner-stats">{cells.map(([k, v]) => <a href="#/economy"><b class="tnum">{v}</b><span>{k}</span></a>)}</div>
@@ -99,6 +99,7 @@ function Printing() {
   const { world: w, me } = useStore();
   const [p, setP] = useState({ amount: '50', use: 'debt' });
   const [b, setB] = useState({ rate: '2', weeks: '4', cap: '200' });
+  const [g, setG] = useState('50');
   if (!w.offices.treasury || !w.offices.reserve) return null;
   const mine = canMoneyMotion(w, me);
   const m = w.economy.motion && w.economy.motion.expiresAt > w.now ? w.economy.motion : null;
@@ -117,7 +118,7 @@ function Printing() {
           <>
             <Card>
               <b>Print new crowns</b>
-              <p class="small muted" style={{ margin: '4px 0 8px' }}>No debt, but every 25 crowns printed adds about 1% to this week’s inflation. Up to {MINT_MAX} a time, {MINT_WEEK} a week.</p>
+              <p class="small muted" style={{ margin: '4px 0 8px' }}>No debt. Crowns backed by the gold reserve are free; beyond that, every 25 crowns printed adds about 1% to this week’s inflation. Up to {MINT_MAX} a time, {MINT_WEEK} a week.</p>
               <div class="grid2"><Field label="Crowns" type="number" value={p.amount} onInput={(v) => setP({ ...p, amount: v })} /><Pick label="Where it goes" value={p.use} onChange={(v) => setP({ ...p, use: v })} options={[['debt', 'Pay down the debt'], ['treasury', 'Into the Treasury']]} /></div>
               <Btn small style={{ marginTop: 8 }} onClick={() => act('money.print', { amount: Number(p.amount), use: p.use }, 'Signed. The other side must agree.')}>Propose printing</Btn>
             </Card>
@@ -127,6 +128,11 @@ function Printing() {
               <div class="grid2"><Field label="% a week (1–10)" type="number" value={b.rate} onInput={(v) => setB({ ...b, rate: v })} /><Field label="Weeks (1–8)" type="number" value={b.weeks} onInput={(v) => setB({ ...b, weeks: v })} /></div>
               <Field label="Size of the issue (crowns)" type="number" value={b.cap} onInput={(v) => setB({ ...b, cap: v })} />
               <Btn small style={{ marginTop: 8 }} onClick={() => act('money.bonds', { rate: Number(b.rate), weeks: Number(b.weeks), cap: Number(b.cap) }, 'Signed. The other side must agree.')}>Propose a bond issue</Btn>
+            </Card>
+            <Card>
+              <b>Buy gold for the reserve</b>
+              <p class="small muted" style={{ margin: '4px 0 8px' }}>Treasury crowns spent on gold abroad. The Reserve can then print that much without raising prices. The reserve holds {w.economy.gold || 0}.</p>
+              <div class="grid2"><Field label="Crowns of gold (10–200)" type="number" value={g} onInput={setG} /><Btn style={{ alignSelf: 'end' }} onClick={() => act('money.gold', { amount: Number(g) }, 'Signed. The other side must agree.')}>Propose buying gold</Btn></div>
             </Card>
           </>
         )}
@@ -146,8 +152,10 @@ function Bonds() {
   const { world: w, me } = useStore();
   const [amt, setAmt] = useState('10');
   const s = w.bonds?.issue && w.bonds.issue.closesAt > w.now ? w.bonds.issue : null;
+  const [ask, setAsk] = useState<Record<string, string>>({});
   const mine = (w.bonds?.holdings || []).filter((h: any) => h.owner === me);
-  if (!s && !mine.length) return null;
+  const market = (w.bonds?.market || []).filter((m: any) => !mine.some((h: any) => h.id === m.id));
+  if (!s && !mine.length && !market.length) return null;
   return (
     <Sec title="Treasury bonds">
       <div class="stack">
@@ -158,7 +166,25 @@ function Bonds() {
             <div class="grid2" style={{ marginTop: 8 }}><Field label="Crowns to lend" type="number" value={amt} onInput={setAmt} /><Btn style={{ alignSelf: 'end' }} onClick={() => act('bond.buy', { amount: Number(amt) }, 'Bonds bought.')}>Buy bonds</Btn></div>
           </Card>
         )}
-        {mine.length > 0 && <Card kind="tint"><b>Your bonds</b><ul class="list" style={{ marginTop: 6 }}>{mine.map((h: any) => <li class="row"><span class="small">{h.amt} lent, {h.payout} back</span><span class="small muted">due <When at={h.dueAt} /></span></li>)}</ul></Card>}
+        {mine.length > 0 && (
+          <Card kind="tint">
+            <b>Your bonds</b>
+            <ul class="list" style={{ marginTop: 6 }}>{mine.map((h: any) => (
+              <li class="stack" style={{ gap: 6 }}>
+                <div class="row"><span class="small">{h.amt} lent, {h.payout} back</span><span class="small muted">due <When at={h.dueAt} /></span></div>
+                {h.ask ? <div class="row"><span class="small">On the market at {h.ask}</span><Btn small kind="plain" onClick={() => act('bond.unlist', { bond: h.id }, 'Taken off the market.')}>Withdraw</Btn></div>
+                  : <div class="grid2"><Field label="Sell for" type="number" value={ask[h.id] ?? String(h.payout)} onInput={(v) => setAsk({ ...ask, [h.id]: v })} /><Btn small style={{ alignSelf: 'end' }} onClick={() => act('bond.sell', { bond: h.id, price: Number(ask[h.id] ?? h.payout) }, 'Offered for sale.')}>Offer for sale</Btn></div>}
+              </li>
+            ))}</ul>
+          </Card>
+        )}
+        {market.length > 0 && (
+          <Card>
+            <b>The bond market</b>
+            <p class="small muted" style={{ margin: '4px 0 6px' }}>Bonds other citizens are selling. Sellers stay anonymous; the Treasury repays whoever holds a bond when it falls due.</p>
+            <ul class="list">{market.map((m: any) => <li class="row"><span class="small">Pays {m.payout}, due <When at={m.dueAt} /></span><Btn small onClick={() => act('bond.take', { bond: m.id }, 'Bond bought.')}>Buy for {m.price}</Btn></li>)}</ul>
+          </Card>
+        )}
       </div>
     </Sec>
   );
