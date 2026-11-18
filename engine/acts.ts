@@ -18,9 +18,15 @@ import { checkClauses, enactDecree } from './proposals';
 import { voidMarket } from './markets';
 import { endCivil } from './regime';
 
-export type ActKey = 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security' | 'crown';
-export const ACT_KEYS: ActKey[] = ['jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown'];
+export type ActKey = 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security' | 'crown' | 'prerogative';
+export const ACT_KEYS: ActKey[] = ['jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative'];
+export const PREROGATIVE_DAYS = 3;
 export const ACTS: Record<ActKey, { name: string; text: string }> = {
+  // assent is the monarch's to give or refuse again
+  prerogative: {
+    name: 'Royal Prerogative',
+    text: `Every bill passed by the House waits for the Royal Assent of the Monarch, who may give it or refuse it. Nothing becomes law by convention or by the passing of time: a bill not given assent within ${PREROGATIVE_DAYS} days lapses. Where the Government Powers Act says otherwise, this Act prevails. A bill that removes the head of state still needs no assent.`
+  },
   jail: {
     name: 'Public Order and Detention',
     text: 'Creates the Ministry of Public Order, led by the Minister of Public Order, appointed and removed by the Prime Minister: restricted, with a budget of 20 crowns a week, and the powers to fine a citizen up to 10 crowns (as often as it likes), guard one citizen from assassins each day, detain a citizen and release a detainee. The Minister or the Prime Minister may detain any active citizen except the Prime Minister and the head of state, with no trial, charge, vote or reason, for as long as the order says or with no end date. A detainee is held in the Realm Jail: they cannot vote, stand (they are withdrawn from any election), table, edit, amend or speak on any proposal, sign anything, or found, join, lead or split a party. A detained MP keeps their seat, suspended and not filled by countback. A detainee loses every office and any party leadership. Detention does not end at an election, a change of government, the end of a season or the fall of any regime, and no pardon, asylum, court, amnesty or jailbreak releases a detainee. Only the Prime Minister or the Minister of Public Order may release one, or the repeal of this law. The Realm Jail page lists every detainee, who ordered it, and when.'
@@ -70,8 +76,8 @@ export function applyAct(w: W, key: ActKey, ref: string) {
     gazette(w, 'law', 'The Realm Jail opens. The Prime Minister and the Minister of Public Order may now detain any citizen.', '#/jail');
   }
   if (key === 'decrees') {
-    // bills already waiting for assent get it within the hour
-    Object.values(w.proposals).forEach((p: any) => p.stage === 'assent' && (p.assentDueAt = Math.min(p.assentDueAt || Infinity, w.now + HOUR)));
+    // bills already waiting for assent get it within the hour (unless the Royal Prerogative Act keeps assent the monarch's)
+    if (!w.acts.prerogative) Object.values(w.proposals).forEach((p: any) => p.stage === 'assent' && (p.assentDueAt = Math.min(p.assentDueAt || Infinity, w.now + HOUR)));
     gazette(w, 'law', 'The Prime Minister may now rule by decree. The head of state can no longer refuse assent.', '#/powers');
   }
   if (key === 'continuity') {
@@ -93,6 +99,11 @@ export function applyAct(w: W, key: ActKey, ref: string) {
     gazette(w, 'press', 'Every newspaper now needs a licence from the Ministry of Public Order. Papers not renewed within 24 hours lose theirs.', '#/press');
   }
   if (key === 'crown') gazette(w, 'law', `The Crown Act is law. The ${w.config.hos === 'monarchy' ? w.config.hosTitle : 'President'} is now the Prime Minister too.`, '#/cabinet');
+  if (key === 'prerogative') {
+    // bills already waiting no longer pass on their own: the monarch has the full time to decide
+    Object.values(w.proposals).forEach((p: any) => p.stage === 'assent' && (p.assentDueAt = w.now + PREROGATIVE_DAYS * DAY));
+    gazette(w, 'law', `The Royal Prerogative Act is law. No bill becomes law without the ${w.config.hos === 'monarchy' ? w.config.hosTitle : 'head of state'}’s assent, which may be refused.`, '#/powers');
+  }
   if (key === 'security') gazette(w, 'law', 'The State Security Act is law. Plots need more members, every coup goes to a contested night, and the security forces stand with the government.', '#/plots');
 }
 export function repealAct(w: W, key: ActKey) {
@@ -115,6 +126,10 @@ export function repealAct(w: W, key: ActKey) {
     gazette(w, 'law', 'The government can be challenged again: no-confidence motions, censures and proposals need no one’s consent.', '#/laws');
   }
   if (key === 'press') gazette(w, 'law', 'The press is free again: newspapers need no licence, and questions are published as they are asked.', '#/press');
+  if (key === 'prerogative') {
+    if (w.acts.decrees) Object.values(w.proposals).forEach((p: any) => p.stage === 'assent' && (p.assentDueAt = Math.min(p.assentDueAt || Infinity, w.now + HOUR)));
+    gazette(w, 'law', 'The Royal Prerogative Act is repealed. Assent follows the ordinary rules again.', '#/laws');
+  }
   if (key === 'security') gazette(w, 'law', 'The State Security Act is repealed. Coups are back to the ordinary rules.', '#/laws');
   if (key === 'crown') {
     // the head of state stops being Prime Minister; the House forms a government as usual

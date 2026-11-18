@@ -1,7 +1,7 @@
 // Time: everything closes itself. advanceTo() runs every deadline in order, including the calendar's weekly events.
 import { W, DAY, HOUR, nm, gazette, exiled, allCitizens, nextAt, meter, inDanger, approve } from './core';
 import { closeElection, callGeneralElection, autoInvite, governmentFalls, startHosSelection, newObjectives, closeConvention, endInduction , lapseChallenge, lapseBreakaway, newsnight, newsnightDue } from './politics';
-import { openVote, closeVote, enact, closeOverride, dissolve, closePMQs, missFormal } from './proposals';
+import { openVote, closeVote, enact, assentDue, closeOverride, dissolve, closePMQs, missFormal } from './proposals';
 import { payday, settleVenture } from './economy';
 import { actBots } from './bots';
 import { maybeOffers, answerAsk, resolveIntel, armyLoyalty } from './foreign';
@@ -47,7 +47,7 @@ function collect(w: W): D[] {
   Object.values(w.proposals).forEach((p: any) => {
     if (p.stage === 'debate') add(p.debateEndsAt, () => openVote(w, p), p.id);
     if (p.stage === 'vote') add(p.voteEndsAt, () => closeVote(w, p), p.id);
-    if (p.stage === 'assent') add(p.assentDueAt, () => enact(w, p, w.config.hos === 'monarchy' ? 'Royal Assent by convention' : 'became law unsigned'), p.id);
+    if (p.stage === 'assent') add(p.assentDueAt, () => assentDue(w, p), p.id);
     if (p.stage === 'override') add(p.overrideEndsAt, () => closeOverride(w, p), p.id);
     if (p.stage === 'hos') add(p.hosDueAt, () => dissolve(w, p, false), p.id);
   });

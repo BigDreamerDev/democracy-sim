@@ -3,7 +3,7 @@
 import {
   W, Id, DAY, HOUR, fail, newId, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, tick, meter,
   isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, hasPower, officeWithPower, weekNo, adminDid, bump, own, text, int, inForce, inGov } from './core';
-import { ACTS, ACT_KEYS, ENTRENCHED, applyAct, repealAct, describeAct, national, expelNational } from './acts';
+import { ACTS, ACT_KEYS, ENTRENCHED, PREROGATIVE_DAYS, applyAct, repealAct, describeAct, national, expelNational } from './acts';
 import { TEMPLATES, POWERS, FILL, createOffice } from './offices';
 import { startHosSelection, callGeneralElection, governmentFalls, vacateSeat, HOS_METHODS, countback } from './politics';
 import { addJob, addZone } from './streets';
@@ -28,7 +28,7 @@ export const SETTABLE: Record<string, { label: string; unit: string; min: number
   voteHours: { label: 'Voting length', unit: ' hours', min: 12, max: 48 }
 };
 export const CONSTITUTIONAL = ['constitution', 'removeHos'];
-export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown'];
+export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative'];
 
 export function describe(w: W, e: any): string {
   switch (e.t) {
@@ -75,6 +75,7 @@ export function describe(w: W, e: any): string {
     case 'press':
     case 'security':
     case 'crown':
+    case 'prerogative':
       return describeAct(e.t);
     case 'war':
       return `Declares war on ${w.nations[e.nation]?.name}.`;
@@ -158,6 +159,7 @@ function checkClause(w: W, e: any, byDecree = false) {
     case 'press':
     case 'security':
     case 'crown':
+    case 'prerogative':
       if (inForce(w, e.t)) fail(`The ${ACTS[e.t as 'jail'].name} Act is already law.`);
       break;
     case 'war':
@@ -634,8 +636,9 @@ export function closeVote(w: W, p: any) {
     // the head of state can't veto their own removal: a bill that removes them needs no assent
     if (p.clauses.some((e: any) => e.t === 'removeHos')) return enact(w, p, 'no assent needed: the head of state cannot block their own removal');
     p.stage = 'assent';
-    // under the Government Powers Act, assent follows within the hour whatever the head of state does
-    p.assentDueAt = w.now + (inForce(w, 'decrees') ? 1 : 48) * HOUR;
+    // under the Government Powers Act, assent follows within the hour whatever the head of state does;
+    // under the Royal Prerogative Act the monarch decides, and an unsigned bill lapses
+    p.assentDueAt = w.now + (inForce(w, 'prerogative') ? PREROGATIVE_DAYS * 24 : inForce(w, 'decrees') ? 1 : 48) * HOUR;
     return;
   }
   p.stage = 'passed';
@@ -728,6 +731,13 @@ function trackWhip(w: W, p: any) {
   const nid = national(w);
   if (nid) rebels.forEach((r) => w.citizens[r]?.party === nid && r !== w.pm && expelNational(w, r, r, true));
 }
+// the Royal Prerogative Act: a bill left unsigned lapses instead of becoming law
+export function assentDue(w: W, p: any) {
+  if (p.stage !== 'assent') return;
+  if (!inForce(w, 'prerogative') || p.clauses.some((e: any) => e.t === 'removeHos')) return enact(w, p, w.config.hos === 'monarchy' ? 'Royal Assent by convention' : 'became law unsigned');
+  p.stage = 'withheld';
+  gazette(w, 'hos', `${p.title} lapses: the ${hosTitle(w)} did not give Royal Assent.`, '#/p/' + p.id);
+}
 export function assent(w: W, actor: Id, pid: Id, yes: boolean) {
   const p = own(w.proposals, pid);
   if (!p || p.stage !== 'assent') fail('Nothing is waiting for assent.');
@@ -739,7 +749,13 @@ export function assent(w: W, actor: Id, pid: Id, yes: boolean) {
   }
   // (a removal bill already waiting for assent from before this rule: refusing it enacts it anyway)
   if (p.clauses.some((e: any) => e.t === 'removeHos')) return enact(w, p, 'no assent needed: the head of state cannot block their own removal');
-  if (inForce(w, 'decrees')) fail(`The ${hosTitle(w)} can no longer refuse assent. It becomes law within the hour.`);
+  if (inForce(w, 'decrees') && !inForce(w, 'prerogative')) fail(`The ${hosTitle(w)} can no longer refuse assent. It becomes law within the hour.`);
+  if (inForce(w, 'prerogative')) {
+    // the prerogative: refusing is the monarch's right, not a constitutional crisis
+    p.stage = 'withheld';
+    gazette(w, 'hos', `The ${hosTitle(w)} withholds Royal Assent from ${p.title}. It does not become law.`, '#/p/' + p.id);
+    return;
+  }
   if (w.config.hos === 'monarchy') {
     p.stage = 'withheld';
     meter(w, 'stability', -10, 'The Crown refused assent');
@@ -909,6 +925,7 @@ export function applyClause(w: W, e: any, ref: string) {
     case 'press':
     case 'security':
     case 'crown':
+    case 'prerogative':
       applyAct(w, e.t, ref);
       break;
     case 'war':

@@ -270,7 +270,7 @@ export function Proposal({ id }: { id: string }) {
         <Sec>
           <Card kind="tint">
             <h2 class="h">{w.config.hos === 'monarchy' ? 'Awaiting Royal Assent' : 'Awaiting the President'}</h2>
-            <p style={{ margin: '0 0 10px' }}>{nm(w, w.hos.holder)} has until <When at={p.assentDueAt} />. If nothing happens it becomes law then.</p>
+            <p style={{ margin: '0 0 10px' }}>{nm(w, w.hos.holder)} has until <When at={p.assentDueAt} />. {w.acts?.prerogative && !p.clauses.some((e: any) => e.t === 'removeHos') ? 'If nothing happens it lapses then: under the Royal Prerogative Act nothing becomes law without assent.' : 'If nothing happens it becomes law then.'}</p>
             {isHOS(w, me) && <div class="grid2"><Btn onClick={() => act('prop.assent', { prop: p.id, yes: true }, 'It is law.')}>{w.config.hos === 'monarchy' ? 'Grant assent' : 'Sign it'}</Btn><Btn kind="danger ghost" onClick={() => act('prop.assent', { prop: p.id, yes: false })}>{w.config.hos === 'monarchy' ? 'Refuse assent' : 'Veto'}</Btn></div>}
             {blocker && <Btn small kind="plain" style={{ marginTop: 10 }} onClick={() => act('prop.block', { prop: p.id }, 'Sent back for 48 hours.')}>Send back ({blocker.name})</Btn>}
           </Card>
@@ -334,7 +334,7 @@ export const CLAUSES: [string, string][] = [
   ['jail', 'Act: Public Order and Detention (the Realm Jail)'], ['decrees', 'Act: Government Powers (rule by decree)'],
   ['continuity', 'Act: Continuity of Parliament (no more elections)'], ['unity', 'Act: National Unity (one party)'],
   ['protection', 'Act: Protection of the State'], ['press', 'Act: Press and Information'], ['security', 'Act: State Security'],
-  ['crown', 'Act: The Crown (the head of state is Prime Minister)']
+  ['crown', 'Act: The Crown (the head of state is Prime Minister)'], ['prerogative', 'Act: Royal Prerogative (assent can be refused)']
 ];
 export function NewProposal({ query }: { query: URLSearchParams }) {
   const { world: w, me } = useStore();
@@ -665,7 +665,8 @@ export function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; 
     protection: { t: 'protection' },
     press: { t: 'press' },
     security: { t: 'security' },
-    crown: { t: 'crown' }
+    crown: { t: 'crown' },
+    prerogative: { t: 'prerogative' }
   };
   const ob = e.office || {};
   const setOb = (k: string, v: any) => onChange({ ...e, template: null, office: { ...ob, [k]: v } });

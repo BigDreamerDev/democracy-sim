@@ -70,7 +70,7 @@ export const held = (w: W, id: Id) => !!w.citizens[id]?.detainedUntil && w.citiz
 export const jailed = (w: W, id: Id) => { const j = w.citizens[id]?.jail; return !!j && (j.until == null || j.until > w.now); };
 export const detained = (w: W, id: Id) => held(w, id) || jailed(w, id);
 // an Act passed with one of the special clauses (acts.ts) is in force while w.acts[key] holds its law number
-export const inForce = (w: W, key: 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security' | 'crown') => !!w.acts?.[key];
+export const inForce = (w: W, key: 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security' | 'crown' | 'prerogative') => !!w.acts?.[key];
 // a minister: anyone holding an office the Prime Minister appoints
 export const isMinister = (w: W, id: Id) => Object.values(w.offices).some((o: any) => o.fill === 'pm' && o.holder === id);
 export const inGov = (w: W, id: Id | null | undefined) => !!id && (w.pm === id || isMinister(w, id));
