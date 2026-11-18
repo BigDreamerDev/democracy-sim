@@ -139,7 +139,8 @@ export const CATALOG: Record<string, CmdInfo> = {
   'jail.detain': { about: 'Under the Public Order and Detention Act, the Prime Minister or the Minister of Public Order: detain a citizen in the Realm Jail. No end date unless you give days.', args: { target: 'id (citizen)', days: 'number 1–365 (optional)' } },
   'jail.release': { about: 'The Prime Minister or the Minister of Public Order: release a detainee from the Realm Jail.', args: { target: 'id (citizen)' } },
   'gov.decree': { about: 'Under the Government Powers Act, the Prime Minister: make law by decree, at once. Clauses as for a bill (prop.new). Only a later decree can repeal a decree.', args: { title: 'text', summary: 'text (optional)', clauses: 'list of clause objects' } },
-  'gov.edict': { about: 'Under the Government Powers Act, the Prime Minister: issue a built-in regime decree (as regime.decree), once a day, with no regime and no legitimacy cost. kind \'lift\' with `what` ends one.', args: { kind: 'as regime.decree, plus \'lift\'', what: "'censorship' | 'curfew' | 'parliament' | 'conscription' | 'trade' | 'banks' | 'police' | 'oath' | 'bans' | 'seized' | 'exiles' | 'tax' | 'rate' | 'constitution' (lift)" } },
+  // gov.edict takes everything regime.decree does (filled in below the table), plus 'lift' with `what`
+  'gov.edict': { about: 'Under the Government Powers Act, the Prime Minister: issue a built-in regime decree, once a day, with no regime and no legitimacy cost. Arrest someone with kind \'arrest\', target and n (days, 1–2). kind \'lift\' with `what` ends one.', args: {} },
   'gov.speaker': { about: 'Under the Continuity of Parliament Act, the Prime Minister: appoint the Speaker (not an MP), or remove them (no target).', args: { target: 'id (citizen) or null' } },
   'gov.seat': { about: 'Under the Continuity of Parliament Act, the Prime Minister: appoint a citizen to an empty seat.', args: { target: 'id (citizen)' } },
   'gov.unseat': { about: 'Under the Continuity of Parliament Act, the Prime Minister: remove an MP from their seat.', args: { target: 'id (citizen)' } },
@@ -202,3 +203,8 @@ export const CATALOG: Record<string, CmdInfo> = {
   'hunt.enter': { about: 'Sign up for this round of the Hunt (w.hunt, while status is signup). Streets players only.', args: {} },
   'hunt.withdraw': { about: 'Drop out of the Hunt before it starts.', args: {} }
 };
+// the Prime Minister's edict takes the same arguments as a regime decree, plus 'lift' to end one
+{
+  const d = CATALOG['regime.decree'].args;
+  CATALOG['gov.edict'].args = { ...d, kind: String(d.kind).replace(/"?$/, '') + " | 'lift'", what: "'censorship' | 'curfew' | 'parliament' | 'conscription' | 'trade' | 'banks' | 'police' | 'oath' | 'bans' | 'seized' | 'exiles' | 'tax' | 'rate' | 'constitution' (lift only)" };
+}
