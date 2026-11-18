@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Pick, Locked, Meter, Banknote, noteBreakdown } from '../ui';
 import { nm, bal, ca, acctLabel, allCitizens, fmtTime, isPM, hasPower, inDanger, holderOf } from '../../../engine/index';
-import { budget, bankHealth, ventureOdds, priceIndex, canMoneyMotion, describeMotion, MINT_MAX, MINT_WEEK } from '../../../engine/economy';
+import { budget, bankHealth, ventureOdds, priceIndex, fx, savingsRate, savingsTaxDue, canMoneyMotion, describeMotion, MINT_MAX, MINT_WEEK } from '../../../engine/economy';
 import { MOODS } from '../../../engine/foreign';
 import { Meters } from './today';
 
@@ -52,6 +52,7 @@ export function Economy() {
     <Page back={['#/realm', 'The realm']} kicker="Treasury and Reserve" title="The economy" intro={<>The Treasury holds <b class="tnum">{bal(w, 'treasury')}</b> crowns and owes the Reserve <b class="tnum">{w.economy.lent}</b>. Should the Treasury enter a deficit, it automatically borrows</>}>
       <Sec><Meters compact /></Sec>
       <DebtClock />
+      <Exchange />
       <Printing />
       <Bonds />
       <Sec title="This week's budget" sub={<>Chancellor: <Who id={holderOf(w, 'treasury')} /></>}>
@@ -90,6 +91,19 @@ function DebtClock() {
   return (
     <Sec title="The debt clock" sub="Printing clears debt but raises prices; borrowing costs interest every payday.">
       <div class="corner-stats">{cells.map(([k, v]) => <a href="#/economy"><b class="tnum">{v}</b><span>{k}</span></a>)}</div>
+    </Sec>
+  );
+}
+
+// exchange rates: what a crown buys in each country this week, and the savings tax
+function Exchange() {
+  const { world: w, me } = useStore();
+  const prev = w.economy.fxPrev || {};
+  const due = savingsTaxDue(w, me);
+  return (
+    <Sec title="The crown abroad" sub="What one crown buys in each country, against 1.00 at the founding. Inflation weakens it; good relations and Prosperity strengthen it. A weak crown makes ventures pay more and imports (Army supplies, grain, gold) cost more.">
+      <ul class="list">{Object.values(w.nations).map((n: any) => { const v = fx(w, n.id); const p = prev[n.id] ?? v; return <li class="row"><span>{n.name}</span><b class="tnum" style={{ color: v > p ? 'var(--teal)' : v < p ? 'var(--red)' : undefined }}>{v.toFixed(2)} {v > p ? '▲' : v < p ? '▼' : ''}</b></li>; })}</ul>
+      <p class="small muted" style={{ marginTop: 10 }}>{savingsRate(w) > 0 ? <>Savings tax: {savingsRate(w)}% of every balance above {w.config.savingsFloor ?? 200} crowns, each payday. You will pay {due} at the next one.</> : <>There is no savings tax. A law can set one (“Change a number”).</>}</p>
     </Sec>
   );
 }

@@ -135,6 +135,7 @@ export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
 }
 
 export function useGrant(w: W, actor: Id, officeId: string, target: Id, amount: number, reason: string) {
+  if ((w.conditions || []).some((c: any) => c.type === 'outage' && c.until > w.now)) fail('The Treasury’s systems are down: no grants until the outage ends.');
   const o = own(w.offices, officeId);
   if (!o || o.holder !== actor || !o.powers.includes('grant')) fail('You cannot pay out from that office.');
   const why = text(reason, 4, 200, 'reason');

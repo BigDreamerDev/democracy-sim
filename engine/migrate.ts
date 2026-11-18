@@ -59,6 +59,11 @@ export function migrate(w: W): W {
   w.bonds ??= { issue: null, holdings: [], outstanding: 0, market: [] };
   w.bonds.market ??= [];
   w.config.currency ??= null;
+  w.config.savingsTax ??= 0;
+  w.config.savingsFloor ??= 200;
+  w.conditions ??= [];
+  w.economy.fx ??= {};
+  w.economy.fxPrev ??= {};
   w.crown ??= { reign: null, offer: null };
   w.crown.court ??= {};
   w.crown.circularAt ??= null;

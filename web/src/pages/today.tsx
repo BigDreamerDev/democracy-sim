@@ -17,8 +17,20 @@ import { ghost } from '../../../engine/index';
 import { RoleChips, YourDesk, NewJob } from '../Roles';
 import { rolesOf } from '../roles';
 import { stateMode } from '../state';
+import { CONDITIONS } from '../../../engine/conditions';
 export { needs };
 
+// what crises have left behind, with the time each has left
+export function Conditions() {
+  const { world: w } = useStore();
+  const list = (w.conditions || []).filter((c: any) => c.until > w.now && CONDITIONS[c.type]);
+  if (!list.length) return null;
+  return (
+    <ul class="list small" style={{ marginTop: 10 }} aria-label="Conditions in the realm">
+      {list.map((c: any) => <li class="row" style={{ alignItems: 'flex-start' }}><span><b style={{ color: CONDITIONS[c.type].good ? 'var(--teal)' : 'var(--red)' }}>{CONDITIONS[c.type].label}</b> {CONDITIONS[c.type].blurb}</span><span class="muted tnum" style={{ whiteSpace: 'nowrap' }}><Left at={c.until} /></span></li>)}
+    </ul>
+  );
+}
 export function Meters({ compact }: { compact?: boolean }) {
   const { world: w } = useStore();
   const [open, setOpen] = useState(false);
@@ -35,6 +47,7 @@ export function Meters({ compact }: { compact?: boolean }) {
           </div>
         ))}
       </div>
+      <Conditions />
       {open && (
         <div class="stack" style={{ marginTop: 10 }}>
           {Object.entries(METERS).map(([k, m]) => <p class="small muted" style={{ margin: 0 }}><b style={{ color: 'var(--ink)' }}>{m.name}:</b> {m.blurb} Below 15: {m.low.toLowerCase()}.</p>)}

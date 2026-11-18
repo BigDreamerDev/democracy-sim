@@ -16,7 +16,7 @@ function blank(seed: number, now: number): W {
     config: {
       realmName: 'The Realm', seats: 5, termDays: 21, hos: 'monarchy', hosMethod: 'life', hosTitle: 'Queen',
       debateHours: 12, voteHours: 24, intrigueDelayDays: 14, conventionThreshold: 10, inductionDays: 7, conventionDays: 3,
-      mpPay: 8, ministerPay: 5, dividend: 5, taxRate: 10, tariff: 10
+      mpPay: 8, ministerPay: 5, dividend: 5, taxRate: 10, tariff: 10, savingsTax: 0, savingsFloor: 200
     },
     calendar: { payday: { dow: 1, hour: 9 }, pmqs: { dow: 3, hour: 20 }, frontpage: { dow: 5, hour: 18 } },
     lastEvent: {},
@@ -26,8 +26,9 @@ function blank(seed: number, now: number): W {
     convention: { clauses: conventionClauses(), closesAt: now + 3 * DAY }, parties: {}, elections: {}, nextGeneralAt: null,
     proposals: {}, drafts: {}, pledges: {}, breakaways: {}, propCount: 0, laws: [], questions: [], lobbying: [],
     offices: {}, accounts: { reserve: 0, treasury: 0 }, ledger: [],
-    economy: { lent: 0, rate: 2, prices: [2], lentThisWeek: 0, lastInflation: 0, printedThisWeek: 0, printed: 0, coinage: [], motion: null, gold: 0, inflatingThisWeek: 0, hotWeeks: 0, freezeUntil: null },
+    economy: { lent: 0, rate: 2, prices: [2], lentThisWeek: 0, lastInflation: 0, printedThisWeek: 0, printed: 0, coinage: [], motion: null, gold: 0, inflatingThisWeek: 0, hotWeeks: 0, freezeUntil: null, fx: {}, fxPrev: {} },
     bonds: { issue: null, holdings: [], outstanding: 0, market: [] },
+    conditions: [],
     banks: {}, ventures: [], nations: {}, offers: {}, treaties: {}, asks: [], intel: [],
     army: { readiness: 'ready', loyalty: 3, reasons: [], war: null },
     deals: {}, cards: [], demands: {}, plots: {}, martial: null,

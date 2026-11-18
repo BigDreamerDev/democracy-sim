@@ -1,6 +1,7 @@
 // The state of the realm as plain text, ready to paste into the group chat. Reads public things only (who holds
 // which public office, what's open, the numbers), so it's the same from a player's view or the full world.
 // The site's Copy button and the server's /api/public/digest.txt both use this.
+import { CONDITIONS } from './conditions';
 import { W, Id, DAY, currencyText, nm, fmtTime, fmtDay, ordinal, hosTitle, majority } from './core';
 import { crisisById } from './crises';
 import { KINDS } from './proposals';
@@ -35,6 +36,8 @@ export function digest(w: W): string {
   const ministers = (Object.values(w.offices) as any[]).filter((o) => o.holder && o.secrecy !== 'secret').map((o) => `${o.title} ${nm(w, o.holder)}`);
   if (ministers.length) L.push(`Ministers: ${ministers.join(', ')}.`);
   L.push(`Prosperity ${w.meters.prosperity} · Stability ${w.meters.stability} · Tax ${w.config.taxRate}% · Dividend ${w.config.dividend}`);
+  const conds = (w.conditions || []).filter((c: any) => c.until > w.now && CONDITIONS[c.type]);
+  if (conds.length) L.push(`Conditions: ${conds.map((c: any) => `${CONDITIONS[c.type].label} (${Math.max(1, Math.ceil((c.until - w.now) / DAY))}d)`).join(', ')}`);
   L.push(`Debt to the Reserve ${w.economy.lent}${w.bonds?.outstanding ? ` · Bonds out ${w.bonds.outstanding}` : ''}${w.economy.printed ? ` · Printed ${w.economy.printed}` : ''} · Prices ${w.economy.lastInflation >= 0 ? '+' : ''}${Number(w.economy.lastInflation || 0).toFixed(1)}% last week`);
   const els = (Object.values(w.elections) as any[]).filter((e) => e.status === 'open');
   if (els.length) {

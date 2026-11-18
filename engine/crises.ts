@@ -11,6 +11,22 @@ import { armyLoyalty } from './foreign';
 import { openMarket, settleMarket } from './markets';
 import { callGeneralElection } from './politics';
 import { takePower } from './regime';
+import { addCondition } from './conditions';
+import { fx } from './economy';
+
+// ---------- who a crisis falls on: more than the PM and the meters ----------
+const citizensNow = (w: W) => allCitizens(w).filter((c: any) => !c.bot && !exiled(w, c.id));
+const byWealth = (w: W) => citizensNow(w).sort((a: any, b: any) => bal(w, ca(b.id)) - bal(w, ca(a.id)));
+const richest = (w: W, n = 3) => byWealth(w).slice(0, n).map((c: any) => c.id);
+const poorest = (w: W, n = 3) => byWealth(w).slice(-n).map((c: any) => c.id);
+// take up to n crowns from each (never into debt), to the Treasury or another account
+const levy = (w: W, ids: string[], n: number, to: string, memo: string) => ids.forEach((id) => { const a = Math.min(n, bal(w, ca(id))); if (a > 0) transfer(w, ca(id), to, a, memo); });
+const share = (w: W, from: string, ids: string[], n: number, memo: string) => ids.forEach((id) => transfer(w, from, ca(id), n, memo));
+const approveAll = (w: W, ids: string[], d: number) => ids.forEach((id) => approve(w, id, d));
+const ministers = (w: W) => [...new Set(Object.values(w.offices).filter((o: any) => o.holder && (o.fill === 'pm' || o.fill === 'crown')).map((o: any) => o.holder as string))];
+const cond = addCondition;
+// Standing comes from how the nations feel: move that many of them a step
+const standingShift = (w: W, d: number, why: string) => Object.keys(w.nations).slice(0, Math.abs(d)).forEach((n) => mood(w, n, Math.sign(d), why));
 
 type Option = { label: string; what: string; effects: string[]; run: (w: W) => any; then?: { type: string; days: number } };
 export type Crisis = { id: string; title: string; text: string; needs?: (w: W) => boolean; options: Option[]; house?: boolean; chainOnly?: boolean; weight?: number; extreme?: boolean };
@@ -152,6 +168,119 @@ export const CRISES: Crisis[] = [
     options: [
       { label: 'Fund her', what: 'A gamble: it works or it doesn’t. If it works, others will want it.', effects: ['Treasury −30', 'Even chance: Prosperity +6'], run: (w) => (spend(w, 30, 'escrow', 'Funding an inventor'), chance(w, 0.5) ? (meter(w, 'prosperity', 6, 'The new engine worked'), true) : false), then: { type: 'engine_offer', days: 7 } },
       { label: 'Send her to the banks', what: 'Let private money take the risk.', effects: ['Nothing now'], run: () => {} }
+    ]
+  },
+
+  // ---------- the long tail: crises that fall on citizens, MPs and ministers, and leave conditions behind ----------
+  {
+    id: 'plague', title: 'Fever in the capital', text: 'A fever is spreading through the poorer streets. The hospitals are full.', weight: 0.8,
+    options: [
+      { label: 'Quarantine the city', what: 'Close the markets and keep people home.', effects: ['Quarantine 2 weeks (Prosperity −1 a week)', 'Everyone −2 crowns now', 'Stability +1'], run: (w) => (levy(w, citizensNow(w).map((c: any) => c.id), 2, 'treasury', 'Quarantine levy'), cond(w, 'quarantine', 2), meter(w, 'stability', 1, 'Firm action on the fever')) },
+      { label: 'Hire doctors from Orrin', what: 'Expensive, but it works.', effects: ['Treasury −60', 'Orrin warms', 'The poorest three get free care (+5 each)'], run: (w) => (spend(w, 60, w.nations.orrin ? 'nation:orrin' : 'nation:' + Object.keys(w.nations)[0], 'Doctors from abroad'), mood(w, 'orrin', 1, 'Our doctors helped them'), share(w, 'treasury', poorest(w), 5, 'Free care in the fever')) },
+      { label: 'Keep everything open', what: 'Life must go on.', effects: ['Epidemic 3 weeks (3 citizens a week pay medical bills)', 'Stability −1 a week'], run: (w) => cond(w, 'epidemic', 3) }
+    ]
+  },
+  {
+    id: 'boom', title: 'A boom in the workshops', text: 'Orders are pouring in. Everyone wants to know how long it can last.', weight: 0.7, needs: (w) => w.meters.prosperity >= 55,
+    options: [
+      { label: 'Tax the windfall', what: 'Take a share for the Treasury while it lasts.', effects: ['Treasury +40 (from the richest five)', 'Boom 2 weeks (everyone +2 a week)'], run: (w) => (levy(w, richest(w, 5), 8, 'treasury', 'Windfall tax'), cond(w, 'boom', 2)) },
+      { label: 'Let it run', what: 'Cheap money, rising prices, happy voters. For now.', effects: ['Bubble 3 weeks (everyone +4 a week, prices +3%)', 'A crash follows'], run: (w) => cond(w, 'bubble', 3), then: { type: 'crash', days: 21 } },
+      { label: 'Raise the rate to cool it', what: 'The Reserve leans against the wind.', effects: ['Rate +3%', 'Boom 1 week'], run: (w) => ((w.economy.rate = Math.min(15, w.economy.rate + 3)), cond(w, 'boom', 1)) }
+    ]
+  },
+  {
+    id: 'crash', chainOnly: true, extreme: true, title: 'The bubble bursts', text: 'Prices collapse overnight. Savers who bought at the top are ruined.',
+    options: [
+      { label: 'Bail out the savers', what: 'The Treasury makes the biggest losers whole.', effects: ['Treasury −80', 'The ten poorest +8 each', 'Prosperity −2'], run: (w) => (share(w, 'treasury', poorest(w, 10), 8, 'Crash relief'), meter(w, 'prosperity', -2, 'The crash')) },
+      { label: 'Let the market clear', what: 'Painful, but honest.', effects: ['The richest five lose up to 15 each', 'Recession 2 weeks (Prosperity −2 a week)'], run: (w) => (levy(w, richest(w, 5), 15, 'reserve', 'Lost in the crash'), cond(w, 'recession', 2)) },
+      { label: 'Print to prop it up', what: 'The Reserve buys everything in sight.', effects: ['Everyone +5 (new money)', 'Prices +10%', 'Recession 1 week'], run: (w) => (share(w, 'reserve', citizensNow(w).map((c: any) => c.id), 5, 'Reserve support in the crash'), prices(w, 10), cond(w, 'recession', 1)) }
+    ]
+  },
+  {
+    id: 'drought', title: 'The rains have failed', text: 'A dry summer. The harvest is half what it should be.', weight: 0.8,
+    options: [
+      { label: 'Import grain', what: 'Buy from abroad. A weak crown makes it dear.', effects: ['Treasury pays 40 (more if the crown is weak)', 'Varnholm warms'], run: (w) => { const n = w.nations.varnholm ? 'varnholm' : Object.keys(w.nations)[0]; spend(w, Math.round(40 / fx(w, n)), 'nation:' + n, 'Grain imports'); mood(w, n, 1, 'Bought their grain'); } },
+      { label: 'Ration food', what: 'Fair shares for everyone, smaller for all.', effects: ['Rationing 2 weeks (dividend −2)', 'Stability −1'], run: (w) => (cond(w, 'rationing', 2), meter(w, 'stability', -1, 'Rationing')) },
+      { label: 'Wait for rain', what: 'It has to come eventually.', effects: ['Drought 3 weeks (prices +2% a week, Prosperity −1 a week)'], run: (w) => cond(w, 'drought', 3) }
+    ]
+  },
+  {
+    id: 'expenses', house: true, title: 'The expenses scandal', text: 'A leaked ledger shows MPs claiming for duck houses, moats and second homes.', weight: 0.8, needs: (w) => mps(w).length >= 3,
+    options: [
+      { label: 'Every MP repays 5', what: 'Clean hands all round.', effects: ['Every MP −5 to the Treasury', 'Every MP approval +1', 'Stability +1'], run: (w) => (levy(w, mps(w), 5, 'treasury', 'Repaid expenses'), approveAll(w, mps(w), 1), meter(w, 'stability', 1, 'MPs paid it back')) },
+      { label: 'A public inquiry', what: 'Half pay for MPs until it reports.', effects: ['Expenses inquiry 3 weeks (MPs on half pay)', 'Every MP approval −1'], run: (w) => (cond(w, 'inquiry', 3), approveAll(w, mps(w), -1)) },
+      { label: 'Close ranks', what: 'Nothing to see here.', effects: ['Every MP approval −3', 'Stability −3'], run: (w) => (approveAll(w, mps(w), -3), meter(w, 'stability', -3, 'MPs closed ranks over expenses')) }
+    ]
+  },
+  {
+    id: 'general_strike', house: true, title: 'A general strike', text: 'The unions have walked out. Nothing moves.', weight: 0.7,
+    options: [
+      { label: 'Meet their demands', what: 'A permanent rise in the dividend.', effects: ['Dividend +1 for good', 'Treasury −20 now', 'Stability +2'], run: (w) => ((w.config.dividend = Math.min(20, w.config.dividend + 1)), spend(w, 20, 'reserve', 'Strike settlement'), meter(w, 'stability', 2, 'The strike settled')) },
+      { label: 'Break the strike', what: 'Send in the Army.', effects: ['Stability −4', 'Army loyalty −1', 'Ministers approval −2'], run: (w) => (meter(w, 'stability', -4, 'Strikers broken'), army(w, -1, 'Used against strikers'), approveAll(w, ministers(w), -2)) },
+      { label: 'Sit it out', what: 'They will go back when the money runs out.', effects: ['General strike 2 weeks (no income tax, Prosperity −2 a week)'], run: (w) => cond(w, 'strike', 2) }
+    ]
+  },
+  {
+    id: 'brain_drain', title: 'The talented are leaving', text: 'Doctors, engineers and teachers are emigrating to Orrin for better pay.', weight: 0.6,
+    options: [
+      { label: 'Pay them to stay', what: 'A bonus for the realm’s best.', effects: ['The richest three are paid 10 each to stay (Treasury −30)', 'Prosperity +1'], run: (w) => (share(w, 'treasury', richest(w), 10, 'Paid to stay'), meter(w, 'prosperity', 1, 'Talent kept at home')) },
+      { label: 'An exit tax', what: 'Leave if you like, but pay first.', effects: ['Treasury +20 (from Orrin)', 'Orrin cools', 'Brain drain 1 week'], run: (w) => { const n = w.nations.orrin ? 'orrin' : Object.keys(w.nations)[0]; if (bal(w, 'nation:' + n) >= 20) transfer(w, 'nation:' + n, 'treasury', 20, 'Exit tax'); mood(w, n, -1, 'Our exit tax'); cond(w, 'drain', 1); } },
+      { label: 'Let them go', what: 'A free country.', effects: ['Brain drain 4 weeks (Prosperity −1 a week)'], run: (w) => cond(w, 'drain', 4) }
+    ]
+  },
+  {
+    id: 'refugees', house: true, title: 'Refugees at the border', text: 'Thousands are fleeing trouble in Kessmark. They are camped at the frontier.', weight: 0.7,
+    options: [
+      { label: 'Open the camps', what: 'Costly now, but they will work and pay taxes.', effects: ['Refugee camps 3 weeks (Treasury −10 a week)', 'Prosperity +4 when they close', 'Standing +2'], run: (w) => (cond(w, 'refugees', 3), standingShift(w, 2, 'We took in refugees')) },
+      { label: 'Turn them back', what: 'Close the border.', effects: ['Kessmark cools', 'Standing −3', 'Stability +1'], run: (w) => (mood(w, 'kessmark', -1, 'We turned their people away'), standingShift(w, -3, 'Refugees turned back'), meter(w, 'stability', 1, 'The border held')) },
+      { label: 'Ask the citizens to take them in', what: 'Every household does its bit.', effects: ['Everyone −3 crowns', 'Every citizen +1 approval', 'Standing +3'], run: (w) => (levy(w, citizensNow(w).map((c: any) => c.id), 3, 'nation:' + (w.nations.kessmark ? 'kessmark' : Object.keys(w.nations)[0]), 'Housing refugees'), approveAll(w, citizensNow(w).map((c: any) => c.id), 1), standingShift(w, 3, 'A welcoming realm')) }
+    ]
+  },
+  {
+    id: 'currency_run', extreme: true, title: 'A run on the crown', text: 'Speculators abroad are dumping crowns. The currency is falling by the hour.', weight: 1, needs: (w) => Object.keys(w.nations).some((n) => fx(w, n) < 0.85),
+    options: [
+      { label: 'Defend it with gold', what: 'Sell the gold reserve to buy crowns back.', effects: ['Gold reserve −50', 'The crown recovers 10%'], run: (w) => { w.economy.gold = Math.max(0, (w.economy.gold || 0) - 50); Object.keys(w.nations).forEach((n) => (w.economy.fx[n] = Math.round(fx(w, n) * 1.1 * 1000) / 1000)); } },
+      { label: 'Capital controls', what: 'No money leaves the realm.', effects: ['Capital controls 2 weeks (savings tax doubled, no bonds)', 'Standing −2'], run: (w) => (cond(w, 'controls', 2), standingShift(w, -2, 'Capital controls')) },
+      { label: 'Let it fall', what: 'A cheap crown sells abroad.', effects: ['The crown falls another 10%', 'Ventures abroad pay more', 'Prices +4%'], run: (w) => (Object.keys(w.nations).forEach((n) => (w.economy.fx[n] = Math.round(fx(w, n) * 0.9 * 1000) / 1000)), prices(w, 4)) }
+    ]
+  },
+  {
+    id: 'cyberattack', title: 'The Treasury is hacked', text: 'Ransomware has locked the Treasury’s ledgers. The hackers want 50 crowns.', weight: 0.6, needs: (w) => !!w.offices.treasury,
+    options: [
+      { label: 'Pay the ransom', what: 'Quick, quiet and humiliating.', effects: ['Treasury −50', 'The Chancellor’s approval −3'], run: (w) => (spend(w, 50, 'nation:' + Object.keys(w.nations)[0], 'Ransom'), holderOf(w, 'treasury') && approve(w, holderOf(w, 'treasury')!, -3)) },
+      { label: 'Refuse and rebuild', what: 'Weeks without the systems.', effects: ['Treasury outage 2 weeks (no grants)', 'Stability +1'], run: (w) => (cond(w, 'outage', 2), meter(w, 'stability', 1, 'We did not pay')) },
+      { label: 'Blame Kessmark', what: 'Point the finger abroad.', effects: ['Kessmark cools sharply', 'Treasury outage 1 week'], run: (w) => (mood(w, 'kessmark', -2, 'Accused of hacking us'), cond(w, 'outage', 1)) }
+    ]
+  },
+  {
+    id: 'royal_scandal', title: 'A royal scandal', text: 'The papers have photographs. The palace is not commenting.', weight: 0.7, needs: (w) => monarchy(w) && !!w.hos.holder,
+    options: [
+      { label: 'A full apology', what: 'The monarch says sorry, on camera.', effects: ['The monarch’s approval −2', 'Stability +1'], run: (w) => (approve(w, w.hos.holder!, -2), meter(w, 'stability', 1, 'The palace apologised')) },
+      { label: 'Blame the courtiers', what: 'The officers of state take the fall.', effects: ['The Lord Chamberlain and Lord Privy Seal approval −4', 'The monarch’s approval +1'], run: (w) => (approveAll(w, ['chamberlain', 'privyseal'].map((k) => w.offices[k]?.holder).filter(Boolean), -4), approve(w, w.hos.holder!, 1)) },
+      { label: 'Say nothing', what: 'It will blow over.', effects: ['The monarch’s approval −4', 'Stability −2'], run: (w) => (approve(w, w.hos.holder!, -4), meter(w, 'stability', -2, 'Silence from the palace')) }
+    ]
+  },
+  {
+    id: 'housing', house: true, title: 'Rents are through the roof', text: 'Landlords have doubled rents. Families are sleeping in their carts.', weight: 0.8,
+    options: [
+      { label: 'Cap rents', what: 'The richest pay, the poorest keep their homes.', effects: ['The richest three −10 each', 'The poorest three +10 each', 'Stability +1'], run: (w) => { const r = richest(w); const p = poorest(w).filter((id) => !r.includes(id)); levy(w, r, 10, 'treasury', 'Rent cap'); share(w, 'treasury', p, 10, 'Rent relief'); meter(w, 'stability', 1, 'Rents capped'); } },
+      { label: 'Build homes', what: 'A long programme of building.', effects: ['Treasury −60', 'Building programme 3 weeks (Prosperity +1 a week)'], run: (w) => (spend(w, 60, 'reserve', 'House building'), cond(w, 'building', 3)) },
+      { label: 'Leave it to the market', what: 'Prices will find their level.', effects: ['The poorest three −5 each', 'Stability −2'], run: (w) => (levy(w, poorest(w), 5, 'treasury', 'Rent rises'), meter(w, 'stability', -2, 'Families on the street')) }
+    ]
+  },
+  {
+    id: 'tax_revolt', house: true, title: 'A tax revolt', text: 'Citizens are refusing to pay. Protesters burn their tax demands outside the Treasury.', weight: 0.8, needs: (w) => w.config.taxRate >= 15 || (w.config.savingsTax || 0) >= 3,
+    options: [
+      { label: 'Cut taxes', what: 'Income tax −5%, savings tax halved, for good.', effects: ['Income tax −5% permanently', 'Savings tax halved', 'Stability +2'], run: (w) => ((w.config.taxRate = Math.max(0, w.config.taxRate - 5)), (w.config.savingsTax = Math.floor((w.config.savingsTax || 0) / 2)), meter(w, 'stability', 2, 'Taxes cut')) },
+      { label: 'Enforce collection', what: 'Bailiffs at the door.', effects: ['The richest five −10 each', 'Stability −3', 'Ministers approval −2'], run: (w) => (levy(w, richest(w, 5), 10, 'treasury', 'Back taxes collected'), meter(w, 'stability', -3, 'Bailiffs'), approveAll(w, ministers(w), -2)) },
+      { label: 'A tax amnesty', what: 'Pay what you owe and no questions asked.', effects: ['Treasury +15', 'General strike 1 week'], run: (w) => (levy(w, richest(w, 3), 5, 'treasury', 'Tax amnesty'), cond(w, 'strike', 1)) }
+    ]
+  },
+  {
+    id: 'state_funeral', title: 'A beloved elder dies', text: 'The realm’s oldest citizen, a hero of the founding, has died.', weight: 0.4,
+    options: [
+      { label: 'A state funeral', what: 'The whole realm stops to mourn.', effects: ['Treasury −30', 'Mourning 1 week (Stability +1, Prosperity −1)', 'Every MP approval +1'], run: (w) => (spend(w, 30, 'reserve', 'State funeral'), cond(w, 'mourning', 1), approveAll(w, mps(w), 1)) },
+      { label: 'A quiet family funeral', what: 'As they would have wanted.', effects: ['Stability −1'], run: (w) => meter(w, 'stability', -1, 'A hero buried quietly') }
     ]
   },
   {

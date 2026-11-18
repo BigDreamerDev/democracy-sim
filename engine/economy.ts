@@ -1,6 +1,7 @@
 // Money: wallets, the weekly payday, the Treasury, the Federal Reserve and prices, citizen banks and trade ventures.
 import { W, Id, DAY, HOUR, fail, newId, rand, cit, nm, own, text, int, allCitizens, exiled, mustBeFree, gazette, earn, transfer, bal, ca, tick, meter, inDanger, hasPower, isPM, clamp, standing, holderOf, bump } from './core';
 import { fundOffices, officePay } from './offices';
+import { hasCond, weekly as conditionsWeekly } from './conditions';
 
 export function send(w: W, actor: Id, to: Id, amount: number, note: string) {
   mustBeFree(w, actor);
@@ -25,7 +26,8 @@ export const priceIndex = (w: W) => w.economy.prices[w.economy.prices.length - 1
 // ---------- the budget, as the Treasury page shows it ----------
 export function payroll(w: W) {
   const list: { id: Id; amt: number; why: string }[] = [];
-  w.seats.forEach((m: Id | null) => m && list.push({ id: m, amt: w.config.mpPay, why: 'MP pay' }));
+  const mp = hasCond(w, 'inquiry') ? Math.floor(w.config.mpPay / 2) : w.config.mpPay;
+  w.seats.forEach((m: Id | null) => m && list.push({ id: m, amt: mp, why: 'MP pay' }));
   if (w.speaker) list.push({ id: w.speaker, amt: w.config.mpPay, why: 'Speaker pay' });
   if (w.pm) list.push({ id: w.pm, amt: w.config.ministerPay, why: 'Prime Minister pay' });
   officePay(w).forEach((p) => list.push({ id: p.id, amt: w.config.ministerPay, why: p.why }));
@@ -33,18 +35,39 @@ export function payroll(w: W) {
 }
 export const ARMY_COST: Record<string, number> = { down: 10, ready: 25, mobilised: 50 };
 export function armyCost(w: W) {
-  return w.offices.army ? ARMY_COST[w.army.readiness] * (w.army.war ? 2 : 1) : 0;
+  // supplies come from abroad: a weak crown makes them dearer
+  return w.offices.army ? Math.round((ARMY_COST[w.army.readiness] * (w.army.war ? 2 : 1)) / fx(w, Object.keys(w.nations)[0])) : 0;
 }
+// ---------- exchange rates: what one crown buys abroad. Inflation weakens it; good relations and prosperity strengthen it ----------
+export const fx = (w: W, nid: string) => w.economy.fx?.[nid] ?? 1;
+export function updateFx(w: W, infl: number) {
+  w.economy.fx ??= {};
+  w.economy.fxPrev ??= {};
+  Object.values(w.nations).forEach((n: any) => {
+    const prev = fx(w, n.id);
+    const drift = 1 - (infl - 2) / 100 + (n.mood - 2) * 0.005 + (w.meters.prosperity - 50) / 2500 + (rand(w) - 0.5) * 0.02;
+    w.economy.fxPrev[n.id] = prev;
+    w.economy.fx[n.id] = clamp(Math.round(prev * drift * 1000) / 1000, 0.2, 3);
+  });
+}
+// ---------- the savings tax: a share of every balance above the floor, each payday (both set by law) ----------
+export const savingsRate = (w: W) => (w.config.savingsTax || 0) * (hasCond(w, 'controls') ? 2 : 1);
+export function savingsTaxDue(w: W, id: Id) {
+  const over = bal(w, ca(id)) - (w.config.savingsFloor ?? 200);
+  return over > 0 ? Math.floor((over * savingsRate(w)) / 100) : 0;
+}
+export const dividendNow = (w: W) => Math.max(0, w.config.dividend - (hasCond(w, 'rationing') ? 2 : 0));
 export function budget(w: W) {
   const cs = allCitizens(w).filter((c: any) => !exiled(w, c.id));
   const base = cs.reduce((s: number, c: any) => s + (c.weekIncome || 0), 0);
   const fees = w.ledger.filter((l: any) => l.to === 'treasury' && l.at > w.now - 7 * DAY && !['Income tax'].includes(l.memo) && l.from !== 'reserve' && !l.memo.startsWith('Unspent')).reduce((s: number, l: any) => s + l.amt, 0);
   const income = [
-    { label: `Income tax at ${w.config.taxRate}% (projected)`, v: Math.round((base * w.config.taxRate) / 100) },
+    { label: hasCond(w, 'strike') ? 'Income tax (none: general strike)' : `Income tax at ${w.config.taxRate}% (projected)`, v: hasCond(w, 'strike') ? 0 : Math.round((base * w.config.taxRate) / 100) },
+    ...(savingsRate(w) > 0 ? [{ label: `Savings tax at ${savingsRate(w)}% over ${w.config.savingsFloor ?? 200} (projected)`, v: cs.reduce((s: number, c: any) => s + savingsTaxDue(w, c.id), 0) }] : []),
     { label: 'Tariffs, fines and fees (last 7 days)', v: fees }
   ];
   const out = [
-    { label: `Citizen dividend, ${w.config.dividend} each to ${cs.length}`, v: inDanger(w, 'prosperity') ? 0 : w.config.dividend * cs.length },
+    { label: `Citizen dividend, ${dividendNow(w)} each to ${cs.length}`, v: inDanger(w, 'prosperity') ? 0 : dividendNow(w) * cs.length },
     { label: 'Pay for MPs, the Speaker and ministers', v: payroll(w).reduce((s, p) => s + p.amt, 0) },
     { label: 'Office budgets', v: (Object.values(w.offices) as any[]).reduce((s: number, o: any) => s + (o.id === 'treasury' ? 0 : o.budget || 0), 0) as number },
     { label: 'Army upkeep', v: armyCost(w) },
@@ -63,13 +86,21 @@ export function payday(w: W) {
     const t = Math.round(((c.weekIncome || 0) * w.config.taxRate) / 100);
     c.lastWeekIncome = c.weekIncome || 0;
     c.weekIncome = 0;
-    if (t > 0 && bal(w, ca(c.id)) >= t) {
+    if (t > 0 && !hasCond(w, 'strike') && bal(w, ca(c.id)) >= t) {
       transfer(w, ca(c.id), 'treasury', t, 'Income tax');
       tax += t;
     }
   });
+  // the savings tax, before anything is paid out
+  let saved = 0;
+  if (savingsRate(w) > 0) cs.forEach((c: any) => {
+    const s = savingsTaxDue(w, c.id);
+    if (s > 0) (transfer(w, ca(c.id), 'treasury', s, 'Savings tax'), (saved += s));
+  });
   const recession = inDanger(w, 'prosperity');
-  if (!recession) cs.forEach((c: any) => !exiled(w, c.id) && w.config.dividend > 0 && transfer(w, 'treasury', ca(c.id), w.config.dividend, 'Citizen dividend'));
+  const div = dividendNow(w);
+  if (!recession) cs.forEach((c: any) => !exiled(w, c.id) && div > 0 && transfer(w, 'treasury', ca(c.id), div, 'Citizen dividend'));
+  conditionsWeekly(w);
   payroll(w).forEach((p) => transfer(w, 'treasury', ca(p.id), p.amt, p.why));
   fundOffices(w);
   if (w.offices.army) {
@@ -88,12 +119,13 @@ export function payday(w: W) {
   // prices move with borrowing and the rate
   const borrowed = w.economy.lentThisWeek || 0;
   const printed = w.economy.inflatingThisWeek || 0;
-  let infl = clamp(1 + borrowed / 40 + printed / 25 - (w.economy.rate - 2) * 1.5, -2, 15);
+  let infl = clamp(1 + borrowed / 40 + printed / 25 - (w.economy.rate - 2) * 1.5 + (hasCond(w, 'bubble') ? 3 : 0) + (hasCond(w, 'drought') ? 2 : 0), -2, 15);
   // a price freeze (the hyperinflation crisis) holds inflation down for a week
   if ((w.economy.freezeUntil || 0) > w.now) infl = Math.min(infl, 1);
   w.economy.prices.push(Math.round(priceIndex(w) * (1 + infl / 100) * 100) / 100);
   if (w.economy.prices.length > 12) w.economy.prices.shift();
   w.economy.lastInflation = infl;
+  updateFx(w, infl);
   // Prosperity responds to the week's finances
   const net = bal(w, 'treasury') - w.economy.lent - start;
   meter(w, 'prosperity', net >= 0 ? 2 : -3, net >= 0 ? 'The Treasury balanced its books' : 'The Treasury ran a deficit');
@@ -108,7 +140,7 @@ export function payday(w: W) {
   if (w.economy.hotWeeks >= 2 && !w.crisisQueue.some((q: any) => q.type === 'hyperinflation') && !Object.values(w.crises).some((c: any) => c.type === 'hyperinflation' && c.status === 'open')) {
     w.crisisQueue.push({ type: 'hyperinflation', at: w.now + HOUR, cause: `Prices rose more than 10% two weeks running.` });
   }
-  gazette(w, 'money', recession ? `Payday in a recession: no dividend this week. Income tax raised ${tax}.` : `Payday: ${w.config.dividend} crowns to every citizen. Income tax raised ${tax}. Prices ${infl >= 0 ? 'up' : 'down'} ${Math.abs(infl).toFixed(1)}%.`, '#/wallet');
+  gazette(w, 'money', recession ? `Payday in a recession: no dividend this week. Income tax raised ${tax}.${saved ? ` Savings tax raised ${saved}.` : ''}` : `Payday: ${div} crowns to every citizen. Income tax raised ${tax}.${saved ? ` Savings tax raised ${saved}.` : ''} Prices ${infl >= 0 ? 'up' : 'down'} ${Math.abs(infl).toFixed(1)}%.`, '#/wallet');
 }
 
 // ---------- citizen banks ----------
@@ -208,12 +240,13 @@ export function startVenture(w: W, actor: Id, nid: Id, amount: number) {
   if (tariff > 0) transfer(w, ca(actor), 'treasury', tariff, 'Trade tariff');
   const o = ventureOdds(w, nid);
   const r = o.low + rand(w) * (o.high - o.low);
-  w.ventures.unshift({ id: newId(w, 'v'), by: actor, nation: nid, amount, tariff, r: Math.round(r), at: w.now, dueAt: w.now + 2 * DAY, status: 'out' });
+  w.ventures.unshift({ id: newId(w, 'v'), by: actor, nation: nid, amount, tariff, r: Math.round(r), fx: fx(w, nid), at: w.now, dueAt: w.now + 2 * DAY, status: 'out' });
   tick(w, actor, 'ventures');
 }
 export function settleVenture(w: W, v: any) {
   const n = w.nations[v.nation];
-  const back = Math.max(0, Math.round(v.amount * (1 + v.r / 100)));
+  // earned abroad, brought home at today's rate: a crown that weakened while the ship was out means more crowns back
+  const back = Math.max(0, Math.round((v.amount * (1 + v.r / 100) * (v.fx || 1)) / fx(w, v.nation)));
   v.status = 'back';
   v.returned = back;
   const pay = Math.min(back, bal(w, 'nation:' + v.nation));
@@ -254,6 +287,7 @@ function motionTerms(w: W, a: any) {
   }
   if (kind === 'bonds') {
     if (w.bonds.issue && w.bonds.issue.closesAt > w.now) fail('A bond issue is already open.');
+    if (hasCond(w, 'controls')) fail('No bonds can be issued under capital controls.');
     return { kind, rate: int(a.rate, 1, 10, 'interest (1–10% a week)'), weeks: int(a.weeks, 1, 8, 'term (1–8 weeks)'), cap: int(a.cap, 10, 1000, 'size of the issue (10–1000 crowns)') };
   }
   if (kind === 'gold') {
@@ -323,6 +357,7 @@ export function buyBond(w: W, actor: Id, amount: unknown) {
   mustBeFree(w, actor);
   const s = w.bonds.issue;
   if (!s || s.closesAt <= w.now) fail('No bonds are on sale.');
+  if (hasCond(w, 'controls')) fail('No bonds can be sold under capital controls.');
   const amt = int(amount, 1, 1000, 'amount');
   if (s.sold + amt > s.cap) fail(`Only ${s.cap - s.sold} crowns of this issue are left.`);
   if (bal(w, ca(actor)) < amt) fail('You do not have that many crowns.');
@@ -347,8 +382,9 @@ function buyGold(w: W, amount: number, who: string) {
   if (bal(w, 'treasury') < amount) fail(`The Treasury has only ${bal(w, 'treasury')} crowns.`);
   const seller = Object.keys(w.nations)[0];
   transfer(w, 'treasury', 'nation:' + seller, amount, 'Gold bought abroad for the reserve');
-  w.economy.gold = (w.economy.gold || 0) + amount;
-  gazette(w, 'money', `The Treasury buys ${amount} crowns of gold from ${w.nations[seller]?.name ?? 'abroad'}, agreed by ${who}. The gold reserve is now ${w.economy.gold}: the Reserve can print that much without raising prices.`, '#/economy');
+  const got = Math.max(1, Math.round(amount * fx(w, seller)));
+  w.economy.gold = (w.economy.gold || 0) + got;
+  gazette(w, 'money', `The Treasury spends ${amount} crowns on ${got} crowns' worth of gold from ${w.nations[seller]?.name ?? 'abroad'}, agreed by ${who}. The gold reserve is now ${w.economy.gold}: the Reserve can print that much without raising prices.`, '#/economy');
 }
 
 // ---------- the bond market: holders sell bonds to each other before they mature. Sellers stay anonymous. ----------

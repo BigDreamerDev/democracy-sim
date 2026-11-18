@@ -24,6 +24,8 @@ export const SETTABLE: Record<string, { label: string; unit: string; min: number
   mpPay: { label: 'MP pay each week', unit: ' crowns', min: 0, max: 30 },
   ministerPay: { label: 'Minister pay each week', unit: ' crowns', min: 0, max: 30 },
   tariff: { label: 'Tariff on trade ventures', unit: '%', min: 0, max: 40 },
+  savingsTax: { label: 'Savings tax (each payday)', unit: '%', min: 0, max: 10 },
+  savingsFloor: { label: 'Savings tax starts above', unit: ' crowns', min: 50, max: 1000 },
   debateHours: { label: 'Debate length', unit: ' hours', min: 12, max: 48 },
   voteHours: { label: 'Voting length', unit: ' hours', min: 12, max: 48 }
 };
