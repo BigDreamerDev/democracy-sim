@@ -404,6 +404,97 @@ export const CRISES: Crisis[] = [
       { label: 'Call it a fraud', what: 'The palace denies everything.', effects: ['The claimant −2 approval', 'Stability −1'], run: (w, c) => (castOf(c, 0) && approve(w, castOf(c, 0)!, -2), meter(w, 'stability', -1, 'A royal denial')) }
     ]
   },
+  // ---------- the strange ones: mass delusions, prophets and madness, all with names attached ----------
+  {
+    id: 'prophet', extreme: true, title: 'A prophet in the market square', text: 'A citizen says the spirits speak through them. Hundreds now follow them everywhere, and the followers have stopped paying tax.', weight: 0.5,
+    cast: (w) => one(w, 'any', 'who hears the spirits'),
+    options: [
+      { label: 'Arrest the prophet', what: 'Martyrs are dangerous, but so is this.', effects: ['The prophet −10 and −3 approval', 'Stability −2'], run: (w, c) => (levy(w, [castOf(c, 0)!].filter(Boolean), 10, 'treasury', 'Fined for unlawful assembly'), castOf(c, 0) && approve(w, castOf(c, 0)!, -3), meter(w, 'stability', -2, 'A prophet arrested')) },
+      { label: 'Give them a seat at the table', what: 'A post as Spiritual Adviser to the Crown.', effects: ['The prophet +10 and +5 Influence', 'Stability +1', 'PM approval −2'], run: (w, c) => (castOf(c, 0) && (share(w, 'treasury', [castOf(c, 0)!], 10, 'Spiritual Adviser’s stipend'), earn(w, castOf(c, 0)!, 5, 'Made Spiritual Adviser'), stamp(w, castOf(c, 0)!, 'Spiritual Adviser', 'By appointment', 'good')), meter(w, 'stability', 1, 'The prophet was heard'), w.pm && approve(w, w.pm, -2)) },
+      { label: 'Ignore them', what: 'It will burn out.', effects: ['General strike 1 week (the faithful pay no tax)', 'The prophet +3 Influence'], run: (w, c) => (cond(w, 'strike', 1), castOf(c, 0) && earn(w, castOf(c, 0)!, 3, 'A growing flock')) }
+    ]
+  },
+  {
+    id: 'dancing', extreme: true, title: 'The dancing plague', text: 'It started with one citizen in the street who would not stop dancing. Now four hundred people are dancing day and night, and some have collapsed.', weight: 0.4,
+    cast: (w) => one(w, 'any', 'who started dancing first'),
+    options: [
+      { label: 'Hire musicians', what: 'The physicians say they must dance it out. A stage, a band, and a guard.', effects: ['Treasury −15', 'Epidemic 1 week', 'Celebration 1 week'], run: (w) => (spend(w, 15, 'reserve', 'Musicians for the dancers'), cond(w, 'epidemic', 1), cond(w, 'celebration', 1)) },
+      { label: 'Ban dancing', what: 'By order, nobody dances.', effects: ['Stability −2', 'The first dancer −5'], run: (w, c) => (meter(w, 'stability', -2, 'Dancing was banned'), levy(w, [castOf(c, 0)!].filter(Boolean), 5, 'treasury', 'Fined for dancing')) },
+      { label: 'Quarantine the square', what: 'Wall it off and wait.', effects: ['Quarantine 1 week', 'The first dancer +2 Influence (a legend)'], run: (w, c) => (cond(w, 'quarantine', 1), castOf(c, 0) && earn(w, castOf(c, 0)!, 2, 'Started the dancing plague')) }
+    ]
+  },
+  {
+    id: 'water_theory', extreme: true, title: 'The water is poisoned, they say', text: 'A citizen’s posts claim the government puts something in the water to make people obedient. Half the realm is drinking only beer.', weight: 0.5,
+    cast: (w) => one(w, 'any', 'spreading the theory'),
+    options: [
+      { label: 'Test the water in public', what: 'The Chancellor drinks a glass on the Gazette steps.', effects: ['Treasury −15', 'The theorist −3 approval', 'Stability +1'], run: (w, c) => (spend(w, 15, 'reserve', 'Public water tests'), castOf(c, 0) && approve(w, castOf(c, 0)!, -3), meter(w, 'stability', 1, 'The water was tested')) },
+      { label: 'Arrest the theorist', what: 'Which proves the theory, to the believers.', effects: ['The theorist −10', 'Stability −2', 'The theorist +3 Influence'], run: (w, c) => (castOf(c, 0) && (levy(w, [castOf(c, 0)!], 10, 'treasury', 'Fined for spreading panic'), earn(w, castOf(c, 0)!, 3, 'Silenced, and more famous for it')), meter(w, 'stability', -2, 'A theorist arrested')) },
+      { label: 'Agree with them', what: 'The PM announces an inquiry into “the water”.', effects: ['PM approval +2', 'Standing −2', 'Prosperity −2 (beer economy)'], run: (w) => (w.pm && approve(w, w.pm, 2), standingShift(w, -2, 'The realm believes its water is drugged'), meter(w, 'prosperity', -2, 'Nobody drinks water')) }
+    ]
+  },
+  {
+    id: 'witch_hunt', extreme: true, house: true, title: 'A witch hunt', text: 'A mob says a citizen has cursed the harvest. They have torches. Another citizen is leading them.', weight: 0.4,
+    cast: (w) => pair(w, 'any', ['accused of witchcraft', 'leading the mob']),
+    options: [
+      { label: 'Protect the accused', what: 'The guard stands between them and the mob.', effects: ['The accused +2 approval', 'The mob leader −2 approval', 'Stability −1'], run: (w, c) => (castOf(c, 0) && approve(w, castOf(c, 0)!, 2), castOf(c, 1) && approve(w, castOf(c, 1)!, -2), meter(w, 'stability', -1, 'The mob was turned back')) },
+      { label: 'Put them on trial', what: 'Let the court settle it. The court is not immune to torches.', effects: ['The accused −15 and −3 approval', 'Stability +1', 'Standing −2'], run: (w, c) => (levy(w, [castOf(c, 0)!].filter(Boolean), 15, 'treasury', 'Convicted of witchcraft'), castOf(c, 0) && (approve(w, castOf(c, 0)!, -3), stamp(w, castOf(c, 0)!, 'Convicted', 'Witchcraft', 'ink')), meter(w, 'stability', 1, 'The mob got its trial'), standingShift(w, -2, 'A witch trial, in this century')) },
+      { label: 'Arrest the mob leader', what: 'Inciting a mob is the only crime here.', effects: ['The mob leader −10 and −3 approval', 'Stability +1'], run: (w, c) => (levy(w, [castOf(c, 1)!].filter(Boolean), 10, 'treasury', 'Fined for leading a mob'), castOf(c, 1) && approve(w, castOf(c, 1)!, -3), meter(w, 'stability', 1, 'The mob leader arrested')) }
+    ]
+  },
+  {
+    id: 'secret_society', extreme: true, house: true, title: 'A secret society in Parliament', text: 'Leaked robes, oaths and a membership list: two MPs belong to a society that swears to obey its Grand Master before the realm.', weight: 0.4, needs: (w) => mps(w).length >= 2,
+    cast: (w) => { const m = shuffle(w, pool(w, 'mp')).slice(0, 2); const gm = shuffle(w, freeCitizens(w).filter((x) => !m.includes(x)))[0]; return [...m.map((id) => ({ id, role: 'on the membership list' })), ...(gm ? [{ id: gm, role: 'named as Grand Master' }] : [])]; },
+    options: [
+      { label: 'Expose them', what: 'Names, robes and photographs in the Gazette.', effects: ['Both MPs −3 approval', 'The Grand Master −10', 'Stability −1'], run: (w, c) => (approveAll(w, [castOf(c, 0), castOf(c, 1)].filter(Boolean) as Id[], -3), levy(w, [castOf(c, 2)!].filter(Boolean), 10, 'treasury', 'Fined over the society'), meter(w, 'stability', -1, 'A secret society exposed')) },
+      { label: 'Outlaw it', what: 'Members lose every post.', effects: ['Both MPs lose their posts', 'Stability +1'], run: (w, c) => (vacate(w, castOf(c, 0)), vacate(w, castOf(c, 1)), meter(w, 'stability', 1, 'The society outlawed')) },
+      { label: 'Ask to join', what: 'If you cannot beat them…', effects: ['The Grand Master +5 Influence', 'PM +3 Influence', 'A secret card about the PM'], run: (w, c) => (castOf(c, 2) && earn(w, castOf(c, 2)!, 5, 'The PM joined the society'), w.pm && earn(w, w.pm, 3, 'Joined a secret society'), pmCard(w, 'The PM has sworn the oath of a secret society.', 'A brother of the order')) }
+    ]
+  },
+  {
+    id: 'tulips', extreme: true, title: 'Tulip mania', text: 'A single rare bulb just sold for a house. Everyone is buying bulbs on credit, and one citizen has cornered the market.', weight: 0.4,
+    cast: (w) => one(w, 'rich', 'who cornered the bulb market'),
+    options: [
+      { label: 'Let it run', what: 'What could go wrong?', effects: ['Bubble 2 weeks', 'The bulb baron +20', 'A crash follows'], run: (w, c) => (cond(w, 'bubble', 2), castOf(c, 0) && share(w, 'reserve', [castOf(c, 0)!], 20, 'Bulb profits')), then: { type: 'crash', days: 14 } },
+      { label: 'Ban bulb trading', what: 'Overnight, the bulbs are worth nothing.', effects: ['The bulb baron −20', 'The poorest three −3 (they bought in)', 'Stability −1'], run: (w, c) => (levy(w, [castOf(c, 0)!].filter(Boolean), 20, 'reserve', 'Bulbs worthless'), levy(w, poorest(w), 3, 'reserve', 'Bulbs worthless'), meter(w, 'stability', -1, 'Bulb trading banned')) },
+      { label: 'Tax every sale', what: 'If they are mad, the Treasury may as well profit.', effects: ['The richest three −8 to the Treasury', 'Boom 1 week'], run: (w) => (levy(w, richest(w), 8, 'treasury', 'Bulb tax'), cond(w, 'boom', 1)) }
+    ]
+  },
+  {
+    id: 'emperor', extreme: true, title: 'A citizen crowns themselves Emperor', text: 'A citizen has declared their street an independent empire, issued their own coins and demanded tribute from the neighbours.', weight: 0.4,
+    cast: (w) => one(w, 'any', 'Emperor of the street'),
+    options: [
+      { label: 'Arrest the Emperor', what: 'A short reign.', effects: ['The Emperor −10 and −2 approval', 'Stability +1'], run: (w, c) => (castOf(c, 0) && (levy(w, [castOf(c, 0)!], 10, 'treasury', 'Fined for declaring an empire'), approve(w, castOf(c, 0)!, -2)), meter(w, 'stability', 1, 'The Emperor deposed')) },
+      { label: 'Recognise the empire', what: 'Tourists love it. They pay tribute to the realm.', effects: ['The Emperor +10 and a stamp', 'Treasury +15 (tourists)', 'Stability −1'], run: (w, c) => (castOf(c, 0) && (share(w, 'reserve', [castOf(c, 0)!], 10, 'Imperial tribute'), stamp(w, castOf(c, 0)!, 'Emperor', 'Of one street', 'good')), transfer(w, 'reserve', 'treasury', 15, 'Empire tourism'), meter(w, 'stability', -1, 'An empire in the capital')) },
+      { label: 'Ignore it', what: 'The idea spreads to the north.', effects: ['The Emperor +3 Influence', 'The north may try it next'], run: (w, c) => castOf(c, 0) && earn(w, castOf(c, 0)!, 3, 'Reigned unchallenged'), then: { type: 'secession', days: 7 } }
+    ]
+  },
+  {
+    id: 'curse', extreme: true, title: 'The Prime Minister is cursed', text: 'A soothsayer has cursed the Prime Minister in front of a crowd: “Ruin within the month.” Half the realm believes it.', weight: 0.4, needs: (w) => !!w.pm,
+    cast: (w) => { const p = shuffle(w, freeCitizens(w).filter((x) => x !== w.pm)); return [{ id: w.pm!, role: 'cursed' }, ...(p[0] ? [{ id: p[0], role: 'the soothsayer' }] : [])]; },
+    options: [
+      { label: 'Pay to lift the curse', what: 'The soothsayer names a price.', effects: ['The PM pays the soothsayer up to 15', 'PM approval −1'], run: (w, c) => { const s2 = castOf(c, 1); if (w.pm && s2) { const n = Math.min(15, bal(w, ca(w.pm))); if (n > 0) transfer(w, ca(w.pm), ca(s2), n, 'To lift a curse'); approve(w, w.pm, -1); } } },
+      { label: 'Laugh at it', what: 'The PM tears up the curse on camera.', effects: ['Even chance: PM approval +3', 'Otherwise: Prosperity −3 and PM approval −3 (it seems to work)'], run: (w) => { if (!w.pm) return; if (chance(w, 0.5)) approve(w, w.pm, 3); else (meter(w, 'prosperity', -3, 'The curse came true'), approve(w, w.pm, -3)); } },
+      { label: 'Banish the soothsayer', what: 'Out of the capital.', effects: ['The soothsayer −10', 'Stability −1', 'The soothsayer +3 Influence (now famous)'], run: (w, c) => (castOf(c, 1) && (levy(w, [castOf(c, 1)!], 10, 'treasury', 'Banished soothsayer'), earn(w, castOf(c, 1)!, 3, 'Cursed the PM')), meter(w, 'stability', -1, 'A soothsayer banished')) }
+    ]
+  },
+  {
+    id: 'signal', extreme: true, title: 'A signal from the stars', text: 'The observatory has picked up a repeating signal from deep space. The astronomer who found it wants to answer.', weight: 0.3,
+    cast: (w) => one(w, 'any', 'the astronomer who found it'),
+    options: [
+      { label: 'Answer it', what: 'A message from the realm to the stars. The whole world is watching.', effects: ['Treasury −30', 'All nations warm', 'The astronomer +5 Influence', 'A cult may form'], run: (w, c) => (spend(w, 30, 'reserve', 'A reply to the stars'), Object.keys(w.nations).forEach((n) => mood(w, n, 1, 'We answered the stars')), castOf(c, 0) && earn(w, castOf(c, 0)!, 5, 'Answered the stars')), then: { type: 'cult', days: 7 } },
+      { label: 'Classify it', what: 'Nobody needs to know.', effects: ['A secret card', 'The astronomer −2 approval (they talked)'], run: (w, c) => (pmCard(w, 'The observatory found a signal from space. The government buried it.', 'The observatory'), castOf(c, 0) && approve(w, castOf(c, 0)!, -2)) },
+      { label: 'Announce it, do nothing', what: 'A national holiday for the end of loneliness.', effects: ['Celebration 1 week', 'The astronomer +3 Influence'], run: (w, c) => (cond(w, 'celebration', 1), castOf(c, 0) && earn(w, castOf(c, 0)!, 3, 'Found the signal')) }
+    ]
+  },
+  {
+    id: 'meteor', extreme: true, house: true, title: 'A meteor strikes the capital', text: 'A rock the size of a cart came down in the night. Three streets are gone. Miraculously, nobody died, but some lost everything.', weight: 0.3,
+    cast: (w) => shuffle(w, pool(w, 'poor')).slice(0, 3).map((id) => ({ id, role: 'whose home was destroyed' })),
+    options: [
+      { label: 'Rebuild their homes', what: 'The state pays for everything.', effects: ['Treasury −60', 'Each victim +10', 'Building programme 2 weeks'], run: (w, c) => (spend(w, 30, 'reserve', 'Meteor rebuilding'), share(w, 'treasury', (c.cast || []).map((x: any) => x.id), 10, 'Meteor compensation'), cond(w, 'building', 2)) },
+      { label: 'Sell the meteorite', what: 'Collectors in Orrin will pay a fortune.', effects: ['Treasury +50 from Orrin', 'Orrin warms', 'The victims get nothing (−2 approval for the PM)'], run: (w) => (bal(w, 'nation:orrin') >= 50 && transfer(w, 'nation:orrin', 'treasury', 50, 'Sold the meteorite'), mood(w, 'orrin', 1, 'Bought our meteorite'), w.pm && approve(w, w.pm, -2)) },
+      { label: 'Give the meteorite to the victims', what: 'Theirs to sell.', effects: ['Each victim +15 (new money)', 'Stability +1'], run: (w, c) => (share(w, 'reserve', (c.cast || []).map((x: any) => x.id), 15, 'Sold their piece of the meteorite'), meter(w, 'stability', 1, 'The meteorite went to the victims')) }
+    ]
+  },
   // ---------- more of the long tail ----------
   {
     id: 'heatwave', title: 'A record heatwave', text: 'Forty degrees in the capital. The old and the poor are suffering, and the reservoirs are dropping.', weight: 0.8,
