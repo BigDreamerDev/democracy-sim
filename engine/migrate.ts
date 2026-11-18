@@ -63,6 +63,7 @@ export function migrate(w: W): W {
   w.config.savingsFloor ??= 200;
   w.config.edictsPerDay ??= 1;
   w.config.honoursPerWeek ??= 1;
+  w.config.emeritusPay ??= 10;
   w.conditions ??= [];
   Object.values(w.crises || {}).forEach((c: any) => ((c.cast ??= []), (c.responses ??= {}), (c.helpers ??= {}), (c.bribes ??= {})));
   w.grudges ??= {};

@@ -1,6 +1,6 @@
 // Offices: every role in government is one of these. A law creates an office from a template or from
 // a list of powers; whoever holds it gets those powers as buttons.
-import { W, Id, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, isHOS, hasPower, exiled, barred, detained, holdsAnything, own, text, int } from './core';
+import { W, Id, approve, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, isHOS, hasPower, exiled, barred, detained, holdsAnything, own, text, int } from './core';
 
 export const POWERS: Record<string, { label: string; strong?: boolean }> = {
   grant: { label: 'Pay citizens from its weekly budget' },
@@ -32,7 +32,8 @@ export const TEMPLATES: Record<string, { name: string; title: string; act: strin
   army: { name: 'The Army', title: 'General', act: 'Defence Act', powers: ['army'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'The Army acts to defend the Nation, but comes at a financial and loyalty cost.' },
   court: { name: 'Supreme Court', title: 'Justice', act: 'Supreme Court Amendment', powers: ['judge'], fill: 'lot', budget: 0, secrecy: 'public', blurb: 'The Court handles protecting the rights of citizens and protecting against constitutional violations', constitutional: true },
   guard: { name: 'Protection Service', title: 'Bodyguard', act: 'Protection Act', powers: ['protect'], fill: 'pm', budget: 0, secrecy: 'restricted', blurb: 'The Protection Service ensures that those who face a bounty are protected, but only one at a time' },
-  whip: { name: 'Chief Whip', title: 'Chief Whip', act: 'Founding Act', powers: ['files'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'Keeps government MPs voting together. Sees who rebels.' }
+  whip: { name: 'Chief Whip', title: 'Chief Whip', act: 'Founding Act', powers: ['files'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'Keeps government MPs voting together. Sees who rebels.' },
+  emeritus: { name: 'Office of the Monarch Emeritus', title: 'Monarch Emeritus', act: 'Royal Pensions Act', powers: [], fill: 'crown', budget: 0, secrecy: 'public', blurb: 'A past monarch, granted the office by the reigning one: a royal pension each payday, an honour and a style for life in office.' }
 };
 
 export const FILL: Record<string, string> = { pm: 'The Prime Minister appoints', crown: 'The monarch appoints', house: 'MPs elect', citizens: 'Every citizen elects', lot: 'Drawn by lot' };
@@ -108,6 +109,12 @@ export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
     if (detained(w, target)) fail('A detainee cannot hold office.');
     if (w.regime?.type === 'party' && t.party !== w.regime.party) fail('Only members of the Party may hold office.');
   }
+  // the Monarch Emeritus: only someone who has reigned before, and not the one reigning now
+  if (o.template === 'emeritus' && target) {
+    const past = (w.fame?.monarchs || []).filter((m: any) => m.id === target).pop();
+    if (!past) fail('Only someone who has reigned before can be Monarch Emeritus.');
+    if (w.hos.holder === target) fail('The reigning monarch cannot be their own emeritus.');
+  }
   // an officer of state proposes; a second officer agreeing to the same choice makes it so
   if (!pm) {
     const others = officers(w).filter((id) => id !== actor);
@@ -120,11 +127,18 @@ export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
     }
   }
   o.nominee = null;
+  // a Monarch Emeritus who loses the office loses the style that came with it (the honour and the stamp stay)
+  if (o.template === 'emeritus' && o.holder && o.holder !== target && o.style) {
+    const prev = w.citizens[o.holder];
+    if (prev?.titles) prev.titles = prev.titles.filter((x: string) => x !== o.style);
+    o.style = null;
+  }
   if (target) {
     const t = cit(w, target);
     const promised = Object.entries(w.coalition?.promises || {}).find(([k]) => k === officeId)?.[1];
     o.holder = target;
     t.stats.heldOffice = true;
+    if (o.template === 'emeritus') return grantEmeritus(w, o, target, actor);
     stamp(w, target, o.title, 'Appointed by ' + nm(w, actor), 'ink');
     gazette(w, 'government', `${t.name} is appointed ${o.title}.`, '#/offices');
     if (promised && promised !== target) gazette(w, 'government', `The PM broke a coalition promise: the ${o.title} post was promised to ${nm(w, promised as string)}.`, '#/cabinet');
@@ -172,7 +186,20 @@ export function fundOffices(w: W) {
 }
 
 export function officePay(w: W) {
-  return Object.values(w.offices).filter((o: any) => o.holder && (o.fill === 'pm' || o.fill === 'crown')).map((o: any) => ({ id: o.holder, why: `${o.title} pay` }));
+  return Object.values(w.offices).filter((o: any) => o.holder && (o.fill === 'pm' || o.fill === 'crown')).map((o: any) => (o.template === 'emeritus' ? { id: o.holder, why: 'Royal pension', amt: w.config.emeritusPay ?? 10 } : { id: o.holder, why: `${o.title} pay` }));
+}
+// a past monarch made Monarch Emeritus: a style for life in office (their old regnal name, emeritus), an honour and a stamp
+function grantEmeritus(w: W, o: any, target: Id, actor: Id) {
+  const t = cit(w, target);
+  const past = (w.fame?.monarchs || []).filter((m: any) => m.id === target).pop();
+  const style = past ? `${past.title} ${past.name} ${past.numeral}, Emeritus` : `${t.name}, Monarch Emeritus`;
+  o.style = style;
+  t.titles ??= [];
+  if (!t.titles.includes(style)) t.titles.push(style);
+  stamp(w, target, 'Monarch Emeritus', `Granted by ${nm(w, actor)}`, 'good');
+  earn(w, target, 5, 'Made Monarch Emeritus');
+  approve(w, target, 3);
+  gazette(w, 'hos', `${t.name} is made Monarch Emeritus, to be styled ${style}, with a royal pension of ${w.config.emeritusPay ?? 10} crowns each payday.`, '#/office/' + o.id);
 }
 
 export function lotOfficeRefresh(w: W, o: any) {

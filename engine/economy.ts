@@ -30,7 +30,7 @@ export function payroll(w: W) {
   w.seats.forEach((m: Id | null) => m && list.push({ id: m, amt: mp, why: 'MP pay' }));
   if (w.speaker) list.push({ id: w.speaker, amt: w.config.mpPay, why: 'Speaker pay' });
   if (w.pm) list.push({ id: w.pm, amt: w.config.ministerPay, why: 'Prime Minister pay' });
-  officePay(w).forEach((p) => list.push({ id: p.id, amt: w.config.ministerPay, why: p.why }));
+  officePay(w).forEach((p: any) => list.push({ id: p.id, amt: p.amt ?? w.config.ministerPay, why: p.why }));
   return list.filter((p) => p.amt > 0);
 }
 export const ARMY_COST: Record<string, number> = { down: 10, ready: 25, mobilised: 50 };

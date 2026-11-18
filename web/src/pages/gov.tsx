@@ -64,7 +64,7 @@ export function Office({ id }: { id: string }) {
         </div>
       </Sec>
       {o.nominee && <Sec><Card kind="warn"><b>{nm(w, o.nominee.by)}</b> proposes {o.nominee.target ? <><b>{nm(w, o.nominee.target)}</b> as {o.title}</> : `leaving the post vacant`}. Another officer of state must make the same choice.</Card></Sec>}
-      {canAppoint(w, me, o) && <Sec title="Appoint" sub={isPM(w, me) ? undefined : 'As an officer of state you propose; a second officer must agree.'}><Pick value={o.holder || ''} onChange={(v) => act('gov.appoint', { office: o.id, target: v || null }, 'Appointed.')} empty="Leave vacant" options={allCitizens(w).filter((c: any) => !c.admin).map((c: any) => [c.id, c.name])} /></Sec>}
+      {canAppoint(w, me, o) && <Sec title="Appoint" sub={o.template === 'emeritus' ? 'Only someone who has reigned before.' : isPM(w, me) ? undefined : 'As an officer of state you propose; a second officer must agree.'}><Pick value={o.holder || ''} onChange={(v) => act('gov.appoint', { office: o.id, target: v || null }, 'Appointed.')} empty="Leave vacant" options={allCitizens(w).filter((c: any) => (o.template === 'emeritus' ? (w.fame?.monarchs || []).some((m: any) => m.id === c.id) && c.id !== w.hos.holder : !c.admin)).map((c: any) => [c.id, c.name])} /></Sec>}
       {o.fill !== 'crown' && <Sec><Btn href={'#/law/' + o.law} kind="plain" small>Read the law that created it</Btn></Sec>}
     </Page>
   );

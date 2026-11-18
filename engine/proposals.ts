@@ -27,6 +27,7 @@ export const SETTABLE: Record<string, { label: string; unit: string; min: number
   savingsTax: { label: 'Savings tax (each payday)', unit: '%', min: 0, max: 10 },
   edictsPerDay: { label: 'Built-in decrees a day (Government Powers Act)', unit: '', min: 1, max: 10 },
   honoursPerWeek: { label: 'Honours the head of state may give each week', unit: '', min: 1, max: 10 },
+  emeritusPay: { label: 'Royal pension for the Monarch Emeritus', unit: ' crowns', min: 0, max: 30 },
   savingsFloor: { label: 'Savings tax starts above', unit: ' crowns', min: 50, max: 1000 },
   debateHours: { label: 'Debate length', unit: ' hours', min: 12, max: 48 },
   voteHours: { label: 'Voting length', unit: ' hours', min: 12, max: 48 }
