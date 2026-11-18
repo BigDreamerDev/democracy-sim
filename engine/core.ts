@@ -199,6 +199,8 @@ export const METERS: Record<string, { name: string; low: string; blurb: string }
 };
 export function meter(w: W, key: 'prosperity' | 'stability', d: number, why: string) {
   if (!d) return;
+  // the realm has gone mad (two extreme crises in a week): every swing is doubled
+  if ((w.conditions || []).some((x: any) => x.type === 'madness' && x.until > w.now)) d *= 2;
   const before = w.meters[key];
   // for two weeks after a regime falls the realm is scarred: Stability cannot climb past 50
   const cap = key === 'stability' && w.scars && w.scars.until > w.now ? Math.max(50, before) : 100;

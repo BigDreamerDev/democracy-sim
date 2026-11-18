@@ -197,6 +197,7 @@ export const COMMANDS: Record<string, Cmd> = {
   'crisis.speak': (w, me, a) => S.speakCrisis(w, me, a.id, a.choice, a.text),
   'crisis.respond': (w, me, a) => S.respond(w, me, a.id, a.move, a.target),
   'crisis.help': (w, me, a) => S.help(w, me, a.id, a.amount),
+  'crisis.bribe': (w, me, a) => S.bribe(w, me, a.id, a.choice, a.amount),
   'foreign.answer': (w, me, a) => F.answerUltimatum(w, me, a.id, a.pay),
   'streets.join': (w, me, a) => R.join(w, me, a.agree),
   'streets.leave': (w, me) => R.leave(w, me),

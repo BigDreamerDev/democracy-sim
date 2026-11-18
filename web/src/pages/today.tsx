@@ -481,6 +481,11 @@ export function Passport({ id }: { id?: string }) {
         <Sec title="Offices and roles">{roles.length ? <ul class="list">{roles.map((r) => <li><a href={r.href} class="row" style={{ color: 'inherit', textDecoration: 'none' }}><b>{r.title}</b>{r.can.length > 0 && <span class="small muted" style={{ textAlign: 'right' }}>{r.can[0]}{r.can.length > 1 ? ` +${r.can.length - 1}` : ''}</span>}</a></li>)}</ul> : <Empty>No offices held.</Empty>}</Sec>
         <Career id={pid} />
         {whip > 0 && <Sec title="Voting record"><Card><b class="serif" style={{ fontSize: 28 }}>{Math.round((c.whip.loyal / whip) * 100)}%</b> with the government whip in {whip} votes.{c.whip.rebel ? <span class="err-line"> {c.whip.rebel} rebellion{c.whip.rebel > 1 ? 's' : ''}, latest on {c.whip.last}.</span> : ''}</Card></Sec>}
+        {(c.crisisLog || []).length > 0 && (
+          <Sec title="Crisis record" sub={`Reputation ${(c.crisisRep || 0) >= 0 ? '+' : ''}${c.crisisRep || 0}: honesty and apologies help; lies, blame that backfires and cashing in hurt.`}>
+            <ul class="list">{c.crisisLog.slice(0, 10).map((e: any) => <li class="row" style={{ alignItems: 'flex-start' }}><span><a href={'#/crisis/' + e.crisis}><b>{e.title}</b></a><div class="small muted">{e.role}; {e.outcome}</div></span><b class="tnum" style={{ color: e.d > 0 ? 'var(--teal)' : e.d < 0 ? 'var(--red)' : 'var(--muted)' }}>{e.d > 0 ? '+' : ''}{e.d}</b></li>)}</ul>
+          </Sec>
+        )}
         <Sec title="Visas" sub="A stamp for every office, vote and scandal.">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>{c.stamps.slice(0, 24).map((s: any) => <span class={'visa ' + (s.tone === 'bad' ? 'bad' : s.tone === 'ink' ? 'ink' : '')}><b>{s.label}</b><small>{s.sub}</small></span>)}</div>
         </Sec>

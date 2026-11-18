@@ -169,6 +169,7 @@ export const CATALOG: Record<string, CmdInfo> = {
   'crisis.speak': { about: 'MP or PM: speak for one response to an open crisis (2 speeches each, max 280 characters, printed in the Gazette).', args: { id: 'id (crisis)', choice: 'number (option index)', text: 'text' } },
   'crisis.respond': { about: 'If you are in crisis.cast (caught up in it): make your one move while it is open. cashin is private until it comes out.', args: { id: 'id (crisis)', move: "'deny' | 'apologise' | 'blame' | 'cashin'", target: 'id (citizen, for blame)' } },
   'crisis.help': { about: 'Give crowns to an open crisis’s relief fund (up to 25 each). +1 approval per 5, up to +3.', args: { id: 'id (crisis)', amount: 'number' } },
+  'crisis.bribe': { about: 'If you are caught up in a crisis the PM decides: privately offer the PM crowns (5–50) to choose an option. Paid only if they do; a third of the time it comes out.', args: { id: 'id (crisis)', choice: 'number (option index)', amount: 'number' } },
   'crisis.vote': { about: 'MP: vote on a crisis the House decides (crisis.house is true).', args: { id: 'id (crisis)', choice: 'number (option index)' } },
   'foreign.answer': { about: 'Foreign Minister or PM: pay or refuse a nation’s demand for tribute (w.ultimatums).', args: { id: 'id (ultimatum)', pay: 'bool' } },
   'streets.join': { about: 'Opt in to the Streets, the real-life part of the game (contracts, bounties, stalls). You must agree to the rules.', args: { agree: 'bool (must be true)' } },

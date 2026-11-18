@@ -164,6 +164,10 @@ export function viewFor(full: W, me: Id): W {
   }
   // Treasury bonds: what each citizen holds is their own business; the issue and the total stay public
   if (w.bonds) w.bonds.holdings = (w.bonds.holdings || []).filter((h: any) => h.owner === me);
+  // crises: a bribe is seen by the one who offered it and by the PM, until it comes out
+  Object.values(w.crises || {}).forEach((c: any) => { if (!c.bribes) return; Object.keys(c.bribes).forEach((id) => { if (id !== me && full.pm !== me && !c.bribes[id].exposed) delete c.bribes[id]; }); });
+  // the crisis record: others see a cash-in or a hidden bribe only as keeping quiet
+  Object.values(w.citizens).forEach((p: any) => { if (p.id !== me && p.crisisLog) p.crisisLog = p.crisisLog.map((e: any) => (e.secret ? { ...e, move: 'none', outcome: 'kept their head down' } : e)).map(({ secret, ...e }: any) => e); });
   // crises: a cash-in is private until it comes out
   Object.values(w.crises || {}).forEach((c: any) => Object.keys(c.responses || {}).forEach((id) => { const r = c.responses[id]; if (r.move === 'cashin' && id !== me && !r.exposed) c.responses[id] = { move: 'quiet', at: r.at }; }));
   // offices marked secret show only to their members

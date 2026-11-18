@@ -46,7 +46,7 @@ export function Admin() {
         {w.phase !== 'running' ? <Empty>Crises begin once Parliament is running.</Empty> : Object.values(w.crises).some((c: any) => c.status === 'open') ? <Empty>A crisis is already open.</Empty> : (
           <div class="stack">
             <div class="grid2">
-              <Pick value={crisis} onChange={setCrisis} empty={`Surprise me (${CRISES.filter((c) => !c.chainOnly && (!c.needs || c.needs(w))).length} can come up)`} options={CRISES.filter((c) => !/^(rg|aft)_/.test(c.id) && (!c.needs || c.needs(w))).sort((a, b) => a.title.localeCompare(b.title)).map((c) => [c.id, (c.extreme ? '⚠ ' : '') + c.title + (c.house ? ' (House vote)' : '') + (c.chainOnly ? ' (follow-on)' : '')])} />
+              <Pick value={crisis} onChange={setCrisis} empty={`Surprise me (${CRISES.filter((c) => !c.chainOnly && (!c.needs || c.needs(w))).length} can come up)`} options={CRISES.slice().sort((a, b) => Number(!!(a.needs && !a.needs(w))) - Number(!!(b.needs && !b.needs(w))) || a.title.localeCompare(b.title)).map((c) => [c.id, (c.needs && !c.needs(w) ? '✕ ' : c.extreme ? '⚠ ' : '') + c.title + (c.house ? ' (House vote)' : '') + (c.chainOnly ? ' (follow-on)' : '') + (c.needs && !c.needs(w) ? ' (does not fit right now)' : '')])} />
               <Btn style={{ alignSelf: 'end' }} onClick={() => act('admin.crisis', { type: crisis }, 'Crisis started.') && setCrisis('')}>Start it</Btn>
             </div>
             {crisis && (() => { const c = CRISES.find((x) => x.id === crisis)!; return (
@@ -54,7 +54,7 @@ export function Admin() {
                 <b>{c.title}</b>
                 <p class="small" style={{ margin: '4px 0 8px' }}>{c.text}</p>
                 <ul class="list small">{c.options.map((o) => <li><b>{o.label}</b>: {o.effects.join(', ')}{o.then ? ' (has a follow-on)' : ''}</li>)}</ul>
-                <p class="small muted" style={{ margin: '8px 0 0' }}>{c.house ? 'MPs vote on it.' : 'The Prime Minister decides.'} If nobody decides in time, the last option happens.</p>
+                <p class="small muted" style={{ margin: '8px 0 0' }}>{c.house ? 'MPs vote on it.' : 'The Prime Minister decides.'} If nobody decides in time, the last option happens.{c.needs && !c.needs(w) ? ' It does not fit the realm right now, so it cannot be started.' : ''}</p>
               </Card>
             ); })()}
           </div>

@@ -4,7 +4,7 @@ import { Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Field, Pick, Loc
 import { nm, isPM, allCitizens, fmtTime, fmtDay, bal, hasPower, holderOf, standing, isMP } from '../../../engine/index';
 import { MOODS, TREATIES, INTEL_Q } from '../../../engine/foreign';
 import { ARMY_COST } from '../../../engine/economy';
-import { CRISES, MOVES } from '../../../engine/society';
+import { CRISES, MOVES, grudgeAgainst } from '../../../engine/society';
 import { SeasonExtras } from './glory';
 
 const moodColour = ['var(--red)', 'var(--amber)', 'var(--muted)', 'var(--teal)', 'var(--teal)'];
@@ -260,6 +260,10 @@ function Caught({ c }: { c: any }) {
   const { world: w, me } = useStore();
   const [target, setTarget] = useState('');
   const [gift, setGift] = useState('5');
+  const [offer, setOffer] = useState({ choice: '0', amount: '10' });
+  const t = CRISES.find((x) => x.id === c.type)!;
+  const grudges = grudgeAgainst(w, me);
+  const bribes = Object.entries(c.bribes || {}) as [string, any][];
   const open = c.status === 'open';
   const cast = c.cast || [];
   const mine = cast.find((x: any) => x.id === me);
@@ -277,7 +281,7 @@ function Caught({ c }: { c: any }) {
               {Object.entries(MOVES).map(([k, m]) => (
                 k === 'blame' ? (
                   <div class="stack" style={{ gap: 6 }}>
-                    <span class="small"><b>{m.label}</b>. {m.what}</span>
+                    <span class="small"><b>{m.label}</b>. {m.what}{grudges.length > 0 && <> You hold a grudge against {grudges.map((g) => nm(w, g)).join(', ')}: blaming them carries no risk.</>}</span>
                     <div class="grid2"><Pick value={target} onChange={setTarget} empty="Whom?" options={allCitizens(w).filter((p: any) => p.id !== me && !p.bot).map((p: any) => [p.id, p.name])} /><Btn small style={{ alignSelf: 'end' }} onClick={() => act('crisis.respond', { id: c.id, move: k, target }, 'Done. It is settled when the crisis ends.')}>Blame them</Btn></div>
                   </div>
                 ) : <div class="row" style={{ alignItems: 'flex-end', gap: 8 }}>
@@ -286,6 +290,21 @@ function Caught({ c }: { c: any }) {
                 </div>
               ))}
             </div>
+          </Card>
+        )}
+        {open && mine && !c.house && !isPM(w, me) && (
+          <Card>
+            <b>A private word with the Prime Minister</b>
+            <p class="small muted" style={{ margin: '4px 0 8px' }}>Offer the PM crowns to choose an option. Only the PM sees it. You pay only if they choose it, and about a third of the time it comes out (−3 approval for you, −4 for them).</p>
+            {c.bribes?.[me] ? <p class="small" style={{ margin: 0 }}>You offered {c.bribes[me].amount} for “{t.options[c.bribes[me].choice].label}”. You can change it.</p> : null}
+            <div class="grid2" style={{ marginTop: 6 }}><Pick label="For" value={offer.choice} onChange={(v) => setOffer({ ...offer, choice: v })} options={t.options.map((o, i) => [String(i), o.label])} /><Field label="Crowns (5–50)" type="number" value={offer.amount} onInput={(v) => setOffer({ ...offer, amount: v })} /></div>
+            <Btn small kind="danger ghost" style={{ marginTop: 8 }} onClick={() => act('crisis.bribe', { id: c.id, choice: Number(offer.choice), amount: Number(offer.amount) }, 'Offer made. Only the PM can see it.')}>Make the offer</Btn>
+          </Card>
+        )}
+        {bribes.length > 0 && (isPM(w, me) || bribes.some(([, b]) => b.exposed)) && (
+          <Card kind="warn">
+            <b>{open ? 'Private offers (only you can see these)' : 'Offers'}</b>
+            <ul class="list small" style={{ marginTop: 6 }}>{bribes.map(([id, b]) => <li class="row"><span><Who id={id} /> offers {b.amount} for “{t.options[b.choice]?.label}”</span><span class="muted">{b.exposed ? 'exposed' : b.paid ? `paid ${b.paid}` : ''}</span></li>)}</ul>
           </Card>
         )}
         <Card>

@@ -28,6 +28,7 @@ export const CONDITIONS: Record<string, Cond> = {
   controls: { label: 'Capital controls', blurb: 'The savings tax is doubled, and no new bonds can be sold.' },
   outage: { label: 'Treasury outage', blurb: 'The Treasury’s systems are down: no grants can be paid.' },
   building: { label: 'Building programme', good: true, blurb: 'New homes going up. Prosperity +1 each payday.', weekly: (w) => meter(w, 'prosperity', 1, 'The building programme') },
+  madness: { label: 'The realm has gone mad', blurb: 'Two extreme crises in a week. Every change to Prosperity and Stability is doubled.' },
   celebration: { label: 'Celebrations', good: true, blurb: 'Street parties and full hotels. Stability +1 and Prosperity +1 each payday.', weekly: (w) => (meter(w, 'stability', 1, 'Celebrations'), meter(w, 'prosperity', 1, 'Celebrations')) },
   mourning: { label: 'Mourning', blurb: 'The realm is in mourning. Stability +1 each payday, Prosperity −1.', weekly: (w) => (meter(w, 'stability', 1, 'A nation in mourning'), meter(w, 'prosperity', -1, 'A nation in mourning')) }
 };

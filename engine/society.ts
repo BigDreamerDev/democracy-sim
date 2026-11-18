@@ -151,4 +151,4 @@ export function rule(w: W, k: any, forPlaintiff: boolean) {
 
 // ---------- the weekly crisis: the PM picks which meter takes the hit (the list lives in crises.ts) ----------
 import { CRISES, crisisById } from './crises';
-export { CRISES, spawnCrisis, decideCrisis, voteCrisis, speakCrisis, timeoutCrisis, fireQueued, respond, help, MOVES } from './crises';
+export { CRISES, spawnCrisis, decideCrisis, voteCrisis, speakCrisis, timeoutCrisis, fireQueued, respond, help, bribe, grudgeAgainst, MOVES } from './crises';
