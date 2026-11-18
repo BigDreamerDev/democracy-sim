@@ -16,7 +16,7 @@ function blank(seed: number, now: number): W {
     config: {
       realmName: 'The Realm', seats: 5, termDays: 21, hos: 'monarchy', hosMethod: 'life', hosTitle: 'Queen',
       debateHours: 12, voteHours: 24, intrigueDelayDays: 14, conventionThreshold: 10, inductionDays: 7, conventionDays: 3,
-      mpPay: 8, ministerPay: 5, dividend: 5, taxRate: 10, tariff: 10, savingsTax: 0, savingsFloor: 200
+      mpPay: 8, ministerPay: 5, dividend: 5, taxRate: 10, tariff: 10, savingsTax: 0, savingsFloor: 200, edictsPerDay: 1
     },
     calendar: { payday: { dow: 1, hour: 9 }, pmqs: { dow: 3, hour: 20 }, frontpage: { dow: 5, hour: 18 } },
     lastEvent: {},

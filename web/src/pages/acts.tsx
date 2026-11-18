@@ -79,7 +79,9 @@ function Decrees() {
   const [title, setTitle] = useState('');
   const [summary, setSummary] = useState('');
   const [clauses, setClauses] = useState<any[]>([{ t: 'text', text: '' }]);
-  const today = w.regime?.type === 'civil' && w.regime.decreeDay === Math.floor(w.now / 86400000);
+  const perDay = Math.max(1, Number(w.config.edictsPerDay) || 1);
+  const usedToday = w.regime?.type === 'civil' && w.regime.decreeDay === Math.floor(w.now / 86400000) ? w.regime.decreeCount || 1 : 0;
+  const today = usedToday >= perDay;
   return (
     <>
       <Sec title="Make law by decree" sub="Anything a bill can contain, including the constitution. It becomes law the moment you issue it: no debate, vote or assent. Only a later decree can repeal it.">
@@ -91,7 +93,7 @@ function Decrees() {
           <Btn kind="danger" full onClick={() => act('gov.decree', { title, summary, clauses }, 'Decreed. It is law.')}>Issue the decree</Btn>
         </div>
       </Sec>
-      <Sec title="Built-in decrees" sub={today ? 'You have issued today’s. Come back tomorrow.' : 'One a day, as if you led a dictatorship, with no legitimacy cost. Everything you decree stays in force until you lift it, a coup ends it, or the Act is repealed.'}>
+      <Sec title="Built-in decrees" sub={today ? `You have issued all ${perDay === 1 ? 'of today’s' : perDay}. Come back tomorrow.` : perDay > 1 ? `${perDay - usedToday} of ${perDay} left today, as if you led a dictatorship, with no legitimacy cost. Everything you decree stays in force until you lift it, a coup ends it, or the Act is repealed.` : 'One a day, as if you led a dictatorship, with no legitimacy cost. Everything you decree stays in force until you lift it, a coup ends it, or the Act is repealed.'}>
         <DecreeForm type="civil" cmd="gov.edict" />
         {w.regime?.type === 'civil' && <p class="small" style={{ marginTop: 8 }}><a href="#/regime">What is in force, the censor’s desk, and the realm’s resistance</a></p>}
       </Sec>

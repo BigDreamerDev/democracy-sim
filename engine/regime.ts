@@ -210,8 +210,11 @@ export function decree(w: W, actor: Id, a: any) {
   const d = own(DECREES, kind);
   if (!d) fail('Unknown decree.');
   if (!d.types.includes(r.type)) fail(`${REGIMES[r.type].name} doesn’t allow that.`);
-  if (r.decreeDay === DAYNO(w.now)) fail('One decree a day. Come back tomorrow.');
-  r.decreeDay = DAYNO(w.now);
+  // one a day; under the Government Powers Act a law can allow the Prime Minister more (config.edictsPerDay)
+  const limit = r.type === 'civil' ? Math.max(1, Math.round(Number(w.config.edictsPerDay) || 1)) : 1;
+  if (r.decreeDay !== DAYNO(w.now)) (r.decreeDay = DAYNO(w.now)), (r.decreeCount = 0);
+  if ((r.decreeCount || 0) >= limit) fail(limit === 1 ? 'One decree a day. Come back tomorrow.' : `All ${limit} of today’s decrees are used. Come back tomorrow.`);
+  r.decreeCount = (r.decreeCount || 0) + 1;
   // a junta rules by council: the decree waits for a majority of it
   if (r.type === 'junta' && r.council.length >= 3) {
     const args: any = {};
