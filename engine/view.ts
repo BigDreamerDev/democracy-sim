@@ -1,6 +1,7 @@
 // What one citizen is allowed to see. The server sends only this; the full world never leaves it.
 // Anything secret by the rules (ballots, other people's cards, deals, plots, ambitions, wallets) is stripped here.
 import { W, Id, canSeeCard, hasPower, isPM, holderOf } from './core';
+import { crisisById } from './crises';
 const canSeeIntel = (w: W, id: Id) => hasPower(w, id, 'intel') || isPM(w, id);
 const PRIVATE_COUNTS = ['sends', 'saves', 'ventures', 'betsWon', 'betCrowns', 'insider', 'maxBalance', 'underground', 'strikes', 'jailbreaks', 'informer'];
 
@@ -164,6 +165,8 @@ export function viewFor(full: W, me: Id): W {
   }
   // Treasury bonds: what each citizen holds is their own business; the issue and the total stay public
   if (w.bonds) w.bonds.holdings = (w.bonds.holdings || []).filter((h: any) => h.owner === me);
+  // crises: the title, text and options, so players' apps can show them by name (all public on the crisis page)
+  Object.values(w.crises || {}).forEach((c: any) => { const t = crisisById(c.type); if (t) Object.assign(c, { title: t.title, text: t.text, extreme: !!t.extreme, options: t.options.map((o) => ({ label: o.label, what: o.what, effects: o.effects })) }); });
   // crises: a bribe is seen by the one who offered it and by the PM, until it comes out
   Object.values(w.crises || {}).forEach((c: any) => { if (!c.bribes) return; Object.keys(c.bribes).forEach((id) => { if (id !== me && full.pm !== me && !c.bribes[id].exposed) delete c.bribes[id]; }); });
   // the crisis record: others see a cash-in or a hidden bribe only as keeping quiet
