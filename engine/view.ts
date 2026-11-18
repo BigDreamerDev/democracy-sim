@@ -162,6 +162,8 @@ export function viewFor(full: W, me: Id): W {
     w.daily.answered = Object.keys(w.daily.votes).length;
     w.daily.votes = w.daily.votes[me] !== undefined ? { [me]: w.daily.votes[me] } : {};
   }
+  // Treasury bonds: what each citizen holds is their own business; the issue and the total stay public
+  if (w.bonds) w.bonds.holdings = (w.bonds.holdings || []).filter((h: any) => h.owner === me);
   // offices marked secret show only to their members
   Object.values(w.offices).forEach((o: any) => {
     if (o.secrecy === 'secret' && o.holder !== me && !o.members.includes(me)) {

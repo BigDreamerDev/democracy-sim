@@ -1,6 +1,7 @@
 // What needs one citizen right now: votes to cast, bills to sign, deals waiting. Shown on Today, counted in the
 // sidebar, and sent to personal webhooks (each alert's `key` is stable, so a hook fires once per new item).
 // Always call it on viewFor(world, me), never the full world, so it can only mention what that person may see.
+import { canMoneyMotion, describeMotion } from './economy';
 import { W, Id, nm, isHOS, isPM, isMP, intrigueOpen, hasPower, holderOf, sideOf, bal, nextAt, mps, DAY } from './core';
 import { RED_BOX } from './glory';
 import { canVote , contenders, commands, leaderOfSide, FORM_DAYS } from './politics';
@@ -90,6 +91,9 @@ export function needs(w: W, me: Id): Alert[] {
     const left = bal(w, 'office:' + o.id);
     if (payday && left >= o.budget && payday - w.now < 2 * DAY) out.push({ key: `budget:${o.id}:${payday}`, href: '#/office/' + o.id, label: o.title, title: `${left} crowns of the ${o.name} budget unspent. It goes back to the Treasury at payday`, at: payday });
   });
+  // printing money or a bond issue waits for the other key-holder
+  const mm = w.economy?.motion;
+  if (mm && mm.expiresAt > w.now && canMoneyMotion(w, me) && mm.by !== me) out.push({ key: `motion:${mm.at}`, href: '#/economy', label: 'Treasury and Reserve', title: `${nm(w, mm.by)} proposes ${describeMotion(w, mm.terms)}. Agree or let it lapse`, at: mm.expiresAt });
   // an officer of state's appointment waits for a second officer
   if (hasPower(w, me, 'govern')) (Object.values(w.offices) as any[]).forEach((o) => o.nominee && o.nominee.by !== me && !o.powers.includes('govern') && out.push({ key: `nominee:${o.id}:${o.nominee.at}`, href: '#/office/' + o.id, label: 'Officer of state', title: `${nm(w, o.nominee.by)} proposes ${o.nominee.target ? nm(w, o.nominee.target) + ' as ' + o.title : 'leaving the ' + o.title + ' post vacant'}. Agree or choose otherwise` }));
   if (hasPower(w, me, 'rate') && (w.economy?.lastInflation || 0) > 5) out.push({ key: `rate:${payday}`, href: '#/economy', label: 'The Reserve', title: `Inflation is ${w.economy.lastInflation}%. Consider raising the rate`, at: payday || undefined });

@@ -48,6 +48,11 @@ export function migrate(w: W): W {
   w.scars ??= null;
   w.fame.regimes ??= [];
   w.fame.monarchs ??= [];
+  w.economy.printedThisWeek ??= 0;
+  w.economy.printed ??= 0;
+  w.economy.coinage ??= [];
+  w.economy.motion ??= null;
+  w.bonds ??= { issue: null, holdings: [], outstanding: 0 };
   w.crown ??= { reign: null, offer: null };
   w.crown.court ??= {};
   w.crown.circularAt ??= null;

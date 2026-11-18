@@ -2,7 +2,7 @@
 import { W, DAY, HOUR, nm, gazette, exiled, allCitizens, nextAt, meter, inDanger, approve } from './core';
 import { closeElection, callGeneralElection, autoInvite, governmentFalls, startHosSelection, newObjectives, closeConvention, endInduction , lapseChallenge, lapseBreakaway, newsnight, newsnightDue } from './politics';
 import { openVote, closeVote, enact, assentDue, closeOverride, dissolve, closePMQs, missFormal } from './proposals';
-import { payday, settleVenture } from './economy';
+import { payday, settleVenture, redeemBond } from './economy';
 import { actBots } from './bots';
 import { maybeOffers, answerAsk, resolveIntel, armyLoyalty } from './foreign';
 import { checkPlot, endMartialLaw, resolveCoup, autoFind } from './backroom';
@@ -62,6 +62,8 @@ function collect(w: W): D[] {
     add(w.crown.circularAt, () => circular(w), 'circular');
     if (kr.claim) add(kr.claim.until, () => settleThrone(w), 'claim');
   }
+  // Treasury bonds fall due
+  (w.bonds?.holdings || []).forEach((h: any) => add(h.dueAt, () => redeemBond(w, h), h.id));
   if (w.crown?.offer) add(w.crown.offer.until, () => lapseOffer(w), 'heir');
   if (w.hos.until) add(w.hos.until, () => ((w.hos.until = null), startHosSelection(w)));
   Object.values(w.crises).forEach((c: any) => c.status === 'open' && add(c.decideBy, () => timeoutCrisis(w, c), c.id));

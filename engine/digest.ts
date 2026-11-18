@@ -35,6 +35,7 @@ export function digest(w: W): string {
   const ministers = (Object.values(w.offices) as any[]).filter((o) => o.holder && o.secrecy !== 'secret').map((o) => `${o.title} ${nm(w, o.holder)}`);
   if (ministers.length) L.push(`Ministers: ${ministers.join(', ')}.`);
   L.push(`Prosperity ${w.meters.prosperity} · Stability ${w.meters.stability} · Tax ${w.config.taxRate}% · Dividend ${w.config.dividend}`);
+  L.push(`Debt to the Reserve ${w.economy.lent}${w.bonds?.outstanding ? ` · Bonds out ${w.bonds.outstanding}` : ''}${w.economy.printed ? ` · Printed ${w.economy.printed}` : ''} · Prices ${w.economy.lastInflation >= 0 ? '+' : ''}${Number(w.economy.lastInflation || 0).toFixed(1)}% last week`);
   const els = (Object.values(w.elections) as any[]).filter((e) => e.status === 'open');
   if (els.length) {
     L.push('');

@@ -1,5 +1,5 @@
 // Money: wallets, the weekly payday, the Treasury, the Federal Reserve and prices, citizen banks and trade ventures.
-import { W, Id, DAY, fail, newId, rand, cit, nm, own, text, int, allCitizens, exiled, mustBeFree, gazette, earn, transfer, bal, ca, tick, meter, inDanger, hasPower, isPM, clamp, standing } from './core';
+import { W, Id, DAY, fail, newId, rand, cit, nm, own, text, int, allCitizens, exiled, mustBeFree, gazette, earn, transfer, bal, ca, tick, meter, inDanger, hasPower, isPM, clamp, standing, holderOf, bump } from './core';
 import { fundOffices, officePay } from './offices';
 
 export function send(w: W, actor: Id, to: Id, amount: number, note: string) {
@@ -48,7 +48,8 @@ export function budget(w: W) {
     { label: 'Pay for MPs, the Speaker and ministers', v: payroll(w).reduce((s, p) => s + p.amt, 0) },
     { label: 'Office budgets', v: (Object.values(w.offices) as any[]).reduce((s: number, o: any) => s + (o.id === 'treasury' ? 0 : o.budget || 0), 0) as number },
     { label: 'Army upkeep', v: armyCost(w) },
-    { label: 'Interest owed to the Reserve', v: Math.round((w.economy.lent * w.economy.rate) / 100) }
+    { label: 'Interest owed to the Reserve', v: Math.round((w.economy.lent * w.economy.rate) / 100) },
+    { label: 'Treasury bonds falling due', v: (w.bonds?.holdings || []).filter((h: any) => h.dueAt <= w.now + 7 * DAY).reduce((s: number, h: any) => s + h.payout, 0) }
   ].filter((r) => r.v > 0 || r.label.startsWith('Citizen'));
   return { income, out, inTotal: income.reduce((s, r) => s + r.v, 0), outTotal: out.reduce((s, r) => s + r.v, 0) };
 }
@@ -86,7 +87,8 @@ export function payday(w: W) {
   bankPayday(w);
   // prices move with borrowing and the rate
   const borrowed = w.economy.lentThisWeek || 0;
-  const infl = clamp(1 + borrowed / 40 - (w.economy.rate - 2) * 1.5, -2, 12);
+  const printed = w.economy.printedThisWeek || 0;
+  const infl = clamp(1 + borrowed / 40 + printed / 25 - (w.economy.rate - 2) * 1.5, -2, 15);
   w.economy.prices.push(Math.round(priceIndex(w) * (1 + infl / 100) * 100) / 100);
   if (w.economy.prices.length > 12) w.economy.prices.shift();
   w.economy.lastInflation = infl;
@@ -97,6 +99,7 @@ export function payday(w: W) {
   if (infl > 5) meter(w, 'prosperity', -3, `Inflation hit ${infl.toFixed(1)}%`);
   else if (infl < 2) meter(w, 'prosperity', 1, 'Prices held steady');
   w.economy.lentThisWeek = 0;
+  w.economy.printedThisWeek = 0;
   gazette(w, 'money', recession ? `Payday in a recession: no dividend this week. Income tax raised ${tax}.` : `Payday: ${w.config.dividend} crowns to every citizen. Income tax raised ${tax}. Prices ${infl >= 0 ? 'up' : 'down'} ${Math.abs(infl).toFixed(1)}%.`, '#/wallet');
 }
 
@@ -214,4 +217,107 @@ export function settleVenture(w: W, v: any) {
     earn(w, v.by, 2, 'A profitable venture');
     meter(w, 'prosperity', 1, 'Trade brought money home');
   }
+}
+
+// ---------- printing money and Treasury bonds: the Chancellor and the Chair of the Reserve must agree ----------
+// A motion (print, or open a bond issue) is proposed by one key-holder and carried out when the other signs the same terms.
+// The PM signs for a post that is vacant. One person holding both posts signs both at once.
+export const MINT_MAX = 200; // crowns per print
+export const MINT_WEEK = 400; // crowns per week
+export const BOND_DAYS = 3; // a bond issue stays open this long
+export const MOTION_HOURS = 24;
+const keyOf = (w: W, id: Id) => ({
+  treasury: !!w.offices.treasury && (holderOf(w, 'treasury') === id || (isPM(w, id) && !holderOf(w, 'treasury'))),
+  reserve: !!w.offices.reserve && (hasPower(w, id, 'rate') || (isPM(w, id) && !holderOf(w, 'reserve')))
+});
+export const canMoneyMotion = (w: W, id: Id) => { const k = keyOf(w, id); return k.treasury || k.reserve; };
+const same = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
+const sovereignName = (w: W) => {
+  const r = w.crown?.reign;
+  return r && w.config.hos === 'monarchy' ? `${w.config.hosTitle} ${r.name} ${r.numeral}` : null;
+};
+function motionTerms(w: W, a: any) {
+  const kind = a?.kind;
+  if (kind === 'print') {
+    const amount = int(a.amount, 1, MINT_MAX, `amount (1–${MINT_MAX} crowns)`);
+    if (a.use !== 'treasury' && a.use !== 'debt') fail('Choose where the new money goes: the Treasury, or paying down the debt.');
+    if ((w.economy.printedThisWeek || 0) + amount > MINT_WEEK) fail(`At most ${MINT_WEEK} crowns can be printed in a week. ${MINT_WEEK - (w.economy.printedThisWeek || 0)} left this week.`);
+    return { kind, amount, use: a.use };
+  }
+  if (kind === 'bonds') {
+    if (w.bonds.issue && w.bonds.issue.closesAt > w.now) fail('A bond issue is already open.');
+    return { kind, rate: int(a.rate, 1, 10, 'interest (1–10% a week)'), weeks: int(a.weeks, 1, 8, 'term (1–8 weeks)'), cap: int(a.cap, 10, 1000, 'size of the issue (10–1000 crowns)') };
+  }
+  return fail('Unknown kind of motion.');
+}
+export function moneyMotion(w: W, actor: Id, a: any) {
+  mustBeFree(w, actor);
+  if (!w.offices.treasury || !w.offices.reserve) fail('Printing money and bonds need both the Treasury and the Federal Reserve.');
+  const k = keyOf(w, actor);
+  if (!k.treasury && !k.reserve) fail('Only the Chancellor and the Chair of the Reserve can do this.');
+  const terms = motionTerms(w, a);
+  let m = w.economy.motion;
+  if (!m || m.expiresAt <= w.now || !same(m.terms, terms)) m = w.economy.motion = { terms, signed: { treasury: null, reserve: null }, by: actor, at: w.now, expiresAt: w.now + MOTION_HOURS * 3600000 };
+  else if ((k.treasury ? m.signed.treasury : true) && (k.reserve ? m.signed.reserve : true)) fail('You have already signed this. The other side must agree.');
+  if (k.treasury) m.signed.treasury = actor;
+  if (k.reserve) m.signed.reserve = actor;
+  const what = describeMotion(w, terms);
+  if (!m.signed.treasury || !m.signed.reserve) {
+    gazette(w, 'money', `${nm(w, actor)} proposes ${what}. The ${m.signed.treasury ? 'Chair of the Reserve' : 'Chancellor'} must agree within ${MOTION_HOURS} hours.`, '#/economy');
+    return;
+  }
+  w.economy.motion = null;
+  const who = [...new Set([m.signed.treasury, m.signed.reserve])].map((id: Id) => nm(w, id)).join(' and ');
+  if (terms.kind === 'print') return print(w, terms.amount, terms.use, who);
+  openBonds(w, terms, who);
+}
+export function describeMotion(w: W, t: any) {
+  return t.kind === 'print'
+    ? `printing ${t.amount} new crowns ${t.use === 'debt' ? 'to pay down the debt to the Reserve' : 'into the Treasury'}`
+    : `a Treasury bond issue of up to ${t.cap} crowns at ${t.rate}% a week for ${t.weeks} week${t.weeks === 1 ? '' : 's'}`;
+}
+// new money: the Reserve's balance goes further negative, so the ledger still sums to zero. No debt, but prices rise.
+function print(w: W, amount: number, use: string, who: string) {
+  const crown = sovereignName(w);
+  transfer(w, 'reserve', 'treasury', amount, crown ? `New crowns struck bearing the head of ${crown}` : 'New crowns printed by the Federal Reserve');
+  w.economy.printedThisWeek = (w.economy.printedThisWeek || 0) + amount;
+  w.economy.printed = (w.economy.printed || 0) + amount;
+  w.economy.coinage.unshift({ at: w.now, amt: amount, by: crown || 'the Realm', use });
+  if (w.economy.coinage.length > 30) w.economy.coinage.length = 30;
+  let paid = 0;
+  if (use === 'debt' && w.economy.lent > 0) {
+    paid = Math.min(amount, w.economy.lent, bal(w, 'treasury'));
+    if (paid > 0) {
+      transfer(w, 'treasury', 'reserve', paid, 'Repaid the Federal Reserve with new money');
+      w.economy.lent -= paid;
+    }
+  }
+  gazette(w, 'money', `The Federal Reserve prints ${amount} new crowns${crown ? ` bearing the head of ${crown}` : ''}, agreed by ${who}.${paid ? ` ${paid} go to paying down the debt, which is now ${w.economy.lent}.` : ''} Expect prices to rise.`, '#/economy');
+}
+
+// ---------- Treasury bonds: citizens lend the Treasury crowns and are repaid with interest ----------
+function openBonds(w: W, t: any, who: string) {
+  w.bonds.issue = { id: newId(w, 'bond'), rate: t.rate, weeks: t.weeks, cap: t.cap, sold: 0, at: w.now, closesAt: w.now + BOND_DAYS * DAY };
+  gazette(w, 'money', `Treasury bonds on sale, agreed by ${who}: up to ${t.cap} crowns, paying ${t.rate}% a week for ${t.weeks} week${t.weeks === 1 ? '' : 's'}. Open for ${BOND_DAYS} days.`, '#/economy');
+}
+export function buyBond(w: W, actor: Id, amount: unknown) {
+  mustBeFree(w, actor);
+  const s = w.bonds.issue;
+  if (!s || s.closesAt <= w.now) fail('No bonds are on sale.');
+  const amt = int(amount, 1, 1000, 'amount');
+  if (s.sold + amt > s.cap) fail(`Only ${s.cap - s.sold} crowns of this issue are left.`);
+  if (bal(w, ca(actor)) < amt) fail('You do not have that many crowns.');
+  transfer(w, ca(actor), 'treasury', amt, `Bought Treasury bonds (${s.rate}% a week, ${s.weeks} weeks)`);
+  s.sold += amt;
+  w.bonds.holdings.push({ id: newId(w, 'bh'), issue: s.id, owner: actor, amt, payout: Math.round(amt * (1 + (s.rate * s.weeks) / 100)), at: w.now, dueAt: w.now + s.weeks * 7 * DAY });
+  w.bonds.outstanding = (w.bonds.outstanding || 0) + amt;
+  bump(w, actor, 'bonds');
+}
+// at maturity the Treasury repays, borrowing from the Reserve if it must
+export function redeemBond(w: W, h: any) {
+  const i = w.bonds.holdings.indexOf(h);
+  if (i < 0) return;
+  w.bonds.holdings.splice(i, 1);
+  w.bonds.outstanding = Math.max(0, (w.bonds.outstanding || 0) - h.amt);
+  if (w.citizens[h.owner]) transfer(w, 'treasury', ca(h.owner), h.payout, 'Treasury bond repaid with interest');
 }

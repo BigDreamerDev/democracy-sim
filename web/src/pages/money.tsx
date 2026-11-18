@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Pick, Locked, Meter, Banknote, noteBreakdown } from '../ui';
 import { nm, bal, ca, acctLabel, allCitizens, fmtTime, isPM, hasPower, inDanger, holderOf } from '../../../engine/index';
-import { budget, bankHealth, ventureOdds, priceIndex } from '../../../engine/economy';
+import { budget, bankHealth, ventureOdds, priceIndex, canMoneyMotion, describeMotion, MINT_MAX, MINT_WEEK } from '../../../engine/economy';
 import { MOODS } from '../../../engine/foreign';
 import { Meters } from './today';
 
@@ -51,6 +51,9 @@ export function Economy() {
   return (
     <Page back={['#/realm', 'The realm']} kicker="Treasury and Reserve" title="The economy" intro={<>The Treasury holds <b class="tnum">{bal(w, 'treasury')}</b> crowns and owes the Reserve <b class="tnum">{w.economy.lent}</b>. Should the Treasury enter a deficit, it automatically borrows</>}>
       <Sec><Meters compact /></Sec>
+      <DebtClock />
+      <Printing />
+      <Bonds />
       <Sec title="This week's budget" sub={<>Chancellor: <Who id={holderOf(w, 'treasury')} /></>}>
         <Card>
           <div class="small" style={{ fontWeight: 700 }}>Coming in</div>
@@ -76,6 +79,88 @@ export function Economy() {
         </Sec>
       )}
     </Page>
+  );
+}
+
+// the debt clock: what the Treasury owes, what it has printed, and what that is doing to prices
+function DebtClock() {
+  const { world: w } = useStore();
+  const e = w.economy;
+  const cells: [string, string | number][] = [['Owed to the Reserve', e.lent], ['Bonds outstanding', w.bonds?.outstanding || 0], ['Printed this week', `${e.printedThisWeek || 0} / ${MINT_WEEK}`], ['Printed in all', e.printed || 0], ['Prices last week', `${e.lastInflation >= 0 ? '+' : ''}${Number(e.lastInflation || 0).toFixed(1)}%`], ['Price index', priceIndex(w).toFixed(2)]];
+  return (
+    <Sec title="The debt clock" sub="Printing clears debt but raises prices; borrowing costs interest every payday.">
+      <div class="corner-stats">{cells.map(([k, v]) => <a href="#/economy"><b class="tnum">{v}</b><span>{k}</span></a>)}</div>
+    </Sec>
+  );
+}
+
+// printing money and opening a bond issue: the Chancellor proposes, the Chair of the Reserve agrees (or the other way round)
+function Printing() {
+  const { world: w, me } = useStore();
+  const [p, setP] = useState({ amount: '50', use: 'debt' });
+  const [b, setB] = useState({ rate: '2', weeks: '4', cap: '200' });
+  if (!w.offices.treasury || !w.offices.reserve) return null;
+  const mine = canMoneyMotion(w, me);
+  const m = w.economy.motion && w.economy.motion.expiresAt > w.now ? w.economy.motion : null;
+  const signedBy = m ? [m.signed.treasury && `the Chancellor (${nm(w, m.signed.treasury)})`, m.signed.reserve && `the Chair (${nm(w, m.signed.reserve)})`].filter(Boolean).join(' and ') : '';
+  return (
+    <Sec title="Printing money and bonds" sub={<>The Chancellor (<Who id={holderOf(w, 'treasury')} />) and the Chair of the Reserve (<Who id={holderOf(w, 'reserve')} />) must both sign. The Prime Minister signs for a vacant post.</>}>
+      <div class="stack">
+        {m && (
+          <Card kind="warn">
+            <b>Waiting: {describeMotion(w, m.terms)}.</b>
+            <div class="small" style={{ marginTop: 4 }}>Signed by {signedBy}. Lapses in <Left at={m.expiresAt} />.</div>
+            {mine && <Btn small style={{ marginTop: 8 }} onClick={() => act('money.agree', {}, 'Agreed.')}>Agree</Btn>}
+          </Card>
+        )}
+        {mine && (
+          <>
+            <Card>
+              <b>Print new crowns</b>
+              <p class="small muted" style={{ margin: '4px 0 8px' }}>No debt, but every 25 crowns printed adds about 1% to this week’s inflation. Up to {MINT_MAX} a time, {MINT_WEEK} a week.</p>
+              <div class="grid2"><Field label="Crowns" type="number" value={p.amount} onInput={(v) => setP({ ...p, amount: v })} /><Pick label="Where it goes" value={p.use} onChange={(v) => setP({ ...p, use: v })} options={[['debt', 'Pay down the debt'], ['treasury', 'Into the Treasury']]} /></div>
+              <Btn small style={{ marginTop: 8 }} onClick={() => act('money.print', { amount: Number(p.amount), use: p.use }, 'Signed. The other side must agree.')}>Propose printing</Btn>
+            </Card>
+            <Card>
+              <b>Issue Treasury bonds</b>
+              <p class="small muted" style={{ margin: '4px 0 8px' }}>Citizens lend the Treasury crowns for 3 days of sales; each is repaid with interest when it matures.</p>
+              <div class="grid2"><Field label="% a week (1–10)" type="number" value={b.rate} onInput={(v) => setB({ ...b, rate: v })} /><Field label="Weeks (1–8)" type="number" value={b.weeks} onInput={(v) => setB({ ...b, weeks: v })} /></div>
+              <Field label="Size of the issue (crowns)" type="number" value={b.cap} onInput={(v) => setB({ ...b, cap: v })} />
+              <Btn small style={{ marginTop: 8 }} onClick={() => act('money.bonds', { rate: Number(b.rate), weeks: Number(b.weeks), cap: Number(b.cap) }, 'Signed. The other side must agree.')}>Propose a bond issue</Btn>
+            </Card>
+          </>
+        )}
+        {(w.economy.coinage || []).length > 0 && (
+          <Card kind="tint">
+            <b>The coinage</b>
+            <ul class="list" style={{ marginTop: 6 }}>{w.economy.coinage.slice(0, 8).map((c: any) => <li class="row"><span class="small">{c.amt} crowns bearing the head of {c.by}{c.use === 'debt' ? ', to pay the debt' : ''}</span><span class="small muted"><When at={c.at} /></span></li>)}</ul>
+          </Card>
+        )}
+      </div>
+    </Sec>
+  );
+}
+
+// Treasury bonds: anyone may lend while an issue is open
+function Bonds() {
+  const { world: w, me } = useStore();
+  const [amt, setAmt] = useState('10');
+  const s = w.bonds?.issue && w.bonds.issue.closesAt > w.now ? w.bonds.issue : null;
+  const mine = (w.bonds?.holdings || []).filter((h: any) => h.owner === me);
+  if (!s && !mine.length) return null;
+  return (
+    <Sec title="Treasury bonds">
+      <div class="stack">
+        {s && (
+          <Card>
+            <b>{s.rate}% a week for {s.weeks} week{s.weeks === 1 ? '' : 's'}</b>
+            <div class="small muted">{s.sold} of {s.cap} crowns sold. Sales close in <Left at={s.closesAt} />. 100 crowns lent now returns {Math.round(100 * (1 + (s.rate * s.weeks) / 100))}.</div>
+            <div class="grid2" style={{ marginTop: 8 }}><Field label="Crowns to lend" type="number" value={amt} onInput={setAmt} /><Btn style={{ alignSelf: 'end' }} onClick={() => act('bond.buy', { amount: Number(amt) }, 'Bonds bought.')}>Buy bonds</Btn></div>
+          </Card>
+        )}
+        {mine.length > 0 && <Card kind="tint"><b>Your bonds</b><ul class="list" style={{ marginTop: 6 }}>{mine.map((h: any) => <li class="row"><span class="small">{h.amt} lent, {h.payout} back</span><span class="small muted">due <When at={h.dueAt} /></span></li>)}</ul></Card>}
+      </div>
+    </Sec>
   );
 }
 
