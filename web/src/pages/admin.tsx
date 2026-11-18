@@ -44,9 +44,19 @@ export function Admin() {
       <Duplicates />
       <Sec title="Start a crisis" sub="One lands every payday anyway. Starting one now is announced, and the PM still decides it.">
         {w.phase !== 'running' ? <Empty>Crises begin once Parliament is running.</Empty> : Object.values(w.crises).some((c: any) => c.status === 'open') ? <Empty>A crisis is already open.</Empty> : (
-          <div class="grid2">
-            <Pick value={crisis} onChange={setCrisis} empty="Surprise me" options={CRISES.filter((c) => !c.chainOnly && (!c.needs || c.needs(w))).map((c) => [c.id, (c.extreme ? '⚠ ' : '') + c.title + (c.house ? ' (House vote)' : '')])} />
-            <Btn style={{ alignSelf: 'end' }} onClick={() => act('admin.crisis', { type: crisis }, 'Crisis started.') && setCrisis('')}>Start it</Btn>
+          <div class="stack">
+            <div class="grid2">
+              <Pick value={crisis} onChange={setCrisis} empty={`Surprise me (${CRISES.filter((c) => !c.chainOnly && (!c.needs || c.needs(w))).length} can come up)`} options={CRISES.filter((c) => !/^(rg|aft)_/.test(c.id) && (!c.needs || c.needs(w))).sort((a, b) => a.title.localeCompare(b.title)).map((c) => [c.id, (c.extreme ? '⚠ ' : '') + c.title + (c.house ? ' (House vote)' : '') + (c.chainOnly ? ' (follow-on)' : '')])} />
+              <Btn style={{ alignSelf: 'end' }} onClick={() => act('admin.crisis', { type: crisis }, 'Crisis started.') && setCrisis('')}>Start it</Btn>
+            </div>
+            {crisis && (() => { const c = CRISES.find((x) => x.id === crisis)!; return (
+              <Card kind="tint">
+                <b>{c.title}</b>
+                <p class="small" style={{ margin: '4px 0 8px' }}>{c.text}</p>
+                <ul class="list small">{c.options.map((o) => <li><b>{o.label}</b>: {o.effects.join(', ')}{o.then ? ' (has a follow-on)' : ''}</li>)}</ul>
+                <p class="small muted" style={{ margin: '8px 0 0' }}>{c.house ? 'MPs vote on it.' : 'The Prime Minister decides.'} If nobody decides in time, the last option happens.</p>
+              </Card>
+            ); })()}
           </div>
         )}
       </Sec>

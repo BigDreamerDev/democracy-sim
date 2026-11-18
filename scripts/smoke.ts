@@ -1,6 +1,17 @@
 // Bots play both scenarios for weeks. Checks the ledger always sums to zero and nothing throws.
 import { createWorld, skip, ledgerTotal, HOUR, DAY, nm } from '../engine/index';
 import { botsAct } from '../engine/bots';
+import { CRISES } from '../engine/crises';
+
+// every crisis needs its own id: a crisis is decided by looking its definition up by id
+{
+  const seen = new Set<string>();
+  CRISES.forEach((c) => {
+    if (seen.has(c.id)) throw new Error(`Two crises share the id "${c.id}"`);
+    seen.add(c.id);
+    (c as any).options.forEach((o: any) => o.then && !CRISES.some((x) => x.id === o.then.type) && (() => { throw new Error(`Crisis "${c.id}" chains to unknown "${o.then.type}"`); })());
+  });
+}
 
 for (const scenario of ['convention', 'running'] as const) {
   let w = createWorld(scenario);
