@@ -8,6 +8,7 @@ import { W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, earn, transfer, bal,
 import { moodShift, treatyWith, PROFILES, warSpoils, PROVINCES, seedProvinces } from './foreign';
 import { fame } from './glory';
 import { enemyKnows, takeHostage } from './abroad';
+import { canGovernEmpire } from './empire';
 import { imposePretender } from './crown';
 
 export const BATTLE_EVERY = 12 * HOUR;
@@ -23,7 +24,8 @@ const FRONTS = ['the river crossings', 'the northern passes', 'the coast road', 
 
 const war = (w: W) => w.army?.campaign;
 const canCommand = (w: W, id: Id) => hasPower(w, id, 'army') || isPM(w, id) || hasPower(w, id, 'govern');
-export const allies = (w: W) => Object.values(w.nations).filter((n: any) => n.id !== w.army.war && treatyWith(w, n.id, 'alliance') && n.mood >= 2) as any[];
+// allies with a Military Alliance, and the empire's protectorates
+export const allies = (w: W) => Object.values(w.nations).filter((n: any) => n.id !== w.army.war && ((treatyWith(w, n.id, 'alliance') && n.mood >= 2) || n.protectorate)) as any[];
 export function power(w: W) {
   const k = war(w);
   const garrisons = garrisoned(w);
@@ -264,7 +266,7 @@ function dispatches(w: W, k: any, won: boolean, where: string, delta: number, lo
 export const garrisoned = (w: W) => Object.values(w.provinces || {}).filter((p: any) => p.owner === 'realm' && p.garrison).length;
 export function garrison(w: W, actor: Id, pid: unknown, on: unknown) {
   if (!w.offices.army) fail('There is no Army.');
-  if (!canCommand(w, actor)) fail('Only the General, the Prime Minister or an officer of state posts garrisons.');
+  if (!canCommand(w, actor) && !canGovernEmpire(w, actor)) fail('Only the General, the Prime Minister, an officer of state or the Imperial High Commissioner posts garrisons.');
   seedProvinces(w);
   const p = own(w.provinces, pid);
   if (!p || p.owner !== 'realm') fail('That province is not ours to garrison.');

@@ -3,6 +3,7 @@
 import { startWar, endWar } from './war';
 import { company, fundTrade, lobbyOutcome } from './exchange';
 import { PROVINCES } from './foreign';
+import { checkRealmName, renameRealm } from './empire';
 import {
   W, Id, DAY, HOUR, fail, newId, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, tick, meter,
   isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, hasPower, officeWithPower, weekNo, adminDid, bump, own, text, int, inForce, inGov, bal } from './core';
@@ -36,7 +37,7 @@ export const SETTABLE: Record<string, { label: string; unit: string; min: number
   voteHours: { label: 'Voting length', unit: ' hours', min: 12, max: 48 }
 };
 export const CONSTITUTIONAL = ['constitution', 'removeHos'];
-export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'fund', 'pension', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'currency', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto'];
+export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'fund', 'pension', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'currency', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto', 'imperial'];
 
 export function describe(w: W, e: any): string {
   switch (e.t) {
@@ -68,6 +69,7 @@ export function describe(w: W, e: any): string {
     case 'repeal':
       return `Repeals ${e.ref}${w.laws.find((l: any) => l.ref === e.ref) ? ', the ' + w.laws.find((l: any) => l.ref === e.ref).title : ''}.`;
     case 'constitution':
+      if (e.key === 'name') return `Renames the realm: the ${w.config.realmName} becomes the ${e.value}.`;
       return `Changes the constitution: ${({ seats: 'seats in Parliament', termDays: 'time between general elections', hos: 'the head of state', hosMethod: 'how the head of state is chosen' } as any)[e.key]} becomes ${e.label ?? e.value}.`;
     case 'removeHos':
       return w.config.hos === 'monarchy' ? `Removes the ${w.config.hosTitle}. A new Monarch is chosen as the constitution says.` : 'Impeaches the President. A new one is chosen as the constitution says.';
@@ -91,6 +93,7 @@ export function describe(w: W, e: any): string {
     case 'crown':
     case 'prerogative':
     case 'veto':
+    case 'imperial':
       return describeAct(e.t);
     case 'war':
       return `Declares war on ${w.nations[e.nation]?.name}.`;
@@ -194,7 +197,9 @@ function checkClause(w: W, e: any, byDecree = false) {
     case 'crown':
     case 'prerogative':
     case 'veto':
+    case 'imperial':
       if (inForce(w, e.t)) fail(`The ${ACTS[e.t as 'jail'].name} Act is already law.`);
+      if (e.t === 'imperial' && w.config.hos !== 'monarchy') fail('An empire needs a monarch: make the head of state a monarch first.');
       break;
     case 'war':
       if (!own(w.nations, e.nation)) fail('Pick a nation.');
@@ -211,6 +216,12 @@ function checkClause(w: W, e: any, byDecree = false) {
       break;
     }
     case 'constitution': {
+      // renaming the realm: any plain name that is not mistaken for a nation abroad
+      if (e.key === 'name') {
+        e.value = checkRealmName(w, e.value);
+        e.label = e.value;
+        break;
+      }
       const ok: Record<string, unknown[]> = { seats: [3, 5, 7, 9], termDays: [14, 21, 28], hos: ['monarchy', 'republic'] };
       if (e.key === 'hosMethod') ok.hosMethod = (HOS_METHODS[w.config.hos] || []).map((m: any) => m.id);
       if (!own(ok, e.key)) fail('Pick what to change in the constitution.');
@@ -973,6 +984,7 @@ export function applyClause(w: W, e: any, ref: string) {
         startHosSelection(w);
       }
       if (e.key === 'hosMethod') w.config.hosMethod = e.value;
+      if (e.key === 'name' && typeof e.value === 'string') renameRealm(w, e.value, `law ${ref}`);
       break;
     case 'removeHos': {
       // under the Protection of the State Act only a decree can remove the head of state: a bill's removal clause is void,
@@ -997,6 +1009,7 @@ export function applyClause(w: W, e: any, ref: string) {
     case 'crown':
     case 'prerogative':
     case 'veto':
+    case 'imperial':
       applyAct(w, e.t, ref);
       break;
     case 'war':

@@ -1,5 +1,6 @@
 // The five nations, envoys, treaty offers, the Security Service and the Army.
 import { startWar } from './war';
+import { unrest } from './empire';
 import { W, Id, DAY, HOUR, fail, newId, rand, chance, pick, nm, gazette, earn, transfer, bal, hasPower, isPM, addCard, holderOf, clamp, inDanger, meter, own, approve, stamp, ratifyText } from './core';
 
 export const MOODS = ['Hostile', 'Cold', 'Neutral', 'Friendly', 'Allied'];
@@ -10,7 +11,7 @@ export const PROFILES: Record<string, { capital: string; gov: string; leader: st
   sundmere: { capital: 'Lowmere', gov: 'Neutral confederation', leader: 'The Council of Lakes', strength: 3, wealth: 5, exports: 'Salt, wool', motto: 'Still water.' },
   orrin: { capital: 'Port Calloway', gov: 'Island kingdom', leader: 'Queen Maren of the Isles', strength: 5, wealth: 4, exports: 'Fish, ships', motto: 'The sea provides.' },
   tessaly: { capital: 'New Tessa', gov: 'Parliamentary commonwealth', leader: 'Chancellor Abel Moye', strength: 4, wealth: 6, exports: 'Cloth, machines', motto: 'Many voices, one road.' },
-  aurel: { capital: 'Aurel', gov: 'Free city', leader: 'The Doge of Aurel', strength: 2, wealth: 10, exports: 'Banking, insurance', motto: 'Gold has no flag.' },
+  aurel: { capital: 'Austrava', gov: 'Free city', leader: 'The Doge of Austrava', strength: 2, wealth: 10, exports: 'Banking, insurance', motto: 'Gold has no flag.' },
   drakmoor: { capital: 'Ironhold', gov: 'Military hegemony', leader: 'Marshal Teodor Krell', strength: 9, wealth: 5, exports: 'Steel, coal', motto: 'Strength is peace.' }
 };
 // old quarrels between nations abroad: their wars break out along these lines
@@ -21,7 +22,7 @@ const NATIONS = [
   { id: 'sundmere', name: 'Sundmere', mood: 2, wants: 'To stay out of everyone’s quarrels.', reasons: [{ sign: '+', text: 'No disputes with us' }] },
   { id: 'orrin', name: 'Orrin Isles', mood: 2, wants: 'A defence pact against Kessmark.', reasons: [{ sign: '+', text: 'A shared rival in Kessmark' }] },
   { id: 'tessaly', name: 'Commonwealth of Tessaly', mood: 2, wants: 'Open trade with another young parliament.', reasons: [{ sign: '+', text: 'They welcomed our new Parliament' }] },
-  { id: 'aurel', name: 'Free City of Aurel', mood: 2, wants: 'Our companies listed on their books, and no wars that spoil business.', reasons: [{ sign: '+', text: 'Bankers like a quiet neighbour' }] },
+  { id: 'aurel', name: 'Free City of Austrava', mood: 2, wants: 'Our companies listed on their books, and no wars that spoil business.', reasons: [{ sign: '+', text: 'Bankers like a quiet neighbour' }] },
   { id: 'drakmoor', name: 'Drakmoor', mood: 1, wants: 'Every border in the north redrawn in its favour.', reasons: [{ sign: '−', text: 'They think our Army is weak' }] }
 ];
 // adds any nation the world is missing (a new world gets all of them; migrate() adds new ones to an old world)
@@ -355,7 +356,7 @@ export function mediate(w: W, actor: Id, cid: Id) {
 // ---------- fog of war: we only know a nation's army strength through an embassy, a Security Service report in the
 // last week, or by fighting it. Otherwise view.ts hides it ----------
 export const KNOWN_FOR = 7 * DAY;
-export const known = (w: W, nid: string) => { const n = w.nations[nid]; return !!n && (!!n.embassy || !!n.ring || atWar(w, nid) || (!!n.seenAt && w.now - n.seenAt < KNOWN_FOR)); };
+export const known = (w: W, nid: string) => { const n = w.nations[nid]; return !!n && (!!n.embassy || !!n.ring || !!n.protectorate || atWar(w, nid) || (!!n.seenAt && w.now - n.seenAt < KNOWN_FOR)); };
 
 // ---------- disputed provinces: border lands that change hands in war. Each has its owner ('realm' or a nation)
 // and the nations that claim it. Win a war and the enemy's claimed provinces are ours; lose and they take one back.
@@ -397,7 +398,7 @@ function provincesWeek(w: W) {
   // a province we took (not one we always held) may rise unless a regiment is posted there
   Object.entries(PROVINCES).forEach(([id, p]) => {
     const pr = w.provinces[id];
-    if (pr.owner !== 'realm' || p.start === 'realm' || pr.garrison || !chance(w, 0.35)) return;
+    if (pr.owner !== 'realm' || p.start === 'realm' || pr.garrison || !chance(w, unrest(pr))) return;
     const back = pr.from && pr.from !== 'realm' && w.nations[pr.from] ? pr.from : p.claims[0];
     w.provinces[id] = { owner: back, since: w.now, from: 'realm' };
     meter(w, 'stability', -2, `${p.name} rose against us`);

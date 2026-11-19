@@ -1084,3 +1084,11 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .page-body > .passport-abroad, .part-body > .passport-abroad { column-span: all; }
 .page-body > .ex-wide { column-span: all; }
 .status-banner.abroad { background: var(--passport); color: var(--on-passport); } .status-banner.abroad a { color: var(--gold); }
+/* bill text: numbered paragraphs, bullets, article headings, the preamble */
+.billtext .bt-item { display:flex; gap:12px; align-items:baseline; margin-top:4px; }
+.billtext .bt-item .bt-num { font-size:16px; }
+.billtext .bt-bullet { display:flex; gap:8px; padding-left:12px; }
+.billtext .bt-headmark { color:var(--teal); }
+.billtext .bt-pre { margin:0; font-style:italic; color:var(--muted); }
+.billtext .bt-title { overflow-wrap:anywhere; }
+.billtext span { min-width:0; overflow-wrap:anywhere; }

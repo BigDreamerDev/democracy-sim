@@ -1,7 +1,7 @@
 // "State stock": how the site looks once the realm is a dictatorship in all but name. On while a coup regime holds
 // power, or while the Prime Minister rules by decree with no elections, or while there is only one legal party.
 // Purely cosmetic: it reads the world and changes nothing in it.
-import { nm } from '../../engine/index';
+import { nm, realmPlace, imperial } from '../../engine/index';
 import { regnal } from '../../engine/crown';
 
 const RULER: Record<string, string> = { martial: 'The Commander', junta: 'The Chairman of the junta', dictatorship: 'The Dictator', party: 'The Chairman of the Party' };
@@ -17,8 +17,8 @@ export function stateMode(w: any): StateMode | null {
   if (!coup && !(a.decrees && a.continuity) && !a.unity && !crown) return null;
   const leader = coup ? r.leader : w.pm || null;
   const title = coup ? (r.president ? 'The President' : RULER[r.type] || 'The Leader') : crown ? 'The ' + (w.config.hos === 'monarchy' ? w.config.hosTitle : 'President') : 'The Prime Minister';
-  const place = String(w.config.realmName || 'the Realm').split(' of ')[1] || 'the Realm';
-  const maj = w.config.hosTitle === 'King' ? 'His Majesty' : 'Her Majesty';
+  const place = realmPlace(w);
+  const maj = `${/^(King|Emperor)$/.test(w.config.hosTitle) ? 'His' : 'Her'} ${imperial(w) ? 'Imperial ' : ''}Majesty`;
   if (sovereign(w)) return { leader, title: 'The Sovereign', realm: String(w.config.realmName || 'The Realm'), name: regnal(w) || nm(w, leader), crown: true, maj };
   return { leader, title, realm: `The State of ${place}`, name: leader ? nm(w, leader) : '', crown: false, maj };
 }

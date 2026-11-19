@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { shareText } from '../store';
-import { digest, recap, recapText } from '../../../engine/index';
+import { digest, recap, recapText, realmPlace, imperial } from '../../../engine/index';
 import { shareRecap } from '../share';
 import { useStore, act, ONLINE, myInvites, sendInvite, inviteLink, signOut, changePassword, toast, securityInfo, unlinkProvider, beginOAuth, signOutEverywhere, passkeysWork, addPasskey, removePasskey, renamePasskey } from '../store';
 import { TUTORIAL } from '../../../engine/tutorial';
@@ -377,7 +377,7 @@ export function Gazette() {
   const [kind, setKind] = useState('all');
   const kinds: [string, string][] = [['all', 'Everything'], ['law', 'Laws'], ['proposal', 'Proposals'], ['election', 'Elections'], ['government', 'Government'], ['scandal', 'Scandals'], ['money', 'Money']];
   return (
-    <Page title={stateMode(w)?.crown ? 'The Royal Gazette' : stateMode(w) ? 'The State Gazette' : `The ${w.config.realmName.split(' of ')[1] || 'Realm'} Gazette`} kicker={stateMode(w)?.crown ? 'Published by authority' : stateMode(w) ? 'Approved for publication' : 'The official record'} intro="The Gazette acts as the official record of what has happened in the nation, printing exactly what has happened">
+    <Page title={stateMode(w)?.crown ? (imperial(w) ? 'The Imperial Gazette' : 'The Royal Gazette') : stateMode(w) ? 'The State Gazette' : `The ${realmPlace(w).replace(/^the /, '')} Gazette`} kicker={stateMode(w)?.crown ? 'Published by authority' : stateMode(w) ? 'Approved for publication' : 'The official record'} intro="The Gazette acts as the official record of what has happened in the nation, printing exactly what has happened">
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 16 }}>{kinds.map(([k, l]) => <Btn small kind={k === kind ? undefined : 'plain'} onClick={() => setKind(k)}>{l}</Btn>)}</div>
       {w.phase === 'running' && <WeekRecap />}
       <Sec title="Front pages" sub="Every Friday, the week on one page.">
@@ -399,7 +399,7 @@ export function FrontPage({ id }: { id: string }) {
       <article class="frontpage" aria-label="Front page">
         <header class="fp-mast">
           <div class="fp-rule" />
-          <div class="fp-name">The {w.config.realmName.split(' of ')[1] || 'Realm'} Gazette</div>
+          <div class="fp-name">The {realmPlace(w).replace(/^the /, '')} Gazette</div>
           <div class="fp-meta"><span>{fmtDay(f.at)}</span><span>Week {f.week + 1}</span><span>Free to every citizen</span></div>
         </header>
         {f.crisisLeads ? (

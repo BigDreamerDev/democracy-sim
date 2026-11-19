@@ -216,6 +216,9 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | `nations`, `treaties`, `offers`, `army` | foreign affairs. Nations also have `power` (army, 0–10; `null` unless we have an embassy, a Security Service report from the last 7 days in `seenAt`, or are at war with them), `embassy`, `embargo`; treaty kinds include `alliance` and `nonaggression` |
 | `army.troops`, `army.campaign`, `wars[]` | regiments; the current war (`nation`, `score` −100…100, `strategy`, `nextBattleAt`, `battles[]`, `volunteers`, `bonds` (yours only), `pretender`); past wars. `army.hero` and `army.defeatedAt` feed the coup tally |
 | `provinces` | disputed border lands: `{id: {owner, since}}`, owner `'realm'` or a nation id (names and claims in `engine/foreign.ts`) |
+| `provinces[].levy`, `.governor` | under the Imperial Prerogative Act: a weekly levy is on (bool); the citizen governing it |
+| `nations[].protectorate` | `true` while that nation is the empire's protectorate (tribute each payday; fights beside us) |
+| `acts.imperial`, `config.formerNames[]` | the Imperial Prerogative Act's law ref when in force; past names of the realm (`{name, until}`) |
 | `shipping` | trade ventures at sea to each nation: `{nationId: count}` |
 | `army.campaign.terms` | the enemy's terms of peace: `kind` (`land`/`tribute`/`hostage`), `ahead`, `province`, `crowns`, `hostage`, `votes` (MPs, public), `closesAt`, `status` |
 | `memorials[]` | a war memorial vote: `names` (candidates), `votes` (MPs), `closesAt`, `status`, `carved`; carved memorials are in `fame.memorials` |

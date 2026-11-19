@@ -344,7 +344,7 @@ export const enemyKnows = (w: W, nid: string) => !!w.nations[nid]?.mole || allCi
 
 // ---------- the throne abroad: every nation has its own road to the top ----------
 // monarchies: marry into the royal family, then claim the succession; republics: win an election (money helps);
-// Aurel: buy the guilds; Drakmoor: seize power. The ruler sets policy every 3 days, offers the realm treaties, draws a
+// Austrava: buy the guilds; Drakmoor: seize power. The ruler sets policy every 3 days, offers the realm treaties, draws a
 // stipend of 20 a week, and risks a palace revolt each week (less likely with more favour).
 export const THRONES: Record<string, { title: string; way: 'marry' | 'elect' | 'buy' | 'seize'; how: string }> = {
   varnholm: { title: 'Grand Sovereign of Varnholm', way: 'marry', how: 'Marry into the grand ducal family, then claim the succession.' },
@@ -352,7 +352,7 @@ export const THRONES: Record<string, { title: string; way: 'marry' | 'elect' | '
   kessmark: { title: 'First Syndic of Kessmark', way: 'elect', how: 'Stand for First Syndic. The merchant houses vote; money helps.' },
   tessaly: { title: 'First Minister of the Commonwealth', way: 'elect', how: 'Stand for First Minister in a Commonwealth election. Money helps.' },
   sundmere: { title: 'Speaker of the Lakes', way: 'elect', how: 'Stand for Speaker of the Council of Lakes. Money helps.' },
-  aurel: { title: 'Doge of Aurel', way: 'buy', how: 'Buy the guilds: 120 crowns makes you Doge, if you have the favour.' },
+  aurel: { title: 'Doge of Austrava', way: 'buy', how: 'Buy the guilds: 120 crowns makes you Doge, if you have the favour.' },
   drakmoor: { title: 'Marshal of Drakmoor', way: 'seize', how: 'Seize power from the old Marshal. Fail, and you are thrown out of the country.' }
 };
 export const BID_COOL = 3 * DAY;
@@ -401,7 +401,7 @@ export function bid(w: W, actor: Id, spend: unknown) {
     ok = chance(w, clamp(d.favour / 150 + cost / 200 - (rival ? 0.15 : 0), 0.1, 0.9));
   } else if (t.way === 'marry') ok = chance(w, clamp(0.35 + (d.favour - 60) / 80 - (rival ? 0.15 : 0), 0.15, 0.9));
   else ok = chance(w, clamp(0.3 + (d.drills || 0) / 20 + (d.favour - 70) / 100 - (rival ? 0.1 : 0), 0.1, 0.8));
-  if (cost > 0) transfer(w, ca(actor), 'nation:' + n.id, cost, t.way === 'buy' ? 'The guilds of Aurel' : `A campaign in ${n.name}`);
+  if (cost > 0) transfer(w, ca(actor), 'nation:' + n.id, cost, t.way === 'buy' ? 'The guilds of Austrava' : `A campaign in ${n.name}`);
   d.bidAt = w.now;
   if (!ok) {
     fav(w, actor, -8);

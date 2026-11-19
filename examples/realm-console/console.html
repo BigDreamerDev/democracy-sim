@@ -75,6 +75,7 @@ a.item .go{color:var(--acc);font-weight:700}
 .item .m{font-size:13.5px;color:var(--mut)}
 .flash{animation:flash 1.6s}
 @keyframes flash{0%,40%{box-shadow:0 0 0 3px var(--acc)}100%{box-shadow:0 0 0 3px transparent}}
+.bill{display:grid;gap:3px;line-height:1.5}.bill .b-title{font-family:var(--serif);letter-spacing:.1em;text-transform:uppercase;text-align:center}.bill .b-head{font-family:var(--serif);font-size:1.1em;margin-top:4px}.bill .b-pre{font-style:italic;color:var(--mut)}.bill .b-row{display:flex;gap:8px}.bill .b-mark{flex:none;min-width:22px;color:var(--mut)}
 .tag{display:inline-block;font-size:12.5px;padding:1px 8px;border-radius:99px;background:var(--acc2);color:var(--acc);margin-right:4px;white-space:nowrap}
 .tag.warn{background:var(--warnbg);color:var(--warn)}.tag.bad{background:var(--badbg);color:var(--bad)}.tag.ok{background:var(--okbg);color:var(--ok)}
 .dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:7px;border:1px solid var(--line);vertical-align:-1px}
@@ -319,7 +320,7 @@ const SOURCES = {
   bond: () => [...(W?.bonds?.holdings || []).map(h => [h.id, `Yours: ${h.amt} lent, ${h.payout} back${h.ask ? ' · on sale at ' + h.ask : ''}`]), ...(W?.bonds?.market || []).filter(m => !(W?.bonds?.holdings || []).some(h => h.id === m.id)).map(m => [m.id, `For sale: pays ${m.payout}, price ${m.price}`])],
 };
 /* The wider world: companies on the Exchange, war memorials, provinces, wars abroad, secret approaches, hostages. */
-const CO_NAMES = { NGR: 'Northgate Rail', CMB: 'Crown Mint Bank', IRF: 'Ironfoot Armaments', HSC: 'Hearth & Salt Co-op', VGC: 'Varnholm Grain Company', KRS: 'Kessmark River Shipping', OFI: 'Orrin Fisheries', TLM: 'Tessaly Looms', AUT: 'Aurel Trust', DSF: 'Drakmoor Steel Foundries' };
+const CO_NAMES = { NGR: 'Northgate Rail', CMB: 'Crown Mint Bank', IRF: 'Ironfoot Armaments', HSC: 'Hearth & Salt Co-op', VGC: 'Varnholm Grain Company', KRS: 'Kessmark River Shipping', OFI: 'Orrin Fisheries', TLM: 'Tessaly Looms', AUT: 'Austrava Trust', DSF: 'Drakmoor Steel Foundries' };
 const PROVINCE_NAMES = { kessvale: 'The Kess Valley', northfells: 'The North Fells', westwold: 'The Westwold' };
 const coName = sym => CO_NAMES[sym] || W?.exchange?.listed?.[sym]?.name || sym;
 Object.assign(SOURCES, {
@@ -343,7 +344,7 @@ function sourceFor(name, type) {
 const GROUPS = [
   ['Voting & bills', /^(prop|draft|pledge)\./], ['Elections', /^(election|newsnight)\./], ['Convention', /^(convention|tutorial)\./],
   ['Parties & coalitions', /^(party|coalition)\./], ['The Crown', /^crown\./], ['Government', /^(gov|office|hos|q|reserve)\./], ['Money', /^(money|bond|bank|venture|market|job)\./],
-  ['War & the Army', /^(war|army)\./], ['The Exchange', /^exchange\./], ['Life abroad', /^(defect|abroad|agent|asylum|hostage)\.|^exile\.(declare|join|leave|return)$/],
+  ['The Empire', /^imperial\./], ['War & the Army', /^(war|army)\./], ['The Exchange', /^exchange\./], ['Life abroad', /^(defect|abroad|agent|asylum|hostage)\.|^exile\.(declare|join|leave|return)$/],
   ['Foreign affairs', /^(foreign|intel|exile)\./], ['Backroom', /^(deal|card|demand|plot|security|coup)\./],
   ['Regimes & coups', /^(regime|police|prison|transition|reckoning|jail)\./], ['Press', /^press\./], ['Court', /^court\./],
   ['Crises', /^crisis\./], ['Streets & market', /^(streets|bounty|stall|hunt)\./], ['Daily & me', /^(daily|me)\./],
@@ -465,6 +466,7 @@ const SETTABLE = {
 const CONST_KEYS = {
   seats: ['Seats in Parliament', [3, 5, 7, 9]], termDays: ['Time between general elections', [[14, '2 weeks'], [21, '3 weeks'], [28, '4 weeks']]],
   hos: ['Head of state', [['monarchy', 'Monarchy'], ['republic', 'Republic']]],
+  name: ['The name of the realm', null],
   hosMethod: ['How the head of state is chosen', [['life', 'Monarch: elected for life'], ['lot', 'Monarch: drawn by lot every 4 weeks'], ['rotate', 'Monarch: each citizen a week in turn'], ['citizens', 'President: elected by citizens'], ['house', 'President: elected by MPs']]]
 };
 const OFFICE_TEMPLATES = { treasury: 'Treasury (Chancellor)', reserve: 'Federal Reserve', foreign: 'Foreign Office', security: 'Security Service', army: 'The Army', court: 'Supreme Court', guard: 'Protection Service', whip: 'Chief Whip', emeritus: 'Office of the Monarch Emeritus (royal pension for a past monarch)' };
@@ -478,7 +480,8 @@ const ACTS = {
   security: 'State Security Act — coups much harder, PM warned of large plots',
   crown: 'Crown Act — the head of state is also the Prime Minister',
   prerogative: 'Royal Prerogative Act — every bill waits for Royal Assent, which can be refused; unsigned bills lapse after 3 days',
-  veto: 'Royal Veto Act — the Monarch may strike any pending bill from the order paper'
+  veto: 'Royal Veto Act — the Monarch may strike any pending bill from the order paper',
+  imperial: 'Imperial Prerogative Act — an Emperor or Empress, the realm proclaimed an Empire, and the Imperial High Commission to govern provinces and protectorates'
 };
 const CLAUSE_TYPES = {
   text: 'Words only (a law in plain text)', set: 'Change a number (tax, pay, timings)', constitution: 'Change the constitution',
@@ -496,7 +499,8 @@ function clauseFields(t, c = {}) {
     case 'set': return `<div class="fields">${f('key', `<select data-c="key">${opt(Object.entries(SETTABLE).map(([k, v]) => [k, `${v[0]} (${v[2]}–${v[3]}${v[1]})`]), c.key)}</select>`, 'Setting')}${f('value', `<input type="number" data-c="value" data-num value="${esc(c.value ?? '')}">`, 'New value')}</div>`;
     case 'constitution': {
       const key = c.key || 'hos';
-      return `<div class="fields">${f('key', `<select data-c="key" data-rebuild>${opt(Object.entries(CONST_KEYS).map(([k, v]) => [k, v[0]]), key)}</select>`, 'What to change')}${f('value', `<select data-c="value" ${key === 'seats' || key === 'termDays' ? 'data-num' : ''}>${opt(CONST_KEYS[key][1], c.value)}</select>`, 'Becomes')}</div>`;
+      const val = key === 'name' ? `<input data-c="value" value="${esc(c.value || '')}" placeholder="e.g. The Aurel Empire">` : `<select data-c="value" ${key === 'seats' || key === 'termDays' ? 'data-num' : ''}>${opt(CONST_KEYS[key][1], c.value)}</select>`;
+      return `<div class="fields">${f('key', `<select data-c="key" data-rebuild>${opt(Object.entries(CONST_KEYS).map(([k, v]) => [k, v[0]]), key)}</select>`, 'What to change')}${f('value', val, key === 'name' ? `New name (now ${esc(W?.config?.realmName || '')})` : 'Becomes')}</div>`;
     }
     case 'office': return `<div class="fields">${f('template', `<select data-c="template">${opt(Object.entries(OFFICE_TEMPLATES), c.template)}</select>`, 'Which office')}</div><small class="mut">For a custom office with your own powers, use the JSON box under Advanced.</small>`;
     case 'abolish': return f('office', `<select data-c="office">${opt(SOURCES.office(), c.office)}</select>`, 'Office');
@@ -549,6 +553,8 @@ const PRESETS = {
       { t: 'decrees' }, { t: 'continuity' }, { t: 'unity' }, { t: 'protection' }, { t: 'security' }, { t: 'crown' }
     ]
   },
+  imperial: { name: 'The Imperial Prerogative Act (an empire)', title: 'The Imperial Prerogative Act', summary: 'Proclaims the empire: the Monarch reigns as Emperor or Empress, the realm takes an imperial name, and the Imperial High Commission governs its provinces and protectorates.', clauses: [{ t: 'imperial' }] },
+  rename: { name: 'Rename the realm', title: 'Realm (Name) Act', summary: 'Gives the realm a new name.', clauses: [{ t: 'constitution', key: 'name', value: '' }] },
   emeritus: { name: 'A royal pension for a past monarch', title: 'Royal Pensions Act', summary: 'Creates the Office of the Monarch Emeritus: the reigning monarch may grant it to someone who has reigned before, with a pension each payday, an honour and a style.', clauses: [{ t: 'office', template: 'emeritus' }, { t: 'set', key: 'emeritusPay', value: 10 }] },
   honours: { name: 'More honours a week for the Crown', title: 'Royal Honours Decree', summary: 'The head of state may give up to five honours a week.', clauses: [{ t: 'set', key: 'honoursPerWeek', value: 5 }] },
   veto: { name: 'The Royal Veto (strike bills)', title: 'Royal Veto Decree', summary: 'The Monarch may strike any pending bill from the order paper.', clauses: [{ t: 'veto' }] },
@@ -558,6 +564,37 @@ const PRESETS = {
   tax: { name: 'Cut income tax', title: 'Finance Bill', summary: 'Lowers income tax.', clauses: [{ t: 'set', key: 'taxRate', value: 10 }] },
   treasury: { name: 'Create the Treasury', title: 'Treasury Act', summary: 'Creates the Treasury and the office of Chancellor.', clauses: [{ t: 'office', template: 'treasury' }] },
 };
+
+/* Bill text laid out like a printed bill: the same rules as the site (web/src/ui.tsx BillText). Never parsed as HTML. */
+function billHtml(text) {
+  const inl = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*(.+?)\*/g, '<i>$1</i>');
+  const out = [];
+  for (const raw of String(text || '').replace(/\r/g, '').split('\n')) {
+    const l = raw.trim(); let m;
+    if (!l) { if (out.length && out[out.length - 1].k !== 'gap') out.push({ k: 'gap' }); continue; }
+    const prev = out[out.length - 1];
+    if (prev && /^[a-z]/.test(l) && prev.k === 'sec') { prev.k = 'num'; prev.mark += '.'; prev.t += ' ' + l; continue; }
+    if (prev && /^[a-z]/.test(l) && ['p', 'num', 'sub', 'bullet', 'pre'].includes(prev.k)) { prev.t += ' ' + l; continue; }
+    if ((m = l.match(/^#{1,3}\s+(.*)$/))) out.push({ k: 'head', t: m[1] });
+    else if ((m = l.match(/^((?:article|section|part|chapter|schedule|clause|title)\s+(?:\d{1,3}|[IVXLC]{1,7}|[A-Z]))\b\s*[.:—–-]?\s*(.*)$/i)) && m[2].length <= 90) out.push({ k: 'head', mark: m[1], t: m[2] });
+    else if (l.length <= 80 && /[A-Z]/.test(l) && l === l.toUpperCase() && !/^\(|^\d/.test(l)) out.push({ k: 'title', t: l });
+    else if (/^(whereas|be it (?:therefore )?enacted|now,? therefore)\b/i.test(l)) out.push({ k: 'pre', t: l });
+    else if ((m = l.match(/^(\d{1,3}\.\d{1,3}(?:\.\d{1,3})?)\.?\s+(.+)$/))) out.push({ k: 'sub', mark: m[1], t: m[2], d: 1 });
+    else if ((m = l.match(/^(\d{1,3})([.)]?)\s+(.+)$/))) out.push(m[3].length <= 90 && !/[.;:,!?]$/.test(m[3]) ? { k: 'sec', mark: m[1], t: m[3] } : { k: 'num', mark: m[1] + (m[2] || '.'), t: m[3] });
+    else if ((m = l.match(/^(\(\d{1,3}\))\s*(.*)$/))) out.push({ k: 'sub', mark: m[1], t: m[2], d: 1 });
+    else if ((m = l.match(/^(\((?:[ivx]{1,5}|[a-z])\)|(?:[ivx]{1,5}|[a-z])[.)])\s*(.+)$/))) out.push({ k: 'sub', mark: m[1], t: m[2], d: 2 });
+    else if ((m = l.match(/^([-–•▪●]|\*(?!\*))\s+(.+)$/))) out.push({ k: 'bullet', mark: '•', t: m[2] });
+    else out.push({ k: 'p', t: l });
+  }
+  while (out.length && out[out.length - 1].k === 'gap') out.pop();
+  if (out.length === 1 && out[0].k === 'p') return inl(out[0].t);
+  return `<div class="bill">${out.map(b => b.k === 'gap' ? '<div style="height:6px"></div>'
+    : b.k === 'head' ? `<div class="b-head">${b.mark ? `<span style="color:var(--acc)">${esc(b.mark)}</span> ` : ''}${inl(b.t)}</div>`
+    : b.k === 'title' ? `<div class="b-title">${esc(b.t)}</div>`
+    : b.k === 'pre' ? `<div class="b-pre">${inl(b.t)}</div>`
+    : b.k === 'p' ? `<div>${inl(b.t)}</div>`
+    : `<div class="b-row" style="padding-left:${b.k === 'sub' ? (b.d === 2 ? 44 : 22) : b.k === 'bullet' ? 8 : 0}px"><span class="b-mark">${esc(b.mark)}</span><span>${inl(b.t)}</span></div>`).join('')}</div>`;
+}
 
 /* ═════════════════════════════════════════════ views */
 const VIEWS = { home: 'Home', house: 'The House', people: 'Parties & people', money: 'Money', exchange: 'Exchange', world: 'World & war', crown: 'The Crown', bill: 'Write a bill', do: 'Do anything', gazette: 'Gazette', settings: 'Settings' };
@@ -680,7 +717,7 @@ function proposalCard(p, compact) {
   return `<div class="item" id="p-${esc(p.id)}">
     <div class="row" style="justify-content:space-between"><span class="t">${p.n ? '#' + p.n + ' ' : ''}${esc(p.title)}${p.crown ? ' <span class="tag warn">Crown bill</span>' : ''}${p.royalLine ? ` <span class="tag ${p.royalLine === 'aye' ? 'ok' : 'bad'}">Crown: ${p.royalLine === 'aye' ? 'for' : 'against'}</span>` : ''}</span><span>${stageTag(p.stage)}${t ? `<span class="small mut">${t}</span>` : ''}</span></div>
     <div class="m">${esc(human(p.kind || 'bill'))} by ${esc(who(p.by || p.author))}${p.summary ? ' — ' + esc(p.summary) : ''}</div>
-    ${p.clauses?.length ? (compact ? `<details class="raw" style="margin-top:4px"><summary>Read the ${p.clauses.length === 1 ? 'clause' : p.clauses.length + ' clauses'}</summary>` : '') + `<ol class="small" style="margin:6px 0 0;padding-left:20px">${p.clauses.map(c => `<li>${esc(describeClause(c))}</li>`).join('')}</ol>` + (compact ? '</details>' : '') : ''}
+    ${p.clauses?.length ? (compact ? `<details class="raw" style="margin-top:4px"><summary>Read the ${p.clauses.length === 1 ? 'clause' : p.clauses.length + ' clauses'}</summary>` : '') + `<ol class="small" style="margin:6px 0 0;padding-left:20px">${p.clauses.map(c => `<li>${c.t === 'text' ? billHtml(c.text) : esc(describeClause(c))}</li>`).join('')}</ol>` + (compact ? '</details>' : '') : ''}
     ${p.stage === 'vote' || Object.keys(tally).length ? `<div class="small mut" style="margin-top:4px">Aye ${tally.aye || 0} · No ${tally.no || 0} · Abstain ${tally.abstain || 0}${mine ? ` · <b>you voted ${esc(mine)}</b>` : ''}</div>` : ''}
     ${canAct() ? `<div class="row" style="margin-top:8px">
       ${p.stage === 'vote' && (isMP || p.voters === 'all') ? ['aye', 'no', 'abstain'].map(v => `<button class="sm ${v} ${mine === v ? 'on' : ''}" data-do="prop.vote" data-a='${JSON.stringify({ prop: p.id, vote: v })}' ${mine === v ? 'title="Your vote. You can change it until the vote closes."' : ''}>${mine === v ? '✓ ' : ''}${human(v)}</button>`).join('') : ''}
@@ -697,7 +734,7 @@ function describeClause(c) {
   switch (c.t) {
     case 'text': return c.text;
     case 'set': return `Sets ${(SETTABLE[c.key]?.[0] || c.key).toLowerCase()} to ${c.value}${SETTABLE[c.key]?.[1] || ''}${typeof c.from === 'number' ? ` (was ${c.from})` : ''}.`;
-    case 'constitution': { const k = CONST_KEYS[c.key]; const v = (k?.[1] || []).find(x => (Array.isArray(x) ? x[0] : x) == c.value); return `Constitution: ${(k?.[0] || c.key).toLowerCase()} becomes ${c.label || (Array.isArray(v) ? v[1] : c.value)}.`; }
+    case 'constitution': { if (c.key === 'name') return `Renames the realm: it becomes the ${c.value}.`; const k = CONST_KEYS[c.key]; const v = (k?.[1] || []).find(x => (Array.isArray(x) ? x[0] : x) == c.value); return `Constitution: ${(k?.[0] || c.key).toLowerCase()} becomes ${c.label || (Array.isArray(v) ? v[1] : c.value)}.`; }
     case 'office': return c.template ? `Creates the ${OFFICE_TEMPLATES[c.template] || c.template}.` : `Creates the office of ${c.office?.name}.`;
     case 'abolish': return `Abolishes the ${W.offices?.[c.office]?.name || 'office'}.`;
     case 'budget': return `Sets the ${W.offices?.[c.office]?.name || 'office'} budget to ${c.value} crowns a week.`;
@@ -900,15 +937,23 @@ function viewWorld() {
   const defectors = coll(W.citizens).filter(([, c]) => c.defected);
   const g = W.exileGov;
   const me = W.citizens?.[W.viewer] || {};
-  return `${abroadCard()}${warCard()}${memorialsCard()}
+  const hc = coll(W.offices).find(([, o]) => (o.powers || []).includes('imperial'));
+  const governs = W.acts?.imperial && (hc ? hc[1].holder === W.viewer : W.pm === W.viewer);
+  const citizensList = coll(W.citizens).filter(([, c]) => c.active !== false && !c.bot && !c.defected);
+  const empire = W.acts?.imperial ? `<div class="card"><h2>The Empire <span class="sub">${hc ? `${esc(hc[1].title || hc[1].name)}: ${hc[1].holder ? esc(who(hc[1].holder)) : 'vacant'}` : 'governed by the Prime Minister'}</span></h2>
+    ${Object.entries(W.provinces || {}).filter(([, p]) => p.owner === 'realm').map(([id, p]) => `<div class="item"><div class="row between"><span class="t">${esc(PROVINCE_NAMES[id] || id)}</span><span class="small">${p.levy ? 'levy · ' : ''}${p.governor ? 'governor ' + esc(who(p.governor)) : 'no governor'}</span></div>
+      ${governs ? `<div class="row" style="margin-top:6px">${btn('imperial.levy', { province: id, on: !p.levy }, p.levy ? 'Lift the levy' : 'Levy it (10 a week)')}${p.governor ? btn('imperial.governor', { province: id, target: null }, 'Recall the governor', 'no') : `<select class="sm" data-gov="${esc(id)}">${citizensList.map(([cid, c]) => `<option value="${esc(cid)}">${esc(c.name)}</option>`).join('')}</select><button class="sm" data-govbtn="${esc(id)}">Appoint governor</button>`}</div>` : ''}</div>`).join('') || '<div class="empty">The realm holds no provinces.</div>'}
+    <div class="small" style="margin-top:8px"><b>Protectorates:</b> ${ns.filter(([, n]) => n.protectorate).map(([id, n]) => `${esc(n.name)}${governs ? ' ' + btn('imperial.release', { nation: id }, 'Release', 'no', `Release ${n.name}?`) : ''}`).join(', ') || 'none'}</div>
+    ${governs ? `<div class="row" style="margin-top:8px">${ns.filter(([id, n]) => !n.protectorate && !n.ruler && n.mood >= 3 && W.army?.war !== id).map(([id, n]) => btn('imperial.protectorate', { nation: id }, `Offer protection to ${n.name}`)).join('')}</div>` : ''}</div>` : '';
+  return `${abroadCard()}${empire}${warCard()}${memorialsCard()}
   <div class="card"><h2>The nations <span class="sub">${ns.length}${W.army?.war ? ' · at war with ' + esc(W.nations[W.army.war]?.name) : ''}</span></h2>
     ${ns.map(([id, n]) => `<div class="item"><div class="row between"><span class="t">${esc(n.name)}</span><span><span class="tag ${n.mood >= 3 ? 'ok' : n.mood <= 1 ? 'bad' : ''}">${W.army?.war === id ? 'At war' : MOODS[n.mood]}</span></span></div>
-      <div class="m">Army ${knownArmy(n) ? Math.round(n.power * 10) / 10 : 'unknown'}${n.embassy ? ' · our embassy' : ''}${n.embargo ? ' · under our embargo' : ''}${n.sanctionsUntil > SERVER_NOW() ? ' · sanctions on us' : ''}${n.ruler ? ` · ruled by ${esc(who(n.ruler.id))}, a defector` : ''}${W.shipping?.[id] ? ` · ${W.shipping[id]} ship${W.shipping[id] === 1 ? '' : 's'} at sea` : ''}</div>
+      <div class="m">Army ${knownArmy(n) ? Math.round(n.power * 10) / 10 : 'unknown'}${n.embassy ? ' · our embassy' : ''}${n.embargo ? ' · under our embargo' : ''}${n.sanctionsUntil > SERVER_NOW() ? ' · sanctions on us' : ''}${n.protectorate ? ' · our protectorate' : ''}${n.ruler ? ` · ruled by ${esc(who(n.ruler.id))}, a defector` : ''}${W.shipping?.[id] ? ` · ${W.shipping[id]} ship${W.shipping[id] === 1 ? '' : 's'} at sea` : ''}</div>
       ${amFM() ? `<div class="row" style="margin-top:6px">${btn('foreign.envoy', { nation: id }, 'Send an envoy')}${btn('foreign.embassy', { nation: id, open: !n.embassy }, n.embassy ? 'Close the embassy' : 'Open an embassy (30)')}${btn('foreign.embargo', { nation: id, on: !n.embargo }, n.embargo ? 'Lift the embargo' : 'Embargo', n.embargo ? '' : 'no')}${openBtn('foreign.propose', 'Propose a treaty…')}</div>` : ''}
     </div>`).join('')}
   </div>
   <div class="grid">
-    <div class="card"><h2>Provinces</h2>${Object.entries(W.provinces || {}).map(([id, p]) => `<div class="item"><div class="row between"><span><span class="t">${esc(PROVINCE_NAMES[id] || id)}</span> <span class="m">${p.owner === 'realm' ? 'ours' : 'held by ' + esc(W.nations?.[p.owner]?.name)}${p.garrison ? ' · garrisoned' : ''}</span></span>${p.owner === 'realm' && amCommander() && W.offices?.army ? btn('army.garrison', { province: id, on: !p.garrison }, p.garrison ? 'Withdraw' : 'Garrison') : ''}</div></div>`).join('') || '<div class="empty">None.</div>'}</div>
+    <div class="card"><h2>Provinces</h2>${Object.entries(W.provinces || {}).map(([id, p]) => `<div class="item"><div class="row between"><span><span class="t">${esc(PROVINCE_NAMES[id] || id)}</span> <span class="m">${p.owner === 'realm' ? 'ours' + (p.levy ? ' · levied' : '') + (p.governor ? ' · governor ' + esc(who(p.governor)) : '') : 'held by ' + esc(W.nations?.[p.owner]?.name)}${p.garrison ? ' · garrisoned' : ''}</span></span>${p.owner === 'realm' && amCommander() && W.offices?.army ? btn('army.garrison', { province: id, on: !p.garrison }, p.garrison ? 'Withdraw' : 'Garrison') : ''}</div></div>`).join('') || '<div class="empty">None.</div>'}</div>
     <div class="card"><h2>Wars abroad</h2>${raging.map(c => `<div class="item"><span class="t">${esc(W.nations?.[c.a]?.name)} against ${esc(W.nations?.[c.b]?.name)}</span><div class="row" style="margin-top:6px">${!c.mediated && amFM() ? btn('foreign.mediate', { conflict: c.id }, 'Offer to mediate') : c.mediated ? '<span class="small mut">We have tried to mediate.</span>' : ''}</div></div>`).join('') || '<div class="empty">The world is at peace.</div>'}</div>
   </div>
   <div class="grid">
@@ -1010,6 +1055,13 @@ document.addEventListener('click', async e => {
   toast(r.ok ? 'Struck by Royal Command.' : r.error, !r.ok);
 });
 document.addEventListener('click', async e => {
+  const g = e.target.closest('[data-govbtn]'); if (!g) return;
+  const citizen = document.querySelector(`[data-gov="${g.dataset.govbtn}"]`)?.value;
+  if (!citizen) return toast('Choose who first.', true);
+  const r = await act('imperial.governor', { province: g.dataset.govbtn, target: citizen });
+  toast(r.ok ? 'Governor appointed.' : r.error, !r.ok);
+});
+document.addEventListener('click', async e => {
   const c = e.target.closest('[data-command]'); if (!c) return;
   const p = W.proposals?.[c.dataset.command];
   if (!confirm(`Enact “${p?.title}” now by Royal Command, without a vote? It becomes law at once.`)) return;
@@ -1037,12 +1089,12 @@ function styleCard() {
   if (!r || r.id !== W.viewer || !canAct()) return '';
   if (r.crownedAt) return `<div class="card"><h2>Your style <span class="sub">${esc(hosTitle())} ${esc(r.name)} ${esc(r.numeral)}</span></h2>
     <p class="small">Your regnal name was fixed for life at the coronation. You can still choose King or Queen.</p>
-    <div class="row">${['Queen', 'King'].map(t => `<button class="sm ${W.config?.hosTitle === t ? 'on' : ''}" data-do="hos.title" data-a='${JSON.stringify({ title: t })}'>${t}</button>`).join('')}</div></div>`;
+    <div class="row">${(W.acts?.imperial ? ['Empress', 'Emperor'] : ['Queen', 'King']).map(t => `<button class="sm ${W.config?.hosTitle === t ? 'on' : ''}" data-do="hos.title" data-a='${JSON.stringify({ title: t })}'>${t}</button>`).join('')}</div></div>`;
   return `<div class="card" style="border-color:var(--acc)"><h2>Your regnal name <span class="sub">crowned ${until(r.crownAt) || 'soon'}</span></h2>
     <p class="small">Choose the name you will reign by, King or Queen, and the oath you swear. You can change them until the coronation; after it the name is yours for life. ${r.styled ? `Now set: <b>${esc(W.config?.hosTitle || 'Queen')} ${esc(r.name)} ${esc(r.numeral)}</b>, sworn ${esc((OATHS[r.oath] || [])[0] || '')}.` : 'Nothing is set yet.'}</p>
     <div class="fields">
       <label>Regnal name<input id="st-name" maxlength="24" value="${esc(r.name || '')}" placeholder="e.g. Victoria"><small>Letters only. The numeral is added for you (a second Victoria is Victoria II).</small></label>
-      <label>Title<select id="st-title">${['Queen', 'King'].map(t => `<option ${(W.config?.hosTitle || 'Queen') === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label>Title<select id="st-title">${(W.acts?.imperial ? ['Empress', 'Emperor'] : ['Queen', 'King']).map(t => `<option ${(W.config?.hosTitle || 'Queen') === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
     </div>
     <div style="display:grid;gap:6px;margin-top:8px">${Object.entries(OATHS).map(([k, [label, text, eff]]) => `<label class="small" style="display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start;font-weight:400"><input type="radio" name="st-oath" value="${k}" ${(r.oath || 'people') === k ? 'checked' : ''} style="width:auto;margin:3px 0 0"><span><b>${label}</b>: “${esc(text)}” <span class="mut">${eff}</span></span></label>`).join('')}</div>
     <div class="row" style="margin-top:10px"><button class="aye" id="st-save">${r.styled ? 'Change name and oath' : 'Set name and oath'}</button><button class="sm" id="st-hold">Hold the coronation now</button></div></div>`;
@@ -1141,7 +1193,7 @@ function viewHouse() {
   const open = all.filter(p => !['enacted', 'failed', 'vetoed', 'withheld', 'withdrawn'].includes(p.stage));
   const done = all.filter(p => !open.includes(p)).slice(0, 15);
   return `<div class="card"><h2>Open proposals</h2>${open.map(p => proposalCard(p)).join('') || '<div class="empty">Nothing open.</div>'}</div>
-    <div class="card"><h2>The statute book <span class="sub">${(W.laws || []).length} laws</span></h2>${(W.laws || []).slice().reverse().map(l => `<details class="item"><summary><span class="t">${esc(l.ref)} ${esc(l.title)}</span> <span class="m">${esc(l.summary || '')}</span></summary><ol class="small">${(l.text || []).map(t => `<li>${esc(t)}</li>`).join('')}</ol></details>`).join('') || '<div class="empty">No laws yet.</div>'}</div>
+    <div class="card"><h2>The statute book <span class="sub">${(W.laws || []).length} laws</span></h2>${(W.laws || []).slice().reverse().map(l => `<details class="item"><summary><span class="t">${esc(l.ref)} ${esc(l.title)}</span> <span class="m">${esc(l.summary || '')}</span></summary><ol class="small">${(l.text || []).map(t => `<li>${billHtml(t)}</li>`).join('')}</ol></details>`).join('') || '<div class="empty">No laws yet.</div>'}</div>
     <div class="card"><h2>Recently decided</h2>${done.map(p => proposalCard(p, true)).join('') || '<div class="empty">Nothing yet.</div>'}</div>`;
 }
 

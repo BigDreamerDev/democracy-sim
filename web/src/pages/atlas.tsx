@@ -1,5 +1,5 @@
 // The world map (#/atlas) and the war room (#/war). The map is drawn here from fixed geography: a continent split
-// between the realm and its neighbours, the Orrin Isles to the west and the Free City of Aurel on its lagoon to the
+// between the realm and its neighbours, the Orrin Isles to the west and the Free City of Austrava on its lagoon to the
 // south. Colours follow each nation's mood; lines show treaties, wars and wars abroad. Every country links to its page.
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
@@ -8,6 +8,7 @@ import { isPM, hasPower, holderOf, standing, bal, ca, isMP, autocrat, autocratTi
 import { MOODS, PROFILES, TREATIES, PROVINCES, known, shipping, laneClosed } from '../../../engine/foreign';
 import { power, STRATEGIES, REGIMENT_COST, MAX_REGIMENTS, BOND_PAYS, allies, EMBED_COST, termsText, garrisoned } from '../../../engine/war';
 import { canMarch } from '../../../engine/backroom';
+import { EmpirePanel } from './empire';
 
 type Pt = [number, number];
 const W = 1000;
@@ -217,7 +218,7 @@ export function WorldMap({ compact }: { compact?: boolean }) {
         {ISLE_PATHS.map((d) => <path d={d} class="atlas-coast thin" />)}
         <path d={AUREL_PATH} class="atlas-coast thin" />
         <text x="40" y="150" class="atlas-sea-label">The Grey Sea</text>
-        <text x="560" y="636" class="atlas-sea-label">Gulf of Aurel</text>
+        <text x="560" y="636" class="atlas-sea-label">Gulf of Austrava</text>
         <text x="300" y="40" class="atlas-sea-label">The Northern Reach</text>
         {/* sea lanes from the harbour at Aldmouth: ships for each venture at sea; a red cross where trade is shut */}
         {Object.keys(LANES).filter((id) => ns[id]).map((id) => {
@@ -259,7 +260,7 @@ export function WorldMap({ compact }: { compact?: boolean }) {
               {ns[id].embassy && <path d={`M${c[0] - 12},${c[1] + 2} v-16 l10,4 l-10,4`} class="atlas-flag" />}
               <text x={l[0]} y={l[1]} text-anchor="middle" class="atlas-name">{name(id)}</text>
               {ns[id].ruler && <text x={l[0]} y={l[1] + 28} text-anchor="middle" class="atlas-prov small">ruled by {w.citizens[ns[id].ruler.id]?.name}</text>}
-              <text x={l[0]} y={l[1] + 15} text-anchor="middle" class={'atlas-mood m' + ns[id].mood}>{enemy === id ? 'At war' : MOODS[ns[id].mood]} · army {known(w, id) && ns[id].power != null ? Math.round(ns[id].power) : '?'}</text>
+              <text x={l[0]} y={l[1] + 15} text-anchor="middle" class={'atlas-mood m' + ns[id].mood}>{enemy === id ? 'At war' : ns[id].protectorate ? 'Protectorate' : MOODS[ns[id].mood]} · army {known(w, id) && ns[id].power != null ? Math.round(ns[id].power) : '?'}</text>
             </g>
           );
         })}
@@ -313,6 +314,7 @@ export function Atlas() {
           {conflicts.filter((c) => c.status === 'over').slice(0, 4).map((c) => <div class="small muted">{w.nations[c.a]?.name} and {w.nations[c.b]?.name}: {c.peaceBy ? <>peace brokered by <Who id={c.peaceBy} /></> : c.winner ? `${w.nations[c.winner]?.name} won` : 'fought to exhaustion'}.</div>)}
         </div>
       </Sec>
+      <EmpirePanel compact />
       <Sec title="Disputed provinces" sub="Border lands that change hands in war. Win a war and the enemy's claimed provinces are ours; lose one and they take one back. A nation whose province we hold resents it.">
         <ul class="list">{Object.keys(PROVINCES).map((id) => {
           const pr = w.provinces?.[id] || { owner: PROVINCES[id].start };
@@ -328,7 +330,7 @@ export function Atlas() {
             const p = PROFILES[n.id];
             return (
               <a class="card atlas-card" href={'#/nation/' + n.id}>
-                <div class="row"><b class="serif" style={{ fontSize: 19 }}>{n.name}</b><span class={'chip ' + (n.mood >= 3 ? 'teal' : n.mood <= 1 ? 'red' : 'ink')}>{w.army?.war === n.id ? 'At war' : MOODS[n.mood]}</span></div>
+                <div class="row"><b class="serif" style={{ fontSize: 19 }}>{n.name}</b><span class={'chip ' + (n.mood >= 3 ? 'teal' : n.mood <= 1 ? 'red' : 'ink')}>{w.army?.war === n.id ? 'At war' : n.protectorate ? 'Protectorate' : MOODS[n.mood]}</span></div>
                 <div class="small muted">{p?.gov}, ruled from {p?.capital}. {n.ruler ? <><b>{n.ruler.title} {w.citizens[n.ruler.id]?.name}</b>, once of the realm.</> : `${p?.leader}.`}</div>
                 <div class="atlas-stats small"><span>Army <b class="tnum">{known(w, n.id) && n.power != null ? `${Math.round(n.power)}/10` : 'unknown'}</b></span><span>Wealth <b class="tnum">{p?.wealth}</b>/10</span><span>{p?.exports}</span></div>
               </a>

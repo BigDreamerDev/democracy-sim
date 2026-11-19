@@ -1,12 +1,16 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 54, text: 'Bills read like bills: articles, sections, numbered clauses, (a)/(i) sub-clauses, bullets and preambles are laid out properly.' },
+  { n: 53, text: 'The Imperial High Commission: under the Imperial Prerogative Act it can levy provinces, appoint governors and take friendly nations as protectorates. Government › Powers, or World › The map.' },
+  { n: 52, text: 'The Imperial Prerogative Act is now a single clause: the Monarch reigns as Emperor or Empress and the High Commission is set up. A PM with decree powers can proclaim it in one tap.' },
+  { n: 51, text: 'Rename the realm by law: a constitution clause “The name of the realm”. Old names are kept. The Free City of Aurel is now Austrava, so it no longer clashes with ours.' },
   { n: 50, text: 'Float your own company or bank on the Exchange. Sell shares to raise money, pay dividends, and watch out: shareholders can vote you out, and a company that runs out of money goes bust. Money › The Exchange.' },
   { n: 49, text: 'A government in exile: defectors can declare one, citizens at home can back it, and with enough support its leader can lead the exiles home for a coup night.' },
   { n: 48, text: 'Rival courts: defectors at the same court can steal each other’s favour or expose each other’s secrets.' },
   { n: 47, text: 'Under a coup, a regime or a jail law, you can shelter in a friendly nation’s embassy, out of reach of arrest. World › Life abroad.' },
   { n: 46, text: 'Royal heirs abroad: a consort can have a child, and press a dynastic claim to the realm’s own throne in the child’s name.' },
-  { n: 45, text: 'Defectors can take the throne abroad: marry into the royal family of Varnholm or the Isles, win an election in Kessmark, Tessaly or Sundmere, buy Aurel, or seize Drakmoor. Rulers offer the realm treaties and set policy every three days, until a palace revolt.' },
+  { n: 45, text: 'Defectors can take the throne abroad: marry into the royal family of Varnholm or the Isles, win an election in Kessmark, Tessaly or Sundmere, buy Austrava, or seize Drakmoor. Rulers offer the realm treaties and set policy every three days, until a palace revolt.' },
   { n: 44, text: 'Defect: leave the realm and play from a foreign court. Rise from Refugee to Chancellor, sell secrets, broadcast home, recruit agents, train their army, lead it against the realm, and set their policy. Or come home. World › Life abroad.' },
   { n: 43, text: 'Double agents: foreign powers try to recruit citizens in secret, and run rings of their own inside the government. The Security Service can sweep for them.' },
   { n: 42, text: 'Hostages taken under terms of peace can be ransomed early by the Treasury, and while held they may be offered a deal by their captors.' },
@@ -29,7 +33,7 @@ export const CHANGES: { n: number; text: string }[] = [
   { n: 24, text: 'The Exchange is open: ten companies at home and abroad, prices that move with the realm and the world, dividends each payday. What MPs and ministers own is on a public Register of Interests. Money › The Exchange.' },
   { n: 23, text: 'Pretenders can write a manifesto, seek a foreign power’s recognition, and try again after ten days; a dethroned monarch can claim back the crown. The monarch can rally the realm or offer a dukedom. A failed foreign-backed claim can start a war.' },
   { n: 22, text: 'War is now a campaign: battles every 12 hours, regiments, strategy, volunteers and war bonds, in the new war room. A war hero weighs more on a coup night, a beaten Army leans to the plotters, and an Army on the advance can’t defend the capital.' },
-  { n: 21, text: 'There is a map of the world. Two new nations, Aurel and Drakmoor; embassies, embargoes, alliances and non-aggression pacts; and wars abroad our Foreign Office can mediate. World › The map.' },
+  { n: 21, text: 'There is a map of the world. Two new nations, Austrava and Drakmoor; embassies, embargoes, alliances and non-aggression pacts; and wars abroad our Foreign Office can mediate. World › The map.' },
   { n: 20, text: 'The Returning Officer can now close an election early, with a published reason and the turnout. If they’re standing in it, only once everyone has voted.' },
   { n: 19, text: 'Changed your mind about standing after people have voted for you? Ask the Returning Officer to withdraw you. Votes for you are struck out, and those voters are told to vote again.' },
   { n: 18, text: 'Forgotten your password? The Returning Officer can now send you a one-time link to choose a new one yourself.' },

@@ -7,6 +7,7 @@ import { nm, allCitizens, isPM, isMP, isHOS, exiled, detained, jailed, hasPower,
 import { ACTS, jailList, ministerOf, emptySeats } from '../../../engine/acts';
 import { ClauseEditor } from './house';
 import { DecreeForm } from './regime';
+import { EmpirePanel } from './empire';
 
 const people = (w: any, ok: (c: any) => boolean): [string, string][] => allCitizens(w).filter(ok).map((c: any) => [c.id, c.name]);
 
@@ -58,11 +59,12 @@ export function Powers() {
   const { world: w, me } = useStore();
   const pm = isPM(w, me);
   const A = w.acts || {};
-  const any = A.jail || A.decrees || A.continuity || A.unity || A.protection || A.press || A.security || A.crown || A.prerogative || A.veto;
+  const any = A.jail || A.decrees || A.continuity || A.unity || A.protection || A.press || A.security || A.crown || A.prerogative || A.veto || A.imperial;
   return (
     <Page kicker="Acts in force" title="Government powers" intro={any ? 'Powers Parliament has given the government. Each lasts until the law that made it is repealed.' : 'Parliament has given the government no special powers.'}>
-      {any && <Sec><ul class="list">{(['jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto'] as const).filter((k) => A[k]).map((k) => <LinkRow href={'#/law/' + A[k]} title={`${ACTS[k].name} Act`} sub={`${A[k]}. ${({ jail: 'The Realm Jail.', decrees: 'Rule by decree.', continuity: 'No elections.', unity: 'One party.', protection: 'Entrenched: only a decree repeals it.', press: 'Licensed press, approved questions.', security: 'Harder coups.', crown: 'The head of state is Prime Minister.', prerogative: 'Assent can be refused.', veto: 'The Crown can strike bills.' } as any)[k]}`} />)}</ul></Sec>}
+      {any && <Sec><ul class="list">{(['jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto', 'imperial'] as const).filter((k) => A[k]).map((k) => <LinkRow href={'#/law/' + A[k]} title={`${ACTS[k].name} Act`} sub={`${A[k]}. ${({ jail: 'The Realm Jail.', decrees: 'Rule by decree.', continuity: 'No elections.', unity: 'One party.', protection: 'Entrenched: only a decree repeals it.', press: 'Licensed press, approved questions.', security: 'Harder coups.', crown: 'The head of state is Prime Minister.', prerogative: 'Assent can be refused.', veto: 'The Crown can strike bills.' } as any)[k]}`} />)}</ul></Sec>}
       {A.jail && <Sec><Btn kind="ghost" full href="#/jail">The Realm Jail</Btn></Sec>}
+      <EmpirePanel />
       {A.decrees && pm && <Decrees />}
       {A.decrees && !pm && <Sec title="Rule by decree"><p class="small" style={{ margin: 0 }}>The Prime Minister makes law by decree, and the head of state can no longer refuse assent. {w.regime?.type === 'civil' ? <a href="#/regime">See what is in force</a> : 'No built-in decrees are in force.'}</p></Sec>}
       {A.continuity && <Continuity />}

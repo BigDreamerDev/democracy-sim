@@ -17,6 +17,7 @@ export const POWERS: Record<string, { label: string; strong?: boolean }> = {
   detain: { label: 'Detain citizens in the Realm Jail', strong: true },
   release: { label: 'Release detainees from the Realm Jail' },
   propose: { label: 'Put bills to the House' },
+  imperial: { label: 'Govern the empire: provincial tribute, governors and garrisons, and protectorates' },
   govern: { label: 'Run day-to-day government: approve held questions, set the Army’s readiness, and appoint to the PM’s offices with the other officers', strong: true }
 };
 
@@ -29,6 +30,7 @@ export const TEMPLATES: Record<string, { name: string; title: string; act: strin
   reserve: { name: 'Federal Reserve', title: 'Chair of the Reserve', act: 'Currency Act', powers: ['rate', 'files'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'The Fed determines banking standards and loaning of the nation\n' },
   foreign: { name: 'Foreign Office', title: 'Foreign Minister', act: 'Foreign Affairs Act', powers: ['envoy'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'The Foreign Office maintains diplomatic relationships with the other 5 nations' },
   security: { name: 'Security Service', title: 'Director', act: 'Security Service Act', powers: ['intel', 'files'], fill: 'pm', budget: 40, secrecy: 'restricted', blurb: 'The Security Service handles discrete intelligence collection of foreign and domestic threats' },
+  highcommission: { name: 'Imperial High Commission', title: 'Imperial High Commissioner', act: 'Imperial High Commission Act', powers: ['imperial'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'Governs the empire beyond the realm: provinces, their governors and tribute, and protectorates.' },
   army: { name: 'The Army', title: 'General', act: 'Defence Act', powers: ['army'], fill: 'pm', budget: 0, secrecy: 'public', blurb: 'The Army acts to defend the Nation, but comes at a financial and loyalty cost.' },
   court: { name: 'Supreme Court', title: 'Justice', act: 'Supreme Court Amendment', powers: ['judge'], fill: 'lot', budget: 0, secrecy: 'public', blurb: 'The Court handles protecting the rights of citizens and protecting against constitutional violations', constitutional: true },
   guard: { name: 'Protection Service', title: 'Bodyguard', act: 'Protection Act', powers: ['protect'], fill: 'pm', budget: 0, secrecy: 'restricted', blurb: 'The Protection Service ensures that those who face a bounty are protected, but only one at a time' },

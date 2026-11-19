@@ -3,6 +3,7 @@
 // monarchs in w.fame.monarchs. syncCrown() runs after every command and deadline and whenever the throne changes hands.
 import { W, Id, DAY, HOUR, fail, cit, nm, own, text, int, chance, allCitizens, exiled, detained, mustBeFree, gazette, stamp, approve, meter, bump, transfer, ca, earn, holderOf } from './core';
 import { moodShift } from './foreign';
+import { titleFor } from './empire';
 import { startWar, heroOf, beaten } from './war';
 import { setHos, startHosSelection } from './politics';
 import { fame } from './glory';
@@ -133,8 +134,7 @@ export function style(w: W, actor: Id, a: any) {
   const name = text(a?.name, 2, 24, 'regnal name').trim();
   if (!/^[\p{L}][\p{L} '’-]*$/u.test(name)) fail('A regnal name is letters only.');
   if (!own(OATHS, a?.oath)) fail('Choose one of the three oaths.');
-  if (a?.title !== 'King' && a?.title !== 'Queen') fail('Choose King or Queen.');
-  w.config.hosTitle = a.title;
+  w.config.hosTitle = titleFor(w, a?.title);
   r.name = name;
   r.numeral = numeralFor(w, name);
   r.oath = a.oath;

@@ -82,7 +82,7 @@ export const detained = (w: W, id: Id) => held(w, id) || jailed(w, id);
 // sheltering in a friendly nation's embassy in the capital (abroad.ts): out of reach of arrest and the Realm Jail
 export const sheltered = (w: W, id: Id) => !!w.citizens[id]?.refuge;
 // an Act passed with one of the special clauses (acts.ts) is in force while w.acts[key] holds its law number
-export const inForce = (w: W, key: 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security' | 'crown' | 'prerogative' | 'veto') => !!w.acts?.[key];
+export const inForce = (w: W, key: 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security' | 'crown' | 'prerogative' | 'veto' | 'imperial') => !!w.acts?.[key];
 // a minister: anyone holding an office the Prime Minister appoints
 export const isMinister = (w: W, id: Id) => Object.values(w.offices).some((o: any) => o.fill === 'pm' && o.holder === id);
 export const inGov = (w: W, id: Id | null | undefined) => !!id && (w.pm === id || isMinister(w, id));
@@ -355,3 +355,16 @@ export function autocratTitle(w: W) {
 export const ratifyText = (w: W) => (autocrat(w) ? `${cap(autocratTitle(w))} can ratify it by decree.` : 'The House can ratify it with a bill.');
 // who votes where the House would: every MP, or the one ruler
 export const speaksForHouse = (w: W, id: Id) => { const a = autocrat(w); return a ? a === id : w.seats.includes(id); };
+
+// ---------- the realm's name: the whole name ("The Aurel Empire", "Kingdom of Aldmere") and its place ("Aurel",
+// "Aldmere"), for "the Aldmere Gazette", "the State of Aurel", "Queen of Aldmere" ----------
+const FORMS = ['Empire', 'Kingdom', 'Realm', 'Republic', 'Commonwealth', 'Federation', 'Union', 'State', 'States', 'Dominion', 'Principality', 'Duchy', 'Grand Duchy', 'Confederation', 'Isles', 'Nation', 'Land', 'Lands', 'Territories', 'Protectorate', 'Sultanate', 'Emirate', 'Caliphate', 'Khanate', 'Tsardom'];
+export function realmPlace(w: W): string {
+  const name = String(w?.config?.realmName || 'The Realm').trim();
+  if (/ of /i.test(name)) return name.split(/ of /i).slice(1).join(' of ').trim() || 'the Realm';
+  let core = name.replace(/^the\s+/i, '');
+  for (const f of FORMS.slice().sort((a, b) => b.length - a.length)) core = core.replace(new RegExp(`\\s+${f}$`, 'i'), '').replace(new RegExp(`^${f}\\s+`, 'i'), '');
+  return core.trim() && !FORMS.some((f) => f.toLowerCase() === core.trim().toLowerCase()) ? core.trim() : 'the Realm';
+}
+// an empire, by name or by the Imperial Prerogative Act
+export const imperial = (w: W) => !!w?.acts?.imperial || /\bempire\b/i.test(String(w?.config?.realmName || ''));

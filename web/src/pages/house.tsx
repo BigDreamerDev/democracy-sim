@@ -350,12 +350,15 @@ export const CLAUSES: [string, string][] = [
   ['jail', 'Act: Public Order and Detention (the Realm Jail)'], ['decrees', 'Act: Government Powers (rule by decree)'],
   ['continuity', 'Act: Continuity of Parliament (no more elections)'], ['unity', 'Act: National Unity (one party)'],
   ['protection', 'Act: Protection of the State'], ['press', 'Act: Press and Information'], ['security', 'Act: State Security'],
-  ['crown', 'Act: The Crown (the head of state is Prime Minister)'], ['prerogative', 'Act: Royal Prerogative (assent can be refused)'], ['veto', 'Act: Royal Veto (the Crown can strike bills)']
+  ['crown', 'Act: The Crown (the head of state is Prime Minister)'], ['prerogative', 'Act: Royal Prerogative (assent can be refused)'], ['veto', 'Act: Royal Veto (the Crown can strike bills)'], ['imperial', 'Act: Imperial Prerogative (an Empire, an Emperor or Empress, the High Commission)']
 ];
 export function NewProposal({ query }: { query: URLSearchParams }) {
   const { world: w, me } = useStore();
   const init = () => {
     if (query.get('office')) return [{ t: 'office', template: query.get('office') }];
+    // one tap to an Act: #/new?act=imperial (and any other Act)
+    if (query.get('act') && (ACTS as any)[query.get('act')!]) return [{ t: query.get('act') }];
+    if (query.get('rename')) return [{ t: 'constitution', key: 'name', value: '', label: '' }];
     if (query.get('repeal')) return [{ t: 'repeal', ref: query.get('repeal') }];
     if (query.get('treaty')) return [{ t: 'treaty', offer: query.get('treaty') }];
     if (query.get('banks')) return [{ t: 'permit', what: 'banks' }];
@@ -373,7 +376,7 @@ export function NewProposal({ query }: { query: URLSearchParams }) {
   const [kind, setKind] = useState(saved?.kind || query.get('kind') || 'bill');
   const [clauses, setClauses] = useState<any[]>(() => saved?.clauses || init());
   const tpl = query.get('office') && TEMPLATES[query.get('office')!];
-  const [title, setTitle] = useState(saved ? saved.title : tpl ? tpl.act.replace(/Act|Amendment/, 'Bill') : query.get('repeal') ? `Repeal of ${query.get('repeal')} Bill` : query.get('treaty') ? `${w.offers[query.get('treaty')!]?.title ?? 'Treaty'} Bill` : query.get('banks') ? 'Banking Bill' : law ? `${law.title.replace(/ Act$/i, '')} (Amendment) Bill` : '');
+  const [title, setTitle] = useState(saved ? saved.title : tpl ? tpl.act.replace(/Act|Amendment/, 'Bill') : query.get('repeal') ? `Repeal of ${query.get('repeal')} Bill` : query.get('treaty') ? `${w.offers[query.get('treaty')!]?.title ?? 'Treaty'} Bill` : query.get('banks') ? 'Banking Bill' : query.get('act') && (ACTS as any)[query.get('act')!] ? `${(ACTS as any)[query.get('act')!].name} Bill` : query.get('rename') ? 'Realm (Name) Bill' : law ? `${law.title.replace(/ Act$/i, '')} (Amendment) Bill` : '');
   const [summary, setSummary] = useState(saved ? saved.summary : law?.summary || '');
   const [target, setTarget] = useState(saved?.target || '');
   const [fast, setFast] = useState(!!saved?.fast);
@@ -724,7 +727,8 @@ export function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; 
         {e.t === 'repeal' && <Pick value={e.ref} onChange={(v) => onChange({ ...e, ref: v })} options={w.laws.filter((l: any) => !l.repealed && l.ref !== 'L001').map((l: any) => [l.ref, `${l.ref} ${l.title}`])} />}
         {e.t === 'constitution' && (
           <>
-            <Pick value={e.key} onChange={(k) => onChange({ t: 'constitution', key: k, value: k === 'seats' ? 7 : k === 'termDays' ? 21 : k === 'hos' ? (w.config.hos === 'monarchy' ? 'republic' : 'monarchy') : HOS_METHODS[w.config.hos][0].id, label: '' })} options={[['seats', 'Seats in Parliament'], ['termDays', 'Time between elections'], ['hos', 'Monarchy or republic'], ['hosMethod', 'How the head of state is chosen']]} />
+            <Pick value={e.key} onChange={(k) => onChange({ t: 'constitution', key: k, value: k === 'name' ? '' : k === 'seats' ? 7 : k === 'termDays' ? 21 : k === 'hos' ? (w.config.hos === 'monarchy' ? 'republic' : 'monarchy') : HOS_METHODS[w.config.hos][0].id, label: '' })} options={[['seats', 'Seats in Parliament'], ['termDays', 'Time between elections'], ['hos', 'Monarchy or republic'], ['hosMethod', 'How the head of state is chosen'], ['name', 'The name of the realm']]} />
+            {e.key === 'name' && <><Field label={`New name (now: ${w.config.realmName})`} value={e.value || ''} onInput={(v) => onChange({ ...e, value: v, label: v })} placeholder="e.g. The Aurel Empire" /><p class="small muted" style={{ margin: 0 }}>Letters and spaces, 3 to 40 characters. It must not sound like a nation abroad.</p></>}
             {e.key === 'seats' && <Seg value={String(e.value)} onChange={(v) => onChange({ ...e, value: Number(v), label: v })} options={[['3', '3'], ['5', '5'], ['7', '7'], ['9', '9']]} />}
             {e.key === 'termDays' && <Seg value={String(e.value)} onChange={(v) => onChange({ ...e, value: Number(v), label: `${Number(v) / 7} weeks` })} options={[['14', '2 weeks'], ['21', '3 weeks'], ['28', '4 weeks']]} />}
             {e.key === 'hos' && <Seg value={e.value} onChange={(v) => onChange({ ...e, value: v, label: v === 'monarchy' ? 'a Monarch' : 'a President' })} options={[['monarchy', 'Monarchy'], ['republic', 'Republic']]} />}

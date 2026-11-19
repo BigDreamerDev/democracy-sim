@@ -5,6 +5,7 @@ import { nm, isMP, isPM, isHOS, mps, sideOf, sideName, majority, allCitizens, ex
 import { leaderOfOpposition, leaderOfSide, sideSeats, supportFor, members, HOS_METHODS , commands, FORM_DAYS, challengeNeed, BREAKAWAY_MPS } from '../../../engine/politics';
 import { POWERS, TEMPLATES, FILL, canAppoint } from '../../../engine/offices';
 import { RoleChips } from '../Roles';
+import { EmpirePanel } from './empire';
 import { OATHS, regnal, claimNeed, CORONATION_BOUNTY, claimTally, mayClaim, CLAIM_COOLDOWN, RALLY_COST } from '../../../engine/crown';
 import { watchCoronation } from '../Coronation';
 import { sovereign, stateMode } from '../state';
@@ -172,7 +173,7 @@ export function HOS() {
         {mine ? <Card><div class="stack"><Pick value={hon.target} onChange={(v) => setHon({ ...hon, target: v })} empty="Honour whom?" options={allCitizens(w).map((c: any) => [c.id, c.name])} /><Field label="Honour" value={hon.title} onInput={(v) => setHon({ ...hon, title: v })} /><Btn onClick={() => act('hos.honour', hon, 'Honoured.')}>Award</Btn></div></Card> : <Empty>The head of state awards these.</Empty>}
       </Sec>
       <Sec title="Pardons"><ul class="list">{exiles.map((c: any) => <li class="row"><span><b>{c.name}</b><div class="small muted">{c.pardonAsked ? 'Has asked for a pardon' : 'In exile'}</div></span>{mine && <Btn small onClick={() => act('hos.pardon', { target: c.id }, 'Pardoned.')}>Pardon</Btn>}</li>)}</ul>{!exiles.length && <Empty>Nobody is in exile.</Empty>}</Sec>
-      {mon && mine && !!w.crown?.reign?.crownedAt && <Sec title="Your title"><Seg value={w.config.hosTitle} onChange={(v) => act('hos.title', { title: v })} options={[['Queen', 'Queen'], ['King', 'King']]} /></Sec>}
+      {mon && mine && !!w.crown?.reign?.crownedAt && <Sec title="Your title"><Seg value={w.config.hosTitle} onChange={(v) => act('hos.title', { title: v })} options={w.acts?.imperial ? [['Empress', 'Empress'], ['Emperor', 'Emperor']] : [['Queen', 'Queen'], ['King', 'King']]} /></Sec>}
     </Page>
   );
 }
@@ -278,7 +279,7 @@ function Crown() {
           {mine ? (
             <Card><div class="stack">
               <Field label="Regnal name" value={f.name} onInput={(v) => setF({ ...f, name: v })} placeholder="The name you reign under" />
-              <Seg value={f.title} onChange={(v) => setF({ ...f, title: v })} options={[['Queen', 'Queen'], ['King', 'King']]} />
+              <Seg value={f.title} onChange={(v) => setF({ ...f, title: v })} options={w.acts?.imperial ? [['Empress', 'Empress'], ['Emperor', 'Emperor']] : [['Queen', 'Queen'], ['King', 'King']]} />
               <b>Your oath</b>
               {Object.entries(OATHS).map(([id, o]) => <Opt on={f.oath === id} onClick={() => setF({ ...f, oath: id })} title={o.label} hint={<>“{o.text}” {o.effect}.</>} />)}
               <Btn full onClick={() => act('crown.style', f, 'Your name and oath are set.')}>{r.styled ? 'Change them' : 'Set name and oath'}</Btn>
@@ -324,6 +325,7 @@ function Crown() {
         </Sec>
       )}
       <PastClaims />
+      {w.config.hos === 'monarchy' && <EmpirePanel />}
       {line.length > 0 && <Sec title="The line of monarchs"><ul class="list">{line.map((m: any) => <li><span><b>{m.title} {m.name} {m.numeral}</b> <span class="muted">({m.who})</span><div class="small muted">{m.crownedAt ? 'Crowned' : 'Never crowned'}, reigned {Math.max(1, Math.round((m.until - m.at) / 86400000))} day{Math.round((m.until - m.at) / 86400000) > 1 ? 's' : ''}; {m.end}.</div></span></li>)}</ul></Sec>}
     </>
   );

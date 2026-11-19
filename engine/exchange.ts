@@ -17,7 +17,7 @@ export const COMPANIES: Company[] = [
   { sym: 'KRS', name: 'Kessmark River Shipping', sector: 'Shipping', nation: 'kessmark', base: 7, yield: 0.8, about: 'Barges on the great river through Kessmark.' },
   { sym: 'OFI', name: 'Orrin Fisheries', sector: 'Fishing', nation: 'orrin', base: 3, yield: 1.3, about: 'The fleets of the Orrin Isles.' },
   { sym: 'TLM', name: 'Tessaly Looms', sector: 'Textiles', nation: 'tessaly', base: 6, yield: 0.9, about: 'Mills in the Commonwealth of Tessaly.' },
-  { sym: 'AUT', name: 'Aurel Trust', sector: 'Finance', nation: 'aurel', base: 18, yield: 0.7, about: 'The great bank of the Free City. Hates wars anywhere.' },
+  { sym: 'AUT', name: 'Austrava Trust', sector: 'Finance', nation: 'aurel', base: 18, yield: 0.7, about: 'The great bank of the Free City. Hates wars anywhere.' },
   { sym: 'DSF', name: 'Drakmoor Steel Foundries', sector: 'Steel', nation: 'drakmoor', base: 9, yield: 0.8, about: 'Foundries of the Hegemony. Profits from rearmament.' }
 ];
 export const company = (sym: string) => COMPANIES.find((c) => c.sym === sym);

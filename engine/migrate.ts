@@ -6,6 +6,7 @@ import { freshDaily } from './glory';
 import { activateParty } from './politics';
 import { seedNations, seedProvinces, PROFILES } from './foreign';
 import { exchange } from './exchange';
+import { adoptHighCommission } from './empire';
 
 export function migrate(w: W): W {
   // example: w.newThing ??= {};
@@ -110,6 +111,14 @@ export function migrate(w: W): W {
   w.approaches ??= {};
   w.sweeps ??= [];
   w.exileGov ??= null;
+  // the free city abroad was renamed so it is never mistaken for a realm named Aurel
+  if (w.nations?.aurel?.name === 'Free City of Aurel') {
+    w.nations.aurel.name = 'Free City of Austrava';
+    if (w.nations.aurel.ruler?.title === 'Doge of Aurel') w.nations.aurel.ruler.title = 'Doge of Austrava';
+  }
+  // an Imperial High Commission made by hand (a custom office) becomes the real one, with its powers and proper title
+  if (w.offices) adoptHighCommission(w, null);
+  w.config && (w.config.formerNames ??= []);
   w.wars ??= [];
   if (w.army) {
     w.army.troops ??= 6;

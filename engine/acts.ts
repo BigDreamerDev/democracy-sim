@@ -17,11 +17,17 @@ import { members, countback, vacateSeat, endSeason, clearMinisters } from './pol
 import { checkClauses, enactDecree } from './proposals';
 import { voidMarket } from './markets';
 import { endCivil } from './regime';
+import { proclaimEmpire, unproclaimEmpire } from './empire';
 
-export type ActKey = 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security' | 'crown' | 'prerogative' | 'veto';
-export const ACT_KEYS: ActKey[] = ['jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto'];
+export type ActKey = 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security' | 'crown' | 'prerogative' | 'veto' | 'imperial';
+export const ACT_KEYS: ActKey[] = ['jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto', 'imperial'];
 export const PREROGATIVE_DAYS = 3;
 export const ACTS: Record<ActKey, { name: string; text: string }> = {
+  // an empire: an Emperor or Empress, a name to match, and the Imperial High Commission (empire.ts)
+  imperial: {
+    name: 'Imperial Prerogative',
+    text: 'The Monarch reigns as Emperor or Empress, and the realm is proclaimed an Empire (taking the name “The … Empire” unless it is one already). The Imperial High Commission is established, led by the Imperial High Commissioner, appointed by the Prime Minister: it governs the provinces of the empire, levies their tribute, names their governors and garrisons them, and may take friendly nations under the empire’s protection as protectorates, which pay tribute and fight beside the realm. If repealed, the monarch reigns as King or Queen again and every protectorate is released.'
+  },
   // the monarch may strike a pending bill from the order paper
   veto: {
     name: 'Royal Veto',
@@ -110,6 +116,7 @@ export function applyAct(w: W, key: ActKey, ref: string) {
     Object.values(w.proposals).forEach((p: any) => p.stage === 'assent' && (p.assentDueAt = w.now + PREROGATIVE_DAYS * DAY));
     gazette(w, 'law', `The Royal Prerogative Act is law. No bill becomes law without the ${w.config.hos === 'monarchy' ? w.config.hosTitle : 'head of state'}’s assent, which may be refused.`, '#/powers');
   }
+  if (key === 'imperial') proclaimEmpire(w, ref);
   if (key === 'security') gazette(w, 'law', 'The State Security Act is law. Plots need more members, every coup goes to a contested night, and the security forces stand with the government.', '#/plots');
 }
 export function repealAct(w: W, key: ActKey) {
@@ -137,6 +144,7 @@ export function repealAct(w: W, key: ActKey) {
     if (w.acts.decrees) Object.values(w.proposals).forEach((p: any) => p.stage === 'assent' && (p.assentDueAt = Math.min(p.assentDueAt || Infinity, w.now + HOUR)));
     gazette(w, 'law', 'The Royal Prerogative Act is repealed. Assent follows the ordinary rules again.', '#/laws');
   }
+  if (key === 'imperial') unproclaimEmpire(w);
   if (key === 'security') gazette(w, 'law', 'The State Security Act is repealed. Coups are back to the ordinary rules.', '#/laws');
   if (key === 'crown') {
     // the head of state stops being Prime Minister; the House forms a government as usual

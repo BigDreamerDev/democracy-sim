@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import film from './coronation.html?raw';
 import { useStore } from './store';
-import { DAY, fmtDay, inForce } from '../../engine/index';
+import { DAY, fmtDay, inForce, realmPlace } from '../../engine/index';
 
 const KEY = 'realm-coronation-seen';
 export const watchCoronation = () => window.dispatchEvent(new Event('realm-coronation'));
@@ -32,7 +32,7 @@ export function Coronation() {
   }
   if (!open || !r?.crownedAt) return null;
   const realm = String(w.config.realmName || 'The Realm');
-  const q = new URLSearchParams({ name: r.name, numeral: r.numeral, title: w.config.hosTitle, realm, place: realm.includes(' of ') ? realm.split(' of ').slice(1).join(' of ') : realm.replace(/^The /, 'the '), date: fmtDay(r.crownedAt), pm: inForce(w, 'crown') ? '1' : '0' });
+  const q = new URLSearchParams({ name: r.name, numeral: r.numeral, title: w.config.hosTitle, realm, place: realmPlace(w), date: fmtDay(r.crownedAt), pm: inForce(w, 'crown') ? '1' : '0' });
   return (
     <div class="coro" role="dialog" aria-label="The coronation">
       <iframe title="The coronation" name={q.toString()} srcdoc={film} allow="autoplay" />

@@ -19,6 +19,7 @@ import * as Cr from './crown';
 import * as Wr from './war';
 import * as Ex from './exchange';
 import * as Ab from './abroad';
+import * as Em from './empire';
 
 export * from './core';
 export { createWorld, createLiveWorld, NAMES } from './world';
@@ -68,7 +69,7 @@ export const COMMANDS: Record<string, Cmd> = {
   'hos.honour': (w, me, a) => P.honour(w, me, a.target, a.title),
   'hos.title': (w, me, a) => {
     if (w.hos.holder !== me || w.config.hos !== 'monarchy') fail('Only the Monarch picks their title.');
-    w.config.hosTitle = a.title === 'King' ? 'King' : 'Queen';
+    w.config.hosTitle = Em.titleFor(w, a.title);
   },
   'crown.style': (w, me, a) => Cr.style(w, me, a),
   'crown.hold': (w, me) => Cr.hold(w, me),
@@ -170,6 +171,10 @@ export const COMMANDS: Record<string, Cmd> = {
   'intel.sweep': (w, me, a) => Ab.sweep(w, me, a.nation),
   'hostage.ransom': (w, me, a) => Ab.ransom(w, me, a.hostage),
   'exchange.donate': (w, me, a) => Ex.donate(w, me, a.prop, a.sym, a.party),
+  'imperial.levy': (w, me, a) => Em.levy(w, me, a.province, a.on),
+  'imperial.governor': (w, me, a) => Em.governor(w, me, a.province, a.target),
+  'imperial.protectorate': (w, me, a) => Em.protectorate(w, me, a.nation),
+  'imperial.release': (w, me, a) => Em.release(w, me, a.nation),
   'war.terms': (w, me, a) => Wr.voteTerms(w, me, a.yes),
   'war.memorial': (w, me, a) => Wr.voteMemorial(w, me, a.memorial, a.names),
   'army.garrison': (w, me, a) => Wr.garrison(w, me, a.province, a.on),
