@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 62, text: 'One person can now hold several places on the Privy Council, and has a vote for each place they hold.' },
   { n: 61, text: 'Ceremonies: appointments, the Privy Council, vetoes and the Seal, governors, invasions, battles, victories and more now play as short scenes the first time you see them. Watch them all, or turn them off, at You › How to play › Ceremonies.' },
   { n: 60, text: 'Governors have powers of their own: one decree every three days for their province, such as a festival, public works, a crackdown, extra tribute or a militia for the Army.' },
   { n: 59, text: 'The General now sits on the Privy Council, making eight. The Empress and the High Commissioner can force an Order through; the Empress, the High Commissioner, the Lord Chamberlain and the Lord Privy Seal can veto one.' },

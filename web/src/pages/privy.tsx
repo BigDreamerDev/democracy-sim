@@ -14,7 +14,8 @@ export function PrivyCouncil() {
   const [pick, setPick] = useState<Record<number, string>>({});
   const seats = council(w);
   const sovereign = isHOS(w, me);
-  const people = allCitizens(w).filter((c: any) => !c.bot && !c.defected && !seats.includes(c.id)).map((c: any) => [c.id, c.name] as [string, string]);
+  const places = (id: string) => seats.filter((s) => s === id).length;
+  const people = allCitizens(w).filter((c: any) => !c.bot && !c.defected).map((c: any) => [c.id, c.name] as [string, string]);
   const orders = (Object.values(w.proposals) as any[]).filter((p) => LIVE.includes(p.stage)).sort((a, b) => b.n - a.n);
   const chamberlain = hasPower(w, me, 'chamberlain');
   const seal = hasPower(w, me, 'seal');
@@ -29,7 +30,7 @@ export function PrivyCouncil() {
     ['Set the Seal', 'The Lord Privy Seal makes a passed Order take effect within the hour.']
   ];
   return (
-    <Page kicker={`${w.config.realmName} · In Council`} title="The Imperial Privy Council" intro={<>Parliament is dissolved. Eight sit at the Council table in its place, and its Orders are the law of the empire. An Order needs {majority(w)} of {PRIVY_SEATS}. There are no elections while the Council sits.</>}>
+    <Page kicker={`${w.config.realmName} · In Council`} title="The Imperial Privy Council" intro={<>Parliament is dissolved. Eight sit at the Council table in its place, and its Orders are the law of the empire. An Order needs {majority(w)} of {PRIVY_SEATS}. There are no elections while the Council sits. One person may hold several places, with a vote for each.</>}>
       <Sec id="table">
         <div class="privy-table" role="list">
           <div class="privy-board" aria-hidden="true"><span class="privy-crest">✠</span><span>In Council</span><small>Since <When at={w.privy.since} /></small></div>
@@ -38,6 +39,7 @@ export function PrivyCouncil() {
               <span class="privy-num">{NUMERALS[i]}</span>
               <span class="privy-role">{i === 0 ? (w.config.hosTitle ? `The ${w.config.hosTitle}` : SEAT_NAMES[0]) : SEAT_NAMES[i]}</span>
               <b class="privy-name">{id ? <Who id={id} /> : 'Vacant'}</b>
+              {id && places(id) > 1 && <span class="privy-multi">{places(id)} places · {places(id)} votes</span>}
             </div>
           ))}
         </div>

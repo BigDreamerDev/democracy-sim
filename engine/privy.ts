@@ -16,11 +16,11 @@ const officeHolder = (w: W, tpl: string) => (Object.values(w.offices).find((o: a
 const hcHolder = (w: W) => (Object.values(w.offices).find((o: any) => o.powers?.includes('imperial')) as any)?.holder || null;
 const fit = (w: W, id: Id | null) => !!id && !!w.citizens[id]?.active && !w.citizens[id].defected && !w.citizens[id].bot;
 
-// the seven, in seat order; a person holding two places sits once
+// the eight, in seat order; a person may hold several places, and has a vote for each (seatWeight in core.ts)
 export function council(w: W): (Id | null)[] {
   if (!w.privy) return [];
   const raw = [w.hos?.holder || null, hcHolder(w), w.offices.army?.holder || null, officeHolder(w, 'chamberlain'), officeHolder(w, 'privyseal'), ...(w.privy.councillors || [null, null, null])];
-  return raw.map((id, i) => (fit(w, id) && raw.indexOf(id) === i ? id : null));
+  return raw.map((id) => (fit(w, id) ? id : null));
 }
 export const seatOf = (w: W, id: Id) => council(w).indexOf(id);
 
@@ -80,7 +80,7 @@ export function appointCouncillor(w: W, actor: Id, seat: unknown, target: unknow
   }
   const c = cit(w, target as Id);
   if (!fit(w, c.id) || exiled(w, c.id) || detained(w, c.id)) fail('Pick a free citizen at home.');
-  if (council(w).includes(c.id)) fail(`${c.name} already sits on the Council.`);
+  if (w.privy.councillors[seat] === c.id) fail(`${c.name} already holds that seat.`);
   w.privy.councillors[seat] = c.id;
   syncPrivy(w);
   stamp(w, c.id, 'Privy Councillor', 'Appointed by the Sovereign', 'ink');

@@ -1202,7 +1202,7 @@ const PRIVY_SEATS = ['The Sovereign', 'Imperial High Commissioner', 'The General
 function privyCard() {
   if (!W.privy) return '';
   const sov = W.hos?.holder === W.viewer;
-  const people = coll(W.citizens).filter(([id, c]) => c.active !== false && !c.bot && !c.defected && !(W.seats || []).includes(id));
+  const people = coll(W.citizens).filter(([, c]) => c.active !== false && !c.bot && !c.defected);
   return `<div class="card" style="border-color:var(--acc)"><h2>The Imperial Privy Council <span class="sub">sits in place of Parliament · an Order needs 5 of 8</span></h2>
     ${(W.seats || []).map((id, i) => `<div class="item"><div class="row between"><span><span class="m">${['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][i]} · ${esc(PRIVY_SEATS[i])}</span> <span class="t">${id ? esc(who(id)) : 'Vacant'}</span></span>
       ${sov && i >= 5 ? `<span class="row"><select class="sm" data-pc="${i - 5}"><option value="">${id ? 'Dismiss' : 'Choose…'}</option>${people.map(([cid, c]) => `<option value="${esc(cid)}">${esc(c.name)}</option>`).join('')}</select><button class="sm" data-pcbtn="${i - 5}">Do it</button></span>` : ''}</div></div>`).join('')}

@@ -6,7 +6,7 @@ import { PROVINCES } from './foreign';
 import { checkRealmName, renameRealm } from './empire';
 import {
   W, Id, DAY, HOUR, fail, newId, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, tick, meter,
-  isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, hasPower, officeWithPower, weekNo, adminDid, bump, own, text, int, inForce, inGov, bal } from './core';
+  isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, seatWeight, hasPower, officeWithPower, weekNo, adminDid, bump, own, text, int, inForce, inGov, bal } from './core';
 import { ACTS, ACT_KEYS, ENTRENCHED, PREROGATIVE_DAYS, applyAct, repealAct, describeAct, national, expelNational } from './acts';
 import { TEMPLATES, POWERS, FILL, createOffice } from './offices';
 import { startHosSelection, callGeneralElection, governmentFalls, vacateSeat, HOS_METHODS, countback } from './politics';
@@ -464,8 +464,9 @@ export function amendmentLine(w: W, m: any, mp: Id): 'aye' | 'no' | null {
 // when the debate ends: settle every division, then whatever's still waiting lapses
 function settleDivisions(w: W, p: any) {
   (p.amendments || []).filter((m: any) => m.status === 'division').forEach((m: any) => {
-    const ayes = Object.entries(m.votes).filter(([k, v]) => v === 'aye' && isMP(w, k)).length;
-    const noes = Object.entries(m.votes).filter(([k, v]) => v === 'no' && isMP(w, k)).length;
+    const wt = (k: string) => (w.privy ? seatWeight(w, k) : 1);
+    const ayes = Object.entries(m.votes).filter(([k, v]) => v === 'aye' && isMP(w, k)).reduce((s, [k]) => s + wt(k), 0);
+    const noes = Object.entries(m.votes).filter(([k, v]) => v === 'no' && isMP(w, k)).reduce((s, [k]) => s + wt(k), 0);
     m.result = { ayes, noes };
     trackAmendmentWhip(w, p, m);
     if (ayes <= noes) {
@@ -651,7 +652,9 @@ export function openVote(w: W, p: any) {
 }
 function tally(w: W, p: any, book: any) {
   const valid = Object.entries(book).filter(([id]) => (p.voters === 'all' ? !!w.citizens[id] : isMP(w, id)));
-  return { ayes: valid.filter(([, v]) => v === 'aye').length, noes: valid.filter(([, v]) => v === 'no').length };
+  // on the Privy Council a member with several places casts a vote for each
+  const n = ([id]: [string, unknown]) => (p.voters === 'all' || !w.privy ? 1 : seatWeight(w, id));
+  return { ayes: valid.filter(([, v]) => v === 'aye').reduce((s, e) => s + n(e), 0), noes: valid.filter(([, v]) => v === 'no').reduce((s, e) => s + n(e), 0) };
 }
 // what it takes to pass, chosen at the Convention (config.passRule, fixed on each proposal when tabled):
 // 'cast' more ayes than noes; 'seats' a majority of everyone entitled to vote; 'twothirds' two-thirds of votes cast.

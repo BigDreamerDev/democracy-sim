@@ -1138,6 +1138,7 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .privy-num { font-family: var(--serif); font-size: 13px; color: var(--brown); }
 .privy-role { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .privy-name { overflow-wrap: anywhere; }
+.privy-multi { align-self: flex-start; margin-top: 2px; padding: 1px 6px; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--brown); border: 1px solid var(--gold); border-radius: 3px; }
 .privy-seat.s0 { grid-area: s0; } .privy-seat.s1 { grid-area: s1; } .privy-seat.s2 { grid-area: s2; } .privy-seat.s3 { grid-area: s3; }
 .privy-seat.s4 { grid-area: s4; } .privy-seat.s5 { grid-area: s5; } .privy-seat.s6 { grid-area: s6; } .privy-seat.s7 { grid-area: s7; }
 .privy-seat.s1, .privy-seat.s2 { border-top-color: var(--teal); }

@@ -250,7 +250,9 @@ export function canSeeCard(w: W, k: any, id: Id) {
 
 // ---------- seats and roles ----------
 export const isMP = (w: W, id: Id) => w.seats.includes(id);
-export const mps = (w: W): Id[] => w.seats.filter(Boolean);
+export const mps = (w: W): Id[] => [...new Set(w.seats.filter(Boolean))] as Id[];
+// votes a member casts: one per seat they hold (on the Privy Council one person may hold several places)
+export const seatWeight = (w: W, id: Id) => w.seats.filter((s: Id | null) => s === id).length || 0;
 export const isPM = (w: W, id: Id) => w.pm === id;
 export const isHOS = (w: W, id: Id) => w.hos.holder === id;
 export function holderOf(w: W, officeId: string): Id | null {
