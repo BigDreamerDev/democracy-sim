@@ -109,6 +109,7 @@ export function migrate(w: W): W {
   w.hostages ??= [];
   w.approaches ??= {};
   w.sweeps ??= [];
+  w.exileGov ??= null;
   w.wars ??= [];
   if (w.army) {
     w.army.troops ??= 6;

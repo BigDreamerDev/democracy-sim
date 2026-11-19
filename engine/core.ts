@@ -15,7 +15,7 @@ export type W = any; // the world is plain JSON; see world.ts for its shape
 
 // ---------- ids and deterministic randomness ----------
 // the currency's name: a law can rename the crown. Text shown to players goes through this; "the Crown" (the monarchy) is left alone.
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+export const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 export function currencyText(w: any, s: string): string {
   const c = w?.config?.currency;
   if (!c || !s || !/rown/.test(s)) return s;
@@ -79,6 +79,8 @@ export const exiled = (w: W, id: Id) => !!w.citizens[id]?.exiledUntil && w.citiz
 export const held = (w: W, id: Id) => !!w.citizens[id]?.detainedUntil && w.citizens[id].detainedUntil > w.now;
 export const jailed = (w: W, id: Id) => { const j = w.citizens[id]?.jail; return !!j && (j.until == null || j.until > w.now); };
 export const detained = (w: W, id: Id) => held(w, id) || jailed(w, id);
+// sheltering in a friendly nation's embassy in the capital (abroad.ts): out of reach of arrest and the Realm Jail
+export const sheltered = (w: W, id: Id) => !!w.citizens[id]?.refuge;
 // an Act passed with one of the special clauses (acts.ts) is in force while w.acts[key] holds its law number
 export const inForce = (w: W, key: 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security' | 'crown' | 'prerogative' | 'veto') => !!w.acts?.[key];
 // a minister: anyone holding an office the Prime Minister appoints
@@ -332,3 +334,23 @@ export function fmtLeft(w: W, at: number) {
   return `${Math.max(1, Math.floor(ms / 60000))}m`;
 }
 export const ordinal = (n: number) => n + (n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th');
+
+// ---------- one-person rule: who decides alone when the House does not (a coup regime's leader, a sovereign under the
+// Crown Act, a Prime Minister ruling by decree with no elections). Peace terms and war memorials go to them ----------
+export function autocrat(w: W): Id | null {
+  if (w.phase !== 'running') return null;
+  if (w.regime && w.regime.type !== 'civil') return w.regime.leader || w.pm || null;
+  if (w.acts?.crown && w.config.hos === 'monarchy' && w.pm && w.pm === w.hos?.holder) return w.pm;
+  if (w.acts?.decrees && w.acts?.continuity && w.pm) return w.pm;
+  return null;
+}
+// how to name them in a sentence: "the regime", "the Queen", "the Prime Minister"
+export function autocratTitle(w: W) {
+  if (w.regime && w.regime.type !== 'civil') return 'the regime';
+  if (w.acts?.crown && w.config.hos === 'monarchy' && w.pm && w.pm === w.hos?.holder) return `the ${w.config.hosTitle}`;
+  return 'the Prime Minister';
+}
+// how a treaty or peace becomes law: by the House, or by decree
+export const ratifyText = (w: W) => (autocrat(w) ? `${cap(autocratTitle(w))} can ratify it by decree.` : 'The House can ratify it with a bill.');
+// who votes where the House would: every MP, or the one ruler
+export const speaksForHouse = (w: W, id: Id) => { const a = autocrat(w); return a ? a === id : w.seats.includes(id); };

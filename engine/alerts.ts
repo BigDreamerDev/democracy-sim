@@ -2,7 +2,7 @@
 // sidebar, and sent to personal webhooks (each alert's `key` is stable, so a hook fires once per new item).
 // Always call it on viewFor(world, me), never the full world, so it can only mention what that person may see.
 import { canMoneyMotion, describeMotion } from './economy';
-import { W, Id, nm, isHOS, isPM, isMP, intrigueOpen, hasPower, holderOf, sideOf, bal, nextAt, mps, DAY } from './core';
+import { W, Id, nm, isHOS, isPM, isMP, intrigueOpen, hasPower, holderOf, sideOf, bal, nextAt, mps, DAY, speaksForHouse } from './core';
 import { RED_BOX } from './glory';
 import { canVote , contenders, commands, leaderOfSide, FORM_DAYS } from './politics';
 import { canVoteOn, KINDS, whipLine, canWhip, rebelsOn, amendmentLine } from './proposals';
@@ -177,14 +177,15 @@ export function needs(w: W, me: Id): Alert[] {
     out.push({ key: 'war:' + war.startedAt, href: '#/war', label: 'War', title: `The realm is at war with ${w.nations[war.nation]?.name}. Enlist, or buy war bonds` });
     if (isPM(w, me) || hasPower(w, me, 'army')) out.push({ key: 'warcmd:' + war.startedAt, href: '#/war', label: 'War', title: 'Choose the Army’s strategy', at: war.nextBattleAt });
   }
-  if (war?.terms?.status === 'open' && isMP(w, me) && war.terms.votes[me] === undefined) out.push({ key: 'terms:' + war.terms.id, href: '#/war', label: 'Terms of peace', title: `${w.nations[war.nation]?.name} offers terms. Accept or reject`, at: war.terms.closesAt, urgent: true });
-  (w.memorials || []).forEach((m: any) => m.status === 'open' && isMP(w, me) && !m.votes[me] && out.push({ key: 'memorial:' + m.id, href: '#/war', label: 'War memorial', title: 'Choose the names for the memorial', at: m.closesAt }));
+  if (war?.terms?.status === 'open' && speaksForHouse(w, me) && war.terms.votes[me] === undefined) out.push({ key: 'terms:' + war.terms.id, href: '#/war', label: 'Terms of peace', title: `${w.nations[war.nation]?.name} offers terms. Accept or reject`, at: war.terms.closesAt, urgent: true });
+  (w.memorials || []).forEach((m: any) => m.status === 'open' && speaksForHouse(w, me) && !m.votes[me] && out.push({ key: 'memorial:' + m.id, href: '#/war', label: 'War memorial', title: 'Choose the names for the memorial', at: m.closesAt }));
   (w.exchange?.motions || []).forEach((m: any) => m.status === 'open' && w.exchange.holdings?.[me]?.[m.sym]?.n && !m.votes[me] && out.push({ key: 'smotion:' + m.id, href: '#/exchange', label: 'Shareholder vote', title: `${m.sym} shareholders vote on a revolt`, at: m.closesAt }));
   (w.conflicts || []).forEach((c: any) => c.status === 'raging' && !c.mediated && hasPower(w, me, 'envoy') && out.push({ key: 'mediate:' + c.id, href: '#/atlas', label: 'War abroad', title: `${w.nations[c.a]?.name} and ${w.nations[c.b]?.name} are at war. Offer to mediate` }));
   // life abroad: a secret approach, the court's business, hostages to ransom
   Object.values(w.approaches || {}).forEach((a: any) => a.to === me && a.status === 'open' && a.until > w.now && out.push({ key: 'approach:' + a.id, href: '#/abroad', label: 'Private', title: `${w.nations[a.nation]?.name} wants you to work for them`, at: a.until, urgent: true }));
   const dd = w.citizens[me]?.defected;
   if (dd && (!dd.last?.work || w.now - dd.last.work >= 12 * 3600_000)) out.push({ key: 'court:' + Math.floor(w.now / (12 * 3600_000)), href: '#/abroad', label: 'Abroad', title: `The court in ${w.nations[dd.nation]?.name} has work for you` });
+  if (w.exileGov && !w.citizens[me]?.defected && !w.exileGov.backers.includes(me)) out.push({ key: 'exilegov:' + w.exileGov.at, href: '#/abroad', label: 'Government in exile', title: `${w.exileGov.name} claims to be the realm's rightful government` });
   (w.hostages || []).forEach((h: any) => h.status === 'held' && h.until > w.now && (isPM(w, me) || hasPower(w, me, 'envoy') || holderOf(w, 'treasury') === me) && out.push({ key: 'hostage:' + h.id, href: '#/abroad', label: 'Hostage', title: `${nm(w, h.who)} is held in ${w.nations[h.nation]?.name}. Pay the ransom?`, at: h.until }));
   if (w.crown?.offer?.heir === me) out.push({ key: 'heir:' + w.crown.offer.until, href: '#/hos', label: 'The throne is offered', title: 'Accept the crown, or decline', at: w.crown.offer.until, urgent: true });
   return out;

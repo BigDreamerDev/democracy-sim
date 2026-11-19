@@ -9,7 +9,7 @@
 //   still end every term (w.seasonDueAt).
 // - unity: the PM's party is the only one (w.acts.national). Joining needs the PM's approval; MPs voting against
 //   the PM are expelled; no challenges, splits or new parties.
-import { W, Id, DAY, HOUR, fail, newId, cit, nm, own, int, text, allCitizens, exiled, detained, jailed, gazette, stamp, bump, isPM, isHOS, isMP, hasPower, inForce, inGov, isMinister, addCard } from './core';
+import { W, Id, DAY, HOUR, fail, newId, cit, nm, own, int, text, allCitizens, exiled, detained, jailed, gazette, stamp, bump, isPM, isHOS, isMP, hasPower, inForce, inGov, isMinister, addCard, sheltered } from './core';
 import { setHos } from './politics';
 
 import { createOffice, lotOfficeRefresh } from './offices';
@@ -168,6 +168,7 @@ export function detain(w: W, actor: Id, target: Id, days: unknown) {
   if (isPM(w, target)) fail('The Prime Minister cannot be detained.');
   if (isHOS(w, target)) fail('The head of state cannot be detained.');
   if (jailed(w, target)) fail('They are already in the Realm Jail.');
+  if (sheltered(w, target)) fail(`They are sheltering in the ${w.nations[w.citizens[target].refuge.nation]?.name} embassy, out of reach.`);
   const n = days === undefined || days === null || days === '' || days === 0 ? null : int(days, 1, 365, 'number of days');
   c.jail = { by: actor, at: w.now, until: n ? w.now + n * DAY : null };
   stripPosts(w, target);
@@ -391,7 +392,7 @@ function protectState(w: W) {
 // the State's own detentions (a failed plot, an attempted leak): the Realm Jail, ordered by nobody in particular
 export function jailByState(w: W, id: Id, why: string) {
   const c = w.citizens[id];
-  if (!c || jailed(w, id) || isPM(w, id) || isHOS(w, id)) return false;
+  if (!c || jailed(w, id) || isPM(w, id) || isHOS(w, id) || sheltered(w, id)) return false;
   c.jail = { by: null, at: w.now, until: null, why };
   stripPosts(w, id);
   bump(w, id, 'jailed');

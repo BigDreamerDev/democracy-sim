@@ -223,6 +223,9 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | `ventures[].status` | `'seized'` when the enemy took the ship in wartime |
 | `citizens[].defected` | a defector: `nation`, `at`, `favour` (0–100), `sold`, `deeds`; `secrets` and `last` (cooldowns) are only yours. Ranks and rules in `engine/abroad.ts` |
 | `nations[].ruler` | a defector who rules that nation: `id`, `title`, `since` (roads to power in `engine/abroad.ts` THRONES); `fame.foreignRulers` remembers them |
+| `citizens[].defected.child`, `.consort` | a defector's royal marriage and heir abroad |
+| `citizens[].refuge` | sheltering in a nation's embassy: `nation`, `at` |
+| `exileGov` | a government in exile: `name`, `nation`, `leader`, `members` (defectors), `backers` (citizens at home), `at` |
 | `approaches`, `sweeps` | secret offers from foreign powers (to you, or sent by you); your own Security Service sweeps |
 | `hostages[]` | citizens held abroad under terms of peace: `who`, `nation`, `until`, `status` (`held`/`ransomed`/`freed`) |
 | `pensions`, `config.veteranPension` | veterans on a memorial, and what each is paid a payday |

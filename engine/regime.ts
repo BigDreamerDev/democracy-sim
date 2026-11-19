@@ -8,7 +8,8 @@
 // - fallRegime() ends it: an orderly hand-back goes straight to a Restoration election; anything else gets a
 //   provisional government (w.transition) with its own troubles, then the election. Parliament then holds the
 //   reckoning (w.reckoning) on the people who ran it.
-import { W, Id, DAY, HOUR, fail, newId, chance, pick, cit, nm, own, text as txt, int, clamp, allCitizens, exiled, detained, held, jailed, inForce, isPM, mustBeFree, gazette, earn, spend, stamp, approve, meter, legit, isHOS, isMP, mps, holderOf, transfer, bal, ca, bump, DAYNO, hosTitle } from './core';
+import { endWar } from './war';
+import { W, Id, DAY, HOUR, fail, newId, chance, pick, cit, nm, own, text as txt, int, clamp, allCitizens, exiled, detained, held, jailed, inForce, isPM, mustBeFree, gazette, earn, spend, stamp, approve, meter, legit, isHOS, isMP, mps, holderOf, transfer, bal, ca, bump, DAYNO, hosTitle, sheltered } from './core';
 import { syncCrown } from './crown';
 import { clearMinisters, coalitionGoverns, callGeneralElection, vacateSeat, members, VOTING } from './politics';
 import { armyLoyalty } from './foreign';
@@ -52,6 +53,8 @@ export const DECREES: Record<string, { name: string; what: string; cost: string;
   amnesty: { name: 'Amnesty day', what: 'Free every detainee at once.', cost: '+2 or more', types: [...ALL, 'civil'], group: 'Buying support' },
   purge: { name: 'Purge', what: 'Expel a Party member. They are marked.', cost: '−2', types: ['party'], arg: ['target'], group: 'Repression' },
   lift: { name: 'Lift a decree', what: 'End one of the decrees in force: the censor, the curfew, the suspension of Parliament, conscription, nationalisation, the secret police, the oath, party bans, seizures, or a rate or rule set by decree.', cost: 'Free', types: ['civil'], arg: ['what'], group: 'Lifting decrees' },
+  peace: { name: 'Make peace', what: 'End the war on the front as it stands, with no terms. Bonds are repaid in full.', cost: '+1', types: [...ALL, 'civil'], group: 'Foreign affairs' },
+  treaty: { name: 'Ratify a treaty', what: 'Accept a treaty a nation has offered, without Parliament.', cost: 'Free', types: [...ALL, 'civil'], arg: ['offer'], group: 'Foreign affairs' },
   plan: { name: 'Five-year plan', what: 'Promise to pay the people a sum from the Treasury in 7 days. +3 now; −6 if the money isn’t there.', cost: '+3 now', types: ['party'], arg: ['n'], group: 'Buying support' }
 };
 export const LIFT: Record<string, string> = { censorship: 'Censorship', curfew: 'The curfew', parliament: 'The suspension of Parliament', conscription: 'Conscription', trade: 'Nationalised trade', banks: 'Nationalised banks', police: 'The secret police', oath: 'The loyalty oath', bans: 'Party bans', seized: 'Seized money and frozen banks', exiles: 'Exiles by decree', tax: 'The tax rate', rate: 'The Reserve rate', constitution: 'Constitutional rewrites' };
@@ -218,7 +221,7 @@ export function decree(w: W, actor: Id, a: any) {
   // a junta rules by council: the decree waits for a majority of it
   if (r.type === 'junta' && r.council.length >= 3) {
     const args: any = {};
-    ['target', 'party', 'bank', 'n', 'to', 'key', 'value', 'text'].forEach((k) => a[k] !== undefined && (args[k] = a[k]));
+    ['target', 'party', 'bank', 'n', 'to', 'key', 'value', 'text', 'offer'].forEach((k) => a[k] !== undefined && (args[k] = a[k]));
     r.pending = { id: newId(w, 'dc'), kind, args, votes: { [actor]: true }, at: w.now, dueAt: w.now + 12 * HOUR };
     return;
   }
@@ -278,6 +281,7 @@ function enact(w: W, r: any, kind: string, a: any) {
       const c = target();
       if (inRegime(r, c.id)) fail('You cannot arrest the regime.');
       if (!free(w, c.id)) fail('They are already out of reach.');
+      if (sheltered(w, c.id)) fail(`${c.name} is sheltering in the ${w.nations[c.refuge.nation]?.name} embassy. Arresting them there would be an act of war.`);
       if (detainees(w).length >= 3) fail('The cells are full: three are held already. Free someone first.');
       const days = int(a.n ?? 2, 1, 2, 'number of days');
       c.detainedUntil = w.now + days * DAY;
@@ -365,6 +369,24 @@ function enact(w: W, r: any, kind: string, a: any) {
       w.economy.rate = n;
       cost(1, 'The Reserve overruled');
       return say(w, r, kind, `By decree: the Reserve’s interest rate is now ${n}%.`);
+    }
+    case 'peace': {
+      if (!w.army?.war) fail('The realm is not at war.');
+      const n = w.nations[w.army.war]?.name;
+      cost(-1, 'Made peace');
+      say(w, r, kind, `By decree: peace with ${n}.`);
+      return endWar(w, 'peace');
+    }
+    case 'treaty': {
+      const o = own(w.offers, a.offer);
+      if (!o) fail('Pick a treaty on offer.');
+      const id = newId(w, 't');
+      w.treaties[id] = { id, nation: o.nation, title: o.title, effect: o.effect, at: w.now, status: 'active', law: 'decree' };
+      delete w.offers[o.id];
+      const nn = w.nations[o.nation];
+      nn.mood = Math.min(4, nn.mood + 1);
+      nn.reasons.unshift({ sign: '+', text: `We ratified the ${o.title}` });
+      return say(w, r, kind, `By decree: the realm ratifies the ${o.title}.`);
     }
     case 'conscription':
       if (!w.offices.army) fail('There is no Army to conscript into.');

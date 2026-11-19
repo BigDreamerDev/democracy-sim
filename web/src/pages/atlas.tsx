@@ -4,7 +4,7 @@
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Seg, Opt } from '../ui';
-import { isPM, hasPower, holderOf, standing, bal, ca, isMP } from '../../../engine/index';
+import { isPM, hasPower, holderOf, standing, bal, ca, isMP, autocrat, autocratTitle, speaksForHouse, cap } from '../../../engine/index';
 import { MOODS, PROFILES, TREATIES, PROVINCES, known, shipping, laneClosed } from '../../../engine/foreign';
 import { power, STRATEGIES, REGIMENT_COST, MAX_REGIMENTS, BOND_PAYS, allies, EMBED_COST, termsText, garrisoned } from '../../../engine/war';
 import { canMarch } from '../../../engine/backroom';
@@ -361,7 +361,7 @@ export function War() {
   const troops = w.army.troops ?? 6;
   if (!k) {
     return (
-      <Page back={['#/world', 'The world']} kicker="At peace" title="The war room" intro={`The Army fields ${troops} regiment${troops === 1 ? '' : 's'}. War is declared by bill, or by a hostile nation.`}>
+      <Page back={['#/world', 'The world']} kicker="At peace" title="The war room" intro={`The Army fields ${troops} regiment${troops === 1 ? '' : 's'}. War is declared ${autocrat(w) ? `by ${autocratTitle(w)}'s decree` : 'by bill'}, or by a hostile nation.`}>
         {w.army.hero && w.army.hero.until > w.now && <Card kind="tint" style={{ marginTop: 14 }}><b><Who id={w.army.hero.id} /> is a war hero.</b> <span class="small">Until <When at={w.army.hero.until} />, they weigh 4 on a coup night instead of 3.</span></Card>}
         {w.army.defeatedAt && w.now - w.army.defeatedAt < 14 * 86400000 && <Card kind="warn" style={{ marginTop: 14 }}><b>The Army came home beaten.</b> <span class="small">For two weeks after a defeat it leans towards plotters and pretenders.</span></Card>}
         <Regiments cmd={cmd} n={n} setN={setN} troops={troops} />
@@ -375,7 +375,7 @@ export function War() {
   const p = power(w);
   const mine = k.bonds?.[me] || 0;
   return (
-    <Page back={['#/world', 'The world']} kicker={<span style={{ color: 'var(--red)' }}>At war since <When at={k.startedAt} /></span>} title={`War with ${enemy.name}`} intro={<>{k.pretender ? <>They fight to put <Who id={k.pretender} /> on our throne. </> : ''}The next battle is in <Left at={k.nextBattleAt} />. Win at +100; at −100 we are beaten. Parliament can make peace at any time with a bill.</>}>
+    <Page back={['#/world', 'The world']} kicker={<span style={{ color: 'var(--red)' }}>At war since <When at={k.startedAt} /></span>} title={`War with ${enemy.name}`} intro={<>{k.pretender ? <>They fight to put <Who id={k.pretender} /> on our throne. </> : ''}The next battle is in <Left at={k.nextBattleAt} />. Win at +100; at −100 we are beaten. {autocrat(w) ? `${cap(autocratTitle(w))} can make peace by decree at any time.` : 'Parliament can make peace at any time with a bill.'}</>}>
       <Sec><Front score={k.score} /></Sec>
       <Terms />
       <Sec title="The odds" sub={`Each battle we win about ${Math.round(p.odds * 100)} times in 100.`}>
@@ -457,11 +457,11 @@ function Terms() {
   const v = Object.values(t.votes);
   const mine = t.votes[me];
   return (
-    <Sec title="Terms of peace" sub={<>On the table for <Left at={t.closesAt} />. A majority of MPs voting makes peace on these terms; otherwise the war goes on.</>}>
+    <Sec title="Terms of peace" sub={<>On the table for <Left at={t.closesAt} />. {autocrat(w) ? `${cap(autocratTitle(w))} alone accepts or rejects them.` : 'A majority of MPs voting makes peace on these terms; otherwise the war goes on.'}</>}>
       <Card kind="warn"><div class="stack">
         <b class="serif" style={{ fontSize: 20 }}>{w.nations[k.nation].name} proposes: {termsText(w, t, w.nations[k.nation].name)}.</b>
-        <span class="small">{v.filter((x) => x).length} accept, {v.filter((x) => !x).length} reject so far.{t.kind === 'hostage' ? ' A hostage spends a week in exile abroad, and comes home to +5 approval.' : ''}</span>
-        {isMP(w, me) ? <div class="grid2"><Btn kind={mine === true ? undefined : 'ghost'} onClick={() => act('war.terms', { yes: true }, 'You vote to accept.')}>Accept{mine === true ? ' ✓' : ''}</Btn><Btn kind={mine === false ? 'danger' : 'danger ghost'} onClick={() => act('war.terms', { yes: false }, 'You vote to fight on.')}>Reject{mine === false ? ' ✓' : ''}</Btn></div> : <span class="small muted">Only MPs vote. Lobby yours.</span>}
+        <span class="small">{autocrat(w) ? '' : `${v.filter((x) => x).length} accept, ${v.filter((x) => !x).length} reject so far.`}{t.kind === 'hostage' ? ' A hostage spends a week in exile abroad, and comes home to +5 approval.' : ''}</span>
+        {speaksForHouse(w, me) ? <div class="grid2"><Btn kind={mine === true ? undefined : 'ghost'} onClick={() => act('war.terms', { yes: true }, 'You vote to accept.')}>Accept{mine === true ? ' ✓' : ''}</Btn><Btn kind={mine === false ? 'danger' : 'danger ghost'} onClick={() => act('war.terms', { yes: false }, 'You vote to fight on.')}>Reject{mine === false ? ' ✓' : ''}</Btn></div> : <span class="small muted">{autocrat(w) ? `Only ${autocratTitle(w)} decides.` : 'Only MPs vote. Lobby yours.'}</span>}
       </div></Card>
     </Sec>
   );
@@ -473,15 +473,15 @@ function Memorials() {
   const [pick, setPick] = useState<Record<string, string[]>>({});
   if (!open.length) return null;
   return (
-    <Sec title="The war memorial" sub="Whose names are carved? A name backed by a majority of MPs voting goes on it, with a stamp and a place in the Hall of Fame.">
+    <Sec title="The war memorial" sub={autocrat(w) ? `Whose names are carved? ${cap(autocratTitle(w))} chooses. Each gets a stamp, a pension and a place in the Hall of Fame.` : 'Whose names are carved? A name backed by a majority of MPs voting goes on it, with a stamp, a pension and a place in the Hall of Fame.'}>
       {open.map((m) => {
         const chosen = pick[m.id] ?? m.votes[me] ?? m.names;
         return (
           <Card><div class="stack">
             <b>The {w.nations[m.nation]?.name} war</b>
-            <span class="small muted">Closes in <Left at={m.closesAt} />. {Object.keys(m.votes).length === 1 ? '1 MP has' : `${Object.keys(m.votes).length} MPs have`} voted.</span>
-            {m.names.map((id: string) => <label class="tick"><input type="checkbox" checked={chosen.includes(id)} disabled={!isMP(w, me)} onChange={(e: any) => setPick({ ...pick, [m.id]: e.target.checked ? [...chosen, id] : chosen.filter((x: string) => x !== id) })} /><span><Who id={id} />{holderOf(w, 'army') === id ? ', the General' : ', volunteer'}</span></label>)}
-            {isMP(w, me) && <Btn small onClick={() => act('war.memorial', { memorial: m.id, names: chosen }, 'Your choice is recorded.')}>{m.votes[me] ? 'Change my choice' : 'Choose these names'}</Btn>}
+            <span class="small muted">Closes in <Left at={m.closesAt} />.{autocrat(w) ? '' : ` ${Object.keys(m.votes).length === 1 ? '1 MP has' : `${Object.keys(m.votes).length} MPs have`} voted.`}</span>
+            {m.names.map((id: string) => <label class="tick"><input type="checkbox" checked={chosen.includes(id)} disabled={!speaksForHouse(w, me)} onChange={(e: any) => setPick({ ...pick, [m.id]: e.target.checked ? [...chosen, id] : chosen.filter((x: string) => x !== id) })} /><span><Who id={id} />{holderOf(w, 'army') === id ? ', the General' : ', volunteer'}</span></label>)}
+            {speaksForHouse(w, me) && <Btn small onClick={() => act('war.memorial', { memorial: m.id, names: chosen }, 'Your choice is recorded.')}>{m.votes[me] ? 'Change my choice' : 'Choose these names'}</Btn>}
           </div></Card>
         );
       })}

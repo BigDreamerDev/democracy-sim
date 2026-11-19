@@ -4,7 +4,7 @@
 // Victory and defeat feed the coup system (backroom.ts): a war hero weighs more on a coup night, a beaten Army
 // leans towards the plotters, and an Army at the front cannot defend the capital.
 // State: w.army.war = the enemy's id (as before), w.army.campaign = this war, w.army.hero, w.army.defeatedAt, w.wars (history).
-import { W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, earn, transfer, bal, ca, hasPower, isPM, holderOf, clamp, meter, approve, stamp, bump, mustBeFree, int, legit, own, newId, pick, isMP, mps, inGov } from './core';
+import { W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, earn, transfer, bal, ca, hasPower, isPM, holderOf, clamp, meter, approve, stamp, bump, mustBeFree, int, legit, own, newId, pick, isMP, mps, inGov, autocrat, autocratTitle, cap } from './core';
 import { moodShift, treatyWith, PROFILES, warSpoils, PROVINCES, seedProvinces } from './foreign';
 import { fame } from './glory';
 import { enemyKnows, takeHostage } from './abroad';
@@ -302,7 +302,8 @@ function proposeTerms(w: W, k: any) {
   if (kind === 'hostage' && (ahead || !hostages.length)) kind = 'tribute';
   const crowns = 30 + Math.round(rand(w) * 50);
   k.terms = { id: newId(w, 'tm'), kind, ahead, province: kind === 'land' ? land : null, crowns: kind === 'tribute' ? crowns : 0, hostage: kind === 'hostage' ? pick(w, hostages) : null, at: w.now, closesAt: w.now + TERMS_HOURS * HOUR, votes: {}, status: 'open' };
-  gazette(w, 'army', `${n.name} proposes peace: ${termsText(w, k.terms, n.name)}. MPs have a day to accept or reject.`, '#/war');
+  const solo = autocrat(w);
+  gazette(w, 'army', `${n.name} proposes peace: ${termsText(w, k.terms, n.name)}. ${solo ? `${cap(autocratTitle(w))} alone will accept or reject them, within a day.` : 'MPs have a day to accept or reject.'}`, '#/war');
 }
 export function termsText(w: W, t: any, name: string) {
   if (t.kind === 'land') return t.ahead ? `they give up ${PROVINCES[t.province]?.name}` : `we give up ${PROVINCES[t.province]?.name}`;
@@ -313,10 +314,13 @@ export function voteTerms(w: W, actor: Id, yes: unknown) {
   const k = war(w);
   const t = k?.terms;
   if (!t || t.status !== 'open') fail('There are no terms on the table.');
-  if (!isMP(w, actor)) fail('Only MPs vote on terms of peace.');
+  // under one-person rule the ruler answers alone, and at once
+  const solo = autocrat(w);
+  if (solo ? actor !== solo : !isMP(w, actor)) fail(solo ? `Only ${autocratTitle(w)} answers terms of peace.` : 'Only MPs vote on terms of peace.');
   mustBeFree(w, actor);
   if (yes !== true && yes !== false) fail('Accept or reject.');
   t.votes[actor] = yes;
+  if (solo) settleTerms(w);
 }
 export function settleTerms(w: W) {
   const k = war(w);
@@ -328,8 +332,10 @@ export function settleTerms(w: W) {
   t.status = ayes > noes ? 'accepted' : 'rejected';
   t.result = { ayes, noes };
   const n = w.nations[k.nation];
-  if (t.status === 'rejected') return gazette(w, 'army', `The House rejects ${n.name}'s terms, ${ayes} to ${noes}. The war goes on.`, '#/war');
-  gazette(w, 'army', `The House accepts ${n.name}'s terms, ${ayes} to ${noes}: ${termsText(w, t, n.name)}.`, '#/war');
+  const who = autocrat(w) ? cap(autocratTitle(w)) : 'The House';
+  const score = autocrat(w) ? '' : `, ${ayes} to ${noes}`;
+  if (t.status === 'rejected') return gazette(w, 'army', `${who} rejects ${n.name}'s terms${score}. The war goes on.`, '#/war');
+  gazette(w, 'army', `${who} accepts ${n.name}'s terms${score}: ${termsText(w, t, n.name)}.`, '#/war');
   if (t.kind === 'land' && t.province) w.provinces[t.province] = { owner: t.ahead ? 'realm' : n.id, since: w.now, garrison: false };
   if (t.kind === 'tribute') {
     if (t.ahead) { const c = Math.min(t.crowns, bal(w, 'nation:' + n.id)); if (c > 0) transfer(w, 'nation:' + n.id, 'treasury', c, `Peace terms from ${n.name}`); }
@@ -355,14 +361,16 @@ function openMemorial(w: W, record: any, k: any) {
   w.memorials ??= [];
   w.memorials.unshift({ id: newId(w, 'mem'), nation: record.nation, outcome: record.outcome, names, votes: {}, closesAt: w.now + 2 * DAY, status: 'open', carved: [] });
   w.memorials = w.memorials.slice(0, 10);
-  gazette(w, 'army', `The House will decide whose names go on the memorial to the ${w.nations[record.nation].name} war. MPs have two days.`, '#/war');
+  gazette(w, 'army', autocrat(w) ? `${cap(autocratTitle(w))} will choose whose names go on the memorial to the ${w.nations[record.nation].name} war.` : `The House will decide whose names go on the memorial to the ${w.nations[record.nation].name} war. MPs have two days.`, '#/war');
 }
 export function voteMemorial(w: W, actor: Id, mid: unknown, names: unknown) {
   const m = (w.memorials || []).find((x: any) => x.id === mid);
   if (!m || m.status !== 'open') fail('That memorial vote is closed.');
-  if (!isMP(w, actor)) fail('Only MPs decide the memorial.');
+  const solo = autocrat(w);
+  if (solo ? actor !== solo : !isMP(w, actor)) fail(solo ? `Only ${autocratTitle(w)} chooses the names.` : 'Only MPs decide the memorial.');
   if (!Array.isArray(names) || names.length > 30 || names.some((x) => typeof x !== 'string' || !m.names.includes(x))) fail('Pick names from the list.');
   m.votes[actor] = [...new Set(names as string[])];
+  if (solo) closeMemorial(w, m);
 }
 export function closeMemorial(w: W, m: any) {
   m.status = 'closed';

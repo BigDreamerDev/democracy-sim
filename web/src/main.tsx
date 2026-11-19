@@ -154,6 +154,8 @@ function StatusBanner() {
   const { world: w, me } = useStore();
   // a defector sees the realm from across the border
   const ab = w.citizens[me]?.defected;
+  const rf = w.citizens[me]?.refuge;
+  if (rf) return <div class="status-banner abroad" role="status"><b>You are sheltering in the {w.nations[rf.nation]?.name} embassy.</b> Nobody can arrest you here, and you cannot act in politics. <a href="#/abroad">Leave, or take safe passage</a>.</div>;
   if (ab) return <div class="status-banner abroad" role="status"><b>You live in {w.nations[ab.nation]?.name} now.</b> You can read the realm's news but not act in it. <a href="#/abroad">Go to the court</a>.</div>;
   const p = w.clock?.pausedAt;
   const m = w.martial;

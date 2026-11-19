@@ -143,7 +143,7 @@ export function Exchange() {
         {fund(w).rows.length ? (
           <Card><ul class="list">{fund(w).rows.map((r) => <li class="row"><span><b>{r.sym}</b> × <span class="tnum">{r.n}</span><div class="small muted">Cost {r.cost}</div></span><span class="tnum">{r.value} <Move v={pct(r.value, r.cost)} /></span></li>)}</ul><div class="row" style={{ marginTop: 8 }}><b>Worth</b><span class="tnum"><b>{fund(w).value}</b> <Move v={pct(fund(w).value, fund(w).cost)} /></span></div></Card>
         ) : <Empty>The realm owns no shares.</Empty>}
-        <Btn small kind="ghost" href="#/new" style={{ marginTop: 8 }}>Draft a bill to buy or sell</Btn>
+        <Btn small kind="ghost" href="#/new" style={{ marginTop: 8 }}>{w.acts?.decrees || (w.regime && w.regime.type !== 'civil') ? 'Draft a bill or decree' : 'Draft a bill to buy or sell'}</Btn>
       </Sec>
       {(chair || chancellor) && (
         <Sec title="Powers over the Exchange">

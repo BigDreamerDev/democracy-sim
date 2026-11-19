@@ -134,6 +134,7 @@ export function DecreeForm({ type, cmd, council }: { type: string; cmd: string; 
       {needs.includes('bank') && (banks.length ? <Pick label={kind === 'nationalise' ? 'A bank (leave empty to nationalise foreign trade)' : 'Or a bank'} value={a.bank} onChange={(v) => set('bank', v)} empty={kind === 'nationalise' ? 'Foreign trade' : 'No bank'} options={banks} /> : kind === 'nationalise' ? <p class="small muted" style={{ margin: 0 }}>There are no banks, so this nationalises foreign trade.</p> : null)}
       {needs.includes('n') && <Field label={kind === 'arrest' ? 'Days held (1 or 2)' : kind === 'plan' ? 'Crowns promised (20 to 300)' : kind === 'tax' ? 'Tax rate, % (0 to 40)' : 'Interest rate, % (0 to 15)'} type="number" value={a.n} onInput={(v) => set('n', v)} />}
       {needs.includes('to') && <Pick label="Become" value={a.to} onChange={(v) => set('to', v)} empty="Choose" options={(r?.type === 'martial' ? ['junta', 'dictatorship'] : r?.type === 'junta' ? ['dictatorship', 'party'] : ['party']).map((t): [string, string] => [t, REGIMES[t].name])} />}
+      {needs.includes('offer') && <Pick label="Treaty" value={a.offer || ''} onChange={(v) => set('offer', v)} empty={Object.keys(w.offers).length ? 'Pick an offer' : 'No treaty is on offer'} options={(Object.values(w.offers) as any[]).map((o) => [o.id, o.title])} />}
       {needs.includes('what') && <Pick label="Lift" value={a.what} onChange={(v) => set('what', v)} empty="Choose" options={Object.entries(LIFT)} />}
       {needs.includes('key') && (
         <>

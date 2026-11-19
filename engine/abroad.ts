@@ -7,7 +7,7 @@
 // defector, by the nation itself, or turned while a hostage); nations also run rings of their own in our government.
 // The Security Service sweeps for both. Public: who defected, where, rank and favour. Secret: secrets carried,
 // approaches, who is a mole, foreign rings.
-import { W, Id, DAY, HOUR, fail, own, cit, nm, gazette, earn, transfer, bal, ca, chance, pick, rand, clamp, approve, stamp, bump, meter, mustBeFree, text, int, isPM, isHOS, isMP, hasPower, holderOf, newId, canSeeCard, allCitizens, exiled } from './core';
+import { W, Id, DAY, HOUR, fail, own, cit, nm, gazette, earn, transfer, bal, ca, chance, pick, rand, clamp, approve, stamp, bump, meter, mustBeFree, text, int, isPM, isHOS, isMP, hasPower, holderOf, newId, canSeeCard, allCitizens, exiled, ratifyText } from './core';
 import { PROFILES, moodShift, ultimatum, sanction, atWar, TREATIES as TREATY_KINDS } from './foreign';
 import { startWar, endWar } from './war';
 import { vacateSeat } from './politics';
@@ -40,8 +40,10 @@ const court = (nid: string) => `the court in ${PROFILES[nid]?.capital ?? nid}`;
 // what a defector may still do: their life abroad, the Exchange, the daily question, and leaving
 const ABROAD_OK = ['exchange.buy', 'exchange.sell', 'daily.answer', 'daily.freeze', 'tutorial.visit', 'press.cheer', 'agent.answer'];
 export function gateAbroad(w: W, actor: Id, cmd: string) {
+  const r = w.citizens[actor]?.refuge;
+  if (r && !cmd.startsWith('asylum.') && !cmd.startsWith('defect.') && !cmd.startsWith('admin.') && !ABROAD_OK.includes(cmd)) fail(`You are sheltering in the ${w.nations[r.nation]?.name} embassy. Leave it first, or take safe passage abroad.`);
   const d = w.citizens[actor]?.defected;
-  if (!d || cmd.startsWith('abroad.') || cmd.startsWith('defect.') || cmd.startsWith('admin.') || ABROAD_OK.includes(cmd)) return;
+  if (!d || cmd.startsWith('abroad.') || cmd.startsWith('defect.') || cmd.startsWith('exile.') || cmd === 'crown.back' || cmd.startsWith('admin.') || ABROAD_OK.includes(cmd)) return;
   fail(`You live in ${w.nations[d.nation]?.name} now. Play from the court abroad (World › Life abroad), or come home first.`);
 }
 
@@ -57,6 +59,7 @@ export function defect(w: W, actor: Id, nid: unknown) {
   if (isHOS(w, actor)) fail('Give up the throne or the presidency first.');
   if (c.party && w.parties[c.party]?.leader === actor) fail('Stand down as party leader first.');
   const from = c.defected?.nation;
+  c.refuge = null;
   if (from && w.nations[from].ruler?.id === actor) w.nations[from].ruler = null;
   if (!from) {
     Object.values(w.offices).forEach((o: any) => { if (o.holder === actor) o.holder = null; if (o.members) o.members = o.members.filter((m: Id) => m !== actor); });
@@ -439,7 +442,7 @@ export function offerTreaty(w: W, actor: Id, kind: unknown) {
   const id = newId(w, 'of');
   w.offers[id] = { id, nation: n.id, ...t, title: `${n.name} ${t.title}`, at: w.now, expiresAt: w.now + 5 * DAY, by: actor };
   deed(w, actor, `Offered the realm a ${t.title}`);
-  gazette(w, 'foreign', `${n.ruler.title} ${nm(w, actor)} offers the realm a ${t.title}. The House can ratify it with a bill.`, '#/foreign');
+  gazette(w, 'foreign', `${n.ruler.title} ${nm(w, actor)} offers the realm a ${t.title}. ${ratifyText(w)}`, '#/foreign');
 }
 export function abdicateAbroad(w: W, actor: Id) {
   const n = nationOf(w, actor);
@@ -464,4 +467,159 @@ export function rulersWeek(w: W) {
       n.ruler = null;
     }
   });
+}
+
+// ---------- royal heirs: a consort can have a child, the nation's heir; with one, they may press a dynastic claim to
+// the realm's own throne (crown.ts), backed by the nation they married into ----------
+export function haveChild(w: W, actor: Id, name: unknown) {
+  const d = w.citizens[actor]?.defected;
+  if (!d || !d.consort) fail('Only a royal consort can have a royal child.');
+  if (d.child) fail(`You already have an heir, ${d.child.name}.`);
+  const nmx = text(name, 2, 24, "child's name");
+  if (!/^[\p{L}][\p{L} '’-]*$/u.test(nmx)) fail('A name is letters only.');
+  if (d.triedChildAt && w.now - d.triedChildAt < 2 * DAY) fail('Give it two days.');
+  d.triedChildAt = w.now;
+  if (!chance(w, 0.5)) return deed(w, actor, 'Hoped for an heir');
+  const n = nationOf(w, actor);
+  d.child = { name: nmx, born: w.now };
+  fav(w, actor, 10);
+  stamp(w, actor, 'Royal parent', `Of ${nmx}, heir of ${n.name}`, 'good');
+  deed(w, actor, `${nmx} was born, heir of ${n.name}`);
+  gazette(w, 'foreign', `Bells ring in ${PROFILES[n.id]?.capital}: ${nm(w, actor)} has a child, ${nmx}, heir to the house of ${n.name}.`, '#/abroad');
+}
+
+// ---------- embassies as refuge: when the realm turns on its people (a coup regime, a coup night, or a law to jail
+// them), a citizen may shelter in a friendly nation's embassy in the capital. They are out of reach of arrest and the
+// Realm Jail, cannot take part in politics, and can leave, or take safe passage abroad ----------
+export const threatened = (w: W) => (!!w.regime && w.regime.type !== 'civil') || !!w.coup || !!w.acts?.jail;
+export function seekRefuge(w: W, actor: Id, nid: unknown) {
+  const c = cit(w, actor);
+  mustBeFree(w, actor);
+  if (c.defected) fail('You live abroad already.');
+  if (c.refuge) fail('You are already sheltering in an embassy.');
+  if (!threatened(w)) fail('Nobody is in danger: embassies take people in only under a coup, a regime, or a law to jail citizens.');
+  const n = own(w.nations, nid);
+  if (!n || n.mood < 3) fail('Only a friendly nation will take you in.');
+  if (isPM(w, actor) || isHOS(w, actor)) fail('The head of the government cannot hide in an embassy.');
+  c.refuge = { nation: n.id, at: w.now };
+  gazette(w, 'foreign', `${c.name} takes refuge in the ${n.name} embassy.`, '#/abroad');
+}
+export function leaveRefuge(w: W, actor: Id) {
+  const c = cit(w, actor);
+  if (!c.refuge) fail('You are not in an embassy.');
+  gazette(w, 'foreign', `${c.name} leaves the ${w.nations[c.refuge.nation]?.name} embassy.`, '#/abroad');
+  c.refuge = null;
+}
+
+// ---------- rival courts: defectors at the same court intrigue against each other, once a day ----------
+export function intrigue(w: W, actor: Id, target: unknown, kind: unknown) {
+  const d = w.citizens[actor]?.defected;
+  if (!d) fail('You have not defected.');
+  const t = cit(w, target as Id);
+  const td = t.defected;
+  if (!td || td.nation !== d.nation || t.id === actor) fail('Pick a rival at your own court.');
+  if (kind !== 'steal' && kind !== 'expose') fail('Steal their favour, or expose their secrets.');
+  if (d.last.intrigue && w.now - d.last.intrigue < DAY) fail('One intrigue a day.');
+  d.last.intrigue = w.now;
+  const n = nationOf(w, actor);
+  if (kind === 'steal') {
+    const ok = chance(w, clamp(0.45 + (d.favour - td.favour) / 200, 0.15, 0.8));
+    if (!ok) {
+      fav(w, actor, -5);
+      deed(w, actor, `Plotted against ${t.name}, and was caught`);
+      td.deeds = [{ at: w.now, what: `Saw off a plot by ${nm(w, actor)}` }, ...(td.deeds || [])].slice(0, 20);
+      return gazette(w, 'foreign', `Intrigue at the court of ${n.name}: ${nm(w, actor)} is caught plotting against ${t.name}.`, '#/abroad');
+    }
+    const amt = Math.min(td.favour, 6 + Math.round(rand(w) * 6));
+    fav(w, t.id, -amt);
+    fav(w, actor, amt);
+    deed(w, actor, `Turned the court against ${t.name} (+${amt} favour)`);
+    td.deeds = [{ at: w.now, what: `Lost ${amt} favour to whispers at court` }, ...(td.deeds || [])].slice(0, 20);
+    if (n.ruler?.id === t.id && td.favour < 50) {
+      n.ruler = null;
+      gazette(w, 'foreign', `${t.name} loses the throne of ${n.name}, undone by court intrigue.`, '#/abroad');
+    }
+    return;
+  }
+  // expose: one of their carried secrets is printed, and can no longer be sold
+  if (!td.secrets.length || !chance(w, 0.5)) return fav(w, actor, -2), deed(w, actor, `Tried to expose ${t.name}, and found nothing`);
+  const secret = td.secrets.splice(Math.floor(rand(w) * td.secrets.length), 1)[0];
+  fav(w, t.id, -6);
+  fav(w, actor, 3);
+  deed(w, actor, `Exposed a secret ${t.name} was hoarding`);
+  td.deeds = [{ at: w.now, what: `${nm(w, actor)} exposed one of your secrets` }, ...(td.deeds || [])].slice(0, 20);
+  gazette(w, 'scandal', `${nm(w, actor)} exposes a secret ${t.name} carried out of the realm: “${secret}”`, '#/abroad');
+}
+
+// ---------- a government in exile: defectors in one nation declare that they, not the government at home, are the
+// realm's rightful government. Citizens at home may back it in public. With backing of at least a quarter of the
+// realm (3 at least), its leader can lead the exiles home: they return, and a coup night begins with their host
+// nation behind them and every backer declared on their side ----------
+export function declareExile(w: W, actor: Id, name: unknown) {
+  const d = w.citizens[actor]?.defected;
+  if (!d) fail('Only defectors can form a government in exile.');
+  if (rankOf(w, actor) < 1) fail('You need to be an Adviser at least.');
+  if (w.exileGov) fail(`There is already a government in exile: ${w.exileGov.name}.`);
+  const t = text(name, 4, 60, 'name');
+  const n = nationOf(w, actor);
+  w.exileGov = { name: t, nation: n.id, leader: actor, members: [actor], backers: [], at: w.now, triedAt: 0 };
+  moodShift(n, -1, 'They host a government in exile');
+  deed(w, actor, `Declared ${t}`);
+  gazette(w, 'foreign', `From ${PROFILES[n.id]?.capital}, ${nm(w, actor)} declares ${t}: the realm's rightful government, in exile.`, '#/abroad');
+}
+export function joinExile(w: W, actor: Id) {
+  const g = w.exileGov;
+  if (!g) fail('There is no government in exile.');
+  const c = cit(w, actor);
+  if (c.defected) {
+    if (c.defected.nation !== g.nation) fail(`It sits in ${w.nations[g.nation].name}. Move there first.`);
+    if (g.members.includes(actor)) fail('You are already a member.');
+    g.members.push(actor);
+    return gazette(w, 'foreign', `${c.name} joins ${g.name}.`, '#/abroad');
+  }
+  mustBeFree(w, actor);
+  if (g.backers.includes(actor)) fail('You already back it.');
+  g.backers.push(actor);
+  approve(w, actor, -2);
+  gazette(w, 'foreign', `${c.name} declares for ${g.name}.`, '#/abroad');
+}
+export function leaveExile(w: W, actor: Id) {
+  const g = w.exileGov;
+  if (!g) fail('There is no government in exile.');
+  if (g.leader === actor) {
+    w.exileGov = null;
+    return gazette(w, 'foreign', `${g.name} is dissolved by its leader.`, '#/abroad');
+  }
+  if (!g.members.includes(actor) && !g.backers.includes(actor)) fail('You are not part of it.');
+  g.members = g.members.filter((x: Id) => x !== actor);
+  g.backers = g.backers.filter((x: Id) => x !== actor);
+}
+export const exileNeed = (w: W) => Math.max(3, Math.ceil(allCitizens(w).filter((c: any) => !c.bot).length / 4));
+export function exileReturn(w: W, actor: Id) {
+  const g = w.exileGov;
+  if (!g || g.leader !== actor) fail('Only the leader of the government in exile can lead it home.');
+  if (w.coup) fail('A coup is already under way.');
+  if (w.phase !== 'running') fail('There is nothing to take back yet.');
+  if (g.triedAt && w.now - g.triedAt < 7 * DAY) fail('Your last attempt was too recent. Wait a week.');
+  const live = (ids: Id[]) => ids.filter((id) => w.citizens[id]?.active);
+  const backers = live(g.backers).filter((id) => !w.citizens[id].defected);
+  const members = live(g.members);
+  if (members.length + backers.length < exileNeed(w)) fail(`You need ${exileNeed(w)} members and backers in all. You have ${members.length + backers.length}.`);
+  g.triedAt = w.now;
+  // the exiles come home for the night
+  members.forEach((id: Id) => {
+    const c = w.citizens[id];
+    const n = w.nations[c.defected.nation];
+    if (n?.ruler?.id === id) n.ruler = null;
+    c.defections = [...(c.defections || []), { nation: c.defected.nation, from: c.defected.at, to: w.now, rank: 'Returned with the exiles', sold: c.defected.sold }].slice(-5);
+    c.defected = null;
+  });
+  const pid = newId(w, 'pl');
+  w.plots[pid] = { id: pid, name: g.name, leader: actor, members: members.slice(), invited: {}, informers: [], chest: 0, paid: {}, backer: g.nation, asked: {}, heat: 0, status: 'launched', at: w.now, nextCheck: null, exile: true };
+  const declared: Record<string, string> = {};
+  backers.forEach((id: Id) => (declared[id] = 'coup'));
+  w.coup = { plot: pid, name: g.name, leader: actor, plotters: members.slice(), defected: [], declared, startedAt: w.now, endsAt: w.now + 12 * HOUR, backer: g.nation, pretext: true, chest: 0, against: w.regime && w.regime.type !== 'civil' ? 'regime' : 'government', exile: true };
+  meter(w, 'stability', -8, 'The exiles come home');
+  w.exileGov = null;
+  gazette(w, 'crisis', `${g.name} comes home. ${nm(w, actor)} and ${members.length - 1} other exile${members.length === 2 ? '' : 's'} land with ${w.nations[g.nation].name} behind them and ${backers.length} citizen${backers.length === 1 ? '' : 's'} already declared. Everyone has 12 hours to choose a side.`, '#/regime');
 }

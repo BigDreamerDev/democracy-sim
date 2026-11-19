@@ -313,6 +313,25 @@ export function claim(w: W, actor: Id, manifesto?: unknown) {
   meter(w, 'stability', -3, 'A pretender claims the throne');
   gazette(w, 'hos', `${nm(w, actor)} ${restoration ? 'claims back the throne they once held' : 'claims the throne'} against ${regnal(w, r)}.${words ? ` “${words}”` : ''} The realm has two days to choose.`, '#/hos');
 }
+// a defector with a royal child abroad presses a dynastic claim to the realm's throne, in the child's name: the nation
+// they married into recognises it at once. If it succeeds, they come home and are crowned
+export function dynasticClaim(w: W, actor: Id) {
+  const k = crown(w);
+  const r = k.reign;
+  const c = cit(w, actor);
+  const d = c.defected;
+  if (!d?.child) fail('You need a royal heir abroad to press a dynastic claim.');
+  if (!r || !r.crownedAt) fail('The realm has no crowned monarch to challenge.');
+  if (rough(w)) fail('Nobody can claim the throne until the country is settled.');
+  if (r.claim) fail('A claim is already being pressed.');
+  r.lastClaim ??= {};
+  if (r.lastClaim[actor] && w.now - r.lastClaim[actor] < CLAIM_COOLDOWN) fail('Your last claim failed too recently. Wait ten days.');
+  r.claimed.push(actor);
+  r.lastClaim[actor] = w.now;
+  r.claim = { by: actor, at: w.now, until: w.now + 2 * DAY, backers: [actor], manifesto: `In the name of ${d.child.name}, heir of two houses.`, restoration: false, dynastic: d.child.name, backer: d.nation, asked: { [d.nation]: 'yes' }, rally: false, parley: null };
+  meter(w, 'stability', -3, 'A dynastic claim from abroad');
+  gazette(w, 'hos', `From ${w.nations[d.nation].name}, ${c.name} claims the realm's throne in the name of ${d.child.name}, heir of two houses. ${w.nations[d.nation].name} recognises the claim. The realm has two days to choose.`, '#/hos');
+}
 export function back(w: W, actor: Id) {
   const r = crown(w).reign;
   const c = r?.claim;
@@ -437,6 +456,14 @@ export function settleClaim(w: W) {
     return;
   }
   logClaim(w, r, c, 'succeeded', t);
+  // a defector who wins comes home to be crowned
+  const pc = w.citizens[c.by];
+  if (pc?.defected) {
+    const fn = w.nations[pc.defected.nation];
+    if (fn?.ruler?.id === c.by) fn.ruler = null;
+    pc.defections = [...(pc.defections || []), { nation: pc.defected.nation, from: pc.defected.at, to: w.now, rank: 'Came home to be crowned', sold: pc.defected.sold }].slice(-5);
+    pc.defected = null;
+  }
   const was = regnal(w, r);
   stamp(w, r.id, 'Dethroned', `By ${nm(w, c.by)}`, 'bad');
   stamp(w, c.by, 'Took the throne', `From ${was}`, 'ink');

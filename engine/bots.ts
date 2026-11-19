@@ -1,5 +1,5 @@
 // Bots: the other citizens take plausible turns so one person can play the whole game.
-import { W, Id, chance, pick, rand, allCitizens, exiled, isMP, mps, inGovernment, sideOf, intrigueOpen, canSeeCard, weekNo, ghost, holderOf , sideName , DAY , majority } from './core';
+import { W, Id, chance, pick, rand, allCitizens, exiled, isMP, mps, inGovernment, sideOf, intrigueOpen, canSeeCard, weekNo, ghost, holderOf , sideName , DAY , majority, speaksForHouse } from './core';
 import { isGhostOk } from './streets';
 import { gate } from './regime';
 import { RED_BOX } from './glory';
@@ -196,8 +196,8 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
   if (w.army?.campaign) bots.forEach((b: any) => (p(0.04) && go(b.id, 'war.enlist'), p(0.03) && go(b.id, 'war.bond', { amount: 10 })));
   if (w.army?.campaign) Object.values(w.papers).forEach((pp: any) => isBot(pp.editor) && p(0.1) && go(pp.editor, 'war.embed', { paper: pp.id }));
   const tm = w.army?.campaign?.terms;
-  if (tm?.status === 'open') bots.forEach((b: any) => isMP(w, b.id) && tm.votes[b.id] === undefined && p(0.3) && go(b.id, 'war.terms', { yes: chance(w, 0.5) }));
-  (w.memorials || []).forEach((m: any) => m.status === 'open' && bots.forEach((b: any) => isMP(w, b.id) && !m.votes[b.id] && p(0.3) && go(b.id, 'war.memorial', { memorial: m.id, names: m.names.filter(() => chance(w, 0.7)) })));
+  if (tm?.status === 'open') bots.forEach((b: any) => speaksForHouse(w, b.id) && tm.votes[b.id] === undefined && p(0.3) && go(b.id, 'war.terms', { yes: chance(w, 0.5) }));
+  (w.memorials || []).forEach((m: any) => m.status === 'open' && bots.forEach((b: any) => speaksForHouse(w, b.id) && !m.votes[b.id] && p(0.3) && go(b.id, 'war.memorial', { memorial: m.id, names: m.names.filter(() => chance(w, 0.7)) })));
   (w.exchange?.motions || []).forEach((m: any) => m.status === 'open' && bots.forEach((b: any) => !m.votes[b.id] && p(0.2) && go(b.id, 'exchange.vote', { motion: m.id, yes: chance(w, 0.5) })));
   const dirB = w.offices.security?.holder;
   if (dirB && isBot(dirB) && p(0.03)) go(dirB, 'intel.ring', { nation: pick(w, Object.keys(w.nations)) });
@@ -212,6 +212,10 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
     p(0.05) && b.defected.secrets?.length && go(b.id, 'abroad.sell', { secret: 0 });
     p(0.05) && go(b.id, 'abroad.policy', { act: pick(w, ['ultimatum', 'sanction', 'aid']) });
     p(0.05) && go(b.id, 'abroad.marry');
+    p(0.05) && go(b.id, 'abroad.child', { name: 'Edda' });
+    p(0.02) && go(b.id, 'abroad.dynasty');
+    p(0.05) && go(b.id, 'abroad.intrigue', { target: (pick(w, allCitizens(w).filter((c: any) => c.defected?.nation === b.defected.nation && c.id !== b.id)) as any)?.id, kind: chance(w, 0.5) ? 'steal' : 'expose' });
+    p(0.01) && go(b.id, 'exile.declare', { name: 'The Free Government of the Realm' });
     p(0.04) && go(b.id, 'abroad.bid', { spend: 20 });
     p(0.03) && go(b.id, 'defect.return');
   });

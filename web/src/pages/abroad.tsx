@@ -5,7 +5,7 @@ import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Pick, Opt, Meter } from '../ui';
 import { isPM, hasPower, holderOf, bal, ca, canSeeCard, nm } from '../../../engine/index';
 import { MOODS, PROFILES } from '../../../engine/foreign';
-import { RANKS, rankOf, COOL, POLICIES, RANSOM, defectorsIn, throneOf, BID_COOL, BUY_PRICE } from '../../../engine/abroad';
+import { RANKS, rankOf, COOL, POLICIES, RANSOM, defectorsIn, throneOf, BID_COOL, BUY_PRICE, threatened, exileNeed } from '../../../engine/abroad';
 import { TREATIES } from '../../../engine/foreign';
 
 const moodColour = ['var(--red)', 'var(--amber)', 'var(--muted)', 'var(--teal)', 'var(--teal)'];
@@ -57,6 +57,8 @@ function Court() {
         </div>
       </Sec>
       <Throne />
+      <Heir />
+      <ExileGov />
       <Sec title="The secrets you carried out" sub="Each one sold is printed abroad: +12 favour and 15 crowns. If you ever come home, you will be questioned at the border.">
         {d.secrets.length ? <ul class="list">{d.secrets.map((s: string, i: number) => <li class="row"><span class="small">{s}</span><Btn small kind="danger ghost" onClick={() => confirm('Sell this secret? It will be printed.') && act('abroad.sell', { secret: i }, 'Sold.')}>Sell</Btn></li>)}</ul> : <Empty>You have no secrets to sell. Agents you recruit can send you more.</Empty>}
       </Sec>
@@ -68,7 +70,11 @@ function Court() {
           </div>
         ) : <Card kind="dashed">You are {d.favour < 80 ? `${80 - d.favour} favour short` : 'outranked by another defector'}.</Card>}
       </Sec>
-      {rivals.length > 0 && <Sec title="Other defectors at court"><ul class="list">{rivals.map((c: any) => <li class="row"><Who id={c.id} /><span class="small">{RANKS[Math.max(0, rankOf(w, c.id))].name} · {c.defected.favour} favour</span></li>)}</ul></Sec>}
+      {rivals.length > 0 && (
+        <Sec title="Rivals at court" sub={<>Intrigue once a day: turn the court against a rival and take their favour (better odds if you have more), or expose a secret they are hoarding. {d.last?.intrigue && w.now - d.last.intrigue < 86400000 ? <>Next intrigue in <Left at={d.last.intrigue + 86400000} />.</> : ''}</>}>
+          <ul class="list">{rivals.map((c: any) => <li class="row"><span><Who id={c.id} /><div class="small muted">{rankOf(w, c.id) === 4 ? n.ruler.title : RANKS[Math.max(0, rankOf(w, c.id))].name} · {c.defected.favour} favour · {c.defected.secrets.length} secret{c.defected.secrets.length === 1 ? '' : 's'}</div></span><span class="row" style={{ gap: 6 }}><Btn small kind="ghost" onClick={() => act('abroad.intrigue', { target: c.id, kind: 'steal' }, 'The whispers begin.')}>Steal favour</Btn><Btn small kind="danger ghost" onClick={() => act('abroad.intrigue', { target: c.id, kind: 'expose' }, 'You go digging.')}>Expose</Btn></span></li>)}</ul>
+        </Sec>
+      )}
       <Sec title="Your record abroad">
         <ul class="list small">{(d.deeds || []).map((x: any) => <li class="row"><span>{x.what}</span><span class="muted"><When at={x.at} /></span></li>)}</ul>
         {!(d.deeds || []).length && <Empty>Nothing yet.</Empty>}
@@ -97,7 +103,7 @@ function Throne() {
     return (
       <Sec title="Your reign" sub={`Ruler since ${new Date(n.ruler.since).toUTCString().slice(0, 11)}. A palace revolt is less likely the more favour you keep.`}>
         <div class="grid2">
-          <Card><b>Offer the realm a treaty</b><p class="small">It arrives as an offer your old House can ratify by bill.</p><Pick value={kind} onChange={setKind} options={TREATIES.map((x) => [x.kind, x.title])} /><Btn small style={{ marginTop: 8 }} onClick={() => act('abroad.offer', { kind }, 'The offer is sent.')}>Send the offer</Btn></Card>
+          <Card><b>Offer the realm a treaty</b><p class="small">It arrives as an offer your old homeland can ratify.</p><Pick value={kind} onChange={setKind} options={TREATIES.map((x) => [x.kind, x.title])} /><Btn small style={{ marginTop: 8 }} onClick={() => act('abroad.offer', { kind }, 'The offer is sent.')}>Send the offer</Btn></Card>
           <Card><b>Give it up</b><p class="small">Step down. You stay at court with your favour.</p><Btn small kind="plain" onClick={() => confirm('Give up the throne?') && act('abroad.abdicate', {}, 'You have stepped down.')}>Abdicate</Btn></Card>
         </div>
       </Sec>
@@ -115,6 +121,90 @@ function Throne() {
         <span class="small muted">Needs {need} favour (you have {d.favour}){t.way === 'marry' ? ' and a royal marriage' : ''}{t.way === 'buy' ? `, and ${BUY_PRICE} crowns (you have ${bal(w, ca(me))})` : ''}{t.way === 'seize' ? `. Each army drill you have done helps (${d.drills || 0} so far)` : ''}.{bidIn ? <> Next bid in <Left at={w.now + bidIn} />.</> : ''}</span>
         <Btn kind={t.way === 'seize' ? 'danger' : undefined} disabled={d.favour < need || !!bidIn || (t.way === 'marry' && !d.consort)} onClick={() => confirm(t.way === 'seize' ? 'Seize power? If you fail you are thrown out of the country.' : 'Make your bid?') && act('abroad.bid', { spend: Number(spend) }, 'The die is cast.')}>{t.way === 'marry' ? 'Claim the succession' : t.way === 'elect' ? 'Stand for election' : t.way === 'buy' ? `Buy the guilds (${BUY_PRICE})` : 'Seize power'}</Btn>
       </div></Card>
+    </Sec>
+  );
+}
+// a royal child abroad, and a claim to the realm's own throne in their name
+function Heir() {
+  const { world: w, me } = useStore();
+  const d = w.citizens[me].defected;
+  const [name, setName] = useState('');
+  if (!d.consort) return null;
+  const n = w.nations[d.nation];
+  const reign = w.crown?.reign;
+  const claimable = w.config.hos === 'monarchy' && reign?.crownedAt && !reign.claim;
+  return (
+    <Sec title="Your heir" sub="A child of the royal house of your new country, and of the realm.">
+      {d.child ? (
+        <Card kind="tint"><div class="stack">
+          <b class="serif" style={{ fontSize: 22 }}>{d.child.name}, heir of {n.name}</b>
+          <span class="small">Born <When at={d.child.born} />.{' '}{w.config.hos === 'monarchy' ? `In ${d.child.name}'s name you can claim the realm's own throne. ${n.name} will recognise the claim (+2); win it and you come home to be crowned.` : 'The realm has no throne to claim while it is a republic.'}</span>
+          {claimable && <Btn kind="danger" onClick={() => confirm(`Press a dynastic claim to the throne of the realm in ${d.child.name}'s name?`) && act('abroad.dynasty', {}, 'The claim is pressed. The realm has two days.')}>Press a dynastic claim</Btn>}
+          {reign?.claim && <span class="small muted">A claim is already being pressed at home. <a href="#/hos">See it</a>.</span>}
+        </div></Card>
+      ) : (
+        <Card><div class="stack">
+          <span class="small">Hope for an heir: an even chance every two days.</span>
+          <Field label="Name the child" value={name} onInput={(v) => setName(v.slice(0, 24))} placeholder="e.g. Edda" />
+          <Btn small disabled={name.trim().length < 2} onClick={() => act('abroad.child', { name }, 'We shall see.')}>Hope for an heir</Btn>
+        </div></Card>
+      )}
+    </Sec>
+  );
+}
+// a government in exile: declared abroad, backed at home, and one day led home
+function ExileGov() {
+  const { world: w, me } = useStore();
+  const g = w.exileGov;
+  const c = w.citizens[me];
+  const [name, setName] = useState('The Free Government of the Realm');
+  if (!g) {
+    if (!c.defected || rankOf(w, me) < 1) return null;
+    return (
+      <Sec title="A government in exile" sub="Declare that you, not the government at home, are the realm's rightful government. Citizens at home can back you; with enough backing you can lead the exiles home.">
+        <Card><div class="stack"><Field label="Its name" value={name} onInput={(v) => setName(v.slice(0, 60))} /><Btn kind="danger ghost" onClick={() => act('exile.declare', { name }, 'Declared.')}>Declare it</Btn></div></Card>
+      </Sec>
+    );
+  }
+  const members = g.members.filter((id: string) => w.citizens[id]?.active);
+  const backers = g.backers.filter((id: string) => w.citizens[id]?.active && !w.citizens[id].defected);
+  const total = members.length + backers.length;
+  const lead = g.leader === me;
+  const inIt = g.members.includes(me) || g.backers.includes(me);
+  const here = c.defected?.nation === g.nation;
+  return (
+    <Sec title={g.name} sub={<>A government in exile, sitting in {w.nations[g.nation]?.name}, led by <Who id={g.leader} />. To lead it home it needs {exileNeed(w)} members and backers in all; it has {total}.</>}>
+      <Card kind="warn"><div class="stack">
+        <Meter value={total} max={exileNeed(w)} color="var(--red)" />
+        <span class="small">Members abroad: {members.map((id: string) => nm(w, id)).join(', ')}. Backers at home: {backers.length ? backers.map((id: string) => nm(w, id)).join(', ') : 'none yet'}.</span>
+        {!inIt && (c.defected ? here : true) && <Btn kind="danger ghost" onClick={() => act('exile.join', {}, c.defected ? 'You have joined.' : 'You back it, in public.')}>{c.defected ? 'Join it' : 'Back it in public (−2 approval)'}</Btn>}
+        {inIt && <Btn small kind="plain" onClick={() => confirm(lead ? 'Dissolve the government in exile?' : 'Leave it?') && act('exile.leave', {}, lead ? 'Dissolved.' : 'You have left.')}>{lead ? 'Dissolve it' : 'Leave it'}</Btn>}
+        {lead && <Btn kind="danger" disabled={total < exileNeed(w)} onClick={() => confirm('Lead the exiles home? Every member returns, and a coup night begins.') && act('exile.return', {}, 'You are going home.')}>Lead the exiles home</Btn>}
+      </div></Card>
+    </Sec>
+  );
+}
+// sheltering in a friendly embassy, when the realm turns on its people
+function Refuge() {
+  const { world: w, me } = useStore();
+  const c = w.citizens[me];
+  const [n, setN] = useState('');
+  const friends = (Object.values(w.nations) as any[]).filter((x) => x.mood >= 3);
+  if (c.refuge) {
+    const host = w.nations[c.refuge.nation];
+    return (
+      <Sec title={`Sheltering in the ${host?.name} embassy`} sub="Out of reach of arrest and the Realm Jail. You cannot take part in politics while you are here.">
+        <Card kind="tint"><div class="grid2">
+          <Btn kind="plain" onClick={() => confirm('Leave the embassy? You will be within reach again.') && act('asylum.leave', {}, 'You step outside.')}>Leave the embassy</Btn>
+          <Btn kind="danger ghost" onClick={() => confirm(`Take safe passage to ${host?.name} and defect?`) && act('defect.go', { nation: c.refuge.nation }, 'Safe passage granted.')}>Take safe passage abroad</Btn>
+        </div></Card>
+      </Sec>
+    );
+  }
+  if (!threatened(w)) return null;
+  return (
+    <Sec title="Take refuge" sub="Under a coup, a regime or a law to jail citizens, a friendly nation's embassy will take you in. Nobody can arrest you there.">
+      {friends.length ? <Card><div class="grid2"><Pick value={n} onChange={setN} empty="Which embassy?" options={friends.map((x) => [x.id, x.name])} /><Btn style={{ alignSelf: 'end' }} disabled={!n} onClick={() => act('asylum.claim', { nation: n }, 'The embassy doors close behind you.')}>Take refuge</Btn></div></Card> : <Empty>No nation is friendly enough to take you in.</Empty>}
     </Sec>
   );
 }
@@ -155,6 +245,8 @@ function Home() {
           </div></Card>
         </Sec>
       )}
+      <Refuge />
+      <ExileGov />
       <Sec title="Hostages" sub={`Held abroad for a week under terms of peace. The PM, the Chancellor or the Foreign Minister can pay ${RANSOM} from the Treasury to bring them home early.`}>
         {held.length ? <ul class="list">{held.map((h: any) => <li class="row"><span><Who id={h.who} /> in {PROFILES[h.nation]?.capital}, {w.nations[h.nation]?.name}<div class="small muted">Released in <Left at={h.until} /></div></span>{canRansom && <Btn small onClick={() => act('hostage.ransom', { hostage: h.id }, 'Ransom paid.')}>Pay {RANSOM}</Btn>}</li>)}</ul> : <Empty>Nobody is held abroad.</Empty>}
       </Sec>

@@ -1,6 +1,10 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 49, text: 'A government in exile: defectors can declare one, citizens at home can back it, and with enough support its leader can lead the exiles home for a coup night.' },
+  { n: 48, text: 'Rival courts: defectors at the same court can steal each other’s favour or expose each other’s secrets.' },
+  { n: 47, text: 'Under a coup, a regime or a jail law, you can shelter in a friendly nation’s embassy, out of reach of arrest. World › Life abroad.' },
+  { n: 46, text: 'Royal heirs abroad: a consort can have a child, and press a dynastic claim to the realm’s own throne in the child’s name.' },
   { n: 45, text: 'Defectors can take the throne abroad: marry into the royal family of Varnholm or the Isles, win an election in Kessmark, Tessaly or Sundmere, buy Aurel, or seize Drakmoor. Rulers offer the realm treaties and set policy every three days, until a palace revolt.' },
   { n: 44, text: 'Defect: leave the realm and play from a foreign court. Rise from Refugee to Chancellor, sell secrets, broadcast home, recruit agents, train their army, lead it against the realm, and set their policy. Or come home. World › Life abroad.' },
   { n: 43, text: 'Double agents: foreign powers try to recruit citizens in secret, and run rings of their own inside the government. The Security Service can sweep for them.' },

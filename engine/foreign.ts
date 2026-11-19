@@ -1,6 +1,6 @@
 // The five nations, envoys, treaty offers, the Security Service and the Army.
 import { startWar } from './war';
-import { W, Id, DAY, HOUR, fail, newId, rand, chance, pick, nm, gazette, earn, transfer, bal, hasPower, isPM, addCard, holderOf, clamp, inDanger, meter, own, approve, stamp } from './core';
+import { W, Id, DAY, HOUR, fail, newId, rand, chance, pick, nm, gazette, earn, transfer, bal, hasPower, isPM, addCard, holderOf, clamp, inDanger, meter, own, approve, stamp, ratifyText } from './core';
 
 export const MOODS = ['Hostile', 'Cold', 'Neutral', 'Friendly', 'Allied'];
 // who they are: fixed facts about each nation (the world map, the nation pages and the Exchange read these)
@@ -74,7 +74,7 @@ export function maybeOffers(w: W) {
     const t = pick(w, TREATIES.filter((x) => x.kind !== 'alliance' || n.mood >= 4));
     const id = newId(w, 'of');
     w.offers[id] = { id, nation: n.id, ...t, title: `${n.name} ${t.title}`, at: w.now, expiresAt: w.now + 5 * DAY };
-    gazette(w, 'foreign', `${n.name} offers us a ${t.title}. The House can ratify it with a bill.`, '#/foreign');
+    gazette(w, 'foreign', `${n.name} offers us a ${t.title}. ${ratifyText(w)}`, '#/foreign');
   });
 }
 // we propose; they answer within a day; a yes becomes an offer our House can ratify
