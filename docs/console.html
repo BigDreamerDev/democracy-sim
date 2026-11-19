@@ -469,7 +469,7 @@ const ACTS = {
 const CLAUSE_TYPES = {
   text: 'Words only (a law in plain text)', set: 'Change a number (tax, pay, timings)', constitution: 'Change the constitution',
   office: 'Create an office', abolish: 'Abolish an office', budget: 'Set an office budget', repeal: 'Repeal a law',
-  removeHos: 'Remove the head of state', permit: 'Allow private banks', job: 'Create a civic job', zone: 'Add a Streets safe zone', currency: 'Rename the currency',
+  removeHos: 'Remove the head of state', permit: 'Allow private banks', job: 'Create a civic job', zone: 'Add a Streets safe zone', realmName: 'Rename the realm', currency: 'Rename the currency',
   treaty: 'Ratify a treaty offer', breakTreaty: 'Break a treaty', war: 'Declare war', peace: 'Make peace',
   ...Object.fromEntries(Object.entries(ACTS).map(([k, v]) => [k, v.split(' — ')[0]]))
 };
@@ -489,6 +489,7 @@ function clauseFields(t, c = {}) {
     case 'repeal': return f('ref', `<select data-c="ref">${opt(coll(W?.laws).map(([, l]) => [l.ref, `${l.ref} — ${l.title}`]), c.ref)}</select>`, 'Law to repeal');
     case 'job': return `<div class="fields">${f('title', `<input data-c="title" value="${esc(c.title || '')}">`, 'The job (6–120 characters)')}${f('pay', `<input type="number" data-c="pay" data-num min="1" max="30" value="${esc(c.pay ?? '')}">`, 'Pay each time (1–30)')}</div>`;
     case 'zone': return f('text', `<input data-c="text" value="${esc(c.text || '')}">`, 'Where the safe zone is');
+    case 'realmName': return `${f('name', `<input data-c="name" minlength="3" maxlength="60" value="${esc(c.name || '')}" placeholder="e.g. Republic of Aldmere">`, 'New official name of the realm')}<small class="mut">3–60 characters. The name changes only when the bill becomes law or an authorised decree is issued.</small>`;
     case 'currency': return `<div class="fields">${f('one', `<input data-c="one" value="${esc(c.one || '')}" placeholder="e.g. ducat">`, 'New name')}${f('many', `<input data-c="many" value="${esc(c.many || '')}" placeholder="e.g. ducats (optional)">`, 'Plural')}</div>`;
     case 'treaty': return f('offer', `<select data-c="offer">${opt(SOURCES.offer(), c.offer)}</select>`, 'Treaty offer');
     case 'breakTreaty': return f('treaty', `<select data-c="treaty">${opt(SOURCES.treaty(), c.treaty)}</select>`, 'Treaty');
@@ -518,6 +519,7 @@ function readClauses(root) {
   });
 }
 const PRESETS = {
+  renameRealm: { name: 'Rename the realm', title: 'Realm Name Bill', summary: 'Changes the official name of the realm.', clauses: [{ t: 'realmName', name: '' }] },
   crown: {
     name: 'The Crown Sovereignty Act (absolute monarchy)',
     title: 'The Crown Sovereignty Act', summary: 'Makes the Monarch sovereign for life and gives the Crown’s government every power the realm can grant: rule by decree, an indefinite Parliament, one party, and protection from removal.',
@@ -686,6 +688,7 @@ function describeClause(c) {
     case 'peace': return `Makes peace with ${W.nations?.[c.nation]?.name || c.nation}.`;
     case 'job': return `Creates a civic job: ${c.title} (${c.pay} crowns).`;
     case 'zone': return `Adds a Streets safe zone: ${c.text}.`;
+    case 'realmName': return `Changes the official name of the realm to ${c.name || '(enter a name)'}.`;
     case 'currency': return `Renames the currency: the crown becomes the ${c.one}${c.many ? ` (${c.many})` : ''}.`;
     default: return ACTS[c.t] ? 'Enacts the ' + ACTS[c.t] : CLAUSE_TYPES[c.t] || c.t;
   }

@@ -426,6 +426,8 @@ export function NewProposal({ query }: { query: URLSearchParams }) {
           <Sec title={kind === 'referendum' ? 'If Yes wins (optional)' : 'Clauses'}>
             <div class="stack">{clauses.map((e, i) => <ClauseEditor e={e} n={i + 1} onChange={(x) => setClauses(clauses.map((y, j) => (j === i ? x : y)))} onRemove={clauses.length > 1 || kind === 'referendum' ? () => setClauses(clauses.filter((_, j) => j !== i)) : undefined} />)}</div>
             <Btn kind="plain" small style={{ marginTop: 10 }} onClick={() => setClauses([...clauses, { t: 'text', text: '' }])}>Add a clause</Btn>
+            {!clauses.some((e) => e.t === 'realmName') && <Btn kind="plain" small style={{ marginTop: 10, marginLeft: 8 }} onClick={() => setClauses([...clauses, { t: 'realmName', name: '' }])}>+ Rename the realm</Btn>}
+            <p class="small muted" style={{ margin: '8px 0 0' }}>To change the country's official name, choose “Rename the realm” in a clause, or use the shortcut above. The name changes when the law is enacted.</p>
           </Sec>
         </>
       )}
