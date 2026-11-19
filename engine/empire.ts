@@ -4,7 +4,7 @@
 // the realm: it can levy tribute from provinces (more money, more unrest), name a governor for each (a citizen, paid
 // 5 a week, who halves the chance of an uprising), garrison them, and, while the Act is law, take friendly nations as
 // protectorates: they pay 10 a week and fight beside us, but chafe, and break away if they stop liking us.
-import { W, Id, DAY, fail, own, cit, nm, gazette, transfer, bal, ca, chance, stamp, approve, meter, mustBeFree, isPM, hasPower, newId, realmPlace, inForce, allCitizens, earn, bump } from './core';
+import { theName, W, Id, DAY, fail, own, cit, nm, gazette, transfer, bal, ca, chance, stamp, approve, meter, mustBeFree, isPM, hasPower, newId, realmPlace, inForce, allCitizens, earn, bump } from './core';
 import { createOffice, TEMPLATES } from './offices';
 import { imperialPurse } from './warmachine';
 import { establishPrivy, dissolvePrivy } from './privy';
@@ -54,7 +54,7 @@ export function proclaimEmpire(w: W, ref: string) {
   if (!/\bempire\b/i.test(w.config.realmName)) renameRealm(w, realmPlace(w) === 'the Realm' ? 'The Empire' : `The ${realmPlace(w)} Empire`, 'the Imperial Prerogative Act');
   adoptHighCommission(w, ref);
   establishPrivy(w, ref);
-  gazette(w, 'law', `The Imperial Prerogative Act is law. ${w.config.hos === 'monarchy' ? `${nm(w, w.hos.holder)} reigns as ${w.config.hosTitle}` : 'The realm is an Empire'}, the ${w.config.realmName} is proclaimed, the Imperial Privy Council sits in place of Parliament, and the Imperial High Commission governs the empire and commands its forces.`, '#/atlas', { k: 'empire', who: w.hos?.holder || null, title: w.config.hosTitle, place: w.config.realmName });
+  gazette(w, 'law', `The Imperial Prerogative Act is law. ${w.config.hos === 'monarchy' ? `${nm(w, w.hos.holder)} reigns as ${w.config.hosTitle}` : 'The realm is an Empire'}, ${theName(w.config.realmName)} is proclaimed, the Imperial Privy Council sits in place of Parliament, and the Imperial High Commission governs the empire and commands its forces.`, '#/atlas', { k: 'empire', who: w.hos?.holder || null, title: w.config.hosTitle, place: w.config.realmName });
 }
 export function unproclaimEmpire(w: W) {
   if (w.config.hos === 'monarchy') w.config.hosTitle = royalTitle(w.config.hosTitle);
@@ -70,7 +70,7 @@ export function renameRealm(w: W, to: string, how: string) {
   if (was === to) return;
   w.config.formerNames = [...(w.config.formerNames || []), { name: was, until: w.now }].slice(-10);
   w.config.realmName = to;
-  gazette(w, 'law', `The realm is renamed by ${how}: the ${was} is now the ${to}.`, '#/laws');
+  gazette(w, 'law', `The realm is renamed by ${how}: ${theName(was)} is now ${theName(to)}.`, '#/laws');
 }
 // a new name must be plain words, and must not be mistaken for a nation abroad
 export function checkRealmName(w: W, v: unknown) {
@@ -131,11 +131,11 @@ export function protectorate(w: W, actor: Id, nid: unknown) {
   const yes = chance(w, Math.min(0.85, 0.3 + 0.2 * (n.mood - 3) + (n.embassy ? 0.15 : 0) + ((n.power || 3) <= 3 ? 0.15 : 0)));
   if (!yes) {
     moodShift(n, -1, 'Insulted by an offer of protection');
-    return gazette(w, 'foreign', `${n.name} refuses to become a protectorate of the ${w.config.realmName}.`, '#/nation/' + n.id);
+    return gazette(w, 'foreign', `${n.name} refuses to become a protectorate of ${theName(w.config.realmName)}.`, '#/nation/' + n.id);
   }
   n.protectorate = { since: w.now, by: actor };
   approve(w, actor, 3);
-  gazette(w, 'foreign', `${n.name} becomes a protectorate of the ${w.config.realmName}: tribute of ${PROTECTORATE_TRIBUTE} crowns a week, and its army at our side.`, '#/nation/' + n.id, { k: 'protectorate', place: n.name, by: actor });
+  gazette(w, 'foreign', `${n.name} becomes a protectorate of ${theName(w.config.realmName)}: tribute of ${PROTECTORATE_TRIBUTE} crowns a week, and its army at our side.`, '#/nation/' + n.id, { k: 'protectorate', place: n.name, by: actor });
 }
 export function release(w: W, actor: Id, nid: unknown) {
   mustGovern(w, actor);
@@ -143,7 +143,7 @@ export function release(w: W, actor: Id, nid: unknown) {
   if (!n?.protectorate) fail('That nation is not a protectorate.');
   n.protectorate = null;
   moodShift(n, 1, 'We gave them back their freedom');
-  gazette(w, 'foreign', `The ${w.config.realmName} releases ${n.name} from its protection.`, '#/nation/' + n.id);
+  gazette(w, 'foreign', `${theName(w.config.realmName, true)} releases ${n.name} from its protection.`, '#/nation/' + n.id);
 }
 
 // ---------- once a week ----------
@@ -170,7 +170,7 @@ export function empireWeek(w: W) {
       n.protectorate = null;
       moodShift(n, -1, 'They threw off our protection');
       meter(w, 'stability', -2, `${n.name} broke away`);
-      gazette(w, 'foreign', `${n.name} declares its independence and throws off the protection of the ${w.config.realmName}.`, '#/nation/' + n.id);
+      gazette(w, 'foreign', `${n.name} declares its independence and throws off the protection of ${theName(w.config.realmName)}.`, '#/nation/' + n.id);
     }
   });
 }

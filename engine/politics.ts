@@ -3,7 +3,7 @@ import { syncCrown } from './crown';
 // parties, forming a government, coalitions, the shadow cabinet, seasons, ambitions and weekly objectives.
 import {
   W, Id, DAY, HOUR, fail, newId, pick, rand, shuffle, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, stamp, approve,
-  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal, fmtDay, bump, adminDid, own, text, barred, detained, legit, inForce } from './core';
+  isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal, fmtDay, bump, adminDid, own, text, barred, detained, legit, inForce, theName } from './core';
 import { national } from './acts';
 import { openMarket, settleMarket } from './markets';
 import { seasonAwards } from './glory';
@@ -246,10 +246,10 @@ export function finishConvention(w: W) {
   w.seats = Array(w.config.seats).fill(null);
   const extra = w.convention.clauses.filter((c: any) => c.kind !== 'core' && c.adopted === 0).map((c: any) => (c.kind === 'custom' ? c.q : c.q.replace(/^Start with/, 'The realm starts with').replace(/ \(normally.*\)\.$/, '.')));
   w.laws.push({
-    ref: 'L001', title: 'Founding Act', summary: `Adopts the constitution of the ${w.config.realmName}.`, at: w.now, how: 'Founding Convention', repealed: false, classified: false, rulings: [], propId: null,
+    ref: 'L001', title: 'Founding Act', summary: `Adopts the constitution of ${theName(w.config.realmName)}.`, at: w.now, how: 'Founding Convention', repealed: false, classified: false, rulings: [], propId: null,
     text: [
       'Every citizen has one vote, and nothing binds the realm without a law.',
-      `The realm is the ${w.config.realmName}.`,
+      `The realm is ${theName(w.config.realmName)}.`,
       `Parliament has ${w.config.seats} seats. At each general election the ${w.config.seats} candidates with the most votes nationwide take them. A seat that falls empty goes to the next candidate in line.`,
       `${w.config.hos === 'monarchy' ? 'A Monarch' : 'A President'} is head of state, ${HOS_METHODS[w.config.hos].find((m) => m.id === w.config.hosMethod)!.label.toLowerCase()}.`,
       `A general election every ${w.config.termDays / 7} week${w.config.termDays === 7 ? '' : 's'}.`,
@@ -259,7 +259,7 @@ export function finishConvention(w: W) {
     ]
   });
   createOffice(w, { template: 'whip' }, 'L001');
-  gazette(w, 'law', `The constitution is adopted. The ${w.config.realmName} is founded.`, '#/law/L001');
+  gazette(w, 'law', `The constitution is adopted. ${theName(w.config.realmName, true)} is founded.`, '#/law/L001');
   startInduction(w);
   callGeneralElection(w, w.now + 2 * DAY);
   if (w.config.hos === 'monarchy') startHosSelection(w);

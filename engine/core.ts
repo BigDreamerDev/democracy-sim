@@ -373,4 +373,6 @@ export function realmPlace(w: W): string {
   return core.trim() && !FORMS.some((f) => f.toLowerCase() === core.trim().toLowerCase()) ? core.trim() : 'the Realm';
 }
 // an empire, by name or by the Imperial Prerogative Act
+// a name with 'the' in front only if it lacks one: 'the Kingdom of Aldmere', 'The Aldmere Empire'
+export const theName = (n: unknown, cap = false) => { const t = String(n || 'Realm').trim(); return /^the\s/i.test(t) ? (cap ? t.charAt(0).toUpperCase() + t.slice(1) : t) : `${cap ? 'The' : 'the'} ${t}`; };
 export const imperial = (w: W) => !!w?.acts?.imperial || /\bempire\b/i.test(String(w?.config?.realmName || ''));

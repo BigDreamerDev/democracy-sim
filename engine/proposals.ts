@@ -311,7 +311,7 @@ export function propose(w: W, actor: Id, a: any) {
     across.forEach((s) => approve(w, s, 1));
   }
   if (w.proposals[id].stage === 'consent') return (gazette(w, 'proposal', `${nm(w, actor)} asks the Prime Minister’s consent to table: ${w.proposals[id].title}.`, '#/p/' + id), id);
-  gazette(w, 'proposal', `${nm(w, actor)} puts a ${across.length ? 'cross-party ' : ''}${w.privy && kind === 'bill' ? 'Order' : KINDS[kind].name.toLowerCase()} ${w.privy ? 'before the Privy Council' : 'to the House'}${sponsors.length ? `, co-sponsored by ${sponsors.map((s) => nm(w, s)).join(', ')}` : ''}: ${w.proposals[id].title}${constitutional ? ' (constitutional: needs ' + superMajority(w) + ' of ' + w.config.seats + ')' : ''}.`, '#/p/' + id);
+  gazette(w, 'proposal', `${nm(w, actor)} puts ${across.length ? 'a cross-party ' : w.privy && kind === 'bill' ? 'an ' : 'a '}${w.privy && kind === 'bill' ? 'Order' : KINDS[kind].name.toLowerCase()} ${w.privy ? 'before the Privy Council' : 'to the House'}${sponsors.length ? `, co-sponsored by ${sponsors.map((s) => nm(w, s)).join(', ')}` : ''}: ${w.proposals[id].title}${constitutional ? ' (constitutional: needs ' + superMajority(w) + ' of ' + w.config.seats + ')' : ''}.`, '#/p/' + id);
   return id;
 }
 

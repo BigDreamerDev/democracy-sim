@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 64, text: 'The Realm Console has caught up: the Privy Council’s powers, governors’ decrees, the war chest, acquisitions and forts, and the Gazette’s great moments.' },
   { n: 63, text: 'The ceremonies are smoother: richer gilded emblems, cleaner motion, and scenes that fade into one another.' },
   { n: 62, text: 'One person can now hold several places on the Privy Council, and has a vote for each place they hold.' },
   { n: 61, text: 'Ceremonies: appointments, the Privy Council, vetoes and the Seal, governors, invasions, battles, victories and more now play as short scenes the first time you see them. Watch them all, or turn them off, at You › How to play › Ceremonies.' },

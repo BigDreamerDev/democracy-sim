@@ -134,7 +134,7 @@ export function force(w: W, actor: Id, pid: unknown) {
   p.stage = 'commanded';
   p.lawRef = ref;
   history(w, p, actor, `Forced through as ${ref}`);
-  gazette(w, 'law', `${cap1(roleOf(w, actor))}, ${nm(w, actor)}, forces ${p.title} through the Privy Council without a vote. It is law as ${ref}.`, '#/law/' + ref, { k: 'force', by: actor, title: p.title, role: roleOf(w, actor) });
+  gazette(w, 'law', `${cap1(roleOf(w, actor))}, ${nm(w, actor)}, forces “${p.title}” through the Privy Council without a vote. It is law as ${ref}.`, '#/law/' + ref, { k: 'force', by: actor, title: p.title, role: roleOf(w, actor) });
 }
 export function veto(w: W, actor: Id, pid: unknown) {
   if (!canVeto(w, actor)) fail('Only the Sovereign, the High Commissioner, the Lord Chamberlain or the Lord Privy Seal can veto an Order.');
@@ -144,6 +144,6 @@ export function veto(w: W, actor: Id, pid: unknown) {
   p.stage = 'vetoed';
   p.vetoedBy = actor;
   history(w, p, actor, `Vetoed by ${roleOf(w, actor)}`);
-  gazette(w, 'proposal', `${cap1(roleOf(w, actor))}, ${nm(w, actor)}, vetoes ${p.title}. It falls.`, '#/p/' + p.id, { k: 'veto', by: actor, title: p.title, role: roleOf(w, actor) });
+  gazette(w, 'proposal', `${cap1(roleOf(w, actor))}, ${nm(w, actor)}, vetoes “${p.title}”. It falls.`, '#/p/' + p.id, { k: 'veto', by: actor, title: p.title, role: roleOf(w, actor) });
 }
 const cap1 = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);

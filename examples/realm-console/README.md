@@ -18,5 +18,5 @@ Home (what needs you, the war, your life abroad), the House, parties and people,
 buy and sell, shareholder votes, citizens' companies, floating your own, the Register of Interests, the wealth fund),
 **World & war** (the front, strategy, enlisting, war bonds, terms of peace, memorials, nations, embassies and
 embargoes, provinces and garrisons, wars abroad, hostages, defectors, a government in exile, the Security Service,
-and, if you have defected, your whole court abroad up to the throne), the Crown, a bill writer with every clause
-(including the wealth fund, pensions and land-for-peace), every other action under **Do anything**, and the Gazette.
+and, if you have defected, your whole court abroad up to the throne), **the Empire** (the Imperial Privy Council with every great officer's prerogative: appoint, summon, seal, force through, veto, and a vote for each place held; the High Commission's provinces, levies, governors and protectorates; a governor's own decrees; the war chest, its shares, company acquisitions and director's orders; military acquisitions and forts), the Crown, a bill writer with every clause
+(including the wealth fund, pensions and land-for-peace), every other action under **Do anything**, and the Gazette (with a **Moments** filter for the events the site plays as ceremonies). Under the Imperial Prerogative Act the console takes the empire's porphyry and gold.

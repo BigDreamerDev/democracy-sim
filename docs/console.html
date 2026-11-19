@@ -17,6 +17,11 @@
 :root{--bg:#EEF0E8;--card:#FBFCF8;--field:#fff;--ink:#1B2430;--mut:#4A5560;--line:#C3CFC0;--soft:#E1E6DC;--acc:#1F5E57;--acc2:#E4ECE8;--onacc:#FBFCF8;--ok:#1F6B45;--okbg:#E1EFE4;--bad:#A8321F;--badbg:#F3E3DF;--warn:#8A4B14;--warnbg:#F3E8D6;--hh:92px;
   --serif:'Gloock','Iowan Old Style','Palatino Linotype',Georgia,serif;--sans:'Atkinson Hyperlegible',system-ui,-apple-system,'Segoe UI',sans-serif}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#11191E;--card:#18232A;--field:#121B21;--ink:#E3E8DE;--mut:#A7B2AC;--line:#33443F;--soft:#22302E;--acc:#74BCAC;--acc2:#1B2F2B;--onacc:#0E1518;--ok:#7CCB9A;--okbg:#17302A;--bad:#E7836E;--badbg:#35211D;--warn:#E39A60;--warnbg:#2B261D}}
+:root[data-empire]{--bg:#F1ECDF;--card:#FCF9F0;--line:#D3C49E;--soft:#E7DFCC;--acc:#5E1B3C;--acc2:#F1E3E7;--onacc:#F6EBDC}
+:root[data-empire] .card{box-shadow:3px 3px 0 #C9A13B}
+@media(prefers-color-scheme:dark){:root[data-empire]:not([data-theme=light]){--bg:#140E11;--card:#1D1418;--field:#170F13;--ink:#EDE3D2;--mut:#B9AA94;--line:#4E3A2A;--soft:#2C1E24;--acc:#D9A7BC;--acc2:#33202A;--onacc:#140E11}}
+:root[data-empire][data-theme=dark]{--bg:#140E11;--card:#1D1418;--field:#170F13;--ink:#EDE3D2;--mut:#B9AA94;--line:#4E3A2A;--soft:#2C1E24;--acc:#D9A7BC;--acc2:#33202A;--onacc:#140E11}
+.gz .moment{border-left:3px solid #C9A13B;padding-left:6px}.gz .fx{color:#C9A13B}
 :root[data-theme=dark]{--bg:#11191E;--card:#18232A;--field:#121B21;--ink:#E3E8DE;--mut:#A7B2AC;--line:#33443F;--soft:#22302E;--acc:#74BCAC;--acc2:#1B2F2B;--onacc:#0E1518;--ok:#7CCB9A;--okbg:#17302A;--bad:#E7836E;--badbg:#35211D;--warn:#E39A60;--warnbg:#2B261D}
 *{box-sizing:border-box}
 html{scroll-padding-top:calc(var(--hh) + 12px)}
@@ -344,7 +349,7 @@ function sourceFor(name, type) {
 const GROUPS = [
   ['Voting & bills', /^(prop|draft|pledge)\./], ['Elections', /^(election|newsnight)\./], ['Convention', /^(convention|tutorial)\./],
   ['Parties & coalitions', /^(party|coalition)\./], ['The Crown', /^crown\./], ['Government', /^(gov|office|hos|q|reserve)\./], ['Money', /^(money|bond|bank|venture|market|job)\./],
-  ['The Empire', /^imperial\./], ['The Privy Council', /^privy\./], ['War & the Army', /^(war|army)\./], ['The Exchange', /^exchange\./], ['Life abroad', /^(defect|abroad|agent|asylum|hostage)\.|^exile\.(declare|join|leave|return)$/],
+  ['The Empire', /^imperial\./], ['Governors', /^governor\./], ['The Privy Council', /^privy\./], ['War & the Army', /^(war|army)\./], ['The Exchange', /^exchange\./], ['Life abroad', /^(defect|abroad|agent|asylum|hostage)\.|^exile\.(declare|join|leave|return)$/],
   ['Foreign affairs', /^(foreign|intel|exile)\./], ['Backroom', /^(deal|card|demand|plot|security|coup)\./],
   ['Regimes & coups', /^(regime|police|prison|transition|reckoning|jail)\./], ['Press', /^press\./], ['Court', /^court\./],
   ['Crises', /^crisis\./], ['Streets & market', /^(streets|bounty|stall|hunt)\./], ['Daily & me', /^(daily|me)\./],
@@ -605,7 +610,7 @@ const TAB_SHORT = { home: 'Home', house: 'House', people: 'People', money: 'Mone
 PHONE.addEventListener?.('change', () => tabs());
 function tabs() {
   const phone = PHONE.matches;
-  $('#tabs').innerHTML = Object.entries(VIEWS).map(([k, l]) => `<button data-v="${k}" class="${k === VIEW ? 'on' : ''}" aria-label="${esc(l)}">${phone ? `<span class="ic" aria-hidden="true">${TAB_ICON[k] || '•'}</span>${TAB_SHORT[k] || l}` : l}${k === 'home' && ALERTS.length ? `<span class="badge">${ALERTS.length}</span>` : ''}</button>`).join('');
+  $('#tabs').innerHTML = Object.entries(VIEWS).map(([k, l]) => (W?.privy && k === 'house' ? ['house', 'The Council'] : W?.privy && k === 'bill' ? ['bill', 'Write an Order'] : [k, l])).map(([k, l]) => `<button data-v="${k}" class="${k === VIEW ? 'on' : ''}" aria-label="${esc(l)}">${phone ? `<span class="ic" aria-hidden="true">${TAB_ICON[k] || '•'}</span>${TAB_SHORT[k] || l}` : l}${k === 'home' && ALERTS.length ? `<span class="badge">${ALERTS.length}</span>` : ''}</button>`).join('');
   if (phone) $('#tabs .on')?.scrollIntoView({ inline: 'center', block: 'nearest' });
 }
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) go(b.dataset.v); };
@@ -638,6 +643,7 @@ function header() {
   $('#find').hidden = !W || !ME;
   if (!W || !ME) { $('#meBar').innerHTML = `<span class="live" id="live"></span><span>Not connected</span>`; $('#meLine').innerHTML = ''; document.title = 'Realm Console'; return; }
   $('#realmName').textContent = W.config?.realmName || 'The Realm';
+  document.documentElement.toggleAttribute('data-empire', !!W.acts?.imperial || /\bempire\b/i.test(W.config?.realmName || ''));
   document.title = (ALERTS.length ? `(${ALERTS.length}) ` : '') + (W.config?.realmName || 'The Realm') + ' · Console';
   const me = W.citizens?.[W.viewer] || {};
   $('#meBar').innerHTML = `<span class="live ${CONN === 'live' ? 'on' : CONN === 'retry' ? 'wait' : ''}" title="${CONN === 'live' ? 'Live: updates arrive on their own' : CONN === 'retry' ? 'Reconnecting' : 'Not live'}"></span>
@@ -944,7 +950,7 @@ function viewWorld() {
   const empire = W.acts?.imperial ? `<div class="card"><h2>The Empire <span class="sub">${hc ? `${esc(hc[1].title || hc[1].name)}: ${hc[1].holder ? esc(who(hc[1].holder)) : 'vacant'}` : 'governed by the Prime Minister'}</span></h2>
     ${Object.entries(W.provinces || {}).filter(([, p]) => p.owner === 'realm').map(([id, p]) => `<div class="item"><div class="row between"><span class="t">${esc(PROVINCE_NAMES[id] || id)}</span><span class="small">${p.levy ? 'levy · ' : ''}${p.governor ? 'governor ' + esc(who(p.governor)) : 'no governor'}</span></div>
       ${p.governor === W.viewer ? `<div class="row" style="margin-top:6px"><span class="small">Your decree:</span>${[['festival', 'Festival'], ['works', 'Public works (15)'], ['crackdown', 'Crack down'], ['tribute', 'Extra tribute'], ['militia', 'Militia']].map(([k, l]) => btn('governor.decree', { province: id, kind: k }, l)).join('')}</div>` : ''}
-      ${governs ? `<div class="row" style="margin-top:6px">${btn('imperial.levy', { province: id, on: !p.levy }, p.levy ? 'Lift the levy' : 'Levy it (10 a week)')}${p.governor ? btn('imperial.governor', { province: id, target: null }, 'Recall the governor', 'no') : `<select class="sm" data-gov="${esc(id)}">${citizensList.map(([cid, c]) => `<option value="${esc(cid)}">${esc(c.name)}</option>`).join('')}</select><button class="sm" data-govbtn="${esc(id)}">Appoint governor</button>`}</div>` : ''}</div>`).join('') || '<div class="empty">The realm holds no provinces.</div>'}
+      ${governs ? `<div class="row" style="margin-top:6px">${btn('imperial.levy', { province: id, on: !p.levy }, p.levy ? 'Lift the levy' : 'Levy it (10 a week)')}${p.governor ? btn('imperial.governor', { province: id, target: null }, 'Recall the governor', 'no') : `<select class="sm" style="width:auto;min-height:0" data-gov="${esc(id)}">${citizensList.map(([cid, c]) => `<option value="${esc(cid)}">${esc(c.name)}</option>`).join('')}</select><button class="sm" data-govbtn="${esc(id)}">Appoint governor</button>`}</div>` : ''}</div>`).join('') || '<div class="empty">The realm holds no provinces.</div>'}
     <div class="small" style="margin-top:8px"><b>Protectorates:</b> ${ns.filter(([, n]) => n.protectorate).map(([id, n]) => `${esc(n.name)}${governs ? ' ' + btn('imperial.release', { nation: id }, 'Release', 'no', `Release ${n.name}?`) : ''}`).join(', ') || 'none'}</div>
     ${governs ? `<div class="row" style="margin-top:8px">${ns.filter(([id, n]) => !n.protectorate && !n.ruler && n.mood >= 3 && W.army?.war !== id).map(([id, n]) => btn('imperial.protectorate', { nation: id }, `Offer protection to ${n.name}`)).join('')}</div>` : ''}</div>` : '';
   const kit = W.army?.kit || {}, firms = W.warchest?.firms || {}, wh = W.exchange?.holdings?.warchest || {};
@@ -953,8 +959,11 @@ function viewWorld() {
   const ITEMS = { artillery: ['Artillery battery', 40, 4], cavalry: ['Cavalry squadron', 25, 4], ironclad: ['Ironclad', 60, 3], airship: ['Airship', 50, 2] };
   const machine = coll(W.offices).some(([, o]) => (o.powers || []).includes('army')) ? `<div class="card"><h2>The war machine <span class="sub">war chest ${W.accounts?.warchest || 0}</span></h2>
     ${canDir ? `<div class="row">${btn('imperial.requisition', { crowns: 50 }, 'Requisition 50 from the Treasury')}${btn('imperial.repay', { crowns: 50 }, 'Give 50 back')}</div>` : ''}
-    <div class="small" style="margin-top:8px"><b>Equipment:</b> ${Object.entries(ITEMS).map(([id, [n, c, m]]) => `${esc(n)} ${kit[id] || 0}/${m}${canBuy ? ' ' + btn('army.procure', { item: id }, `Buy (${c})`) : ''}`).join(' · ')}</div>
-    <div class="small" style="margin-top:8px"><b>Companies:</b> ${Object.keys(CO_NAMES).map(sym => `${esc(sym)}${wh[sym]?.n ? ` (${wh[sym].n})` : ''}${firms[sym] ? ` <span class="tag ok">${esc(firms[sym].order)}</span>` : ''}${canDir ? ' ' + (firms[sym] ? ['dividends', 'war', 'requisition'].filter(o => o !== firms[sym].order).map(o => btn('imperial.direct', { sym, order: o }, o === 'war' ? 'War production' : o[0].toUpperCase() + o.slice(1))).join('') : btn('imperial.acquire', { sym }, 'Acquire', '', `Acquire a controlling stake in ${sym}?`)) : ''}`).join('<br>')}</div></div>` : '';
+    <div class="small" style="margin-top:8px"><b>Equipment:</b> ${Object.entries(ITEMS).map(([id, [n, c, m]]) => `${esc(n)} ${kit[id] || 0}/${m}${canBuy ? ' ' + btn('army.procure', { item: id }, `Buy (${c})`) + (kit[id] ? btn('army.scrap', { item: id }, 'Scrap one', 'no', `Stand down one ${n.toLowerCase()}?`) : '') : ''}`).join('<br>')}</div>
+    ${(() => { const ours = Object.entries(W.provinces || {}).filter(([, p]) => p.owner === 'realm'); return ours.length ? `<div class="small" style="margin-top:8px"><b>Forts (35, 1 a week):</b> ${ours.map(([pid, p]) => `${esc(PROVINCE_NAMES[pid] || pid)}${p.fort ? ' <span class="tag ok">fort</span>' + (canBuy ? btn('army.scrap', { item: 'fort', province: pid }, 'Scrap') : '') : canBuy ? ' ' + btn('army.procure', { item: 'fort', province: pid }, 'Build a fort') : ''}`).join(' · ')}</div>` : ''; })()}
+    <div style="margin-top:10px"><b class="small">Companies</b> <span class="small mut">25 shares gives control; a controlled company takes orders</span>${Object.keys(CO_NAMES).map(sym => { const px = W.exchange?.prices?.[sym]?.p, h = wh[sym]?.n || 0, f = firms[sym];
+      return `<div class="item"><div class="row between"><span><span class="t">${esc(sym)}</span> <span class="m">${esc(coName(sym))}${px != null ? ` · ${Number(px).toFixed(2)}` : ''}${h ? ` · the chest holds ${h}` : ''}</span>${f ? ` <span class="tag ok">${f.order === 'war' ? 'war production' : esc(f.order)}</span>` : ''}</span>
+        ${canDir ? `<span class="row">${btn('imperial.trade', { sym, n: 5, sell: false }, 'Buy 5')}${h ? btn('imperial.trade', { sym, n: Math.min(5, h), sell: true }, `Sell ${Math.min(5, h)}`) : ''}${f ? ['dividends', 'war', 'requisition'].filter(o => o !== f.order).map(o => btn('imperial.direct', { sym, order: o }, o === 'war' ? 'War production' : o[0].toUpperCase() + o.slice(1))).join('') : btn('imperial.acquire', { sym }, 'Acquire', 'p', `Acquire a controlling stake in ${coName(sym)}?`)}</span>` : ''}</div></div>`; }).join('')}</div></div>` : '';
   return `${abroadCard()}${empire}${machine}${warCard()}${memorialsCard()}
   <div class="card"><h2>The nations <span class="sub">${ns.length}${W.army?.war ? ' · at war with ' + esc(W.nations[W.army.war]?.name) : ''}</span></h2>
     ${ns.map(([id, n]) => `<div class="item"><div class="row between"><span class="t">${esc(n.name)}</span><span><span class="tag ${n.mood >= 3 ? 'ok' : n.mood <= 1 ? 'bad' : ''}">${W.army?.war === id ? 'At war' : MOODS[n.mood]}</span></span></div>
@@ -1185,15 +1194,16 @@ const dayOf = ms => {
   return d === new Date().toDateString() ? 'Today' : d === new Date(Date.now() - 864e5).toDateString() ? 'Yesterday' : new Date(ms).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 };
 /* full = the Gazette page: filtered by the search box and the chips, grouped by day. */
+const FX_GLYPH = { sworn: '♛', council: '♛', empire: '♛', appoint: '✠', governor: '⚜', gdecree: '✎', force: '✎', veto: '✖', seal: '◉', summon: '♪', invade: '⚔', invaded: '⚔', orders: '⚑', battle: '⚔', victory: '❦', defeat: '✝', memorial: '❦', march: '⚑', raise: '⚔', procure: '⚙', acquire: '❖', production: '⚙', protectorate: '⚑', levy: '⛁' };
 function gazetteList(n, full) {
   const ws = full ? GQ.toLowerCase().trim().split(/\s+/).filter(Boolean) : [];
-  const g = (W.gazette || []).filter(x => !full || ((!GKIND || x.kind === GKIND) && ws.every(w => String(x.text).toLowerCase().includes(w)))).slice(0, n);
+  const g = (W.gazette || []).filter(x => !full || ((!GKIND || x.kind === GKIND || (GKIND === 'moments' && x.fx)) && ws.every(w => String(x.text).toLowerCase().includes(w)))).slice(0, n);
   if (!g.length) return `<div class="empty">${full && (GQ || GKIND) ? 'Nothing in the record matches that.' : 'No news yet.'}</div>`;
   let last = '';
   return `<div class="gz">${g.map(x => {
     const d = full ? dayOf(x.at) : '', head = d !== last ? `<span class="day">${esc(d)}</span>` : ''; last = d;
     const when = full ? new Date(x.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : ago(x.at);
-    return `${head}<span class="when" title="${esc(new Date(x.at).toLocaleString())}">${when}</span><span>${esc(x.text)}${x.via ? ` <span class="tag">via ${esc(x.via)}</span>` : ''}${x.practice ? ' <span class="tag warn">practice</span>' : ''}</span>`;
+    return `${head}<span class="when" title="${esc(new Date(x.at).toLocaleString())}">${when}</span><span${x.fx ? ' class="moment"' : ''}>${x.fx ? `<span class="fx" title="A ceremony on the site">${FX_GLYPH[x.fx.k] || '✠'}</span> ` : ''}${esc(x.text)}${x.via ? ` <span class="tag">via ${esc(x.via)}</span>` : ''}${x.practice ? ' <span class="tag warn">practice</span>' : ''}</span>`;
   }).join('')}</div>`;
 }
 
@@ -1204,12 +1214,12 @@ function privyCard() {
   const sov = W.hos?.holder === W.viewer;
   const people = coll(W.citizens).filter(([, c]) => c.active !== false && !c.bot && !c.defected);
   return `<div class="card" style="border-color:var(--acc)"><h2>The Imperial Privy Council <span class="sub">sits in place of Parliament · an Order needs 5 of 8</span></h2>
-    ${(W.seats || []).map((id, i) => `<div class="item"><div class="row between"><span><span class="m">${['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][i]} · ${esc(PRIVY_SEATS[i])}</span> <span class="t">${id ? esc(who(id)) : 'Vacant'}</span></span>
-      ${sov && i >= 5 ? `<span class="row"><select class="sm" data-pc="${i - 5}"><option value="">${id ? 'Dismiss' : 'Choose…'}</option>${people.map(([cid, c]) => `<option value="${esc(cid)}">${esc(c.name)}</option>`).join('')}</select><button class="sm" data-pcbtn="${i - 5}">Do it</button></span>` : ''}</div></div>`).join('')}
+    ${(W.seats || []).map((id, i) => `<div class="item"><div class="row between"><span><span class="m">${['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][i]} · ${esc(PRIVY_SEATS[i])}${id && W.seats.filter(x => x === id).length > 1 ? ` · ${W.seats.filter(x => x === id).length} votes` : ''}</span> <span class="t">${id ? esc(who(id)) : 'Vacant'}</span></span>
+      ${sov && i >= 5 ? `<span class="row"><select class="sm" style="width:auto;min-height:0" data-pc="${i - 5}"><option value="">${id ? 'Dismiss' : 'Choose…'}</option>${people.map(([cid, c]) => `<option value="${esc(cid)}">${esc(c.name)}</option>`).join('')}</select><button class="sm" data-pcbtn="${i - 5}">Do it</button></span>` : ''}</div></div>`).join('')}
     ${(() => { const mine = coll(W.offices).filter(([, o]) => o.holder === W.viewer).flatMap(([, o]) => o.powers || []);
-      const force = sov || mine.includes('imperial'), veto = force || mine.includes('chamberlain') || mine.includes('seal');
+      const force = sov || mine.includes('imperial'), veto = force || mine.includes('chamberlain') || mine.includes('seal'), summon = mine.includes('chamberlain'), seal = mine.includes('seal');
       const pending = coll(W.proposals).filter(([, p]) => p.kind === 'bill' && ['consent', 'debate', 'vote', 'assent', 'override', 'withheld'].includes(p.stage));
-      return (force || veto) && pending.length ? `<div class="small" style="margin-top:8px"><b>Your prerogatives:</b>${pending.map(([id, p]) => `<div class="row between" style="margin-top:4px"><span>${esc(p.title)} <span class="m">${esc(p.stage)}</span></span><span>${force ? btn('privy.force', { prop: id }, 'Force it through', 'aye', `Force “${p.title}” through? It becomes law at once.`) : ''}${veto ? btn('privy.veto', { prop: id }, 'Veto', 'no', `Veto “${p.title}”?`) : ''}</span></div>`).join('')}</div>` : ''; })()}</div>`;
+      return (force || veto || summon || seal) && pending.length ? `<div class="small" style="margin-top:8px"><b>Your prerogatives:</b>${pending.map(([id, p]) => `<div class="row between" style="margin-top:4px"><span>${esc(p.title)} <span class="m">${esc(STAGE[p.stage]?.[0] || p.stage)}</span></span><span>${summon && p.stage === 'debate' ? btn('privy.summon', { prop: id }, 'Summon the Council') : ''}${seal && p.stage === 'assent' && !p.sealed ? btn('privy.seal', { prop: id }, 'Set the Seal') : ''}${force ? btn('privy.force', { prop: id }, 'Force it through', 'aye', `Force “${p.title}” through? It becomes law at once.`) : ''}${veto ? btn('privy.veto', { prop: id }, 'Veto', 'no', `Veto “${p.title}”?`) : ''}</span></div>`).join('')}</div>` : ''; })()}</div>`;
 }
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-pcbtn]'); if (!b) return;
@@ -1482,6 +1492,7 @@ function wireDo() {
 /* ---------------------------------------------------------------- gazette */
 function viewGazette() {
   const kinds = [...new Set((W.gazette || []).map(x => x.kind).filter(Boolean))].sort();
+  if ((W.gazette || []).some(x => x.fx)) kinds.unshift('moments');
   return `<div class="card"><div class="row between"><h2>The Gazette <span class="sub">the public record, live</span></h2><button id="gcopy" class="sm">Copy the digest for WhatsApp</button></div>
     <input id="gq" type="search" placeholder="Search the record: a name, a bill, a party…" value="${esc(GQ)}" style="margin-bottom:8px">
     <div class="chips" id="gkinds" style="margin-bottom:10px"><button class="chip ${GKIND ? '' : 'on'}" data-gk="">Everything</button>${kinds.map(k => `<button class="chip ${k === GKIND ? 'on' : ''}" data-gk="${esc(k)}">${esc(human(k))}</button>`).join('')}</div>
