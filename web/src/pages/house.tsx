@@ -346,7 +346,7 @@ export const CLAUSES: [string, string][] = [
   ['text', 'A rule in words'], ['office', 'Create an office'], ['set', 'Change a number'], ['budget', 'Set an office budget'], ['abolish', 'Abolish an office'],
   ['permit', 'Allow banks'], ['treaty', 'Ratify a treaty'], ['breakTreaty', 'Break a treaty'], ['repeal', 'Repeal a law'],
   ['constitution', 'Change the constitution'], ['removeHos', 'Remove the head of state'], ['war', 'Declare war'], ['peace', 'Make peace'],
-  ['job', 'Create a civic job (paid wage)'], ['zone', 'Add a Streets safe zone'], ['currency', 'Rename the currency'], ['fund', 'Wealth fund: buy or sell shares'], ['pension', 'Set veterans’ pensions'],
+  ['job', 'Create a civic job (paid wage)'], ['zone', 'Add a Streets safe zone'], ['realmName', 'Rename the realm'], ['currency', 'Rename the currency'], ['fund', 'Wealth fund: buy or sell shares'], ['pension', 'Set veterans’ pensions'],
   ['jail', 'Act: Public Order and Detention (the Realm Jail)'], ['decrees', 'Act: Government Powers (rule by decree)'],
   ['continuity', 'Act: Continuity of Parliament (no more elections)'], ['unity', 'Act: National Unity (one party)'],
   ['protection', 'Act: Protection of the State'], ['press', 'Act: Press and Information'], ['security', 'Act: State Security'],
@@ -358,7 +358,7 @@ export function NewProposal({ query }: { query: URLSearchParams }) {
     if (query.get('office')) return [{ t: 'office', template: query.get('office') }];
     // one tap to an Act: #/new?act=imperial (and any other Act)
     if (query.get('act') && (ACTS as any)[query.get('act')!]) return [{ t: query.get('act') }];
-    if (query.get('rename')) return [{ t: 'constitution', key: 'name', value: '', label: '' }];
+    if (query.get('rename')) return [{ t: 'realmName', name: '' }];
     if (query.get('repeal')) return [{ t: 'repeal', ref: query.get('repeal') }];
     if (query.get('treaty')) return [{ t: 'treaty', offer: query.get('treaty') }];
     if (query.get('banks')) return [{ t: 'permit', what: 'banks' }];
@@ -429,6 +429,8 @@ export function NewProposal({ query }: { query: URLSearchParams }) {
           <Sec title={kind === 'referendum' ? 'If Yes wins (optional)' : 'Clauses'}>
             <div class="stack">{clauses.map((e, i) => <ClauseEditor e={e} n={i + 1} onChange={(x) => setClauses(clauses.map((y, j) => (j === i ? x : y)))} onRemove={clauses.length > 1 || kind === 'referendum' ? () => setClauses(clauses.filter((_, j) => j !== i)) : undefined} />)}</div>
             <Btn kind="plain" small style={{ marginTop: 10 }} onClick={() => setClauses([...clauses, { t: 'text', text: '' }])}>Add a clause</Btn>
+            {!clauses.some((e) => e.t === 'realmName') && <Btn kind="plain" small style={{ marginTop: 10, marginLeft: 8 }} onClick={() => setClauses([...clauses, { t: 'realmName', name: '' }])}>+ Rename the realm</Btn>}
+            <p class="small muted" style={{ margin: '8px 0 0' }}>To change the country's official name, choose “Rename the realm” in a clause, or use the shortcut above. The name changes when the law is enacted.</p>
           </Sec>
         </>
       )}
@@ -678,6 +680,7 @@ export function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; 
     job: { t: 'job', title: '', pay: 5 },
     zone: { t: 'zone', text: '' },
     currency: { t: 'currency', one: '', many: '' },
+    realmName: { t: 'realmName', name: '' },
     fund: { t: 'fund', sym: 'NGR', crowns: 100, sell: false },
     pension: { t: 'pension', amount: 0 },
     jail: { t: 'jail' },
@@ -727,8 +730,7 @@ export function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; 
         {e.t === 'repeal' && <Pick value={e.ref} onChange={(v) => onChange({ ...e, ref: v })} options={w.laws.filter((l: any) => !l.repealed && l.ref !== 'L001').map((l: any) => [l.ref, `${l.ref} ${l.title}`])} />}
         {e.t === 'constitution' && (
           <>
-            <Pick value={e.key} onChange={(k) => onChange({ t: 'constitution', key: k, value: k === 'name' ? '' : k === 'seats' ? 7 : k === 'termDays' ? 21 : k === 'hos' ? (w.config.hos === 'monarchy' ? 'republic' : 'monarchy') : HOS_METHODS[w.config.hos][0].id, label: '' })} options={[['seats', 'Seats in Parliament'], ['termDays', 'Time between elections'], ['hos', 'Monarchy or republic'], ['hosMethod', 'How the head of state is chosen'], ['name', 'The name of the realm']]} />
-            {e.key === 'name' && <><Field label={`New name (now: ${w.config.realmName})`} value={e.value || ''} onInput={(v) => onChange({ ...e, value: v, label: v })} placeholder="e.g. The Aurel Empire" /><p class="small muted" style={{ margin: 0 }}>Letters and spaces, 3 to 40 characters. It must not sound like a nation abroad.</p></>}
+            <Pick value={e.key} onChange={(k) => onChange({ t: 'constitution', key: k, value: k === 'seats' ? 7 : k === 'termDays' ? 21 : k === 'hos' ? (w.config.hos === 'monarchy' ? 'republic' : 'monarchy') : HOS_METHODS[w.config.hos][0].id, label: '' })} options={[['seats', 'Seats in Parliament'], ['termDays', 'Time between elections'], ['hos', 'Monarchy or republic'], ['hosMethod', 'How the head of state is chosen']]} />
             {e.key === 'seats' && <Seg value={String(e.value)} onChange={(v) => onChange({ ...e, value: Number(v), label: v })} options={[['3', '3'], ['5', '5'], ['7', '7'], ['9', '9']]} />}
             {e.key === 'termDays' && <Seg value={String(e.value)} onChange={(v) => onChange({ ...e, value: Number(v), label: `${Number(v) / 7} weeks` })} options={[['14', '2 weeks'], ['21', '3 weeks'], ['28', '4 weeks']]} />}
             {e.key === 'hos' && <Seg value={e.value} onChange={(v) => onChange({ ...e, value: v, label: v === 'monarchy' ? 'a Monarch' : 'a President' })} options={[['monarchy', 'Monarchy'], ['republic', 'Republic']]} />}
@@ -739,6 +741,7 @@ export function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; 
         {e.t === 'pension' && <><Field label="Crowns each payday per name on a memorial (0 cuts them, 10 at most)" type="number" value={e.amount} onInput={(v) => onChange({ ...e, amount: whole(v, 10) })} /><p class="small muted" style={{ margin: 0 }}>Now {w.config.veteranPension ?? 3} crowns, to {Object.keys(w.pensions || {}).length} veterans.</p></>}
         {e.t === 'fund' && <><div class="grid2"><Pick label="Company" value={e.sym} onChange={(v) => onChange({ ...e, sym: v })} options={COMPANIES.map((c) => [c.sym, `${c.sym} ${c.name}`])} /><Field label="Crowns (10–500)" type="number" value={e.crowns} onInput={(v) => onChange({ ...e, crowns: Math.max(10, whole(v, 500)) })} /></div><Seg value={e.sell ? 'sell' : 'buy'} onChange={(v) => onChange({ ...e, sell: v === 'sell' })} options={[['buy', 'Buy'], ['sell', 'Sell']]} /><p class="small muted" style={{ margin: 0 }}>The Treasury trades at the price on the day the bill becomes law. Dividends go to the Treasury.</p></>}
         {e.t === 'currency' && <div class="grid2"><Field label="New name (one)" value={e.one || ''} onInput={(v) => onChange({ ...e, one: v })} placeholder="e.g. ducat" /><Field label="Plural (optional)" value={e.many || ''} onInput={(v) => onChange({ ...e, many: v })} placeholder="e.g. ducats" /></div>}
+        {e.t === 'realmName' && <><Field label={`New official name of the realm (now: ${w.config.realmName})`} value={e.name || ''} onInput={(v) => onChange({ ...e, name: v })} placeholder="e.g. Republic of Aldmere" /><p class="small muted" style={{ margin: 0 }}>3 to 60 characters. It must not sound like a nation abroad. Past names are kept on record.</p></>}
         {e.t === 'zone' && <Field label="Where nothing counts" value={e.text} onInput={(v) => onChange({ ...e, text: v })} placeholder="e.g. The library" />}
         {(e.t === 'war' || e.t === 'peace') && <Pick value={e.nation} onChange={(v) => onChange({ ...e, nation: v, gain: null, cede: null })} options={Object.values(w.nations).map((x: any) => [x.id, x.name])} />}
         {e.t === 'peace' && (() => {

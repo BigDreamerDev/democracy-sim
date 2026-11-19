@@ -466,7 +466,6 @@ const SETTABLE = {
 const CONST_KEYS = {
   seats: ['Seats in Parliament', [3, 5, 7, 9]], termDays: ['Time between general elections', [[14, '2 weeks'], [21, '3 weeks'], [28, '4 weeks']]],
   hos: ['Head of state', [['monarchy', 'Monarchy'], ['republic', 'Republic']]],
-  name: ['The name of the realm', null],
   hosMethod: ['How the head of state is chosen', [['life', 'Monarch: elected for life'], ['lot', 'Monarch: drawn by lot every 4 weeks'], ['rotate', 'Monarch: each citizen a week in turn'], ['citizens', 'President: elected by citizens'], ['house', 'President: elected by MPs']]]
 };
 const OFFICE_TEMPLATES = { treasury: 'Treasury (Chancellor)', reserve: 'Federal Reserve', foreign: 'Foreign Office', security: 'Security Service', army: 'The Army', court: 'Supreme Court', guard: 'Protection Service', whip: 'Chief Whip', emeritus: 'Office of the Monarch Emeritus (royal pension for a past monarch)' };
@@ -486,7 +485,7 @@ const ACTS = {
 const CLAUSE_TYPES = {
   text: 'Words only (a law in plain text)', set: 'Change a number (tax, pay, timings)', constitution: 'Change the constitution',
   office: 'Create an office', abolish: 'Abolish an office', budget: 'Set an office budget', repeal: 'Repeal a law',
-  removeHos: 'Remove the head of state', permit: 'Allow private banks', job: 'Create a civic job', zone: 'Add a Streets safe zone', currency: 'Rename the currency',
+  removeHos: 'Remove the head of state', permit: 'Allow private banks', job: 'Create a civic job', zone: 'Add a Streets safe zone', realmName: 'Rename the realm', currency: 'Rename the currency',
   treaty: 'Ratify a treaty offer', breakTreaty: 'Break a treaty', war: 'Declare war', peace: 'Make peace (can trade land and money)',
   fund: 'Wealth fund: buy or sell shares', pension: 'Set veterans’ pensions',
   ...Object.fromEntries(Object.entries(ACTS).map(([k, v]) => [k, v.split(' — ')[0]]))
@@ -499,8 +498,8 @@ function clauseFields(t, c = {}) {
     case 'set': return `<div class="fields">${f('key', `<select data-c="key">${opt(Object.entries(SETTABLE).map(([k, v]) => [k, `${v[0]} (${v[2]}–${v[3]}${v[1]})`]), c.key)}</select>`, 'Setting')}${f('value', `<input type="number" data-c="value" data-num value="${esc(c.value ?? '')}">`, 'New value')}</div>`;
     case 'constitution': {
       const key = c.key || 'hos';
-      const val = key === 'name' ? `<input data-c="value" value="${esc(c.value || '')}" placeholder="e.g. The Aurel Empire">` : `<select data-c="value" ${key === 'seats' || key === 'termDays' ? 'data-num' : ''}>${opt(CONST_KEYS[key][1], c.value)}</select>`;
-      return `<div class="fields">${f('key', `<select data-c="key" data-rebuild>${opt(Object.entries(CONST_KEYS).map(([k, v]) => [k, v[0]]), key)}</select>`, 'What to change')}${f('value', val, key === 'name' ? `New name (now ${esc(W?.config?.realmName || '')})` : 'Becomes')}</div>`;
+      const val = `<select data-c="value" ${key === 'seats' || key === 'termDays' ? 'data-num' : ''}>${opt(CONST_KEYS[key][1], c.value)}</select>`;
+      return `<div class="fields">${f('key', `<select data-c="key" data-rebuild>${opt(Object.entries(CONST_KEYS).map(([k, v]) => [k, v[0]]), key)}</select>`, 'What to change')}${f('value', val, 'Becomes')}</div>`;
     }
     case 'office': return `<div class="fields">${f('template', `<select data-c="template">${opt(Object.entries(OFFICE_TEMPLATES), c.template)}</select>`, 'Which office')}</div><small class="mut">For a custom office with your own powers, use the JSON box under Advanced.</small>`;
     case 'abolish': return f('office', `<select data-c="office">${opt(SOURCES.office(), c.office)}</select>`, 'Office');
@@ -508,6 +507,7 @@ function clauseFields(t, c = {}) {
     case 'repeal': return f('ref', `<select data-c="ref">${opt(coll(W?.laws).map(([, l]) => [l.ref, `${l.ref} — ${l.title}`]), c.ref)}</select>`, 'Law to repeal');
     case 'job': return `<div class="fields">${f('title', `<input data-c="title" value="${esc(c.title || '')}">`, 'The job (6–120 characters)')}${f('pay', `<input type="number" data-c="pay" data-num min="1" max="30" value="${esc(c.pay ?? '')}">`, 'Pay each time (1–30)')}</div>`;
     case 'zone': return f('text', `<input data-c="text" value="${esc(c.text || '')}">`, 'Where the safe zone is');
+    case 'realmName': return `${f('name', `<input data-c="name" minlength="3" maxlength="60" value="${esc(c.name || '')}" placeholder="e.g. Republic of Aldmere">`, `New official name of the realm (now ${esc(W?.config?.realmName || '')})`)}<small class="mut">3–60 characters, not like a nation abroad. The name changes only when the bill becomes law or an authorised decree is issued.</small>`;
     case 'currency': return `<div class="fields">${f('one', `<input data-c="one" value="${esc(c.one || '')}" placeholder="e.g. ducat">`, 'New name')}${f('many', `<input data-c="many" value="${esc(c.many || '')}" placeholder="e.g. ducats (optional)">`, 'Plural')}</div>`;
     case 'treaty': return f('offer', `<select data-c="offer">${opt(SOURCES.offer(), c.offer)}</select>`, 'Treaty offer');
     case 'breakTreaty': return f('treaty', `<select data-c="treaty">${opt(SOURCES.treaty(), c.treaty)}</select>`, 'Treaty');
@@ -543,6 +543,7 @@ function readClauses(root) {
   });
 }
 const PRESETS = {
+  renameRealm: { name: 'Rename the realm', title: 'Realm Name Bill', summary: 'Changes the official name of the realm.', clauses: [{ t: 'realmName', name: '' }] },
   crown: {
     name: 'The Crown Sovereignty Act (absolute monarchy)',
     title: 'The Crown Sovereignty Act', summary: 'Makes the Monarch sovereign for life and gives the Crown’s government every power the realm can grant: rule by decree, an indefinite Parliament, one party, and protection from removal.',
@@ -554,7 +555,6 @@ const PRESETS = {
     ]
   },
   imperial: { name: 'The Imperial Prerogative Act (an empire)', title: 'The Imperial Prerogative Act', summary: 'Proclaims the empire: the Monarch reigns as Emperor or Empress, the realm takes an imperial name, and the Imperial High Commission governs its provinces and protectorates.', clauses: [{ t: 'imperial' }] },
-  rename: { name: 'Rename the realm', title: 'Realm (Name) Act', summary: 'Gives the realm a new name.', clauses: [{ t: 'constitution', key: 'name', value: '' }] },
   emeritus: { name: 'A royal pension for a past monarch', title: 'Royal Pensions Act', summary: 'Creates the Office of the Monarch Emeritus: the reigning monarch may grant it to someone who has reigned before, with a pension each payday, an honour and a style.', clauses: [{ t: 'office', template: 'emeritus' }, { t: 'set', key: 'emeritusPay', value: 10 }] },
   honours: { name: 'More honours a week for the Crown', title: 'Royal Honours Decree', summary: 'The head of state may give up to five honours a week.', clauses: [{ t: 'set', key: 'honoursPerWeek', value: 5 }] },
   veto: { name: 'The Royal Veto (strike bills)', title: 'Royal Veto Decree', summary: 'The Monarch may strike any pending bill from the order paper.', clauses: [{ t: 'veto' }] },
@@ -734,7 +734,7 @@ function describeClause(c) {
   switch (c.t) {
     case 'text': return c.text;
     case 'set': return `Sets ${(SETTABLE[c.key]?.[0] || c.key).toLowerCase()} to ${c.value}${SETTABLE[c.key]?.[1] || ''}${typeof c.from === 'number' ? ` (was ${c.from})` : ''}.`;
-    case 'constitution': { if (c.key === 'name') return `Renames the realm: it becomes the ${c.value}.`; const k = CONST_KEYS[c.key]; const v = (k?.[1] || []).find(x => (Array.isArray(x) ? x[0] : x) == c.value); return `Constitution: ${(k?.[0] || c.key).toLowerCase()} becomes ${c.label || (Array.isArray(v) ? v[1] : c.value)}.`; }
+    case 'constitution': { const k = CONST_KEYS[c.key]; const v = (k?.[1] || []).find(x => (Array.isArray(x) ? x[0] : x) == c.value); return `Constitution: ${(k?.[0] || c.key).toLowerCase()} becomes ${c.label || (Array.isArray(v) ? v[1] : c.value)}.`; }
     case 'office': return c.template ? `Creates the ${OFFICE_TEMPLATES[c.template] || c.template}.` : `Creates the office of ${c.office?.name}.`;
     case 'abolish': return `Abolishes the ${W.offices?.[c.office]?.name || 'office'}.`;
     case 'budget': return `Sets the ${W.offices?.[c.office]?.name || 'office'} budget to ${c.value} crowns a week.`;
@@ -746,6 +746,7 @@ function describeClause(c) {
     case 'pension': return c.amount > 0 ? `Veterans on a war memorial are paid ${c.amount} crowns each payday.` : 'Veterans’ pensions are cut.';
     case 'job': return `Creates a civic job: ${c.title} (${c.pay} crowns).`;
     case 'zone': return `Adds a Streets safe zone: ${c.text}.`;
+    case 'realmName': return `Changes the official name of the realm to ${c.name || '(enter a name)'}.`;
     case 'currency': return `Renames the currency: the crown becomes the ${c.one}${c.many ? ` (${c.many})` : ''}.`;
     default: return ACTS[c.t] ? 'Enacts the ' + ACTS[c.t] : CLAUSE_TYPES[c.t] || c.t;
   }

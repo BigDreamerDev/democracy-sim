@@ -4,7 +4,7 @@ export const CHANGES: { n: number; text: string }[] = [
   { n: 54, text: 'Bills read like bills: articles, sections, numbered clauses, (a)/(i) sub-clauses, bullets and preambles are laid out properly.' },
   { n: 53, text: 'The Imperial High Commission: under the Imperial Prerogative Act it can levy provinces, appoint governors and take friendly nations as protectorates. Government › Powers, or World › The map.' },
   { n: 52, text: 'The Imperial Prerogative Act is now a single clause: the Monarch reigns as Emperor or Empress and the High Commission is set up. A PM with decree powers can proclaim it in one tap.' },
-  { n: 51, text: 'Rename the realm by law: a constitution clause “The name of the realm”. Old names are kept. The Free City of Aurel is now Austrava, so it no longer clashes with ours.' },
+  { n: 51, text: 'Renaming the realm by law now checks the name isn’t like a nation abroad, and keeps the old names on record. The Free City of Aurel is now Austrava, so it no longer clashes with ours.' },
   { n: 50, text: 'Float your own company or bank on the Exchange. Sell shares to raise money, pay dividends, and watch out: shareholders can vote you out, and a company that runs out of money goes bust. Money › The Exchange.' },
   { n: 49, text: 'A government in exile: defectors can declare one, citizens at home can back it, and with enough support its leader can lead the exiles home for a coup night.' },
   { n: 48, text: 'Rival courts: defectors at the same court can steal each other’s favour or expose each other’s secrets.' },

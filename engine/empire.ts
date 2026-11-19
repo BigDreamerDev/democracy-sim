@@ -71,8 +71,8 @@ export function renameRealm(w: W, to: string, how: string) {
 export function checkRealmName(w: W, v: unknown) {
   if (typeof v !== 'string') fail('Write the new name.');
   const t = v.trim().replace(/\s+/g, ' ');
-  if (t.length < 3 || t.length > 40) fail('A realm name is 3 to 40 characters.');
-  if (!/^[\p{L}][\p{L} '’-]*$/u.test(t)) fail('A realm name is letters and spaces only.');
+  if (t.length < 3 || t.length > 60) fail('A realm name is 3 to 60 characters.');
+  if (!/^[\p{L}\p{N}][\p{L}\p{N} '’&.,-]*$/u.test(t)) fail('Use letters, numbers, spaces and ordinary punctuation in the realm name.');
   const words = (s: string) => s.toLowerCase().replace(/^the /, '').split(/\s+/).filter((x) => !['of', 'the', 'free', 'city', 'commonwealth', 'isles', 'kingdom', 'empire', 'republic', 'realm'].includes(x));
   const mine = new Set(words(t));
   const clash = (Object.values(w.nations) as any[]).find((n) => words(n.name).some((x) => mine.has(x)));

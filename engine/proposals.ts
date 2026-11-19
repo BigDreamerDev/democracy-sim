@@ -37,7 +37,7 @@ export const SETTABLE: Record<string, { label: string; unit: string; min: number
   voteHours: { label: 'Voting length', unit: ' hours', min: 12, max: 48 }
 };
 export const CONSTITUTIONAL = ['constitution', 'removeHos'];
-export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'fund', 'pension', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'currency', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto', 'imperial'];
+export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'fund', 'pension', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'currency', 'realmName', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto', 'imperial'];
 
 export function describe(w: W, e: any): string {
   switch (e.t) {
@@ -69,7 +69,6 @@ export function describe(w: W, e: any): string {
     case 'repeal':
       return `Repeals ${e.ref}${w.laws.find((l: any) => l.ref === e.ref) ? ', the ' + w.laws.find((l: any) => l.ref === e.ref).title : ''}.`;
     case 'constitution':
-      if (e.key === 'name') return `Renames the realm: the ${w.config.realmName} becomes the ${e.value}.`;
       return `Changes the constitution: ${({ seats: 'seats in Parliament', termDays: 'time between general elections', hos: 'the head of state', hosMethod: 'how the head of state is chosen' } as any)[e.key]} becomes ${e.label ?? e.value}.`;
     case 'removeHos':
       return w.config.hos === 'monarchy' ? `Removes the ${w.config.hosTitle}. A new Monarch is chosen as the constitution says.` : 'Impeaches the President. A new one is chosen as the constitution says.';
@@ -83,6 +82,8 @@ export function describe(w: W, e: any): string {
       return `The realm’s wealth fund ${e.sell ? 'sells' : 'buys'} up to ${e.crowns} crowns of ${company(e.sym)?.name ?? e.sym} shares on the Exchange${e.sell ? ', paid to the Treasury' : ', paid for by the Treasury'}.`;
     case 'currency':
       return `Renames the currency: the crown becomes the ${e.one} (plural ${e.many}).`;
+    case 'realmName':
+      return `Renames the realm from ${w.config.realmName} to ${e.name}.`;
     case 'jail':
     case 'decrees':
     case 'continuity':
@@ -171,6 +172,11 @@ function checkClause(w: W, e: any, byDecree = false) {
       if (e.one === 'crown') fail('It is already the crown.');
       break;
     }
+    case 'realmName': {
+      e.name = checkRealmName(w, e.name);
+      if (e.name === w.config.realmName) fail('The realm already has that name.');
+      break;
+    }
     case 'treaty':
       if (typeof e.offer !== 'string') fail('Pick a treaty offer.');
       break;
@@ -216,12 +222,6 @@ function checkClause(w: W, e: any, byDecree = false) {
       break;
     }
     case 'constitution': {
-      // renaming the realm: any plain name that is not mistaken for a nation abroad
-      if (e.key === 'name') {
-        e.value = checkRealmName(w, e.value);
-        e.label = e.value;
-        break;
-      }
       const ok: Record<string, unknown[]> = { seats: [3, 5, 7, 9], termDays: [14, 21, 28], hos: ['monarchy', 'republic'] };
       if (e.key === 'hosMethod') ok.hosMethod = (HOS_METHODS[w.config.hos] || []).map((m: any) => m.id);
       if (!own(ok, e.key)) fail('Pick what to change in the constitution.');
@@ -924,6 +924,10 @@ export function applyClause(w: W, e: any, ref: string) {
       w.config.currency = { one: e.one, many: e.many, law: ref };
       gazette(w, 'law', `The crown is no more. From today the currency of the realm is the ${e.one}: each old crown becomes one ${e.one}.`, '#/economy');
       break;
+    case 'realmName': {
+      renameRealm(w, e.name, `law ${ref}`);
+      break;
+    }
     case 'pension':
       w.config.veteranPension = e.amount;
       gazette(w, 'law', e.amount > 0 ? `Veterans’ pensions are set at ${e.amount} crowns a payday.` : 'Veterans’ pensions are cut.', '#/fame');
@@ -984,7 +988,6 @@ export function applyClause(w: W, e: any, ref: string) {
         startHosSelection(w);
       }
       if (e.key === 'hosMethod') w.config.hosMethod = e.value;
-      if (e.key === 'name' && typeof e.value === 'string') renameRealm(w, e.value, `law ${ref}`);
       break;
     case 'removeHos': {
       // under the Protection of the State Act only a decree can remove the head of state: a bill's removal clause is void,
