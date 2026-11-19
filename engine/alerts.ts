@@ -4,6 +4,7 @@
 import { canMoneyMotion, describeMotion } from './economy';
 import { W, Id, nm, isHOS, isPM, isMP, intrigueOpen, hasPower, holderOf, sideOf, bal, nextAt, mps, DAY, speaksForHouse } from './core';
 import { RED_BOX } from './glory';
+import { owesOath } from './oath';
 import { canVote , contenders, commands, leaderOfSide, FORM_DAYS } from './politics';
 import { canVoteOn, KINDS, whipLine, canWhip, rebelsOn, amendmentLine } from './proposals';
 import { leaderOfOpposition } from './politics';
@@ -19,6 +20,7 @@ export function needs(w: W, me: Id): Alert[] {
   Object.values(w.elections).forEach((e: any) => {
     if (e.status === 'open' && canVote(w, e, me) && !e.ballots[me]) out.push({ key: 'election:' + e.id, href: '#/election/' + e.id, label: `${Object.keys(e.candidates).length} standing`, title: e.title, at: e.closesAt });
   });
+  if (owesOath(w, me)) out.push({ key: 'oath:' + w.oath.since, href: '#/oath', label: w.oath.refused?.[me] ? 'You refused' : 'Imperial Oath', title: 'Swear the Imperial Oath', at: w.oath.settled ? undefined : w.oath.dueAt, urgent: true });
   Object.values(w.proposals).forEach((p: any) => {
     const book = p.stage === 'override' ? p.overrideVotes || {} : p.votes;
     const line = p.stage === 'vote' && p.voters === 'mps' ? whipLine(w, p, me) : null;

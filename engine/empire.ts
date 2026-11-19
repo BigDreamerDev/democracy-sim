@@ -8,6 +8,7 @@ import { theName, W, Id, DAY, fail, own, cit, nm, gazette, transfer, bal, ca, ch
 import { createOffice, TEMPLATES } from './offices';
 import { imperialPurse } from './warmachine';
 import { establishPrivy, dissolvePrivy } from './privy';
+import { callOath, endOath, mustHaveSworn } from './oath';
 import { callGeneralElection } from './politics';
 import { PROVINCES, seedProvinces, moodShift, atWar } from './foreign';
 
@@ -54,12 +55,14 @@ export function proclaimEmpire(w: W, ref: string) {
   if (!/\bempire\b/i.test(w.config.realmName)) renameRealm(w, realmPlace(w) === 'the Realm' ? 'The Empire' : `The ${realmPlace(w)} Empire`, 'the Imperial Prerogative Act');
   adoptHighCommission(w, ref);
   establishPrivy(w, ref);
+  callOath(w);
   gazette(w, 'law', `The Imperial Prerogative Act is law. ${w.config.hos === 'monarchy' ? `${nm(w, w.hos.holder)} reigns as ${w.config.hosTitle}` : 'The realm is an Empire'}, ${theName(w.config.realmName)} is proclaimed, the Imperial Privy Council sits in place of Parliament, and the Imperial High Commission governs the empire and commands its forces.`, '#/atlas', { k: 'empire', who: w.hos?.holder || null, title: w.config.hosTitle, place: w.config.realmName });
 }
 export function unproclaimEmpire(w: W) {
   if (w.config.hos === 'monarchy') w.config.hosTitle = royalTitle(w.config.hosTitle);
   Object.values(w.nations).forEach((n: any) => n.protectorate && ((n.protectorate = null), moodShift(n, 1, 'Our protectorate ended')));
   w.config.imperialFrom = null;
+  endOath(w);
   if (w.privy) (dissolvePrivy(w), callGeneralElection(w, w.now + 3 * DAY));
   gazette(w, 'law', `The Imperial Prerogative Act is repealed. ${w.config.hos === 'monarchy' ? `The ${w.config.hosTitle} reigns again as a monarch, not an ${/king/i.test(w.config.hosTitle) ? 'Emperor' : 'Empress'}` : 'The imperial powers lapse'}, and every protectorate is released. The realm keeps its name until a law changes it.`, '#/laws');
 }
@@ -111,6 +114,7 @@ export function governor(w: W, actor: Id, pid: unknown, target: unknown) {
   }
   const c = cit(w, target as Id);
   if (!c.active || c.bot || c.defected) fail('Pick a citizen at home.');
+  mustHaveSworn(w, c.id, c.name);
   mustBeFree(w, c.id);
   p.governor = c.id;
   stamp(w, c.id, 'Governor', name, 'ink');

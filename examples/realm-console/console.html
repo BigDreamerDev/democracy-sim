@@ -349,7 +349,7 @@ function sourceFor(name, type) {
 const GROUPS = [
   ['Voting & bills', /^(prop|draft|pledge)\./], ['Elections', /^(election|newsnight)\./], ['Convention', /^(convention|tutorial)\./],
   ['Parties & coalitions', /^(party|coalition)\./], ['The Crown', /^crown\./], ['Government', /^(gov|office|hos|q|reserve)\./], ['Money', /^(money|bond|bank|venture|market|job)\./],
-  ['The Empire', /^imperial\./], ['Governors', /^governor\./], ['The Privy Council', /^privy\./], ['War & the Army', /^(war|army)\./], ['The Exchange', /^exchange\./], ['Life abroad', /^(defect|abroad|agent|asylum|hostage)\.|^exile\.(declare|join|leave|return)$/],
+  ['The Empire', /^imperial\./], ['Governors', /^governor\./], ['The Imperial Oath', /^oath\./], ['The Privy Council', /^privy\./], ['War & the Army', /^(war|army)\./], ['The Exchange', /^exchange\./], ['Life abroad', /^(defect|abroad|agent|asylum|hostage)\.|^exile\.(declare|join|leave|return)$/],
   ['Foreign affairs', /^(foreign|intel|exile)\./], ['Backroom', /^(deal|card|demand|plot|security|coup)\./],
   ['Regimes & coups', /^(regime|police|prison|transition|reckoning|jail)\./], ['Press', /^press\./], ['Court', /^court\./],
   ['Crises', /^crisis\./], ['Streets & market', /^(streets|bounty|stall|hunt)\./], ['Daily & me', /^(daily|me)\./],
@@ -1194,7 +1194,7 @@ const dayOf = ms => {
   return d === new Date().toDateString() ? 'Today' : d === new Date(Date.now() - 864e5).toDateString() ? 'Yesterday' : new Date(ms).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 };
 /* full = the Gazette page: filtered by the search box and the chips, grouped by day. */
-const FX_GLYPH = { sworn: '♛', council: '♛', empire: '♛', appoint: '✠', governor: '⚜', gdecree: '✎', force: '✎', veto: '✖', seal: '◉', summon: '♪', invade: '⚔', invaded: '⚔', orders: '⚑', battle: '⚔', victory: '❦', defeat: '✝', memorial: '❦', march: '⚑', raise: '⚔', procure: '⚙', acquire: '❖', production: '⚙', protectorate: '⚑', levy: '⛁' };
+const FX_GLYPH = { oath: '✋', oathcall: '✠', refuse: '✖', sworn: '♛', council: '♛', empire: '♛', appoint: '✠', governor: '⚜', gdecree: '✎', force: '✎', veto: '✖', seal: '◉', summon: '♪', invade: '⚔', invaded: '⚔', orders: '⚑', battle: '⚔', victory: '❦', defeat: '✝', memorial: '❦', march: '⚑', raise: '⚔', procure: '⚙', acquire: '❖', production: '⚙', protectorate: '⚑', levy: '⛁' };
 function gazetteList(n, full) {
   const ws = full ? GQ.toLowerCase().trim().split(/\s+/).filter(Boolean) : [];
   const g = (W.gazette || []).filter(x => !full || ((!GKIND || x.kind === GKIND || (GKIND === 'moments' && x.fx)) && ws.every(w => String(x.text).toLowerCase().includes(w)))).slice(0, n);
@@ -1209,6 +1209,20 @@ function gazetteList(n, full) {
 
 /* ---------------------------------------------------------------- the house */
 const PRIVY_SEATS = ['The Sovereign', 'Imperial High Commissioner', 'The General', 'Lord Chamberlain', 'Lord Privy Seal', 'Privy Councillor', 'Privy Councillor', 'Privy Councillor'];
+function oathCard() {
+  const o = W.oath;
+  if (!o) return '';
+  const sov = W.hos?.holder;
+  const him = /^(King|Emperor)$/.test(W.config?.hosTitle || '');
+  const people = coll(W.citizens).filter(([id, c]) => c.active !== false && !c.bot && id !== sov);
+  const sworn = people.filter(([id]) => o.sworn?.[id]), refused = people.filter(([id]) => o.refused?.[id] && !o.sworn?.[id]), waiting = people.filter(([id]) => !o.sworn?.[id] && !o.refused?.[id]);
+  const owe = W.viewer !== sov && !o.sworn?.[W.viewer];
+  const names = xs => xs.map(([, c]) => esc(c.name)).join(', ') || 'nobody';
+  return `<div class="card" style="border-color:#C9A13B"><h2>The Imperial Oath <span class="sub">${o.settled ? 'the time for swearing is over' : 'swear by ' + esc(new Date(o.dueAt - (serverOffset || 0)).toLocaleString())}</span></h2>
+    <p style="font-style:italic;margin:0 0 8px">I swear that I will be faithful and bear true allegiance to ${him ? 'His' : 'Her'} Imperial Majesty${sov ? ' ' + esc(W.config.hosTitle) + ' ' + esc(who(sov)) : ''}, ${him ? 'his' : 'her'} heirs and successors, and that I will serve ${esc(W.config.realmName)} according to its laws, in Council and out of it.</p>
+    ${owe ? `<div class="row">${btn('oath.swear', {}, 'I swear it', 'aye')}${o.refused?.[W.viewer] ? '' : btn('oath.refuse', {}, 'I refuse', 'no', 'Refuse the Imperial Oath? You lose 3 approval and every office you hold.')}</div><p class="small mut">Until you swear you cannot vote in Council, lay an Order or hold office.</p>` : W.viewer === sov ? '<p class="small mut">The oath is sworn to you.</p>' : '<p class="small">You have sworn it.</p>'}
+    <div class="small"><b>Sworn (${sworn.length}):</b> ${names(sworn)}</div>${o.settled ? '' : `<div class="small"><b>Yet to swear (${waiting.length}):</b> ${names(waiting)}</div>`}<div class="small"><b>Refused (${refused.length}):</b> ${names(refused)}</div></div>`;
+}
 function privyCard() {
   if (!W.privy) return '';
   const sov = W.hos?.holder === W.viewer;
@@ -1231,7 +1245,7 @@ function viewHouse() {
   const all = coll(W.proposals).map(([, p]) => p).sort((a, b) => (b.n || 0) - (a.n || 0));
   const open = all.filter(p => !['enacted', 'failed', 'vetoed', 'withheld', 'withdrawn'].includes(p.stage));
   const done = all.filter(p => !open.includes(p)).slice(0, 15);
-  return `${privyCard()}<div class="card"><h2>${W.privy ? 'Orders before the Council' : 'Open proposals'}</h2>${open.map(p => proposalCard(p)).join('') || '<div class="empty">Nothing open.</div>'}</div>
+  return `${oathCard()}${privyCard()}<div class="card"><h2>${W.privy ? 'Orders before the Council' : 'Open proposals'}</h2>${open.map(p => proposalCard(p)).join('') || '<div class="empty">Nothing open.</div>'}</div>
     <div class="card"><h2>The statute book <span class="sub">${(W.laws || []).length} laws</span></h2>${(W.laws || []).slice().reverse().map(l => `<details class="item"><summary><span class="t">${esc(l.ref)} ${esc(l.title)}</span> <span class="m">${esc(l.summary || '')}</span></summary><ol class="small">${(l.text || []).map(t => `<li>${billHtml(t)}</li>`).join('')}</ol></details>`).join('') || '<div class="empty">No laws yet.</div>'}</div>
     <div class="card"><h2>Recently decided</h2>${done.map(p => proposalCard(p, true)).join('') || '<div class="empty">Nothing yet.</div>'}</div>`;
 }

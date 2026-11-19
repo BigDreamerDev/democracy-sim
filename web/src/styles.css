@@ -1302,7 +1302,10 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 @keyframes cer-build { from { transform: scaleY(0); } }
 .cer-e-fort .raise { animation: cer-hoist 1.2s cubic-bezier(.16, 1, .3, 1) both 1.4s; }
 @keyframes cer-hoist { from { opacity: 0; transform: translateY(46px); } }
-/* certificate */
+/* the oath: the book opens, the hand is laid on it */
+.cer-e-oath .book { animation: cer-show-up 1s cubic-bezier(.16, 1, .3, 1) both .3s; }
+.cer-e-oath .hand { animation: cer-hand 1.4s cubic-bezier(.16, 1, .3, 1) both 1s; }
+@keyframes cer-hand { from { opacity: 0; transform: translateY(60px); } }
 /* flag: hoisted, then flying */
 .cer-e-flag .rise { animation: cer-hoist2 2s cubic-bezier(.16, 1, .3, 1) both .3s; }
 @keyframes cer-hoist2 { from { transform: translateY(96px); } }
@@ -1318,3 +1321,15 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 /* the gallery of ceremonies (#/ceremonies) */
 .cer-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .gov-desk { flex-basis: 100%; display: grid; gap: 6px; margin-top: 6px; padding: 10px; border-left: 3px solid var(--gold); background: var(--soft); }
+/* the Imperial Oath (web/src/pages/oath.tsx) */
+.oath-words { margin: 0; padding: 14px 18px; border-left: 3px solid var(--gold); background: var(--soft); font-family: var(--serif); font-size: 19px; line-height: 1.45; font-style: italic; }
+.oath-prompt { position: fixed; inset: 0; z-index: 8500; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(18, 7, 13, .72); backdrop-filter: blur(3px); animation: cer-in .4s ease both; }
+.oath-sheet { position: relative; max-width: 560px; width: 100%; padding: 28px 26px 22px; background: #F6EBDC; color: #1B2430; border: 3px double #C9A13B; border-radius: 3px; box-shadow: 0 20px 60px rgba(0, 0, 0, .45), inset 0 0 0 8px rgba(201, 161, 59, .12); text-align: center; animation: oath-up .7s cubic-bezier(.16, 1, .3, 1) both .1s; }
+@keyframes oath-up { from { opacity: 0; transform: translateY(24px) scale(.97); } }
+.oath-sheet .oath-words { text-align: left; background: rgba(201, 161, 59, .1); color: #2a0e1c; }
+.oath-crest { font-family: var(--serif); font-size: 40px; color: #5E1B3C; line-height: 1; }
+.oath-kicker { margin-top: 6px; font: 700 11px/1 var(--sans); letter-spacing: .3em; text-transform: uppercase; color: #7A5A1E; }
+.oath-title { margin: 8px 0 14px; font-family: var(--serif); font-weight: 400; font-size: 34px; color: #2a0e1c; }
+.oath-note { margin: 12px 0 0; color: #4A3B2E; }
+.oath-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center; margin-top: 16px; }
+.oath-actions .linkish { color: #4A3B2E; }

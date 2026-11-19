@@ -8,6 +8,7 @@ import { W, Id, DAY, HOUR, fail, nm, gazette, stamp, cit, isHOS, hasPower, exile
 import { createOffice } from './offices';
 import { checkClauses, enactDecree, history } from './proposals';
 import { voidMarket } from './markets';
+import { mustHaveSworn } from './oath';
 
 export const PRIVY_SEATS = 8;
 export const SEAT_NAMES = ['The Sovereign', 'Imperial High Commissioner', 'The General', 'Lord Chamberlain', 'Lord Privy Seal', 'Privy Councillor', 'Privy Councillor', 'Privy Councillor'];
@@ -80,6 +81,7 @@ export function appointCouncillor(w: W, actor: Id, seat: unknown, target: unknow
   }
   const c = cit(w, target as Id);
   if (!fit(w, c.id) || exiled(w, c.id) || detained(w, c.id)) fail('Pick a free citizen at home.');
+  mustHaveSworn(w, c.id, c.name);
   if (w.privy.councillors[seat] === c.id) fail(`${c.name} already holds that seat.`);
   w.privy.councillors[seat] = c.id;
   syncPrivy(w);

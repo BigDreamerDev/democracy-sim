@@ -1,5 +1,6 @@
 // Proposals: one lifecycle for everything Parliament does. Draft, debate, vote, then the result.
 // The kind only changes who votes and what happens. Also: laws, PM's Questions, formal questions and lobbying.
+import { mustHaveSworn, owesOath } from './oath';
 import { startWar, endWar } from './war';
 import { company, fundTrade, lobbyOutcome } from './exchange';
 import { PROVINCES } from './foreign';
@@ -266,7 +267,7 @@ export function propose(w: W, actor: Id, a: any) {
   const summary = text(a.summary, 0, 500, 'summary');
   if (kind === 'confidence' || kind === 'dissolution') {
     if (!isPM(w, actor)) fail(`Only the Prime Minister can ask for ${kind === 'confidence' ? 'a confidence vote' : 'a dissolution'}.`);
-  } else if (!isMP(w, actor) && !hasPower(w, actor, 'propose')) fail(w.privy ? 'Only members of the Privy Council lay Orders before it.' : 'Only MPs put proposals to the House.');
+  } else if (mustHaveSworn(w, actor, 'you'), !isMP(w, actor) && !hasPower(w, actor, 'propose')) fail(w.privy ? 'Only members of the Privy Council lay Orders before it.' : 'Only MPs put proposals to the House.');
   if ((kind === 'no_confidence' || kind === 'confidence') && !w.pm) fail('There is no government.');
   if (kind === 'censure' && !own(w.citizens, a.target)?.active) fail('Pick who to censure.');
   checkClauses(w, kind, clauses);
@@ -615,6 +616,7 @@ export function speak(w: W, actor: Id, pid: Id, side: string, speech: string) {
 export function canVoteOn(w: W, p: any, id: Id) {
   if (exiled(w, id)) return false;
   if (p.stage === 'override') return isMP(w, id);
+  if (owesOath(w, id)) return false;
   return p.voters === 'all' ? !!w.citizens[id]?.active : isMP(w, id);
 }
 export function vote(w: W, actor: Id, pid: Id, v: string) {
@@ -622,6 +624,7 @@ export function vote(w: W, actor: Id, pid: Id, v: string) {
   if (!p) fail('No such proposal.');
   if (p.stage === 'debate') fail('Voting opens when the debate ends.');
   if (p.stage !== 'vote' && p.stage !== 'override') fail('Voting has closed.');
+  mustHaveSworn(w, actor, 'you');
   if (!canVoteOn(w, p, actor)) fail(w.speaker === actor ? 'The Speaker only votes to break a tie: set your casting vote.' : p.voters === 'all' ? 'You cannot vote in exile.' : w.privy ? 'Only the Privy Council votes on this.' : 'Only MPs vote on this.');
   const book = p.stage === 'override' ? (p.overrideVotes = p.overrideVotes || {}) : p.votes;
   if (p.voters === 'all' && book[actor]) fail('Referendum ballots are secret and final.');

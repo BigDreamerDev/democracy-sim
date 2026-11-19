@@ -22,6 +22,7 @@ import * as Ab from './abroad';
 import * as Em from './empire';
 import * as Wm from './warmachine';
 import * as Pv from './privy';
+import * as Oa from './oath';
 
 export * from './core';
 export { createWorld, createLiveWorld, NAMES } from './world';
@@ -188,6 +189,8 @@ export const COMMANDS: Record<string, Cmd> = {
   'privy.appoint': (w, me, a) => Pv.appointCouncillor(w, me, a.seat, a.target),
   'privy.summon': (w, me, a) => Pv.summon(w, me, a.prop),
   'privy.seal': (w, me, a) => Pv.seal(w, me, a.prop),
+  'oath.swear': (w, me) => Oa.swear(w, me),
+  'oath.refuse': (w, me) => Oa.refuse(w, me),
   'privy.force': (w, me, a) => Pv.force(w, me, a.prop),
   'privy.veto': (w, me, a) => Pv.veto(w, me, a.prop),
   'war.terms': (w, me, a) => Wr.voteTerms(w, me, a.yes),

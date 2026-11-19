@@ -1,4 +1,5 @@
 // Bots: the other citizens take plausible turns so one person can play the whole game.
+import { owesOath } from './oath';
 import { W, Id, chance, pick, rand, allCitizens, exiled, isMP, mps, inGovernment, sideOf, intrigueOpen, canSeeCard, weekNo, ghost, holderOf , sideName , DAY , majority, speaksForHouse } from './core';
 import { isGhostOk } from './streets';
 import { gate } from './regime';
@@ -41,6 +42,9 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
   };
   const bots = allCitizens(w).filter((c: any) => isBot(c.id) && !exiled(w, c.id));
   const p = (x: number) => chance(w, Math.min(1, x * intensity));
+
+  // the Imperial Oath: most swear, now and then one refuses
+  if (w.oath) bots.forEach((b: any) => owesOath(w, b.id) && !w.oath.refused[b.id] && p(0.6) && go(b.id, chance(w, 0.92) ? 'oath.swear' : 'oath.refuse'));
 
   // the Founding Convention
   if (w.phase === 'convention') {

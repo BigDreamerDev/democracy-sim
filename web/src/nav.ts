@@ -16,7 +16,7 @@ export const TABS: Tab[] = [
     { id: 'search', label: 'Find a page', href: '#/search', routes: ['search', 'map'] }
   ] },
   { id: 'house', label: 'Parliament', icon: 'house', href: '#/house', sections: [
-    { id: 'house', label: 'Chamber', href: '#/house', routes: ['house'] },
+    { id: 'house', label: 'Chamber', href: '#/house', routes: ['house', 'oath'] },
     { id: 'bills', label: 'Bills', href: '#/proposals', routes: ['proposals', 'p', 'new', 'draft'], count: openProps },
     { id: 'questions', label: 'Questions', href: '#/questions', routes: ['questions'] },
     { id: 'government', label: 'Government', href: '#/government', routes: ['government', 'cabinet', 'offices', 'office', 'hos'] },
@@ -85,6 +85,7 @@ const PARTS: [string, string, string, string][] = [
   ['#/abroad', 'Life abroad', 'world', 'defect defector asylum court abroad hostage ransom spy mole agent traitor'],
   ['#/foreign', 'Foreign Office', 'world', 'nations envoys treaties diplomacy relations embassy embargo alliance'],
   ['#/war', 'The war room', 'world', 'war battle front strategy regiments volunteer enlist war bonds'],
+  ['#/oath', 'The Imperial Oath', 'house', 'oath allegiance swear refuse empire empress emperor loyalty'],
   ['#/ceremonies', 'Ceremonies', 'learn', 'animations scenes appointments coronation invasion veto seal governor turn off'],
   ['#/exchange', 'The Exchange', 'money', 'stock market shares stocks trade invest dividends portfolio register of interests'],
   ['#/army', 'The Army', 'world', 'military readiness war defence'],

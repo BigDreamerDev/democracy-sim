@@ -159,6 +159,8 @@ export const CATALOG: Record<string, CmdInfo> = {
   'army.scrap': { about: 'General, High Commissioner or PM: stand down one piece of equipment (or a fort) to save its upkeep.', args: { item: 'string', province: 'id (province), for a fort' } },
   'privy.appoint': { about: 'The Sovereign: appoint (or, with no target, dismiss) one of the three Privy Councillors.', args: { seat: '0 | 1 | 2', target: 'id (citizen) or null' } },
   'privy.summon': { about: 'Lord Chamberlain: summon the Privy Council to an urgent sitting; an Order in debate goes to the vote within the hour. Once a day.', args: { prop: 'id (proposal)' } },
+  'oath.swear': { about: 'Under the Imperial Prerogative Act: swear the Imperial Oath of allegiance. Until you do, you cannot vote in Council, lay an Order or hold office.', args: {} },
+  'oath.refuse': { about: 'Refuse the Imperial Oath: −3 approval, and you lose every office, Council seat and governorship you hold. You can still swear later.', args: {} },
   'privy.force': { about: 'The Sovereign or the Imperial High Commissioner: force a pending Order in Council through; it becomes law at once, without a vote.', args: { prop: 'id (proposal)' } },
   'privy.veto': { about: 'The Sovereign, the High Commissioner, the Lord Chamberlain or the Lord Privy Seal: veto a pending Order in Council; it falls.', args: { prop: 'id (proposal)' } },
   'privy.seal': { about: 'Lord Privy Seal: set the Imperial Seal on an Order waiting for assent, so it takes effect within the hour.', args: { prop: 'id (proposal)' } },

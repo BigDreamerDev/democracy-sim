@@ -4,6 +4,7 @@ import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Pick, When } from '../ui';
 import { isHOS, hasPower, allCitizens, majority } from '../../../engine/index';
+import { OathPanel } from './oath';
 import { council, SEAT_NAMES, PRIVY_SEATS, canForce, canVeto } from '../../../engine/privy';
 
 const NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
@@ -44,6 +45,7 @@ export function PrivyCouncil() {
           ))}
         </div>
       </Sec>
+      <OathPanel />
       <Sec title="The great officers’ prerogatives">
         <div class="privy-powers">{prerogatives.map(([t, d]) => <div><b>{t}</b><span class="small muted">{d}</span></div>)}</div>
       </Sec>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { createWorld, run, skip, nextDeadline, GameError, HOUR, DAY } from '../../engine/index';
 import { botsAct } from '../../engine/bots';
+import { migrate } from '../../engine/migrate';
 
 const KEY = 'realm-demo-v2';
 const API: string = ((window as any).API_BASE || '').replace(/\/$/, '');
@@ -22,7 +23,8 @@ function load(): State {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const s = JSON.parse(raw);
-      if (s.world?.v === 2) return { world: s.world, me: s.me, autoBots: s.autoBots ?? true, history: [], toast: null, tick: 0 };
+      // a saved demo world is upgraded as the server upgrades the live one (engine/migrate.ts)
+      if (s.world?.v === 2) return { world: (migrate(s.world), s.world), me: s.me, autoBots: s.autoBots ?? true, history: [], toast: null, tick: 0 };
     }
   } catch {}
   return { world: createWorld('running'), me: 'uzair', autoBots: true, history: [], toast: null, tick: 0 };

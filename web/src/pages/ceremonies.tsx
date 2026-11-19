@@ -12,6 +12,9 @@ export function samples(w: any) {
   return [
     { k: 'empire', who: a, title: w.config.hosTitle || 'Empress', place: w.config.realmName },
     { k: 'council', who: a },
+    { k: 'oathcall', who: a },
+    { k: 'oath', who: b },
+    { k: 'refuse', who: d },
     { k: 'sworn', who: b, by: a },
     { k: 'appoint', who: c, by: a, office: 'highcommission', title: 'Imperial High Commissioner' },
     { k: 'appoint', who: d, by: a, office: 'chamberlain', title: 'Lord Chamberlain' },
