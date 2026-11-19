@@ -31,7 +31,9 @@ self.addEventListener('fetch', (e) => {
     try {
       const res = await fetch(r, { cache: hashed ? 'default' : 'no-store' });
       if (res.ok && res.type === 'basic') {
-        const key = r.mode === 'navigate' || url.pathname.endsWith('/index.html') ? new URL('./', self.registration.scope).href : r;
+        // the home page is kept under one key; other pages (the console) under their own, so they never replace it
+        const home = url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');
+        const key = home ? new URL('./', self.registration.scope).href : r;
         await c.put(key, res.clone());
         if (key !== r) e.waitUntil(res.clone().text().then(prune).catch(() => {}));
       }

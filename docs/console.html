@@ -1,0 +1,1379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#FBFCF8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#18232A" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Console">
+<link rel="manifest" href="console.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>Realm Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Gloock&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#EEF0E8;--card:#FBFCF8;--field:#fff;--ink:#1B2430;--mut:#4A5560;--line:#C3CFC0;--soft:#E1E6DC;--acc:#1F5E57;--acc2:#E4ECE8;--onacc:#FBFCF8;--ok:#1F6B45;--okbg:#E1EFE4;--bad:#A8321F;--badbg:#F3E3DF;--warn:#8A4B14;--warnbg:#F3E8D6;--hh:92px;
+  --serif:'Gloock','Iowan Old Style','Palatino Linotype',Georgia,serif;--sans:'Atkinson Hyperlegible',system-ui,-apple-system,'Segoe UI',sans-serif}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#11191E;--card:#18232A;--field:#121B21;--ink:#E3E8DE;--mut:#A7B2AC;--line:#33443F;--soft:#22302E;--acc:#74BCAC;--acc2:#1B2F2B;--onacc:#0E1518;--ok:#7CCB9A;--okbg:#17302A;--bad:#E7836E;--badbg:#35211D;--warn:#E39A60;--warnbg:#2B261D}}
+:root[data-theme=dark]{--bg:#11191E;--card:#18232A;--field:#121B21;--ink:#E3E8DE;--mut:#A7B2AC;--line:#33443F;--soft:#22302E;--acc:#74BCAC;--acc2:#1B2F2B;--onacc:#0E1518;--ok:#7CCB9A;--okbg:#17302A;--bad:#E7836E;--badbg:#35211D;--warn:#E39A60;--warnbg:#2B261D}
+*{box-sizing:border-box}
+html{scroll-padding-top:calc(var(--hh) + 12px)}
+body{margin:0;font:16px/1.5 var(--sans);background:var(--bg);color:var(--ink)}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:2px solid var(--ink)}
+.top{display:flex;gap:10px;align-items:center;padding:10px 16px;flex-wrap:wrap}
+.top h1{font:400 22px/1.1 var(--serif);margin:0 6px 0 0}
+.top .me{margin-left:auto;font-size:13.5px;color:var(--mut);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pill{display:inline-flex;gap:4px;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:99px;padding:2px 10px;font-size:13px;color:var(--ink);white-space:nowrap}
+.pill.warn{background:var(--warnbg);color:var(--warn);border-color:transparent}
+.live{width:9px;height:9px;border-radius:50%;background:var(--mut);flex:none}.live.on{background:var(--ok);box-shadow:0 0 0 3px var(--okbg)}.live.wait{background:var(--warn);animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.35}}
+kbd{font:12px ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 5px;background:var(--card);color:var(--mut)}
+code{font:12.5px ui-monospace,Menlo,Consolas,monospace;color:var(--mut)}
+nav{display:flex;gap:2px;padding:0 10px;overflow-x:auto;scrollbar-width:none}
+nav button{border:0;background:none;padding:9px 12px;border-bottom:3px solid transparent;border-radius:0;color:var(--mut);font-weight:700;white-space:nowrap}
+nav button:hover{color:var(--ink)}
+nav button.on{color:var(--acc);border-bottom-color:var(--acc)}
+nav .badge{background:var(--bad);color:#fff;border-radius:99px;font-size:11.5px;padding:0 6px;margin-left:5px}
+main{max-width:1080px;margin:0 auto;padding:16px;display:grid;gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+.card h2{font:400 19px/1.2 var(--serif);margin:0 0 10px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.card h2 .sub{font:400 13.5px var(--sans);color:var(--mut)}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.fields{display:grid;gap:10px;align-items:start;grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+label{display:grid;gap:4px;align-content:start;font-size:14px;font-weight:700}
+label small{font-weight:400;color:var(--mut)}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--acc);outline-offset:0;border-color:var(--acc)}
+.miss{border-color:var(--bad)!important;box-shadow:0 0 0 2px var(--badbg)}
+textarea{min-height:84px;resize:vertical}
+textarea.code{font:13px ui-monospace,Menlo,Consolas,monospace}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 13px;transition:background .12s,border-color .12s}
+button:hover:not(:disabled){border-color:var(--acc);background:var(--acc2)}
+button.p{background:var(--acc);border-color:var(--acc);color:var(--onacc);font-weight:700}
+button.p:hover:not(:disabled){background:var(--acc);filter:brightness(1.12)}
+button.sm{padding:4px 11px;font-size:14px}
+button.aye{border-color:var(--ok);color:var(--ok)}button.no{border-color:var(--bad);color:var(--bad)}
+button.aye.on{background:var(--ok);color:var(--card);font-weight:700}button.no.on{background:var(--bad);color:var(--card);font-weight:700}button.abstain.on{background:var(--ink);color:var(--card);border-color:var(--ink);font-weight:700}
+button:disabled{opacity:.5;cursor:default}
+.find{display:inline-flex;gap:8px;align-items:center;color:var(--mut);background:var(--bg)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border-radius:99px;padding:3px 11px;font-size:13.5px;background:var(--card)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:var(--card)}
+.chip small{opacity:.65}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.between{justify-content:space-between}
+.mut{color:var(--mut)}.small{font-size:13.5px}
+.item{padding:10px 0;border-bottom:1px solid var(--soft);display:block;color:inherit;text-decoration:none}
+.item:last-child{border-bottom:0}
+a.item{margin:0 -8px;padding:10px 8px;border-radius:8px}
+a.item:hover{background:var(--acc2)}
+a.item .go{color:var(--acc);font-weight:700}
+.item .t{font-weight:700}
+.item .m{font-size:13.5px;color:var(--mut)}
+.flash{animation:flash 1.6s}
+@keyframes flash{0%,40%{box-shadow:0 0 0 3px var(--acc)}100%{box-shadow:0 0 0 3px transparent}}
+.tag{display:inline-block;font-size:12.5px;padding:1px 8px;border-radius:99px;background:var(--acc2);color:var(--acc);margin-right:4px;white-space:nowrap}
+.tag.warn{background:var(--warnbg);color:var(--warn)}.tag.bad{background:var(--badbg);color:var(--bad)}.tag.ok{background:var(--okbg);color:var(--ok)}
+.dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:7px;border:1px solid var(--line);vertical-align:-1px}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
+.stats div{background:var(--bg);border-radius:8px;padding:10px;min-width:0}
+.stats b{display:block;font:400 18px/1.25 var(--serif);overflow-wrap:anywhere}
+.stats span{font-size:12.5px;color:var(--mut)}
+.meter{height:8px;background:var(--soft);border-radius:99px;overflow:hidden;margin-top:4px}
+.meter i{display:block;height:100%;background:var(--acc)}
+.result{display:inline-block;border-radius:8px;padding:8px 12px;font-size:14px}
+.result.ok{background:var(--okbg);color:var(--ok)}.result.bad{background:var(--badbg);color:var(--bad)}
+.dobar{position:sticky;top:var(--hh);z-index:3;display:grid;gap:10px;box-shadow:0 6px 12px -10px var(--ink)}
+.dobar h2{margin:0}
+details.cmd{border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--card)}
+details.cmd[open]{border-color:var(--acc)}
+details.cmd>summary{cursor:pointer;padding:10px 14px;list-style:none;display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center;border-radius:10px}
+details.cmd>summary:hover{background:var(--acc2)}
+details.cmd>summary::-webkit-details-marker{display:none}
+details.cmd>summary b{font-size:15px}
+details.cmd>summary span{font-size:13.5px;color:var(--mut);grid-column:1}
+details.cmd>summary .pin{grid-column:2;grid-row:1/3;border:0;background:none;font-size:18px;color:var(--line);padding:2px 6px}
+details.cmd>summary .pin.on{color:var(--warn)}
+details.cmd .body{padding:4px 14px 14px;display:grid;gap:10px}
+details.raw summary{cursor:pointer;font-size:13px;color:var(--mut)}
+h3.gh{margin:10px 4px 6px;font:400 16px var(--serif);color:var(--mut)}
+pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;max-height:360px;font-size:12.5px;white-space:pre-wrap;word-break:break-word;margin:6px 0 0}
+.checks{display:grid;gap:4px;max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--field)}
+.checks label{display:flex;gap:8px;align-items:center;font-weight:400}
+.checks input{width:auto}
+.pickbox{display:grid;gap:4px;align-content:start;font-size:14px}.pickbox .lbl{font-weight:700}.pickbox small{font-size:12.5px}.ord{color:var(--acc)}
+.clause{border:1px dashed var(--line);border-radius:10px;padding:12px;display:grid;gap:8px}
+.clause .head{display:flex;gap:8px;align-items:center}
+.clause .head select{flex:1}
+.gz{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;font-size:15px}
+.gz .when{color:var(--mut);font-size:13px;white-space:nowrap;padding-top:2px}
+.gz .day{grid-column:1/-1;font:400 15px var(--serif);color:var(--mut);border-bottom:1px solid var(--soft);margin-top:8px;padding-bottom:2px}
+.empty{color:var(--mut);font-size:14.5px;padding:6px 0}
+[hidden]{display:none!important}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%) translateY(8px);padding:10px 16px;border-radius:10px;font-size:15px;opacity:0;transition:.2s;pointer-events:none;max-width:92vw;background:var(--ink);color:var(--bg);z-index:30;cursor:pointer}
+#toast.show{opacity:1;transform:translateX(-50%);pointer-events:auto}#toast.bad{background:var(--bad);color:#fff}
+#pal{position:fixed;inset:0;z-index:20;background:rgba(27,36,48,.45);display:grid;justify-items:center;align-content:start;padding:12vh 12px 0}
+.palbox{width:min(600px,100%);background:var(--card);border:2px solid var(--ink);border-radius:12px;padding:10px;display:grid;gap:8px;box-shadow:6px 6px 0 var(--ink)}
+#pall{max-height:52vh;overflow:auto;display:grid;gap:2px}
+#pall button{display:grid;text-align:left;border:0;background:none;padding:7px 10px;gap:0}
+#pall button.on{background:var(--acc2)}
+#pall button span{font-size:13px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:640px){
+  /* the tabs become a bottom bar, thumb-reachable; the header shrinks to one line */
+  body{font-size:16px}
+  main{padding:10px 10px calc(84px + env(safe-area-inset-bottom));gap:10px}
+  header{padding-top:env(safe-area-inset-top)}
+  .top{padding:8px 12px;gap:8px;flex-wrap:nowrap}
+  .top h1{font-size:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+  .top .me{display:none}
+  .find kbd,.find .lbl{display:none}
+  nav{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--card);border-top:2px solid var(--ink);padding:0 4px env(safe-area-inset-bottom);gap:0}
+  nav button{display:grid;justify-items:center;gap:1px;min-width:68px;min-height:56px;padding:6px 8px;font-size:12px;border-bottom:0;border-top:3px solid transparent}
+  nav button.on{border-top-color:var(--acc)}
+  nav button .ic{font-size:19px;line-height:1}
+  nav .badge{position:absolute;margin:0 0 0 22px;font-size:10.5px}
+  nav button{position:relative}
+  .meline{display:flex!important}
+  .dobar{position:static}
+  .card{padding:14px;border-radius:12px}
+  .grid,.fields{grid-template-columns:1fr}
+  button{min-height:44px}
+  button.sm{min-height:40px;padding:8px 13px}
+  .row{gap:8px}
+  .row>button{flex:1 1 auto}
+  input,select,textarea{font-size:16px;min-height:44px}
+  details.cmd>summary{padding:12px 14px}
+  .gz{grid-template-columns:1fr;gap:2px}
+  .gz .when{padding-top:8px}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #toast{bottom:calc(76px + env(safe-area-inset-bottom))}
+  #pal{padding-top:calc(4vh + env(safe-area-inset-top))}
+  #pall{max-height:60vh}
+}
+.meline{display:none;gap:6px;overflow-x:auto;padding:0 12px 8px;scrollbar-width:none;font-size:13px}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <h1 id="realmName">Realm Console</h1>
+    <button class="sm find" id="find" title="Find any action or page" aria-label="Find an action">🔍<span class="lbl"> Find an action…</span> <kbd>Ctrl K</kbd></button>
+    <button class="sm" id="theme" title="Light, dark, or follow this PC"></button>
+    <div class="me" id="meBar"><span class="live" id="live"></span><span>Not connected</span></div>
+  </div>
+  <div class="meline" id="meLine"></div>
+  <nav id="tabs"></nav>
+</header>
+<main id="main"></main>
+<div id="toast" role="status" aria-live="polite" title="Click to dismiss"></div>
+<div id="pal" hidden><div class="palbox" role="dialog" aria-label="Find an action">
+  <input id="palq" type="search" placeholder="What do you want to do? Try: coalition, vote, send crowns…" autocomplete="off">
+  <div id="pall"></div>
+  <div class="small mut"><kbd>↑</kbd> <kbd>↓</kbd> to move · <kbd>Enter</kbd> to open · <kbd>Esc</kbd> to close</div>
+</div></div>
+
+<script>
+'use strict';
+/* ═════════════════════════════════════════════ basics */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const store = {
+  get: k => { try { return localStorage.getItem('realm.' + k); } catch { return null; } },
+  set: (k, v) => { try { v == null || v === '' ? localStorage.removeItem('realm.' + k) : localStorage.setItem('realm.' + k, v); } catch {} }
+};
+function toast(msg, bad) {
+  const t = $('#toast'); t.textContent = msg; t.className = bad ? 'bad show' : 'show';
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), bad ? 8000 : 3200);
+}
+$('#toast').onclick = () => $('#toast').classList.remove('show');
+/* camelCase / snake_case → "Camel case" */
+const human = s => { const t = String(s).replace(/[._]/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().trim(); return t.charAt(0).toUpperCase() + t.slice(1); };
+const ago = ms => {
+  if (!ms) return '';
+  const d = (Date.now() - ms) / 1000;
+  if (d < 60) return 'just now';
+  if (d < 3600) return Math.floor(d / 60) + 'm ago';
+  if (d < 86400) return Math.floor(d / 3600) + 'h ago';
+  return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+};
+const left = (ms, now = SERVER_NOW()) => {
+  if (!ms) return '';
+  let s = Math.round((ms - now) / 1000);
+  if (s <= 0) return 'closing';
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return (d ? d + 'd ' : '') + (d || h ? h + 'h ' : '') + (d ? '' : m + 'm') + ' left';
+};
+const until = ms => ms ? `<span data-until="${+ms}">${left(ms)}</span>` : '';
+
+/* ═════════════════════════════════════════════ state */
+let KEY = store.get('key') || '';
+let BASE = store.get('base') || 'https://democracy-sim-1.onrender.com/api/v1';
+let W = null, ME = null, VERSION = -1, CMDS = null, ALERTS = [], LOG = [];
+let serverOffset = 0;
+const SERVER_NOW = () => Date.now() + serverOffset;
+const canAct = () => ME?.scope === 'act';
+
+/* ═════════════════════════════════════════════ http
+   Served by the local launcher → go through its proxy. Opened as a file → straight to the API (CORS is open). */
+async function api(path, body, { quiet } = {}) {
+  const viaProxy = location.protocol.startsWith('http') && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  const headers = { Authorization: 'Bearer ' + KEY };
+  if (body) headers['Content-Type'] = 'application/json';
+  if (viaProxy) headers['X-Upstream'] = BASE;
+  const t0 = performance.now();
+  let status = 0, data;
+  try {
+    const r = await fetch((viaProxy ? '/proxy' : BASE) + path, { method: body ? 'POST' : 'GET', headers, body: body ? JSON.stringify(body) : undefined });
+    status = r.status;
+    const txt = await r.text();
+    try { data = JSON.parse(txt); } catch { data = txt; }
+  } catch (e) {
+    data = { error: 'Could not reach the realm. The server may be waking up (about 30 seconds), or you are offline.' };
+  }
+  if (!quiet) { LOG.unshift({ path, body, status, ms: Math.round(performance.now() - t0), data, at: Date.now() }); if (LOG.length > 200) LOG.length = 200; }
+  if (status < 200 || status >= 300) {
+    const msg = (data && data.error) || ({ 401: 'That key was not accepted. It may be wrong or revoked.', 403: 'This key is read-only. Make an "act" key to do things.', 404: 'The realm does not know that route.', 429: 'Slow down: over 120 requests a minute.' })[status] || `Something went wrong (${status || 'no response'}).`;
+    const err = new Error(msg); err.status = status; err.data = data; throw err;
+  }
+  return data;
+}
+function absorb(d) {
+  if (d?.world) {
+    W = d.world;
+    if (d.serverNow) serverOffset = d.serverNow - Date.now();
+    if (typeof d.version === 'number') VERSION = d.version;
+  }
+}
+/* Do a thing in the game. Returns { ok, error }. Never throws. */
+async function act(cmd, args) {
+  try {
+    const d = await api('/act', { cmd, args });
+    noteTargets(args);
+    if ((cmd === 'gov.edict' || cmd === 'regime.decree') && args?.kind === 'lift') store.set('lastLift', JSON.stringify({ what: args.what, day: Math.floor(SERVER_NOW() / 864e5) }));
+    absorb(d); refreshAlerts(); render();
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+/* ═════════════════════════════════════════════ reading the world */
+const coll = x => !x ? [] : Array.isArray(x) ? x.map((v, i) => [v?.id ?? String(i), v]) : Object.entries(x).map(([k, v]) => [v?.id ?? k, v]);
+const who = id => id == null ? 'nobody' : (W?.citizens?.[id]?.name || id);
+const partyName = id => W?.parties?.[id]?.name || (id ? id : 'Independent');
+const hosTitle = () => W?.config?.hosTitle || (W?.config?.hos === 'monarchy' ? 'Monarch' : 'President');
+const labelOf = (o, id) => {
+  if (!o || typeof o !== 'object') return String(o ?? id);
+  const main = o.name || o.title || o.headline || o.q || o.question || o.text || o.label;
+  const extra = o.stage || o.status || o.kind || '';
+  return (main ? String(main).slice(0, 80) : `#${id}`) + (extra && main ? ` · ${extra}` : '');
+};
+const STAGE = {
+  debate: ['In debate', 'warn'], vote: ['Voting now', 'bad'], passed: ['Passed', 'ok'], assent: ['Awaiting assent', 'warn'],
+  enacted: ['Law', 'ok'], failed: ['Failed', ''], vetoed: ['Vetoed', 'bad'], withheld: ['Assent withheld', 'bad'],
+  override: ['Override vote', 'warn'], hos: ['With the head of state', 'warn'], consent: ['Needs PM consent', 'warn'], commanded: ['Enacted by Royal Command', 'ok'], struck: ['Struck by Royal Command', 'bad'], refused: ['Consent refused', 'bad']
+};
+const stageTag = s => { const [t, c] = STAGE[s] || [human(s || '?'), '']; return `<span class="tag ${c}">${esc(t)}</span>`; };
+
+/* Where to find the things an "id" argument can mean. */
+const recentTargets = () => { try { return JSON.parse(store.get('targets') || '[]'); } catch { return []; } };
+function noteTargets(args) {
+  const ids = Object.entries(args || {}).filter(([k, v]) => typeof v === 'string' && ['target', 'citizen', 'heir', 'who', 'to', 'candidate'].includes(k) && W?.citizens?.[v]).map(([, v]) => v);
+  if (ids.length) store.set('targets', JSON.stringify([...new Set([...ids, ...recentTargets()])].slice(0, 6)));
+}
+const SOURCES = {
+  citizen: () => { const rec = recentTargets(); return coll(W?.citizens).filter(([, c]) => c?.active !== false).sort((a, b) => ((rec.indexOf(a[0]) + 1 || 99) - (rec.indexOf(b[0]) + 1 || 99))).map(([id, c]) => [id, (rec.includes(id) ? '↺ ' : '') + c.name + (c.party ? ' · ' + partyName(c.party) : '')]); },
+  prop: () => coll(W?.proposals).sort((a, b) => (b[1].n || 0) - (a[1].n || 0)).map(([id, p]) => [id, `${p.n ? '#' + p.n + ' ' : ''}${p.title} · ${STAGE[p.stage]?.[0] || p.stage}`]),
+  election: () => coll(W?.elections).filter(([, e]) => e.status !== 'closed').map(([id, e]) => [id, `${e.title || human(e.kind || 'Election')} · ${e.status}`]),
+  party: () => coll(W?.parties).map(([id, p]) => [id, `${p.name}${p.status && p.status !== 'active' ? ' · ' + p.status : ''}`]),
+  office: () => coll(W?.offices).map(([id, o]) => [id, `${o.name}${o.holder ? ' — ' + who(o.holder) : ' — vacant'}`]),
+  standing: () => [...new Set(coll(W?.elections).filter(([, e]) => e.status !== 'closed').flatMap(([, e]) => Object.keys(e.candidates || {})))].map(id => [id, who(id)]),
+  nation: () => coll(W?.nations).map(([id, n]) => [id, n.name]),
+  bank: () => coll(W?.banks).map(([id, b]) => [id, b.name]),
+  case: () => coll(W?.cases).map(([id, c]) => [id, labelOf(c, id)]),
+  plot: () => coll(W?.plots).map(([id, p]) => [id, labelOf(p, id)]),
+  card: () => coll(W?.cards).map(([id, c]) => [id, labelOf(c, id)]),
+  deal: () => coll(W?.deals).map(([id, d]) => [id, `${who(d.from)} → ${who(d.to)}: ${String(d.text || '').slice(0, 50)}`]),
+  demand: () => coll(W?.demands).map(([id, d]) => [id, labelOf(d, id)]),
+  paper: () => coll(W?.papers).map(([id, p]) => [id, p.name]),
+  story: () => coll(W?.stories).map(([id, s]) => [id, labelOf(s, id)]),
+  clause: () => coll(W?.convention?.clauses).map(([id, c]) => [id, c.q + (c.adopted != null ? ' · settled' : '')]),
+  crisis: () => coll(W?.crises).sort((a, b) => (b[1].at || 0) - (a[1].at || 0)).map(([id, c]) => [id, `${human(c.type || 'Crisis')} · ${c.status}${(c.cast || []).some(x => x.id === W?.viewer) ? ' · you are caught up in it' : ''}`]),
+  question: () => coll(W?.questions).map(([id, q]) => [id, String(q.text).slice(0, 70)]),
+  treaty: () => coll(W?.treaties).map(([id, t]) => [id, labelOf(t, id)]),
+  offer: () => coll(W?.offers).map(([id, o]) => [id, labelOf(o, id)]),
+  ultimatum: () => coll(W?.ultimatums).map(([id, u]) => [id, labelOf(u, id)]),
+  bounty: () => coll(W?.bounties).map(([id, b]) => [id, `${String(b.text).slice(0, 60)} · ${b.reward}`]),
+  stall: () => coll(W?.stalls).map(([id, s]) => [id, `${s.title} · ${s.price}`]),
+  order: () => coll(W?.orders).map(([id, o]) => [id, labelOf(o, id)]),
+  job: () => coll(W?.jobs).map(([id, j]) => [id, `${j.title} · ${j.pay}`]),
+  claim: () => coll(W?.jobClaims).map(([id, c]) => [id, labelOf(c, id)]),
+  market: () => coll(W?.markets).map(([id, m]) => [id, labelOf(m, id)]),
+  contract: () => coll(W?.streets?.contracts).map(([id, c]) => [id, labelOf(c, id)]),
+  draft: () => coll(W?.drafts).map(([id, d]) => [id, labelOf(d, id)]),
+  breakaway: () => coll(W?.breakaways).map(([id, b]) => [id, labelOf(b, id)]),
+  motion: () => coll(W?.parties).flatMap(([, p]) => coll(p.motions).map(([id, m]) => [id, `${p.name}: ${String(m.text).slice(0, 50)}`])),
+  pledge: () => coll(W?.pledges).map(([id, p]) => [id, labelOf(p, id)]),
+  bond: () => [...(W?.bonds?.holdings || []).map(h => [h.id, `Yours: ${h.amt} lent, ${h.payout} back${h.ask ? ' · on sale at ' + h.ask : ''}`]), ...(W?.bonds?.market || []).filter(m => !(W?.bonds?.holdings || []).some(h => h.id === m.id)).map(m => [m.id, `For sale: pays ${m.payout}, price ${m.price}`])],
+};
+const ALIAS = { target: 'citizen', who: 'citizen', to: 'citizen', mp: 'citizen', by: 'citizen', post: 'office', against: null, candidate: 'citizen' };
+/* Which kind of thing an argument is, from its name and its "id (…)" hint. */
+function sourceFor(name, type) {
+  const hint = (String(type).match(/^id \(([a-z]+)/i) || [])[1];
+  for (const k of [hint, name, ALIAS[name]]) if (k && SOURCES[k]) return k;
+  return null;
+}
+
+/* ═════════════════════════════════════════════ commands → plain-English groups */
+const GROUPS = [
+  ['Voting & bills', /^(prop|draft|pledge)\./], ['Elections', /^(election|newsnight)\./], ['Convention', /^(convention|tutorial)\./],
+  ['Parties & coalitions', /^(party|coalition)\./], ['The Crown', /^crown\./], ['Government', /^(gov|office|hos|q|reserve)\./], ['Money', /^(money|bond|bank|venture|market|job)\./],
+  ['Foreign affairs', /^(foreign|intel|army|exile)\./], ['Backroom', /^(deal|card|demand|plot|security|coup)\./],
+  ['Regimes & coups', /^(regime|police|prison|transition|reckoning|jail)\./], ['Press', /^press\./], ['Court', /^court\./],
+  ['Crises', /^crisis\./], ['Streets & market', /^(streets|bounty|stall|hunt)\./], ['Daily & me', /^(daily|me)\./],
+];
+const groupOf = cmd => (GROUPS.find(([, r]) => r.test(cmd)) || ['Other'])[0];
+const cmdTitle = cmd => {
+  const [, verb] = cmd.split('.');
+  const nice = { 'prop.new': 'Table a proposal', 'prop.vote': 'Vote on a proposal', 'prop.speak': 'Speak in a debate', 'prop.assent': 'Grant or refuse assent', 'money.send': 'Send crowns', 'gov.decree': 'Make law by decree', 'election.vote': 'Vote in an election', 'election.stand': 'Stand for election', 'party.found': 'Found a party', 'party.join': 'Join a party', 'crisis.respond': 'Make your move in a crisis', 'crisis.bribe': 'Make the PM a private offer', 'crisis.help': 'Give to a crisis relief fund', 'crown.toast': 'Raise a loyal toast', 'crown.emeritus': 'Grant or remove a Monarch Emeritus', 'gov.command': 'Enact a bill by Royal Command', 'crown.strike': 'Strike a bill by Royal Command', 'crown.whip': 'Set the Crown’s line on a bill', 'crown.homage': 'Swear (or refuse) homage', 'money.print': 'Print money (Chancellor or Reserve)', 'money.bonds': 'Issue Treasury bonds', 'money.gold': 'Buy gold for the reserve', 'money.agree': 'Agree to the waiting money motion', 'bond.buy': 'Buy Treasury bonds', 'bond.sell': 'Sell a bond', 'bond.take': 'Buy a bond on the market', 'bond.unlist': 'Take a bond off the market' };
+  return nice[cmd] || human(cmd.split('.')[0]) + ': ' + human(verb).toLowerCase();
+};
+/* Extra words people search with. */
+const SYN = { 'coalition.propose': 'alliance pact government deal partner', 'coalition.sign': 'accept agree', 'money.send': 'pay give transfer crowns', 'prop.new': 'bill law motion table propose', 'prop.vote': 'aye no division',
+  'party.found': 'start create new', 'party.join': 'member', 'plot.launch': 'coup overthrow', 'gov.appoint': 'minister cabinet hire sack', 'election.stand': 'run candidate', 'prop.speak': 'speech debate', 'crisis.respond': 'deny apologise blame cash scandal', 'crisis.bribe': 'bribe offer pay prime minister', 'crisis.help': 'donate relief charity fund', 'money.print': 'print mint inflation debt', 'money.bonds': 'bond borrow loan', 'bond.buy': 'lend invest', 'crown.toast': 'queen king monarch loyal', 'money.gold': 'gold reserve' };
+const searchKey = (cmd, info) => (cmd + ' ' + cmdTitle(cmd) + ' ' + (info.about || '') + ' ' + groupOf(cmd) + ' ' + (SYN[cmd] || '')).toLowerCase();
+/* Pinned and recently used actions, kept on this PC. */
+const listOf = k => { try { return JSON.parse(store.get(k) || '[]').filter(c => CMDS?.[c]); } catch { return []; } };
+const togglePin = cmd => { const p = listOf('pins'); store.set('pins', JSON.stringify(p.includes(cmd) ? p.filter(c => c !== cmd) : [...p, cmd])); };
+const noteRecent = cmd => store.set('recent', JSON.stringify([cmd, ...listOf('recent').filter(c => c !== cmd)].slice(0, 6)));
+const openBtn = (cmd, label, cls = '') => CMDS?.[cmd] ? `<button class="sm ${cls}" data-open="${esc(cmd)}">${esc(label)}</button>` : '';
+
+/* ═════════════════════════════════════════════ forms from argument descriptions */
+function parseArg(name, type) {
+  const t = String(type);
+  const opts = [...t.matchAll(/'([^']+)'/g)].map(m => m[1]);
+  const optional = /optional|,\s*or$/.test(t) || /\bor\b/.test(t.replace(/\([^)]*\)|'[^']*'/g, ''));
+  if (name === 'ranking' || name === 'approve') return { name, kind: 'multi', src: 'standing', ordered: name === 'ranking', type: t, optional: true, note: name === 'ranking' ? 'For ranked or points elections. Tick your favourite first, then your second, and so on.' : 'For approval elections. Tick everyone you would accept; the order does not matter.' };
+  if (name === 'candidate' && /single vote/.test(t)) return { name, kind: 'pick', src: 'standing', type: t, optional: true };
+  if (/^bool/.test(t)) return { name, kind: 'bool', type: t, optional };
+  if (/clause object|list of clause|^list \(optional\)$/.test(t) || (name === 'clauses')) return { name, kind: 'clauses', type: t, optional };
+  if (/^list of text/.test(t)) return { name, kind: 'lines', type: t, optional };
+  if (/^list|ids/.test(t)) return { name, kind: 'multi', src: /option index/.test(t) ? 'optindex' : (sourceFor(name, t) || (/side/.test(t) ? 'side' : /citizen|candidate/.test(t) ? 'citizen' : null)), type: t, optional };
+  if (opts.length > 1 && !/^text|^id/.test(t)) return { name, kind: 'enum', opts, type: t, optional };
+  if (/^number/.test(t)) return { name, kind: /index/.test(t) ? 'index' : 'num', type: t, optional };
+  if (/^id/.test(t)) { const src = sourceFor(name, t); return { name, kind: src ? 'pick' : 'text', src, type: t, optional, nullable: /or null/.test(t) }; }
+  return { name, kind: /\(8|500|body|argument/.test(t + name) ? 'area' : 'text', type: t, optional };
+}
+const hintOf = a => esc(a.type.replace(/^(id|text|number|bool|list)\s*/, '').replace(/^\(|\)$/g, ''));
+function argField(a, cmd) {
+  const label = `<span data-lbl>${esc(human(a.name))}${a.optional && !a.quiet ? ' <small>(optional)</small>' : ''}</span>`;
+  const hint = hintOf(a) && a.kind !== 'enum' ? `<small>${hintOf(a)}</small>` : '';
+  const n = `data-arg="${esc(a.name)}" data-kind="${a.kind}"`;
+  switch (a.kind) {
+    case 'bool': return `<label>${label}<select ${n}><option value="">—</option><option value="true">Yes</option><option value="false">No</option></select></label>`;
+    case 'enum': return `<label>${label}<select ${n}>${a.optional ? `<option value="">${a.labels ? 'Choose…' : '—'}</option>` : ''}${a.opts.map(o => `<option value="${esc(o)}">${esc(a.labels?.[o] || human(o))}</option>`).join('')}</select>${hint}</label>`;
+    case 'num': return `<label>${label}<input type="number" step="any" ${n}>${hint}</label>`;
+    case 'index': return `<label>${label}<select ${n} data-index><option value="">Pick the other field first</option></select>${hint}</label>`;
+    case 'pick': {
+      const rows = SOURCES[a.src]();
+      return `<label>${label}<select ${n}>${a.optional || a.nullable ? `<option value="">${a.nullable ? 'Nobody' : '—'}</option>` : '<option value="">Choose…</option>'}${rows.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select>${rows.length ? '' : '<small>Nothing to choose from right now.</small>'}</label>`;
+    }
+    case 'multi': {
+      const mine = W?.citizens?.[W?.viewer]?.party, mpCount = id => (W?.seats || []).filter(m => W.citizens?.[m]?.party === id).length;
+      const rows = a.src === 'side' ? [...coll(W?.parties).filter(([id, p]) => p.status === 'active' && id !== mine).map(([id, p]) => ['p:' + id, `${p.name} · ${mpCount(id)} seat${mpCount(id) === 1 ? '' : 's'}`]),
+          ...coll(W?.citizens).filter(([id, c]) => c?.active !== false && !c.party && id !== W.viewer).map(([id, c]) => ['i:' + id, c.name + ' (independent' + ((W.seats || []).includes(id) ? ' MP)' : ')')])]
+        : a.src && SOURCES[a.src] ? SOURCES[a.src]() : null;
+      if (!rows) return `<label>${label}<input ${n} data-csv placeholder="comma-separated">${hint}</label>`;
+      return `<div class="pickbox"><span class="lbl">${label}</span><div class="checks" ${n} ${a.ordered ? 'data-ordered' : ''}>${rows.map(([v, l]) => `<label><input type="checkbox" value="${esc(v)}"> <b class="ord"></b>${esc(l)}</label>`).join('') || '<span class="mut small">Nothing to choose from.</span>'}</div><small class="mut">${esc(a.note || 'Tick one or more.')}</small></div>`;
+    }
+    case 'lines': return `<label>${label}<textarea ${n} placeholder="One per line"></textarea></label>`;
+    case 'clauses': return `<div ${n}><span class="small"><b>${esc(human(a.name))}</b></span>${clauseEditor()}</div>`;
+    case 'area': return `<label style="grid-column:1/-1">${label}<textarea ${n}></textarea>${hint}</label>`;
+    default: return `<label>${label}<input ${n}>${hint}</label>`;
+  }
+}
+/* Index fields ("option index") take their options from whatever else was picked. */
+function wireIndex(form) {
+  const idx = form.querySelector('[data-index]'); if (!idx) return;
+  const refresh = () => {
+    let opts = null;
+    form.querySelectorAll('select[data-kind="pick"]').forEach(s => {
+      if (!s.value) return;
+      const all = [...coll(W?.crises), ...coll(W?.convention?.clauses), ...coll(W?.markets)];
+      const hit = all.find(([id]) => String(id) === s.value);
+      if (hit?.[1]?.options) opts = hit[1].options;
+    });
+    if (!opts) form.querySelectorAll('select[data-kind="pick"]').forEach(s => { if (s.value && W?.crises?.[s.value]) opts = ['First option on the crisis page', 'Second option', 'Third option', 'Fourth option']; });
+    if (!opts && W?.daily?.options) opts = W.daily.options;
+    idx.innerHTML = opts ? opts.map((o, i) => `<option value="${i}">${esc(typeof o === 'string' ? o : o.label || o.text || JSON.stringify(o))}</option>`).join('') : '<option value="">Pick the other field first</option>';
+  };
+  form.addEventListener('change', e => { if (!e.target.matches('[data-index]')) refresh(); });
+  refresh();
+}
+/* Ranked tick lists remember the order you ticked in, and show it. */
+let TICK = 0;
+document.addEventListener('change', e => {
+  const box = e.target.closest('.checks[data-ordered]'); if (!box || e.target.type !== 'checkbox') return;
+  if (e.target.checked) e.target.dataset.o = ++TICK; else delete e.target.dataset.o;
+  const on = [...box.querySelectorAll('input:checked')].sort((x, y) => x.dataset.o - y.dataset.o);
+  box.querySelectorAll('.ord').forEach(b => { b.textContent = ''; });
+  on.forEach((i, n) => { i.parentNode.querySelector('.ord').textContent = (n + 1) + '. '; });
+});
+function readArgs(form) {
+  const out = {};
+  form.querySelectorAll('[data-arg]').forEach(el => {
+    if (el.closest('[hidden]')) return;
+    const k = el.dataset.arg, kind = el.dataset.kind;
+    if (kind === 'clauses') { const c = readClauses(el); if (c.length) out[k] = c; return; }
+    if (kind === 'multi') {
+      const v = el.matches('[data-csv]') ? el.value.split(',').map(s => s.trim()).filter(Boolean) : [...el.querySelectorAll('input:checked')].sort((x, y) => (+x.dataset.o || 0) - (+y.dataset.o || 0)).map(i => i.value);
+      if (v.length) out[k] = v.map(x => /^\d+$/.test(x) && /index/.test(k + kind) ? +x : x); return;
+    }
+    const v = el.value;
+    if (v === '' || v == null) { if (el.closest('label')?.textContent.includes('Nobody') && kind === 'pick') out[k] = null; return; }
+    if (kind === 'lines') out[k] = v.split('\n').map(s => s.trim()).filter(Boolean);
+    else if (kind === 'num' || kind === 'index') out[k] = Number(v);
+    else if (kind === 'bool') out[k] = v === 'true';
+    else out[k] = v;
+  });
+  return out;
+}
+
+/* ═════════════════════════════════════════════ the bill builder */
+const SETTABLE = {
+  taxRate: ['Income tax', '%', 0, 50], dividend: ['Citizen dividend each week', ' crowns', 0, 20], mpPay: ['MP pay each week', ' crowns', 0, 30],
+  ministerPay: ['Minister pay each week', ' crowns', 0, 30], tariff: ['Tariff on trade ventures', '%', 0, 40],
+  savingsTax: ['Savings tax (each payday)', '%', 0, 10], edictsPerDay: ['Built-in decrees a day (Government Powers Act)', '', 1, 10], honoursPerWeek: ['Honours the head of state may give each week', '', 1, 10], emeritusPay: ['Royal pension for the Monarch Emeritus', ' crowns', 0, 30], savingsFloor: ['Savings tax starts above', ' crowns', 50, 1000],
+  debateHours: ['Debate length', ' hours', 12, 48], voteHours: ['Voting length', ' hours', 12, 48]
+};
+const CONST_KEYS = {
+  seats: ['Seats in Parliament', [3, 5, 7, 9]], termDays: ['Time between general elections', [[14, '2 weeks'], [21, '3 weeks'], [28, '4 weeks']]],
+  hos: ['Head of state', [['monarchy', 'Monarchy'], ['republic', 'Republic']]],
+  hosMethod: ['How the head of state is chosen', [['life', 'Monarch: elected for life'], ['lot', 'Monarch: drawn by lot every 4 weeks'], ['rotate', 'Monarch: each citizen a week in turn'], ['citizens', 'President: elected by citizens'], ['house', 'President: elected by MPs']]]
+};
+const OFFICE_TEMPLATES = { treasury: 'Treasury (Chancellor)', reserve: 'Federal Reserve', foreign: 'Foreign Office', security: 'Security Service', army: 'The Army', court: 'Supreme Court', guard: 'Protection Service', whip: 'Chief Whip', emeritus: 'Office of the Monarch Emeritus (royal pension for a past monarch)' };
+const ACTS = {
+  decrees: 'Government Powers Act — the PM makes law by decree; assent can no longer be refused',
+  continuity: 'Continuity of Parliament Act — no more general elections; the PM controls seats and the Speaker',
+  unity: 'National Unity Act — the PM’s party becomes the only legal party',
+  protection: 'Protection of the State Act — no confidence votes, PM controls what is tabled, entrenches the other Acts',
+  jail: 'Public Order and Detention Act — Ministry of Public Order and the Realm Jail',
+  press: 'Press and Information Act — licensed newspapers, PM can remove stories',
+  security: 'State Security Act — coups much harder, PM warned of large plots',
+  crown: 'Crown Act — the head of state is also the Prime Minister',
+  prerogative: 'Royal Prerogative Act — every bill waits for Royal Assent, which can be refused; unsigned bills lapse after 3 days',
+  veto: 'Royal Veto Act — the Monarch may strike any pending bill from the order paper'
+};
+const CLAUSE_TYPES = {
+  text: 'Words only (a law in plain text)', set: 'Change a number (tax, pay, timings)', constitution: 'Change the constitution',
+  office: 'Create an office', abolish: 'Abolish an office', budget: 'Set an office budget', repeal: 'Repeal a law',
+  removeHos: 'Remove the head of state', permit: 'Allow private banks', job: 'Create a civic job', zone: 'Add a Streets safe zone', currency: 'Rename the currency',
+  treaty: 'Ratify a treaty offer', breakTreaty: 'Break a treaty', war: 'Declare war', peace: 'Make peace',
+  ...Object.fromEntries(Object.entries(ACTS).map(([k, v]) => [k, v.split(' — ')[0]]))
+};
+const opt = (rows, sel) => rows.map(r => { const [v, l] = Array.isArray(r) ? r : [r, r]; return `<option value="${esc(v)}" ${String(v) === String(sel) ? 'selected' : ''}>${esc(l)}</option>`; }).join('');
+function clauseFields(t, c = {}) {
+  const f = (k, inner, label) => `<label>${label}${inner}</label>`;
+  switch (t) {
+    case 'text': return f('text', `<textarea data-c="text">${esc(c.text || '')}</textarea>`, 'What the law says');
+    case 'set': return `<div class="fields">${f('key', `<select data-c="key">${opt(Object.entries(SETTABLE).map(([k, v]) => [k, `${v[0]} (${v[2]}–${v[3]}${v[1]})`]), c.key)}</select>`, 'Setting')}${f('value', `<input type="number" data-c="value" data-num value="${esc(c.value ?? '')}">`, 'New value')}</div>`;
+    case 'constitution': {
+      const key = c.key || 'hos';
+      return `<div class="fields">${f('key', `<select data-c="key" data-rebuild>${opt(Object.entries(CONST_KEYS).map(([k, v]) => [k, v[0]]), key)}</select>`, 'What to change')}${f('value', `<select data-c="value" ${key === 'seats' || key === 'termDays' ? 'data-num' : ''}>${opt(CONST_KEYS[key][1], c.value)}</select>`, 'Becomes')}</div>`;
+    }
+    case 'office': return `<div class="fields">${f('template', `<select data-c="template">${opt(Object.entries(OFFICE_TEMPLATES), c.template)}</select>`, 'Which office')}</div><small class="mut">For a custom office with your own powers, use the JSON box under Advanced.</small>`;
+    case 'abolish': return f('office', `<select data-c="office">${opt(SOURCES.office(), c.office)}</select>`, 'Office');
+    case 'budget': return `<div class="fields">${f('office', `<select data-c="office">${opt(SOURCES.office(), c.office)}</select>`, 'Office')}${f('value', `<input type="number" data-c="value" data-num min="0" max="200" value="${esc(c.value ?? '')}">`, 'Crowns a week (0–200)')}</div>`;
+    case 'repeal': return f('ref', `<select data-c="ref">${opt(coll(W?.laws).map(([, l]) => [l.ref, `${l.ref} — ${l.title}`]), c.ref)}</select>`, 'Law to repeal');
+    case 'job': return `<div class="fields">${f('title', `<input data-c="title" value="${esc(c.title || '')}">`, 'The job (6–120 characters)')}${f('pay', `<input type="number" data-c="pay" data-num min="1" max="30" value="${esc(c.pay ?? '')}">`, 'Pay each time (1–30)')}</div>`;
+    case 'zone': return f('text', `<input data-c="text" value="${esc(c.text || '')}">`, 'Where the safe zone is');
+    case 'currency': return `<div class="fields">${f('one', `<input data-c="one" value="${esc(c.one || '')}" placeholder="e.g. ducat">`, 'New name')}${f('many', `<input data-c="many" value="${esc(c.many || '')}" placeholder="e.g. ducats (optional)">`, 'Plural')}</div>`;
+    case 'treaty': return f('offer', `<select data-c="offer">${opt(SOURCES.offer(), c.offer)}</select>`, 'Treaty offer');
+    case 'breakTreaty': return f('treaty', `<select data-c="treaty">${opt(SOURCES.treaty(), c.treaty)}</select>`, 'Treaty');
+    case 'war': case 'peace': return f('nation', `<select data-c="nation">${opt(SOURCES.nation(), c.nation)}</select>`, 'Nation');
+    default: return ACTS[t] ? `<small class="mut">${esc(ACTS[t].split(' — ')[1])}. Needs no other details.</small>` : '<small class="mut">Needs no other details.</small>';
+  }
+}
+function clauseRow(c = { t: 'text' }) {
+  return `<div class="clause" data-clause><div class="head"><select data-type>${opt(Object.entries(CLAUSE_TYPES), c.t)}</select><button type="button" class="sm" data-up title="Move up">↑</button><button type="button" class="sm" data-del title="Remove">✕</button></div><div data-cf>${clauseFields(c.t, c)}</div></div>`;
+}
+const clauseEditor = (clauses = []) => `<div class="clauses" style="display:grid;gap:8px;margin-top:6px">${clauses.map(clauseRow).join('')}</div><div class="row" style="margin-top:6px"><button type="button" class="sm" data-addclause>+ Add a clause</button></div>`;
+document.addEventListener('change', e => {
+  const cl = e.target.closest('[data-clause]'); if (!cl) return;
+  if (e.target.matches('[data-type]')) cl.querySelector('[data-cf]').innerHTML = clauseFields(e.target.value);
+  if (e.target.matches('[data-rebuild]')) cl.querySelector('[data-cf]').innerHTML = clauseFields('constitution', { key: e.target.value });
+});
+document.addEventListener('click', e => {
+  if (e.target.matches('[data-addclause]')) { const box = e.target.closest('[data-kind="clauses"],.billbox').querySelector('.clauses'); box.insertAdjacentHTML('beforeend', clauseRow()); }
+  if (e.target.matches('[data-del]')) e.target.closest('[data-clause]').remove();
+  if (e.target.matches('[data-up]')) { const c = e.target.closest('[data-clause]'); c.previousElementSibling && c.parentNode.insertBefore(c, c.previousElementSibling); }
+});
+function readClauses(root) {
+  return [...root.querySelectorAll('[data-clause]')].map(cl => {
+    const o = { t: cl.querySelector('[data-type]').value };
+    cl.querySelectorAll('[data-c]').forEach(el => { if (el.value !== '') o[el.dataset.c] = el.hasAttribute('data-num') ? Number(el.value) : el.value; });
+    return o;
+  });
+}
+const PRESETS = {
+  crown: {
+    name: 'The Crown Sovereignty Act (absolute monarchy)',
+    title: 'The Crown Sovereignty Act', summary: 'Makes the Monarch sovereign for life and gives the Crown’s government every power the realm can grant: rule by decree, an indefinite Parliament, one party, and protection from removal.',
+    clauses: [
+      { t: 'text', text: 'All authority in the realm is vested in the Monarch. The Monarch reigns for life and shall also lead His Majesty’s Government as Prime Minister. Every other office holds only what the Crown lends it.' },
+      { t: 'constitution', key: 'hos', value: 'monarchy' },
+      { t: 'constitution', key: 'hosMethod', value: 'life' },
+      { t: 'decrees' }, { t: 'continuity' }, { t: 'unity' }, { t: 'protection' }, { t: 'security' }, { t: 'crown' }
+    ]
+  },
+  emeritus: { name: 'A royal pension for a past monarch', title: 'Royal Pensions Act', summary: 'Creates the Office of the Monarch Emeritus: the reigning monarch may grant it to someone who has reigned before, with a pension each payday, an honour and a style.', clauses: [{ t: 'office', template: 'emeritus' }, { t: 'set', key: 'emeritusPay', value: 10 }] },
+  honours: { name: 'More honours a week for the Crown', title: 'Royal Honours Decree', summary: 'The head of state may give up to five honours a week.', clauses: [{ t: 'set', key: 'honoursPerWeek', value: 5 }] },
+  veto: { name: 'The Royal Veto (strike bills)', title: 'Royal Veto Decree', summary: 'The Monarch may strike any pending bill from the order paper.', clauses: [{ t: 'veto' }] },
+  edicts: { name: 'More decrees a day for the Crown', title: 'Royal Edicts Decree', summary: 'The Prime Minister may issue up to five built-in decrees a day.', clauses: [{ t: 'set', key: 'edictsPerDay', value: 5 }] },
+  prerogative: { name: 'The Royal Prerogative (assent can be refused)', title: 'Royal Prerogative Decree', summary: 'Every bill passed by the House waits for Royal Assent, which the Crown may give or refuse.', clauses: [{ t: 'prerogative' }] },
+  savings: { name: 'A savings tax', title: 'Savings Tax Act', summary: 'A small tax on large balances each payday.', clauses: [{ t: 'set', key: 'savingsTax', value: 2 }, { t: 'set', key: 'savingsFloor', value: 200 }] },
+  tax: { name: 'Cut income tax', title: 'Finance Bill', summary: 'Lowers income tax.', clauses: [{ t: 'set', key: 'taxRate', value: 10 }] },
+  treasury: { name: 'Create the Treasury', title: 'Treasury Act', summary: 'Creates the Treasury and the office of Chancellor.', clauses: [{ t: 'office', template: 'treasury' }] },
+};
+
+/* ═════════════════════════════════════════════ views */
+const VIEWS = { home: 'Home', house: 'The House', people: 'Parties & people', money: 'Money', crown: 'The Crown', bill: 'Write a bill', do: 'Do anything', gazette: 'Gazette', settings: 'Settings' };
+let VIEW = 'home';
+const PHONE = matchMedia('(max-width:640px)');
+const TAB_ICON = { home: '🏠', house: '🏛', people: '👥', money: '👑', crown: '♛', bill: '📜', do: '⚡', gazette: '📰', settings: '⚙' };
+const TAB_SHORT = { home: 'Home', house: 'House', people: 'People', money: 'Money', crown: 'Crown', bill: 'Bill', do: 'Do', gazette: 'Gazette', settings: 'Settings' };
+PHONE.addEventListener?.('change', () => tabs());
+function tabs() {
+  const phone = PHONE.matches;
+  $('#tabs').innerHTML = Object.entries(VIEWS).map(([k, l]) => `<button data-v="${k}" class="${k === VIEW ? 'on' : ''}" aria-label="${esc(l)}">${phone ? `<span class="ic" aria-hidden="true">${TAB_ICON[k] || '•'}</span>${TAB_SHORT[k] || l}` : l}${k === 'home' && ALERTS.length ? `<span class="badge">${ALERTS.length}</span>` : ''}</button>`).join('');
+  if (phone) $('#tabs .on')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+}
+$('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) go(b.dataset.v); };
+/* The address is the page: #house, #house/<proposal id>, #do/<action>. Back and forward work. */
+function go(v, sub) { const h = '#' + v + (sub ? '/' + sub : ''); if (location.hash === h) route(); else location.hash = h; }
+function route() {
+  const [v, ...rest] = location.hash.slice(1).split('/'), sub = decodeURIComponent(rest.join('/'));
+  VIEW = v in VIEWS ? v : 'home';
+  render(true);
+  if (!W) return;
+  if (VIEW === 'do' && sub) openAction(sub);
+  else if (VIEW === 'house' && sub) spotlight(document.getElementById('p-' + sub));
+  else window.scrollTo(0, 0);
+}
+window.addEventListener('hashchange', route);
+function spotlight(el) { if (!el) return; requestAnimationFrame(() => { el.scrollIntoView({ block: 'center' }); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }); }
+const setHH = () => document.documentElement.style.setProperty('--hh', $('header').offsetHeight + 'px');
+window.addEventListener('resize', setHH);
+/* Light / dark / follow the PC. */
+function applyTheme() {
+  const t = store.get('theme');
+  if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  $('#theme').textContent = t === 'dark' ? '☾ Dark' : t === 'light' ? '☀ Light' : '◐ Auto';
+}
+$('#theme').onclick = () => { const t = store.get('theme'); store.set('theme', !t ? 'light' : t === 'light' ? 'dark' : null); applyTheme(); };
+applyTheme();
+
+function header() {
+  const live = $('#live');
+  $('#find').hidden = !W || !ME;
+  if (!W || !ME) { $('#meBar').innerHTML = `<span class="live" id="live"></span><span>Not connected</span>`; $('#meLine').innerHTML = ''; document.title = 'Realm Console'; return; }
+  $('#realmName').textContent = W.config?.realmName || 'The Realm';
+  document.title = (ALERTS.length ? `(${ALERTS.length}) ` : '') + (W.config?.realmName || 'The Realm') + ' · Console';
+  const me = W.citizens?.[W.viewer] || {};
+  $('#meBar').innerHTML = `<span class="live ${CONN === 'live' ? 'on' : CONN === 'retry' ? 'wait' : ''}" title="${CONN === 'live' ? 'Live: updates arrive on their own' : CONN === 'retry' ? 'Reconnecting' : 'Not live'}"></span>
+    ${CONN === 'retry' ? '<span class="pill warn">Reconnecting…</span>' : ''}${W.clock?.pausedAt ? '<span class="pill warn">Clock paused</span>' : ''}
+    <b style="color:var(--ink)">${esc(me.name || ME.name)}</b>
+    <span class="pill">👑 ${W.accounts?.['c:' + W.viewer] ?? ME.crowns ?? 0} crowns</span>
+    <span class="pill">✦ ${me.influence ?? ME.influence ?? 0} influence</span>
+    <span class="pill">${me.approval ?? ME.approval ?? '–'}% approval</span>
+    <span class="pill" title="Key scope">${canAct() ? '🔓 can act' : '🔒 read only'}</span>`;
+  /* phones: the same, as one scrolling line under the title */
+  $('#meLine').innerHTML = `<span class="live ${CONN === 'live' ? 'on' : CONN === 'retry' ? 'wait' : ''}" style="align-self:center"></span><span class="pill"><b>${esc(me.name || ME.name)}</b></span><span class="pill">👑 ${W.accounts?.['c:' + W.viewer] ?? ME.crowns ?? 0}</span><span class="pill">✦ ${me.influence ?? ME.influence ?? 0}</span><span class="pill">${me.approval ?? ME.approval ?? '–'}%</span>${W.clock?.pausedAt ? '<span class="pill warn">Paused</span>' : ''}${canAct() ? '' : '<span class="pill">🔒 read only</span>'}`;
+}
+
+function render(full) {
+  tabs(); header(); setHH();
+  const m = $('#main');
+  if (!KEY || !W) { if (full || !m.dataset.v || m.dataset.v !== 'connect') { m.dataset.v = 'connect'; m.innerHTML = viewConnect(); wireConnect(); } return; }
+  /* Don't redraw a form the user is typing in when a live update arrives. */
+  if (!full && ['bill', 'do', 'settings'].includes(VIEW) && m.dataset.v === VIEW) return;
+  if (!full && m.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+  m.dataset.v = VIEW;
+  m.innerHTML = ({ home: viewHome, house: viewHouse, people: viewPeople, money: viewMoney, crown: viewCrown, bill: viewBill, do: viewDo, gazette: viewGazette, settings: viewSettings })[VIEW]();
+  ({ bill: wireBill, do: wireDo, gazette: wireGazette, settings: wireSettings })[VIEW]?.();
+}
+
+/* ---------------------------------------------------------------- connect */
+function viewConnect() {
+  return `<div class="card" style="max-width:560px;margin:30px auto;width:100%">
+    <h2>Connect to the realm</h2>
+    <ol class="small mut" style="margin:0 0 12px;padding-left:20px"><li>In the game, open <b>You → Build your own app → Make a key</b>.</li><li>Choose <b>act</b> to vote and do things from here, or <b>read</b> to only watch.</li><li>Paste the key below. It is shown once, so copy it straight away.</li></ol>
+    <form id="cf" style="display:grid;gap:12px">
+      <label>Your API key<span class="row" style="flex-wrap:nowrap"><input id="ck" type="password" autocomplete="off" spellcheck="false" placeholder="rlm_…" value="${esc(KEY)}" autofocus><button type="button" class="sm" id="cshow">Show</button></span></label>
+      <label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="cr" style="width:auto" ${store.get('key') ? 'checked' : ''}> Remember it on this PC</label>
+      <details class="raw"><summary>Advanced</summary><label style="margin-top:8px">Server address<input id="cb" value="${esc(BASE)}"></label></details>
+      <div class="row"><button class="p" id="cgo">Connect</button><span id="cmsg" class="small mut"></span></div>
+    </form></div>`;
+}
+function wireConnect() {
+  $('#cshow').onclick = () => { const i = $('#ck'); i.type = i.type === 'password' ? 'text' : 'password'; $('#cshow').textContent = i.type === 'password' ? 'Show' : 'Hide'; };
+  $('#cf').onsubmit = async e => {
+    e.preventDefault();
+    const k = $('#ck').value.trim();
+    if (!/^rlm_/.test(k)) { $('#cmsg').innerHTML = '<span style="color:var(--bad)">Keys start with rlm_. Check you copied the whole thing.</span>'; $('#ck').classList.add('miss'); $('#ck').focus(); return; }
+    KEY = k; BASE = ($('#cb')?.value.trim() || BASE).replace(/\/+$/, '');
+    store.set('base', BASE); store.set('key', $('#cr').checked ? KEY : null);
+    $('#cgo').disabled = true; $('#cmsg').textContent = 'Connecting… the server may need ~30 seconds to wake up.';
+    try { await connect(); } catch (err) { $('#cmsg').innerHTML = `<span style="color:var(--bad)">${esc(err.message)}</span>`; }
+    $('#cgo') && ($('#cgo').disabled = false);
+  };
+}
+async function connect() {
+  ME = await api('/me');
+  absorb(await api('/state'));
+  CMDS = await api('/commands').catch(() => ({}));
+  await refreshAlerts();
+  route(); loop();
+  toast(`Welcome, ${ME.name}.`);
+}
+async function refreshAlerts() { try { ALERTS = await api('/alerts', null, { quiet: true }); } catch { ALERTS = []; } notifyNew(); }
+/* Desktop notifications for anything new that needs you (crises, signatures, assent, votes). Off until you turn them on in Settings. */
+const notifyOn = () => store.get('notify') === 'on' && 'Notification' in window && Notification.permission === 'granted';
+function notifyNew() {
+  if (!Array.isArray(ALERTS)) return;
+  let seen; try { seen = new Set(JSON.parse(store.get('seenAlerts') || '[]')); } catch { seen = new Set(); }
+  const fresh = ALERTS.filter(a => a.key && !seen.has(a.key));
+  if (notifyOn()) fresh.slice(0, 3).forEach(a => { try { const n = new Notification(a.label || 'The Realm', { body: a.title, tag: a.key }); n.onclick = () => { window.focus(); const h = alertHash(a.href); if (h) location.hash = h; }; } catch {} });
+  store.set('seenAlerts', JSON.stringify([...new Set([...ALERTS.map(a => a.key), ...seen])].slice(0, 300)));
+}
+
+/* ---------------------------------------------------------------- home */
+function proposalCard(p, compact) {
+  const mine = p.votes?.[W.viewer];
+  const isMP = (W.seats || []).includes(W.viewer);
+  const t = p.stage === 'vote' ? until(p.voteEndsAt) : p.stage === 'debate' ? until(p.debateEndsAt) : p.assentDueAt ? until(p.assentDueAt) : '';
+  const tally = p.votes ? Object.values(p.votes).reduce((a, v) => (a[v] = (a[v] || 0) + 1, a), {}) : {};
+  const amHos = W.hos?.holder === W.viewer;
+  return `<div class="item" id="p-${esc(p.id)}">
+    <div class="row" style="justify-content:space-between"><span class="t">${p.n ? '#' + p.n + ' ' : ''}${esc(p.title)}${p.crown ? ' <span class="tag warn">Crown bill</span>' : ''}${p.royalLine ? ` <span class="tag ${p.royalLine === 'aye' ? 'ok' : 'bad'}">Crown: ${p.royalLine === 'aye' ? 'for' : 'against'}</span>` : ''}</span><span>${stageTag(p.stage)}${t ? `<span class="small mut">${t}</span>` : ''}</span></div>
+    <div class="m">${esc(human(p.kind || 'bill'))} by ${esc(who(p.by || p.author))}${p.summary ? ' — ' + esc(p.summary) : ''}</div>
+    ${p.clauses?.length ? (compact ? `<details class="raw" style="margin-top:4px"><summary>Read the ${p.clauses.length === 1 ? 'clause' : p.clauses.length + ' clauses'}</summary>` : '') + `<ol class="small" style="margin:6px 0 0;padding-left:20px">${p.clauses.map(c => `<li>${esc(describeClause(c))}</li>`).join('')}</ol>` + (compact ? '</details>' : '') : ''}
+    ${p.stage === 'vote' || Object.keys(tally).length ? `<div class="small mut" style="margin-top:4px">Aye ${tally.aye || 0} · No ${tally.no || 0} · Abstain ${tally.abstain || 0}${mine ? ` · <b>you voted ${esc(mine)}</b>` : ''}</div>` : ''}
+    ${canAct() ? `<div class="row" style="margin-top:8px">
+      ${p.stage === 'vote' && (isMP || p.voters === 'all') ? ['aye', 'no', 'abstain'].map(v => `<button class="sm ${v} ${mine === v ? 'on' : ''}" data-do="prop.vote" data-a='${JSON.stringify({ prop: p.id, vote: v })}' ${mine === v ? 'title="Your vote. You can change it until the vote closes."' : ''}>${mine === v ? '✓ ' : ''}${human(v)}</button>`).join('') : ''}
+      ${p.stage === 'debate' ? `<button class="sm" data-speak="${esc(p.id)}">Speak in the debate</button>` : ''}
+      ${amHos && W.config?.hos === 'monarchy' && ['consent', 'debate', 'vote'].includes(p.stage) ? ['aye', 'no'].map(l => `<button class="sm ${p.royalLine === l ? 'on' : ''}" data-do="crown.whip" data-a='${JSON.stringify({ prop: p.id, line: l })}'>Crown line: ${l === 'aye' ? 'for' : 'against'}</button>`).join('') + (p.royalLine ? `<button class="sm" data-do="crown.whip" data-a='${JSON.stringify({ prop: p.id, line: 'none' })}'>No line</button>` : '') : ''}
+      ${W.pm === W.viewer && W.acts?.decrees && p.kind === 'bill' && ['consent', 'debate', 'vote', 'assent', 'override', 'withheld'].includes(p.stage) ? `<button class="sm aye" data-command="${esc(p.id)}">Enact by Royal Command</button>` : ''}
+      ${amHos && W.acts?.veto && ['consent', 'debate', 'vote', 'assent', 'override'].includes(p.stage) && (!(p.clauses || []).some(c => c.t === 'removeHos') || W.acts?.protection) ? `<button class="sm no" data-strike="${esc(p.id)}">Strike by Royal Command</button>` : ''}
+      ${['assent', 'hos', 'passed'].includes(p.stage) && amHos ? `<button class="sm aye" data-do="prop.assent" data-a='${JSON.stringify({ prop: p.id, yes: true })}'>Grant assent</button><button class="sm no" data-do="prop.assent" data-a='${JSON.stringify({ prop: p.id, yes: false })}'>Refuse</button>` : ''}
+      ${amHos && W.config?.hos === 'monarchy' && ['debate', 'vote'].includes(p.stage) ? `<button class="sm" data-do="prop.hasten" data-a='${JSON.stringify({ prop: p.id, mode: p.stage === 'debate' ? 'skip' : 'halve' })}'>${p.stage === 'debate' ? 'Skip the debate' : 'Halve the vote time'}</button>` : ''}
+    </div>` : ''}
+  </div>`;
+}
+function describeClause(c) {
+  switch (c.t) {
+    case 'text': return c.text;
+    case 'set': return `Sets ${(SETTABLE[c.key]?.[0] || c.key).toLowerCase()} to ${c.value}${SETTABLE[c.key]?.[1] || ''}${typeof c.from === 'number' ? ` (was ${c.from})` : ''}.`;
+    case 'constitution': { const k = CONST_KEYS[c.key]; const v = (k?.[1] || []).find(x => (Array.isArray(x) ? x[0] : x) == c.value); return `Constitution: ${(k?.[0] || c.key).toLowerCase()} becomes ${c.label || (Array.isArray(v) ? v[1] : c.value)}.`; }
+    case 'office': return c.template ? `Creates the ${OFFICE_TEMPLATES[c.template] || c.template}.` : `Creates the office of ${c.office?.name}.`;
+    case 'abolish': return `Abolishes the ${W.offices?.[c.office]?.name || 'office'}.`;
+    case 'budget': return `Sets the ${W.offices?.[c.office]?.name || 'office'} budget to ${c.value} crowns a week.`;
+    case 'repeal': return `Repeals ${c.ref}.`;
+    case 'removeHos': return `Removes the ${hosTitle()}.`;
+    case 'war': return `Declares war on ${W.nations?.[c.nation]?.name || c.nation}.`;
+    case 'peace': return `Makes peace with ${W.nations?.[c.nation]?.name || c.nation}.`;
+    case 'job': return `Creates a civic job: ${c.title} (${c.pay} crowns).`;
+    case 'zone': return `Adds a Streets safe zone: ${c.text}.`;
+    case 'currency': return `Renames the currency: the crown becomes the ${c.one}${c.many ? ` (${c.many})` : ''}.`;
+    default: return ACTS[c.t] ? 'Enacts the ' + ACTS[c.t] : CLAUSE_TYPES[c.t] || c.t;
+  }
+}
+/* Where an alert's link in the game lands in this console. */
+const alertHash = h => { const m = /^#\/p\/(.+)/.exec(h || ''); return m ? '#house/' + encodeURIComponent(m[1]) : /^#\/(cabinet|part|coalition)/.test(h || '') ? '#people' : /^#\/(crisis|crises)/.test(h || '') ? '#home' : /^#\/(economy|wallet)/.test(h || '') ? '#money' : /^#\/(hos|office)/.test(h || '') ? '#crown' : ''; };
+function viewHome() {
+  const props = coll(W.proposals).map(([, p]) => p).filter(p => ['debate', 'vote', 'assent', 'hos', 'passed', 'consent', 'override'].includes(p.stage)).sort((a, b) => (a.voteEndsAt || a.debateEndsAt || 0) - (b.voteEndsAt || b.debateEndsAt || 0));
+  const elections = coll(W.elections).map(([id, e]) => ({ id, ...e })).filter(e => e.status !== 'closed');
+  const meters = W.meters || {};
+  const party = (W.citizens?.[W.viewer] || {}).party;
+  return `
+  <div class="card"><h2>Needs you <span class="sub">${ALERTS.length ? ALERTS.length + ' thing' + (ALERTS.length > 1 ? 's' : '') : 'all clear'}</span></h2>
+    ${ALERTS.length ? ALERTS.map(a => {
+      const h = alertHash(a.href), inner = `<div class="row between"><span class="t">${a.urgent ? '🔴 ' : ''}${esc(a.title)}</span><span class="small mut">${until(a.at)}${h ? ' <span class="go">Open →</span>' : ''}</span></div><div class="m">${esc(a.label || '')}</div>`;
+      return h ? `<a class="item" href="${h}">${inner}</a>` : `<div class="item">${inner}</div>`;
+    }).join('') : '<div class="empty">Nothing is waiting on you.</div>'}
+  </div>
+  <div class="grid">
+    <div class="card"><h2>The realm <span class="sub">${esc(human(W.phase || ''))}${W.clock?.pausedAt ? ' · clock paused' : ''}</span></h2>
+      <div class="stats">
+        <div><b>${esc(W.crown?.reign?.crownedAt ? `${hosTitle()} ${W.crown.reign.name} ${W.crown.reign.numeral}` : who(W.hos?.holder))}</b><span>${esc(W.acts?.crown && W.pm && W.pm === W.hos?.holder ? 'Sovereign' : hosTitle())}</span></div>
+        <div><b>${esc(who(W.pm))}</b><span>Prime Minister</span></div>
+        <div><b>${esc(who(W.speaker))}</b><span>Speaker</span></div>
+        <div><b>${(W.seats || []).length}</b><span>seats</span></div>
+      </div>
+      ${['prosperity', 'stability'].filter(k => meters[k] != null).map(k => `<div class="small" style="margin-top:10px">${human(k)} · ${meters[k]}<div class="meter"><i style="width:${meters[k]}%"></i></div></div>`).join('')}
+    </div>
+    <div class="card"><h2>The House</h2>
+      ${(W.seats || []).map(id => `<div class="item"><span class="t">${esc(who(id))}</span> <span class="m">${esc(partyName(W.citizens?.[id]?.party))}${id === W.speaker ? ' · Speaker' : ''}${id === W.pm ? ' · PM' : ''}</span></div>`).join('') || '<div class="empty">The House is empty.</div>'}
+    </div>
+  </div>
+  ${W.crown?.reign?.id === W.viewer && !W.crown.reign.crownedAt ? styleCard() : ''}
+  ${W.crown?.offer && [W.crown.offer.heir, W.crown.offer.by].includes(W.viewer) ? abdicationCard() : ''}
+  ${powersCard()}
+  ${crisesCard()}
+  ${crownCard()}
+  <div class="card"><h2>Before the House <span class="sub">${props.length} open</span></h2>${props.map(p => proposalCard(p, true)).join('') || '<div class="empty">Nothing open right now.</div>'}</div>
+  ${elections.length ? `<div class="card"><h2>Elections</h2>${elections.map(e => electionCard(e)).join('')}</div>` : ''}
+  ${W.phase === 'convention' ? conventionCard() : ''}
+  <div class="card"><div class="row between"><h2>Latest news</h2><a href="#gazette" class="small" style="color:var(--acc)">The whole Gazette →</a></div>${gazetteList(8)}</div>`;
+}
+// open crises: who is caught up, and your move if it is you
+function crisesCard() {
+  const open = coll(W.crises).map(([id, c]) => ({ id, ...c })).filter(c => c.status === 'open');
+  if (!open.length) return '';
+  const moves = [['deny', 'Deny everything'], ['apologise', 'Apologise'], ['cashin', 'Quietly cash in']];
+  return `<div class="card"><h2>Crises <span class="sub">${open.length} open</span></h2>${open.map(c => {
+    const me = (c.cast || []).find(x => x.id === W.viewer), done = c.responses?.[W.viewer];
+    const said = r => !r ? 'nothing yet' : r.move === 'blame' ? 'blamed ' + who(r.target) : r.move === 'quiet' ? 'kept their head down' : human(r.move);
+    const fund = Object.values(c.helpers || {}).reduce((a, b) => a + b, 0);
+    const opts = c.options || [], amPM = W.pm === W.viewer, amMP = (W.seats || []).includes(W.viewer);
+    return `<div class="item"><div class="row between"><span class="t">${c.extreme ? '⚠ ' : ''}${esc(c.title || human(c.type))}</span><span class="small mut">${c.house ? 'MPs vote' : 'PM decides'} · ${until(c.decideBy)}</span></div>
+      ${c.text ? `<div class="m">${esc(c.text)}</div>` : ''}
+      ${opts.length ? `<ol class="small" style="margin:6px 0 0;padding-left:20px">${opts.map((o, i) => `<li><b>${esc(o.label)}</b>: ${esc((o.effects || []).join(', '))}${c.house ? ` <span class="mut">(${Object.values(c.votes || {}).filter(v => v === i).length} votes)</span>` : ''}</li>`).join('')}</ol>` : ''}
+      ${canAct() && opts.length && ((amPM && !c.house) || (amMP && c.house)) ? `<div class="row" style="margin-top:6px">${opts.map((o, i) => `<button class="sm ${c.votes?.[W.viewer] === i ? 'on' : ''}" data-do="${c.house ? 'crisis.vote' : 'crisis.decide'}" data-a='${JSON.stringify({ id: c.id, choice: i })}'>${c.house ? 'Vote' : 'Choose'}: ${esc(o.label)}</button>`).join('')}</div>` : ''}
+      <div class="m">Caught up in it: ${(c.cast || []).map(x => `${esc(who(x.id))} (${esc(x.role)}: ${esc(said(c.responses?.[x.id]))})`).join('; ') || 'nobody'}${fund ? ` · relief fund ${fund}` : ''}</div>
+      ${canAct() ? `<div class="row" style="margin-top:8px">${me && !done ? moves.map(([m, l]) => `<button class="sm ${m === 'cashin' ? 'no' : ''}" data-do="crisis.respond" data-a='${JSON.stringify({ id: c.id, move: m })}'>${l}</button>`).join('') + openBtn('crisis.respond', 'Blame someone…') + (c.house ? '' : openBtn('crisis.bribe', 'Private offer to the PM…')) : ''}
+        <button class="sm" data-do="crisis.help" data-a='${JSON.stringify({ id: c.id, amount: 5 })}'>Give 5 to the fund</button></div>` : ''}
+    </div>`;
+  }).join('')}</div>`;
+}
+// the Crown and the Treasury: a toast, the debt clock, and any printing or bonds waiting
+function crownCard() {
+  const r = W.crown?.reign, e = W.economy || {}, m = e.motion && e.motion.expiresAt > SERVER_NOW() ? e.motion : null, issue = W.bonds?.issue && W.bonds.issue.closesAt > SERVER_NOW() ? W.bonds.issue : null;
+  const today = Math.floor(SERVER_NOW() / 864e5), toasted = r?.toastDay === today && (r.toastedToday || []).includes(W.viewer);
+  const desc = t => t.kind === 'print' ? `printing ${t.amount} ${t.use === 'debt' ? 'to pay down the debt' : 'into the Treasury'}` : t.kind === 'gold' ? `buying ${t.amount} of gold` : `bonds: up to ${t.cap} at ${t.rate}% a week for ${t.weeks} weeks`;
+  const conds = (W.conditions || []).filter(c => c.until > SERVER_NOW());
+  return `<div class="card"><h2>The Crown and the Treasury</h2>
+    <div class="stats">
+      <div><b>${e.lent ?? 0}</b><span>owed to the Reserve</span></div>
+      <div><b>${e.gold || 0}</b><span>gold reserve</span></div>
+      <div><b>${W.bonds?.outstanding || 0}</b><span>bonds out</span></div>
+      <div><b>${(e.lastInflation >= 0 ? '+' : '') + Number(e.lastInflation || 0).toFixed(1)}%</b><span>prices last week</span></div>
+    </div>
+    ${conds.length ? `<div class="small" style="margin-top:8px">Conditions: ${conds.map(c => `${esc(human(c.type))} (${until(c.until)})`).join(', ')}</div>` : ''}
+    ${m ? `<div class="item" style="margin-top:8px"><span class="t">Waiting: ${esc(desc(m.terms))}</span><div class="m">Proposed by ${esc(who(m.by))} · ${until(m.expiresAt)}</div>${canAct() ? `<div class="row" style="margin-top:6px"><button class="sm aye" data-do="money.agree" data-a='{}'>Agree</button></div>` : ''}</div>` : ''}
+    ${issue ? `<div class="item" style="margin-top:8px"><span class="t">Bonds on sale: ${issue.rate}% a week for ${issue.weeks} weeks</span><div class="m">${issue.sold} of ${issue.cap} sold · ${until(issue.closesAt)}</div>${canAct() ? `<div class="row" style="margin-top:6px">${[10, 25].map(n => `<button class="sm" data-do="bond.buy" data-a='${JSON.stringify({ amount: n })}'>Lend ${n}</button>`).join('')}</div>` : ''}</div>` : ''}
+    ${canAct() ? `<div class="row" style="margin-top:10px">${r?.crownedAt && r.id !== W.viewer ? `<button class="sm" data-do="crown.toast" data-a='{}' ${toasted ? 'disabled' : ''}>${toasted ? 'Toasted today' : 'Raise a loyal toast'}</button>` : ''}${[W.offices?.treasury?.holder, W.offices?.reserve?.holder, W.pm].includes(W.viewer) ? openBtn('money.print', 'Print money…') + openBtn('money.bonds', 'Issue bonds…') + openBtn('money.gold', 'Buy gold…') : ''}${openBtn('bond.sell', 'Sell a bond…')}</div>` : ''}
+  </div>`;
+}
+// ---------------------------------------------------------------- money: the debt clock, your bonds, the market, the crown abroad
+function viewMoney() {
+  const e = W.economy || {}, now = SERVER_NOW();
+  const mine = (W.bonds?.holdings || []).filter(h => h.owner === W.viewer || !h.owner);
+  const market = (W.bonds?.market || []).filter(m => !mine.some(h => h.id === m.id));
+  const issue = W.bonds?.issue && W.bonds.issue.closesAt > now ? W.bonds.issue : null;
+  const fx = Object.values(W.nations || {}).map(n => [n.name, e.fx?.[n.id] ?? 1, e.fxPrev?.[n.id] ?? e.fx?.[n.id] ?? 1]);
+  const wallet = W.accounts?.['c:' + W.viewer] ?? ME?.crowns ?? 0;
+  const owed = mine.reduce((a, h) => a + h.payout, 0);
+  return `${crownCard()}
+  <div class="grid">
+    <div class="card"><h2>Your bond portfolio <span class="sub">${mine.length} bond${mine.length === 1 ? '' : 's'} · ${owed} due to you</span></h2>
+      ${mine.length ? mine.sort((a, b) => a.dueAt - b.dueAt).map(h => `<div class="item"><div class="row between"><span class="t">${h.amt} lent → ${h.payout} back</span><span class="small mut">${until(h.dueAt)}</span></div>
+        <div class="m">${h.ask ? `On the market at ${h.ask}` : `Profit if held: ${h.payout - h.amt}`}</div>
+        ${canAct() ? `<div class="row" style="margin-top:6px">${h.ask ? `<button class="sm" data-do="bond.unlist" data-a='${JSON.stringify({ bond: h.id })}'>Take off the market</button>` : `<button class="sm" data-do="bond.sell" data-a='${JSON.stringify({ bond: h.id, price: h.payout })}'>Sell at payout (${h.payout})</button><button class="sm" data-do="bond.sell" data-a='${JSON.stringify({ bond: h.id, price: h.amt })}'>Sell at cost (${h.amt})</button>`}</div>` : ''}</div>`).join('') : '<div class="empty">You hold no bonds.</div>'}
+      ${issue && canAct() ? `<div class="item"><span class="t">Bonds on sale: ${issue.rate}% a week for ${issue.weeks} weeks</span><div class="m">${issue.sold} of ${issue.cap} sold · ${until(issue.closesAt)} · you have ${wallet} crowns</div><div class="row" style="margin-top:6px">${[10, 25, 50].map(n => `<button class="sm" data-do="bond.buy" data-a='${JSON.stringify({ amount: n })}'>Lend ${n}</button>`).join('')}</div></div>` : ''}
+    </div>
+    <div class="card"><h2>The bond market <span class="sub">${market.length} for sale</span></h2>
+      ${market.length ? market.map(m => `<div class="item"><div class="row between"><span class="t">Pays ${m.payout} · price ${m.price}</span><span class="small mut">${until(m.dueAt)}</span></div><div class="m">${m.payout - m.price >= 0 ? 'Profit ' + (m.payout - m.price) : 'Loss ' + (m.price - m.payout)} if held</div>${canAct() ? `<div class="row" style="margin-top:6px"><button class="sm aye" data-do="bond.take" data-a='${JSON.stringify({ bond: m.id })}'>Buy for ${m.price}</button></div>` : ''}</div>`).join('') : '<div class="empty">Nobody is selling.</div>'}
+    </div>
+  </div>
+  <div class="grid">
+    <div class="card"><h2>The crown abroad</h2>${fx.map(([n, v, p]) => `<div class="item row between"><span class="t">${esc(n)}</span><b>${Number(v).toFixed(2)} ${v > p ? '▲' : v < p ? '▼' : ''}</b></div>`).join('') || '<div class="empty">No rates yet.</div>'}</div>
+    <div class="card"><h2>Taxes</h2><div class="stats"><div><b>${W.config?.taxRate ?? 0}%</b><span>income tax</span></div><div><b>${W.config?.savingsTax || 0}%</b><span>savings tax over ${W.config?.savingsFloor ?? 200}</span></div><div><b>${W.config?.dividend ?? 0}</b><span>dividend</span></div><div><b>${W.config?.tariff ?? 0}%</b><span>tariff</span></div></div>
+      ${(e.coinage || []).length ? `<div class="small" style="margin-top:10px"><b>Coinage</b><br>${e.coinage.slice(0, 6).map(c => `${c.amt} bearing the head of ${esc(c.by)} · ${ago(c.at)}`).join('<br>')}</div>` : ''}</div>
+  </div>`;
+}
+// the Prime Minister's powers: arrest, exile and pardon by edict (Government Powers Act), and the Realm Jail (Public Order Act)
+function powersCard() {
+  if (!canAct() || W.pm !== W.viewer || !(W.acts?.decrees || W.acts?.jail)) return '';
+  const now = SERVER_NOW();
+  const people = SOURCES.citizen().filter(([id]) => id !== W.viewer && !W.citizens[id]?.bot);
+  const held = coll(W.citizens).filter(([, c]) => (c.detainedUntil && c.detainedUntil > now) || c.jail).map(([id, c]) => `${esc(c.name)} (${c.jail ? 'Realm Jail' : 'held ' + left(c.detainedUntil)})`);
+  const perDay = Math.max(1, Number(W.config?.edictsPerDay) || 1), used = W.regime?.type === 'civil' && W.regime.decreeDay === Math.floor(now / 864e5) ? (W.regime.decreeCount || 1) : 0, usedToday = used >= perDay;
+  return `<div class="card"><h2>Your powers <span class="sub">${W.acts?.decrees ? (usedToday ? 'all of today’s decrees are used' : `${perDay - used} of ${perDay} decree${perDay === 1 ? '' : 's'} left today`) : ''}</span></h2>
+    <div class="fields"><label>Who<select id="pw-who"><option value="">Choose…</option>${people.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select></label>
+      ${W.acts?.decrees ? '<label>Days (arrest)<select id="pw-days"><option value="2">2</option><option value="1">1</option></select></label>' : ''}</div>
+    <div class="row" style="margin-top:8px">
+      ${W.acts?.decrees ? `<button class="sm no" data-power="arrest">Arrest</button><button class="sm no" data-power="exile">Exile</button><button class="sm" data-power="pardon">Pardon</button>` : ''}
+      ${W.acts?.jail ? `<button class="sm no" data-power="detain">Detain in the Realm Jail</button><button class="sm" data-power="release">Release from the Jail</button>` : ''}
+      ${openBtn('gov.edict', 'Any other decree…')}
+      ${(() => { let l; try { l = JSON.parse(store.get('lastLift') || 'null'); } catch {} const back = { censorship: 'censorship', curfew: 'curfew', parliament: 'dissolve', conscription: 'conscription', oath: 'oath' }[l?.what]; return l && back && l.day === Math.floor(now / 864e5) && W.acts?.decrees ? `<button class="sm" data-do="gov.edict" data-a='${JSON.stringify({ kind: back })}'>Re-impose ${esc(human(l.what).toLowerCase())}</button>` : ''; })()}
+    </div>
+    ${held.length ? `<div class="small mut" style="margin-top:8px">Held now: ${held.join(', ')}</div>` : ''}
+  </div>`;
+}
+document.addEventListener('click', async e => {
+  const k = e.target.closest('[data-strike]'); if (!k) return;
+  if (!confirm(`Strike “${W.proposals?.[k.dataset.strike]?.title}” by Royal Command? It falls and cannot become law.`)) return;
+  const r = await act('crown.strike', { prop: k.dataset.strike });
+  toast(r.ok ? 'Struck by Royal Command.' : r.error, !r.ok);
+});
+document.addEventListener('click', async e => {
+  const c = e.target.closest('[data-command]'); if (!c) return;
+  const p = W.proposals?.[c.dataset.command];
+  if (!confirm(`Enact “${p?.title}” now by Royal Command, without a vote? It becomes law at once.`)) return;
+  const r = await act('gov.command', { prop: c.dataset.command });
+  toast(r.ok ? 'Enacted by Royal Command.' : r.error, !r.ok);
+});
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-power]'); if (!b) return;
+  const target = $('#pw-who')?.value, kind = b.dataset.power;
+  if (!target) return toast('Choose who first.', true);
+  const [cmd, args] = kind === 'detain' ? ['jail.detain', { target }] : kind === 'release' ? ['jail.release', { target }] : ['gov.edict', kind === 'arrest' ? { kind, target, n: Number($('#pw-days')?.value || 2) } : { kind, target }];
+  if (!confirm((plainDecree(cmd, args) || `${human(kind)} ${who(target)}?`) + ' It is announced in the Gazette.')) return;
+  b.disabled = true;
+  const r = await act(cmd, args);
+  toast(r.ok ? 'Done. It is in the Gazette.' : r.error, !r.ok);
+});
+// the monarch's style: before the coronation, the regnal name, King or Queen, and the oath; after it, only King or Queen
+const OATHS = {
+  parliament: ['To Parliament', 'I will govern by the laws this House makes, and by no others.', 'Stability +4'],
+  people: ['To the people', 'I hold this crown in trust for every citizen of the realm.', 'Your approval +4'],
+  crown: ['To the Crown alone', 'I answer to the Crown, and the Crown answers to no one.', 'Influence +8, stability −2']
+};
+function styleCard() {
+  const r = W.crown?.reign;
+  if (!r || r.id !== W.viewer || !canAct()) return '';
+  if (r.crownedAt) return `<div class="card"><h2>Your style <span class="sub">${esc(hosTitle())} ${esc(r.name)} ${esc(r.numeral)}</span></h2>
+    <p class="small">Your regnal name was fixed for life at the coronation. You can still choose King or Queen.</p>
+    <div class="row">${['Queen', 'King'].map(t => `<button class="sm ${W.config?.hosTitle === t ? 'on' : ''}" data-do="hos.title" data-a='${JSON.stringify({ title: t })}'>${t}</button>`).join('')}</div></div>`;
+  return `<div class="card" style="border-color:var(--acc)"><h2>Your regnal name <span class="sub">crowned ${until(r.crownAt) || 'soon'}</span></h2>
+    <p class="small">Choose the name you will reign by, King or Queen, and the oath you swear. You can change them until the coronation; after it the name is yours for life. ${r.styled ? `Now set: <b>${esc(W.config?.hosTitle || 'Queen')} ${esc(r.name)} ${esc(r.numeral)}</b>, sworn ${esc((OATHS[r.oath] || [])[0] || '')}.` : 'Nothing is set yet.'}</p>
+    <div class="fields">
+      <label>Regnal name<input id="st-name" maxlength="24" value="${esc(r.name || '')}" placeholder="e.g. Victoria"><small>Letters only. The numeral is added for you (a second Victoria is Victoria II).</small></label>
+      <label>Title<select id="st-title">${['Queen', 'King'].map(t => `<option ${(W.config?.hosTitle || 'Queen') === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+    </div>
+    <div style="display:grid;gap:6px;margin-top:8px">${Object.entries(OATHS).map(([k, [label, text, eff]]) => `<label class="small" style="display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start;font-weight:400"><input type="radio" name="st-oath" value="${k}" ${(r.oath || 'people') === k ? 'checked' : ''} style="width:auto;margin:3px 0 0"><span><b>${label}</b>: “${esc(text)}” <span class="mut">${eff}</span></span></label>`).join('')}</div>
+    <div class="row" style="margin-top:10px"><button class="aye" id="st-save">${r.styled ? 'Change name and oath' : 'Set name and oath'}</button><button class="sm" id="st-hold">Hold the coronation now</button></div></div>`;
+}
+document.addEventListener('click', async e => {
+  if (e.target.id === 'st-save') {
+    const name = $('#st-name')?.value.trim(), title = $('#st-title')?.value, oath = document.querySelector('input[name="st-oath"]:checked')?.value;
+    if (!name) return toast('Choose a regnal name first.', true);
+    const r = await act('crown.style', { name, title, oath });
+    toast(r.ok ? `You will reign as ${title} ${name}.` : r.error, !r.ok);
+  }
+  if (e.target.id === 'st-hold') {
+    if (!confirm('Hold the coronation now? Your regnal name is then fixed for life.')) return;
+    const r = await act('crown.hold', {});
+    toast(r.ok ? 'You are crowned. Long live the ' + (W.config?.hosTitle || 'Queen') + '!' : r.error, !r.ok);
+  }
+});
+// an offered throne: the heir accepts or declines; the monarch can withdraw, or offer it in the first place
+function abdicationCard() {
+  const o = W.crown?.offer, r = W.crown?.reign;
+  if (!r) return '';
+  const name = r.crownedAt ? `${hosTitle()} ${r.name} ${r.numeral}` : who(r.id);
+  if (o) return `<div class="card" style="border-color:var(--bad)"><h2>The throne is offered <span class="sub">${until(o.until)}</span></h2>
+    <p class="small">${esc(name)} offers to abdicate in favour of <b>${esc(who(o.heir))}</b>. If they accept, they are crowned at once, without an election${W.acts?.crown ? ', and under the Crown Act become Prime Minister too' : ''}.</p>
+    ${canAct() && o.heir === W.viewer ? `<div class="row"><button class="aye" data-do="crown.heir" data-a='{"yes":true}'>Accept the crown</button><button class="sm no" data-do="crown.heir" data-a='{"yes":false}'>Decline</button></div>` : ''}
+    ${canAct() && o.by === W.viewer ? `<div class="row"><button class="sm" data-do="crown.withdraw" data-a='{}'>Withdraw the offer</button></div>` : ''}
+  </div>`;
+  return canAct() && r.id === W.viewer ? `<div class="card"><h2>Abdicate</h2><p class="small">Name an heir, who has a day to accept and is crowned without an election. Or leave the throne empty for the realm to fill.</p><div class="row">${openBtn('crown.abdicate', 'Abdicate…', 'no')}</div></div>` : '';
+}
+// ---------------------------------------------------------------- the Crown: the reign, the toast, and the monarch's desk
+function viewCrown() {
+  const r = W.crown?.reign, amHos = W.hos?.holder === W.viewer;
+  if (W.config?.hos !== 'monarchy' || !r) return `<div class="card"><h2>The Crown</h2><div class="empty">There is no monarch on the throne.</div></div>`;
+  const name = r.crownedAt ? `${hosTitle()} ${r.name} ${r.numeral}` : who(r.id);
+  const awaiting = coll(W.proposals).map(([, p]) => p).filter(p => p.stage === 'assent');
+  const house = ['chamberlain', 'privyseal'].map(k => W.offices?.[k]).filter(Boolean);
+  const nominees = coll(W.offices).map(([, o]) => o).filter(o => o.nominee);
+  const sworn = Object.entries(r.homage || {});
+  const today = Math.floor(SERVER_NOW() / 864e5), toasted = r.toastDay === today && (r.toastedToday || []).includes(W.viewer);
+  return `${styleCard()}${abdicationCard()}${powersCard()}<div class="card"><h2>${esc(name)} <span class="sub">${W.acts?.crown && W.pm === W.hos?.holder ? 'Sovereign: Head of State and Prime Minister' : 'Head of State'}</span></h2>
+    <div class="stats"><div><b>${esc(who(r.id))}</b><span>on the throne</span></div><div><b>${r.toasts || 0}</b><span>loyal toasts this reign</span></div><div><b>${sworn.filter(([, v]) => v).length}</b><span>swore homage</span></div><div><b>${r.jubilees || 0}</b><span>jubilees</span></div></div>
+    ${canAct() && !amHos && r.crownedAt ? `<div class="row" style="margin-top:10px"><button class="sm" data-do="crown.toast" data-a='{}' ${toasted ? 'disabled' : ''}>${toasted ? 'You toasted today' : 'Raise a loyal toast'}</button>${r.homageUntil && r.homage?.[W.viewer] === undefined ? `<button class="sm aye" data-do="crown.homage" data-a='{"swear":true}'>Swear homage</button><button class="sm no" data-do="crown.homage" data-a='{"swear":false}'>Refuse homage</button>` : ''}</div>` : ''}
+  </div>
+  <div class="grid">
+    <div class="card"><h2>Awaiting Royal Assent <span class="sub">${awaiting.length}</span></h2>${awaiting.map(p => proposalCard(p, true)).join('') || '<div class="empty">Nothing is waiting.</div>'}
+      ${W.acts?.prerogative ? '<p class="small mut">Royal Prerogative Act: unsigned bills lapse.</p>' : W.acts?.decrees ? '<p class="small mut">Government Powers Act: assent follows within the hour whatever the Crown does.</p>' : ''}</div>
+    <div class="card"><h2>The Royal Household</h2>${house.map(o => `<div class="item row between"><span class="t">${esc(o.title)}</span><span>${esc(o.holder ? who(o.holder) : 'vacant')}</span></div>`).join('') || '<div class="empty">No household offices.</div>'}
+      ${amHos && canAct() ? `<div class="row" style="margin-top:8px">${openBtn('gov.appoint', 'Appoint an officer…')}${openBtn('gov.decree', 'Make law by decree…')}</div>` : ''}
+      ${nominees.length ? `<div class="small" style="margin-top:10px"><b>Appointments waiting for a second officer</b><br>${nominees.map(o => `${esc(who(o.nominee.by))} proposes ${esc(o.nominee.target ? who(o.nominee.target) : 'leaving it vacant')} as ${esc(o.title)}`).join('<br>')}</div>` : ''}
+    </div>
+  </div>
+  ${(() => { const o = coll(W.offices).map(([, x]) => x).find(x => x.template === 'emeritus'); if (!o) return ''; const past = [...new Set((W.fame?.monarchs || []).map(m => m.id))].filter(id => id !== W.hos?.holder && W.citizens?.[id] && !(o.members || []).includes(id));
+    return `<div class="card"><h2>The Monarchs Emeritus <span class="sub">${(o.members || []).length} · ${W.config?.emeritusPay ?? 10} crowns each payday</span></h2>
+      ${(o.members || []).map(id => `<div class="item row between"><span><span class="t">${esc(who(id))}</span> <span class="m">${esc(o.styles?.[id] || '')}</span></span>${amHos && canAct() ? `<button class="sm no" data-do="crown.emeritus" data-a='${JSON.stringify({ target: id, grant: false })}'>Remove</button>` : ''}</div>`).join('') || '<div class="empty">Nobody holds it yet.</div>'}
+      ${amHos && canAct() && past.length ? `<div class="row" style="margin-top:8px">${past.map(id => `<button class="sm aye" data-do="crown.emeritus" data-a='${JSON.stringify({ target: id })}'>Grant to ${esc(who(id))}</button>`).join('')}</div>` : ''}
+    </div>`; })()}
+  ${sworn.length ? `<div class="card"><h2>The homage roll</h2><div class="small">Sworn: ${esc(sworn.filter(([, v]) => v).map(([id]) => who(id)).join(', ') || 'nobody')}<br>Refused: ${esc(sworn.filter(([, v]) => !v).map(([id]) => who(id)).join(', ') || 'nobody')}</div></div>` : ''}`;
+}
+function electionCard(e) {
+  const cands = coll(e.candidates).map(([id]) => id);
+  const mine = e.ballots?.[W.viewer];
+  const standing = cands.includes(W.viewer);
+  const cid = c => c;
+  return `<div class="item"><div class="row" style="justify-content:space-between"><span class="t">${esc(e.title || human(e.kind || 'Election'))}</span><span><span class="tag ${e.status === 'voting' || e.status === 'open' ? 'bad' : 'warn'}">${esc(human(e.status))}</span><span class="small mut">${until(e.closesAt)}</span></span></div>
+    <div class="m">Candidates: ${cands.map(c => esc(who(cid(c)))).join(', ') || 'none yet'}${mine && mine !== '•' ? ` · <b>your ballot: ${esc(Array.isArray(mine) ? mine.map(who).join(', ') : who(mine))}</b>` : ''}</div>
+    ${canAct() ? `<div class="row" style="margin-top:8px">${!standing ? `<button class="sm" data-do="election.stand" data-a='${JSON.stringify({ election: e.id })}'>Stand</button>` : `<button class="sm" data-do="election.withdraw" data-a='${JSON.stringify({ election: e.id })}'>Withdraw</button>`}
+      ${(!e.method || e.method === 'single') ? cands.map(c => `<button class="sm aye" data-do="election.vote" data-a='${JSON.stringify({ election: e.id, candidate: cid(c) })}'>Vote ${esc(who(cid(c)))}</button>`).join('') : openBtn('election.vote', 'Fill in your ballot (ranked or approval)')}</div>` : ''}
+  </div>`;
+}
+function conventionCard() {
+  const open = (W.convention?.clauses || []).filter(c => c.adopted == null);
+  return `<div class="card"><h2>Founding Convention <span class="sub">${open.length} undecided</span></h2>${open.map(c => `<div class="item"><div class="t">${esc(c.q)}</div>
+    <div class="row" style="margin-top:6px">${c.options.map((o, i) => `<button class="sm ${c.votes?.[W.viewer] === i ? 'p' : ''}" ${canAct() ? `data-do="convention.vote" data-a='${JSON.stringify({ clause: c.id, option: i })}'` : 'disabled'}>${esc(o)}</button>`).join('')}</div></div>`).join('') || '<div class="empty">Every clause is settled.</div>'}</div>`;
+}
+let GQ = '', GKIND = '';
+const dayOf = ms => {
+  const d = new Date(ms).toDateString();
+  return d === new Date().toDateString() ? 'Today' : d === new Date(Date.now() - 864e5).toDateString() ? 'Yesterday' : new Date(ms).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+};
+/* full = the Gazette page: filtered by the search box and the chips, grouped by day. */
+function gazetteList(n, full) {
+  const ws = full ? GQ.toLowerCase().trim().split(/\s+/).filter(Boolean) : [];
+  const g = (W.gazette || []).filter(x => !full || ((!GKIND || x.kind === GKIND) && ws.every(w => String(x.text).toLowerCase().includes(w)))).slice(0, n);
+  if (!g.length) return `<div class="empty">${full && (GQ || GKIND) ? 'Nothing in the record matches that.' : 'No news yet.'}</div>`;
+  let last = '';
+  return `<div class="gz">${g.map(x => {
+    const d = full ? dayOf(x.at) : '', head = d !== last ? `<span class="day">${esc(d)}</span>` : ''; last = d;
+    const when = full ? new Date(x.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : ago(x.at);
+    return `${head}<span class="when" title="${esc(new Date(x.at).toLocaleString())}">${when}</span><span>${esc(x.text)}${x.via ? ` <span class="tag">via ${esc(x.via)}</span>` : ''}${x.practice ? ' <span class="tag warn">practice</span>' : ''}</span>`;
+  }).join('')}</div>`;
+}
+
+/* ---------------------------------------------------------------- the house */
+function viewHouse() {
+  const all = coll(W.proposals).map(([, p]) => p).sort((a, b) => (b.n || 0) - (a.n || 0));
+  const open = all.filter(p => !['enacted', 'failed', 'vetoed', 'withheld', 'withdrawn'].includes(p.stage));
+  const done = all.filter(p => !open.includes(p)).slice(0, 15);
+  return `<div class="card"><h2>Open proposals</h2>${open.map(p => proposalCard(p)).join('') || '<div class="empty">Nothing open.</div>'}</div>
+    <div class="card"><h2>The statute book <span class="sub">${(W.laws || []).length} laws</span></h2>${(W.laws || []).slice().reverse().map(l => `<details class="item"><summary><span class="t">${esc(l.ref)} ${esc(l.title)}</span> <span class="m">${esc(l.summary || '')}</span></summary><ol class="small">${(l.text || []).map(t => `<li>${esc(t)}</li>`).join('')}</ol></details>`).join('') || '<div class="empty">No laws yet.</div>'}</div>
+    <div class="card"><h2>Recently decided</h2>${done.map(p => proposalCard(p, true)).join('') || '<div class="empty">Nothing yet.</div>'}</div>`;
+}
+
+/* ---------------------------------------------------------------- parties & people */
+function viewPeople() {
+  const me = W.viewer, seats = W.seats || [], need = Math.floor(seats.length / 2) + 1;
+  const cits = coll(W.citizens).filter(([, c]) => c?.active !== false);
+  const myParty = W.citizens?.[me]?.party;
+  const colour = c => /^#[0-9a-f]{3,8}$/i.test(c || '') ? c : 'var(--mut)';
+  const parties = coll(W.parties).filter(([, p]) => p.status === 'active').map(([id, p]) => {
+    const members = cits.filter(([, c]) => c.party === id).map(([cid]) => cid);
+    return { ...p, id, members, mps: members.filter(m => seats.includes(m)).length };
+  }).sort((a, b) => b.mps - a.mps || b.members.length - a.members.length);
+  const sName = s => s.startsWith('p:') ? partyName(s.slice(2)) : who(s.slice(2)) + ' (independent)';
+  const sLead = s => s.startsWith('p:') ? W.parties?.[s.slice(2)]?.leader : s.slice(2);
+  const sSeats = s => s.startsWith('p:') ? seats.filter(m => W.citizens?.[m]?.party === s.slice(2)).length : +seats.includes(s.slice(2));
+  const co = W.coalition && ['draft', 'signed'].includes(W.coalition.status) && Array.isArray(W.coalition.sides) ? W.coalition : null;
+  const mySide = co?.sides.find(s => sLead(s) === me);
+  const total = co ? co.sides.reduce((n, s) => n + sSeats(s), 0) : 0;
+  const posts = id => coll(W.offices).filter(([, o]) => o.holder === id).map(([, o]) => o.title || o.name);
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
+  const coalition = `<div class="card"><h2>Coalition <span class="sub">${co ? (co.status === 'signed' ? 'signed' : 'talks open: waiting for signatures') : 'none right now'} · a majority is ${need} of ${plural(seats.length, 'seat')}</span></h2>
+    ${co ? `<div class="small mut">${co.kind === 'full' ? 'Full coalition' : 'Confidence and supply'}, led by ${esc(sName(co.lead))}. Together they hold ${plural(total, 'seat')}: ${total >= need ? '<b style="color:var(--ok)">a majority</b>' : '<b style="color:var(--bad)">short of a majority</b>'}.</div>
+      ${co.sides.map(s => `<div class="item row between"><span><span class="t">${esc(sName(s))}</span> <span class="m">${plural(sSeats(s), 'seat')}${s.startsWith('p:') ? ' · leader ' + esc(who(sLead(s))) : ''}</span></span>${co.signed?.[s] ? '<span class="tag ok">Signed</span>' : '<span class="tag warn">Not signed yet</span>'}</div>`).join('')}
+      ${co.terms?.length ? `<div class="small" style="margin-top:8px"><b>Terms</b><ol style="margin:4px 0 0;padding-left:20px">${co.terms.map(t => `<li>${esc(t)}</li>`).join('')}</ol></div>` : ''}
+      <div class="row" style="margin-top:10px">
+        ${canAct() && co.status === 'draft' && mySide && !co.signed?.[mySide] ? `<button class="sm p" data-do="coalition.sign" data-a='{}'>Sign it</button>` : ''}
+        ${sLead(co.lead) === me ? openBtn('coalition.promise', 'Promise a post to a partner') : ''}
+        ${co.status === 'signed' && mySide ? openBtn('coalition.leave', 'Walk out') : ''}
+        ${openBtn('coalition.propose', 'Propose a new one (replaces this)')}
+      </div>`
+    : `<div class="empty">No coalition talks are open. A party leader or an independent MP can start them: pick partners, choose a full coalition or confidence and supply, and list the terms. It is a deal once every partner's leader signs.</div>
+      <div class="row">${openBtn('coalition.propose', 'Propose a coalition', 'p')}</div>`}
+  </div>`;
+
+  const partyCard = `<div class="card"><h2>Parties <span class="sub">${parties.length}</span></h2>
+    ${parties.map(p => `<div class="item"><div class="row between"><span class="t"><span class="dot" style="background:${colour(p.colour)}"></span>${esc(p.name)}${p.id === myParty ? ' <span class="tag">your party</span>' : ''}</span><span class="small mut">${p.mps} of ${plural(seats.length, 'seat')} · ${plural(p.members.length, 'member')}</span></div>
+      <div class="meter"><i style="width:${seats.length ? p.mps / seats.length * 100 : 0}%;background:${colour(p.colour)}"></i></div>
+      <div class="m" style="margin-top:4px">Led by ${esc(who(p.leader))}${p.members.length > 1 ? ' · ' + p.members.filter(m => m !== p.leader).map(m => esc(who(m))).join(', ') : ''}</div></div>`).join('') || '<div class="empty">No parties yet.</div>'}
+    <div class="row" style="margin-top:10px">${myParty ? openBtn('party.leave', 'Leave your party') : openBtn('party.join', 'Join a party') + openBtn('party.found', 'Found a party')}</div>
+  </div>`;
+
+  const people = `<div class="card"><h2>Citizens <span class="sub">${cits.length}</span></h2>
+    ${cits.slice().sort((a, b) => String(a[1].name).localeCompare(String(b[1].name))).map(([id, c]) => `<div class="item row between"><span><span class="t">${esc(c.name)}</span>${id === me ? ' <span class="tag">you</span>' : ''} <span class="m">${esc(partyName(c.party))}${posts(id).length ? ' · ' + posts(id).map(esc).join(', ') : ''}</span></span>
+      <span>${id === W.hos?.holder ? `<span class="tag ok">${esc(hosTitle())}</span>` : ''}${id === W.pm ? '<span class="tag ok">PM</span>' : ''}${id === W.speaker ? '<span class="tag">Speaker</span>' : ''}${seats.includes(id) ? '<span class="tag">MP</span>' : ''}${c.bot ? '<span class="tag warn">practice bot</span>' : ''}</span></div>`).join('')}
+  </div>`;
+  return `${coalition}<div class="grid">${partyCard}${people}</div>`;
+}
+
+/* ---------------------------------------------------------------- bill builder */
+function viewBill() {
+  const amPM = W.pm === W.viewer, decreeOK = amPM && W.acts?.decrees;
+  return `<div class="card billbox">
+    <h2>Write a bill</h2>
+    <p class="small mut">Fill it in, check the plain-English preview, then table it. Laws only bind once the House passes them and assent is given.</p>
+    <div class="row" style="margin-bottom:10px"><span class="small">Start from:</span><select id="preset"><option value="">A blank bill</option>${Object.entries(PRESETS).map(([k, p]) => `<option value="${k}">${esc(p.name)}</option>`).join('')}</select></div>
+    <div class="fields">
+      <label>Kind<select id="bkind">${opt([['bill', 'Bill (makes or changes law)'], ['referendum', 'Referendum'], ['no_confidence', 'Motion of no confidence'], ['confidence', 'Confidence motion'], ['censure', 'Censure'], ['dissolution', 'Dissolution request']])}</select></label>
+      <label>Title<input id="btitle" placeholder="The Something Act"></label>
+      <label id="btargetw" hidden>Who is censured<select id="btarget">${opt(SOURCES.citizen())}</select></label>
+    </div>
+    <label style="margin-top:10px">Summary <small>(optional, one sentence)</small><input id="bsum"></label>
+    <div style="margin-top:12px"><b class="small">Clauses</b>${clauseEditor([{ t: 'text' }])}</div>
+    <details class="raw" style="margin-top:12px"><summary>Advanced: edit the clauses as JSON</summary><textarea class="code" id="bjson" placeholder='[{"t":"office","office":{"name":"Ministry of Fun","powers":["grant"],"fill":"pm","budget":10}}]'></textarea><small class="mut">If filled in, this replaces the clauses above.</small></details>
+    <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:10px"><input type="checkbox" id="bfast" style="width:auto"> Fast-track it (costs 15 influence)</label>
+    <div class="card" style="margin-top:12px;background:var(--bg)"><b class="small">Preview</b><div id="bprev" class="small" style="margin-top:6px"></div></div>
+    <div class="row" style="margin-top:12px">
+      <button class="p" id="bgo" ${canAct() ? '' : 'disabled'}>Table it</button>
+      ${decreeOK ? '<button id="bdecree">Issue as a decree instead</button>' : ''}
+      <button id="bdraft" ${canAct() ? '' : 'disabled'}>Save as a private draft</button>
+      <span id="bres"></span>
+    </div>
+    ${canAct() ? '' : '<p class="small mut">Your key is read-only. Make an act key to table bills.</p>'}
+  </div>`;
+}
+function billPayload() {
+  let clauses;
+  const j = $('#bjson').value.trim();
+  if (j) { try { clauses = JSON.parse(j); } catch (e) { throw new Error('The JSON clauses are not valid: ' + e.message); } }
+  else clauses = readClauses($('.billbox'));
+  const a = { kind: $('#bkind').value, title: $('#btitle').value.trim(), summary: $('#bsum').value.trim() || undefined };
+  if (a.kind === 'bill' || a.kind === 'referendum') a.clauses = clauses;
+  if (a.kind === 'censure') a.target = $('#btarget').value;
+  if ($('#bfast').checked) a.fast = true;
+  return a;
+}
+function wireBill() {
+  const box = $('.billbox');
+  const prev = () => {
+    try {
+      const a = billPayload();
+      $('#bprev').innerHTML = `<b>${esc(a.title || 'Untitled')}</b>${a.summary ? ' — ' + esc(a.summary) : ''}${a.clauses ? `<ol style="margin:6px 0 0;padding-left:20px">${a.clauses.map(c => `<li>${esc(describeClause(c))}</li>`).join('')}</ol>` : ''}`;
+    } catch (e) { $('#bprev').innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+  };
+  box.addEventListener('input', prev); box.addEventListener('change', prev); box.addEventListener('click', () => setTimeout(prev));
+  $('#bkind').onchange = () => { $('#btargetw').hidden = $('#bkind').value !== 'censure'; prev(); };
+  $('#preset').onchange = () => {
+    const p = PRESETS[$('#preset').value]; if (!p) return;
+    $('#btitle').value = p.title; $('#bsum').value = p.summary; $('#bkind').value = 'bill';
+    box.querySelector('.clauses').innerHTML = p.clauses.map(clauseRow).join(''); prev();
+  };
+  const go = async (btn, cmd, extra = {}) => {
+    let a; try { a = billPayload(); } catch (e) { return show($('#bres'), false, e.message); }
+    if (!a.title) return show($('#bres'), false, 'Give it a title.');
+    btn.disabled = true;
+    const r = await act(cmd, { ...a, ...extra });
+    btn.disabled = false;
+    show($('#bres'), r.ok, r.ok ? (cmd === 'gov.decree' ? 'Decreed. It is law now.' : cmd === 'draft.save' ? 'Saved to your drafts.' : 'Tabled. It is in the House now.') : r.error);
+  };
+  $('#bgo').onclick = () => go($('#bgo'), 'prop.new');
+  $('#bdecree') && ($('#bdecree').onclick = () => go($('#bdecree'), 'gov.decree'));
+  $('#bdraft').onclick = () => go($('#bdraft'), 'draft.save', { id: 'd' + Math.random().toString(36).slice(2, 10) });
+  prev();
+}
+function show(el, ok, msg) { el.innerHTML = `<span class="result ${ok ? 'ok' : 'bad'}">${ok ? '✓ ' : ''}${esc(msg)}</span>`; }
+
+/* ---------------------------------------------------------------- do anything */
+let DOQ = '', DOGROUP = '';
+const DANGER = /^(plot\.launch|coup|regime\.|gov\.unseat|jail\.detain|office\.resign|gov\.resign|party\.standDown|party\.leave|coalition\.leave|prop\.withdraw)/;
+/* What a decree will do, in a sentence, with what it costs of today's allowance. */
+function decreeBudget() {
+  const per = Math.max(1, Number(W?.config?.edictsPerDay) || 1);
+  const used = W?.regime?.decreeDay === Math.floor(SERVER_NOW() / 864e5) ? (W.regime.decreeCount || 1) : 0;
+  return { per, used, left: Math.max(0, per - used) };
+}
+function plainDecree(cmd, a) {
+  if (cmd === 'jail.detain') return `Detain ${who(a.target)} in the Realm Jail${a.days ? ` for ${a.days} days` : ' with no end date'}?`;
+  if (cmd === 'jail.release') return `Release ${who(a.target)} from the Realm Jail?`;
+  if (cmd !== 'gov.edict' && cmd !== 'regime.decree') return '';
+  const k = CMDS?.[cmd]?.kinds?.[a.kind]; if (!k) return '';
+  const subj = a.target ? ` ${who(a.target)}` : a.party ? ` the ${partyName(a.party)}` : a.bank ? ` ${W.banks?.[a.bank]?.name || 'the bank'}` : '';
+  const extra = a.kind === 'arrest' ? ` for ${a.n || 2} day${(a.n || 2) === 1 ? '' : 's'}` : a.kind === 'lift' && a.what ? `: ${human(a.what).toLowerCase()}` : a.n != null ? ` (${a.n})` : '';
+  const b = decreeBudget();
+  return `${k.name}${subj}${extra}? This uses 1 of today’s ${b.per} decree${b.per === 1 ? '' : 's'} (${b.left} left).`;
+}
+function quickHtml() {
+  const p = listOf('pins'), r = listOf('recent').filter(c => !p.includes(c));
+  return p.length || r.length ? p.map(c => `<button class="chip" data-open="${esc(c)}" title="Pinned">★ ${esc(cmdTitle(c))}</button>`).join('') + r.map(c => `<button class="chip" data-open="${esc(c)}" title="Used recently">↺ ${esc(cmdTitle(c))}</button>`).join('')
+    : '<span class="small mut">Press ★ on an action to keep it here. The ones you used last appear too.</span>';
+}
+function viewDo() {
+  if (!CMDS || !Object.keys(CMDS).length) return '<div class="card">Could not load the list of actions. <button class="sm" onclick="location.reload()">Try again</button></div>';
+  const groups = {}, pinned = listOf('pins');
+  for (const [cmd, info] of Object.entries(CMDS)) (groups[groupOf(cmd)] ||= []).push([cmd, info]);
+  return `<div class="card"><div class="row between"><h2>Do anything <span class="sub">${Object.keys(CMDS).length} actions, in plain English</span></h2>${canAct() ? '' : '<span class="tag warn">Read-only key: you can look, not act</span>'}</div>
+      <p class="small mut" style="margin:0 0 10px">Pick one, fill it in, press Do it. If the game says no, you'll see why. From any page, <kbd>Ctrl K</kbd> finds an action.</p>
+      <div class="chips" id="dquick">${quickHtml()}</div></div>
+    <div class="card dobar" style="padding:10px">
+      <input id="dq" type="search" placeholder="Search: vote, send money, coalition, newspaper…" value="${esc(DOQ)}">
+      <div class="chips" id="dgroups"><button class="chip" data-g="">All</button>${Object.entries(groups).map(([g, l]) => `<button class="chip" data-g="${esc(g)}">${esc(g)} <small>${l.length}</small></button>`).join('')}</div>
+    </div>
+    <div id="dnone" class="card empty" hidden>Nothing matches. Try fewer words, or press “All”.</div>
+    ${Object.entries(groups).map(([g, list]) => `<div data-group><h3 class="gh">${esc(g)}</h3>${list.map(([cmd, info]) =>
+      `<details class="cmd" data-cmd="${esc(cmd)}" data-g="${esc(g)}" data-s="${esc(searchKey(cmd, info))}"><summary><b>${esc(cmdTitle(cmd))}</b><span>${esc(info.about)} · <code>${esc(cmd)}</code></span><button type="button" class="pin ${pinned.includes(cmd) ? 'on' : ''}" data-pin="${esc(cmd)}" title="Keep at the top" aria-label="Pin this action">★</button></summary><div class="body"></div></details>`).join('')}</div>`).join('')}`;
+}
+function filterDo() {
+  const ws = DOQ.toLowerCase().trim().split(/\s+/).filter(Boolean); let n = 0;
+  document.querySelectorAll('details.cmd').forEach(d => { const hit = (!DOGROUP || d.dataset.g === DOGROUP) && ws.every(w => d.dataset.s.includes(w)); d.hidden = !hit; n += hit; });
+  document.querySelectorAll('[data-group]').forEach(g => g.hidden = ![...g.querySelectorAll('details.cmd')].some(d => !d.hidden));
+  document.querySelectorAll('#dgroups .chip').forEach(c => c.classList.toggle('on', c.dataset.g === DOGROUP));
+  $('#dnone') && ($('#dnone').hidden = n > 0);
+}
+/* Open one action's form, wherever it is in the list. */
+function openAction(cmd) {
+  if (!$('#dq')) return;
+  DOQ = ''; DOGROUP = ''; $('#dq').value = ''; filterDo();
+  const d = document.querySelector(`details.cmd[data-cmd="${CSS.escape(cmd)}"]`);
+  if (!d) return toast(`The realm has no action called ${cmd}.`, true);
+  d.open = true; spotlight(d);
+  setTimeout(() => d.querySelector('.body input, .body select, .body textarea')?.focus({ preventScroll: true }), 80);
+}
+function wireDo() {
+  $('#dq').oninput = () => { DOQ = $('#dq').value; DOGROUP = ''; filterDo(); };
+  $('#dq').onkeydown = e => {
+    if (e.key !== 'Enter') return;
+    const ws = DOQ.toLowerCase().trim().split(/\s+/).filter(Boolean), own = d => ws.filter(w => (d.dataset.cmd + ' ' + cmdTitle(d.dataset.cmd)).toLowerCase().includes(w)).length;
+    const d = [...document.querySelectorAll('details.cmd:not([hidden])')].sort((a, b) => own(b) - own(a))[0];
+    if (d) { d.open = true; spotlight(d); }
+  };
+  $('#dgroups').onclick = e => { const b = e.target.closest('[data-g]'); if (!b) return; DOGROUP = b.dataset.g; filterDo(); };
+  filterDo();
+  document.querySelectorAll('details.cmd').forEach(d => d.addEventListener('toggle', () => {
+    if (!d.open || d.dataset.built) return; d.dataset.built = 1;
+    const cmd = d.dataset.cmd, info = CMDS[cmd];
+    const kinds = info.kinds;
+    /* A command with kinds (decrees): pick the kind by name, and only the fields that kind uses are shown. */
+    const args = Object.entries(info.args || {}).map(([k, t]) => {
+      if (kinds && k === 'kind') return { name: 'kind', kind: 'enum', opts: Object.keys(kinds), labels: Object.fromEntries(Object.entries(kinds).map(([x, v]) => [x, v.name])), type: '', optional: true, quiet: true };
+      const a = parseArg(k, t);
+      return kinds ? { ...a, optional: true, quiet: true } : a;
+    });
+    const body = d.querySelector('.body');
+    body.innerHTML = `<form class="fields">${args.map(a => argField(a, cmd)).join('') || '<span class="small mut">No details needed.</span>'}</form>
+      <div class="row"><button class="p" ${canAct() ? '' : 'disabled title="Read-only key"'}>Do it</button><span data-res></span></div>
+      <details class="raw"><summary>Show what will be sent</summary><pre data-pv></pre></details>`;
+    const form = body.querySelector('form'), btn = body.querySelector('button.p'), res = body.querySelector('[data-res]');
+    wireIndex(form);
+    /* Other commands with a field that only matters for some choices (blame needs a person; the others do not). */
+    const SHOW_IF = { 'crisis.respond': { target: ['move', ['blame']] } };
+    const rules = SHOW_IF[cmd];
+    if (rules) {
+      const apply = () => Object.entries(rules).forEach(([field, [ctl, vals]]) => {
+        const el = form.querySelector(`[data-arg="${CSS.escape(field)}"]`); if (!el) return;
+        const v = form.querySelector(`[data-arg="${CSS.escape(ctl)}"]`)?.value;
+        (el.closest('label, .pickbox') || el).hidden = !vals.includes(v);
+      });
+      form.addEventListener('change', apply); apply();
+    }
+    const kindSel = kinds && form.querySelector('[data-arg="kind"]');
+    const needs = () => (kinds?.[kindSel?.value]?.needs || []);
+    if (kindSel) {
+      kindSel.closest('label').insertAdjacentHTML('afterend', '<p class="small mut" data-kwhat style="grid-column:1/-1;margin:0"></p>');
+      const shape = () => {
+        const k = kinds[kindSel.value];
+        form.querySelector('[data-kwhat]').textContent = k ? k.what + (k.needs.length ? '' : ' Needs nothing else.') : 'Choose what to decree.';
+        /* the same field means different things to different decrees */
+        const NAMES = { n: { arrest: 'Days (1–2)', tax: 'Income tax (%)', rate: 'Reserve rate (%)', plan: 'Crowns' }, text: { honour: 'Title to give' }, target: { seize: 'Whose funds', heir: 'Heir' }, key: { rewrite: 'Which rule' }, value: { rewrite: 'New value' }, what: { lift: 'Which decree to lift' } };
+        form.querySelectorAll('[data-arg]').forEach(el => {
+          if (el.dataset.arg === 'kind') return;
+          const box = el.closest('label, .pickbox') || el; box.hidden = !needs().includes(el.dataset.arg);
+          const l = box.querySelector('[data-lbl]'); if (l) l.textContent = NAMES[el.dataset.arg]?.[kindSel.value] || human(el.dataset.arg);
+          box.querySelectorAll(':scope > small').forEach(sm => { sm.hidden = true; });
+        });
+      };
+      kindSel.addEventListener('change', shape); shape();
+    }
+    const pv = () => { body.querySelector('[data-pv]').textContent = JSON.stringify({ cmd, args: readArgs(form) }, null, 2); };
+    const calm = () => { delete btn.dataset.armed; delete btn.dataset.miss; btn.textContent = 'Do it'; form.querySelectorAll('.miss').forEach(el => el.classList.remove('miss')); };
+    form.addEventListener('input', () => { pv(); calm(); }); form.addEventListener('change', () => { pv(); calm(); }); pv();
+    form.addEventListener('submit', e => { e.preventDefault(); btn.click(); });
+    btn.onclick = async () => {
+      const a = readArgs(form);
+      /* Empty fields the action probably needs: point at them once, then let a second press through. */
+      const missing = kinds ? [{ name: 'kind' }, ...needs().map(name => ({ name }))].filter(x => a[x.name] === undefined) : args.filter(x => !x.optional && !x.nullable && x.kind !== 'bool' && a[x.name] === undefined && !form.querySelector(`[data-arg="${CSS.escape(x.name)}"]`)?.closest('[hidden]'));
+      if (missing.length && !btn.dataset.miss) {
+        btn.dataset.miss = 1; btn.textContent = 'Send anyway';
+        missing.forEach(x => form.querySelector(`[data-arg="${CSS.escape(x.name)}"]`)?.classList.add('miss'));
+        return show(res, false, `Still empty: ${missing.map(x => human(x.name).toLowerCase()).join(', ')}.`);
+      }
+      const sentence = plainDecree(cmd, a);
+      if (sentence && !confirm(sentence)) return;
+      if (DANGER.test(cmd) && !btn.dataset.armed && !sentence) {
+        btn.dataset.armed = 1; btn.textContent = 'Sure? Press again'; setTimeout(() => { if (btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = 'Do it'; } }, 3500); return;
+      }
+      btn.disabled = true; btn.textContent = 'Working…';
+      const before = W.gazette?.[0]?.id;
+      const r = await act(cmd, a);
+      btn.disabled = false; calm();
+      const news = W.gazette?.[0];
+      show(res, r.ok, r.ok ? 'Done.' + (news && news.id !== before ? ' ' + news.text : '') : r.error);
+      if (r.ok) { noteRecent(cmd); $('#dquick') && ($('#dquick').innerHTML = quickHtml()); }
+    };
+  }));
+}
+
+/* ---------------------------------------------------------------- gazette */
+function viewGazette() {
+  const kinds = [...new Set((W.gazette || []).map(x => x.kind).filter(Boolean))].sort();
+  return `<div class="card"><div class="row between"><h2>The Gazette <span class="sub">the public record, live</span></h2><button id="gcopy" class="sm">Copy the digest for WhatsApp</button></div>
+    <input id="gq" type="search" placeholder="Search the record: a name, a bill, a party…" value="${esc(GQ)}" style="margin-bottom:8px">
+    <div class="chips" id="gkinds" style="margin-bottom:10px"><button class="chip ${GKIND ? '' : 'on'}" data-gk="">Everything</button>${kinds.map(k => `<button class="chip ${k === GKIND ? 'on' : ''}" data-gk="${esc(k)}">${esc(human(k))}</button>`).join('')}</div>
+    <div id="glist">${gazetteList(300, true)}</div></div>`;
+}
+function wireGazette() {
+  $('#gq').oninput = () => { GQ = $('#gq').value; $('#glist').innerHTML = gazetteList(300, true); };
+  $('#gkinds').onclick = e => { const b = e.target.closest('[data-gk]'); if (!b) return; GKIND = b.dataset.gk; render(true); };
+}
+document.addEventListener('click', async e => {
+  if (e.target.id !== 'gcopy') return;
+  try {
+    const base = BASE.replace(/\/api\/v1$/, '');
+    const viaProxy = location.protocol.startsWith('http') && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+    const r = await fetch(viaProxy ? '/proxy/api/public/digest.txt' : base + '/api/public/digest.txt', { headers: viaProxy ? { 'X-Upstream': base } : {} });
+    await navigator.clipboard.writeText(await r.text()); toast('Copied. Paste it into the group.');
+  } catch { toast('Could not copy the digest.', true); }
+});
+
+/* ---------------------------------------------------------------- settings */
+function viewSettings() {
+  return `<div class="grid">
+    <div class="card"><h2>Desktop notifications</h2>
+      <p class="small">A notification when something new needs you: a crisis you are caught up in, a signature the Treasury needs, a bill awaiting your assent, a vote closing. Only while this console is open.</p>
+      <div class="row"><button id="notif">${notifyOn() ? 'Turn notifications off' : 'Turn notifications on'}</button><span class="small mut">${!('Notification' in window) ? 'This browser has no notifications.' : Notification.permission === 'denied' ? 'Blocked in the browser’s site settings.' : ''}</span></div></div>
+    <div class="card"><h2>Your key</h2>
+      <p class="small">Connected as <b>${esc(ME.name)}</b> with key “${esc(ME.keyName || 'unnamed')}” (${canAct() ? 'can act' : 'read only'}).</p>
+      <div class="row"><button id="sout">Disconnect and forget the key</button></div></div>
+    <div class="card"><h2>Webhooks <span class="sub">have the realm message you</span></h2><div id="hooks" class="small mut">Loading…</div>
+      ${canAct() ? `<div class="fields" style="margin-top:10px"><label>Address (https)<input id="hurl" placeholder="https://…"></label><label>Send<select id="hkind"><option value="gazette">All public news</option><option value="personal">My own alerts (private)</option></select></label></div><div class="row" style="margin-top:8px"><button id="hadd">Add webhook</button><span id="hres"></span></div>` : ''}</div>
+  </div>
+  <div class="card"><h2>Advanced: send anything</h2>
+    <div class="fields"><label>Action<input id="rcmd" list="rcmds" placeholder="prop.vote"><datalist id="rcmds">${Object.keys(CMDS || {}).map(c => `<option value="${esc(c)}">`).join('')}</datalist></label></div>
+    <label style="margin-top:8px">Arguments (JSON)<textarea class="code" id="rargs">{}</textarea></label>
+    <div class="row" style="margin-top:8px"><button id="rgo">Send</button><span id="rres"></span></div></div>
+  <div class="card"><h2>Request log</h2>${LOG.slice(0, 40).map(l => `<details class="raw item"><summary><span class="tag ${l.status >= 200 && l.status < 300 ? 'ok' : 'bad'}">${l.status || '—'}</span> ${esc(l.body?.cmd || 'GET ' + l.path)} <span class="mut">${ago(l.at)} · ${l.ms}ms</span></summary>${l.body ? `<pre>${esc(JSON.stringify(l.body, null, 2))}</pre>` : ''}<pre>${esc(typeof l.data === 'string' ? l.data : JSON.stringify(l.data?.world ? { ...l.data, world: '…' } : l.data, null, 2))}</pre></details>`).join('') || '<div class="empty">Nothing yet.</div>'}</div>`;
+}
+async function loadHooks() {
+  try {
+    const h = await api('/hooks', null, { quiet: true });
+    $('#hooks').innerHTML = (Array.isArray(h) ? h : h.hooks || []).map(x => `<div class="item"><span class="t">${esc(x.url)}</span> <span class="tag">${esc(x.kind)}</span>${x.disabled ? '<span class="tag bad">switched off</span>' : ''}
+      ${canAct() ? `<div class="row" style="margin-top:6px"><button class="sm" data-htest="${esc(x.id)}">Send a test</button><button class="sm no" data-hdel="${esc(x.id)}">Remove</button></div>` : ''}</div>`).join('') || 'None yet.';
+  } catch (e) { $('#hooks').textContent = e.message; }
+}
+function wireSettings() {
+  const nb = $('#notif');
+  if (nb) nb.onclick = async () => {
+    if (notifyOn()) store.set('notify', 'off');
+    else if ('Notification' in window && (await Notification.requestPermission()) === 'granted') { store.set('notify', 'on'); new Notification('The Realm', { body: 'Notifications are on.' }); }
+    render(true);
+  };
+  $('#sout').onclick = () => { store.set('key', null); KEY = ''; W = null; ME = null; LOOPING = false; CONN = 'off'; render(true); };
+  loadHooks();
+  $('#hadd') && ($('#hadd').onclick = async () => {
+    try { const r = await api('/hooks', { url: $('#hurl').value.trim(), kind: $('#hkind').value }); show($('#hres'), true, `Added. Secret (shown once): ${r.secret}`); loadHooks(); }
+    catch (e) { show($('#hres'), false, e.message); }
+  });
+  $('#hooks').onclick = async e => {
+    const t = e.target.dataset.htest, d = e.target.dataset.hdel;
+    try {
+      if (t) { const r = await api('/hooks/test', { id: t }); toast(r.ok ? 'Test delivered.' : `Your server answered ${r.status}.`, !r.ok); }
+      if (d) { await api('/hooks/delete', { id: d }); toast('Removed.'); loadHooks(); }
+    } catch (err) { toast(err.message, true); }
+  };
+  $('#rcmd').onchange = () => {
+    const info = CMDS?.[$('#rcmd').value.trim()], box = $('#rargs');
+    if (info && /^\s*(\{\s*\})?\s*$/.test(box.value)) box.value = JSON.stringify(Object.fromEntries(Object.keys(info.args || {}).map(k => [k, ''])), null, 2);
+  };
+  $('#rgo').onclick = async () => {
+    let a; try { a = JSON.parse($('#rargs').value || '{}'); } catch (e) { return show($('#rres'), false, 'Arguments are not valid JSON.'); }
+    const r = await act($('#rcmd').value.trim(), a); show($('#rres'), r.ok, r.ok ? 'Done.' : r.error);
+  };
+}
+
+/* ═════════════════════════════════════════════ quick buttons anywhere */
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-do]');
+  if (b) {
+    b.disabled = true;
+    const r = await act(b.dataset.do, JSON.parse(b.dataset.a));
+    b.disabled = false;
+    toast(r.ok ? 'Done.' : r.error, !r.ok);
+    return;
+  }
+  const s = e.target.closest('[data-speak]');
+  if (s) {
+    const item = s.closest('.item');
+    if (item.querySelector('.speak')) return;
+    item.insertAdjacentHTML('beforeend', `<div class="speak" style="display:grid;gap:8px;margin-top:8px"><select><option value="for">Speaking for</option><option value="against">Speaking against</option><option value="undecided">Undecided</option>${W.speaker === W.viewer ? '<option value="order">Order (as Speaker)</option>' : ''}</select><textarea placeholder="Your speech"></textarea><div class="row"><button class="p sm">Speak</button><button class="sm" data-cancel>Cancel</button></div></div>`);
+    const box = item.querySelector('.speak');
+    box.querySelector('[data-cancel]').onclick = () => box.remove();
+    box.querySelector('.p').onclick = async () => {
+      const r = await act('prop.speak', { prop: s.dataset.speak, side: box.querySelector('select').value, text: box.querySelector('textarea').value });
+      toast(r.ok ? 'Your speech is in the record.' : r.error, !r.ok);
+    };
+  }
+});
+
+/* ═════════════════════════════════════════════ find anything (Ctrl K) */
+let PALI = 0, PALROWS = [];
+function palDraw() {
+  const ws = $('#palq').value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const pages = Object.entries(VIEWS).map(([v, l]) => ({ t: l, s: 'Page', h: [v], k: ('page ' + l).toLowerCase() }));
+  const cmds = Object.entries(CMDS || {}).map(([c, i]) => ({ t: cmdTitle(c), s: i.about, h: ['do', c], k: searchKey(c, i), c }));
+  const fav = [...new Set([...listOf('pins'), ...listOf('recent')])];
+  /* Best first: words found in the action's own name beat words found only in its description or group. */
+  const score = x => { const own = ((x.c || '') + ' ' + x.t).toLowerCase(); return ws.filter(w => own.includes(w)).length; };
+  PALROWS = ws.length ? [...cmds, ...pages].filter(x => ws.every(w => x.k.includes(w))).sort((a, b) => score(b) - score(a)).slice(0, 14) : [...fav.map(c => cmds.find(x => x.c === c)).filter(Boolean), ...pages];
+  PALI = Math.max(0, Math.min(PALI, PALROWS.length - 1));
+  $('#pall').innerHTML = PALROWS.map((x, i) => `<button data-i="${i}" class="${i === PALI ? 'on' : ''}"><b>${esc(x.t)}</b><span>${esc(x.s)}</span></button>`).join('') || '<div class="empty" style="padding:8px 10px">Nothing matches. Try another word.</div>';
+  $('#pall .on')?.scrollIntoView({ block: 'nearest' });
+}
+function palOpen() { if (!W) return; $('#pal').hidden = false; $('#palq').value = ''; PALI = 0; palDraw(); $('#palq').focus(); }
+function palClose() { $('#pal').hidden = true; }
+function palGo(i) { const x = PALROWS[i]; if (!x) return; palClose(); go(...x.h); }
+$('#find').onclick = palOpen;
+$('#palq').oninput = () => { PALI = 0; palDraw(); };
+$('#palq').onkeydown = e => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); PALI = (PALI + (e.key === 'ArrowDown' ? 1 : -1) + PALROWS.length) % (PALROWS.length || 1); palDraw(); }
+  if (e.key === 'Enter') { e.preventDefault(); palGo(PALI); }
+};
+$('#pal').onclick = e => { const b = e.target.closest('[data-i]'); if (b) palGo(+b.dataset.i); else if (e.target.id === 'pal') palClose(); };
+document.addEventListener('keydown', e => {
+  const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '');
+  if ((e.key === 'k' && (e.ctrlKey || e.metaKey)) || (e.key === '/' && !typing)) { e.preventDefault(); $('#pal').hidden ? palOpen() : palClose(); }
+  else if (e.key === 'Escape' && !$('#pal').hidden) palClose();
+});
+/* Buttons that jump to an action's form, and the ★ on each action. */
+document.addEventListener('click', e => {
+  const pin = e.target.closest('[data-pin]');
+  if (pin) { e.preventDefault(); togglePin(pin.dataset.pin); pin.classList.toggle('on'); $('#dquick') && ($('#dquick').innerHTML = quickHtml()); return; }
+  const o = e.target.closest('[data-open]');
+  if (!o) return;
+  if (VIEW === 'do' && $('#dq')) { try { history.replaceState(null, '', '#do/' + o.dataset.open); } catch {} openAction(o.dataset.open); }
+  else go('do', o.dataset.open);
+});
+
+/* ═════════════════════════════════════════════ live updates (long-poll) */
+let LOOPING = false, CONN = 'off';
+async function loop() {
+  if (LOOPING) return; LOOPING = true; CONN = 'live'; header();
+  while (LOOPING && KEY) {
+    try {
+      const d = await api(`/state?since=${VERSION}&wait=25`, null, { quiet: true });
+      if (CONN !== 'live') { CONN = 'live'; header(); }
+      if (d?.version !== undefined && d.version !== VERSION) { absorb(d); await refreshAlerts(); render(); }
+    } catch (e) {
+      if (e.status === 401) { LOOPING = false; toast('Your key stopped working. Connect again with a new one.', true); break; }
+      if (CONN !== 'retry') { CONN = 'retry'; header(); }
+      await new Promise(r => setTimeout(r, 5000));
+    }
+  }
+  LOOPING = false; CONN = 'off'; header();
+}
+/* Countdowns tick on their own; nothing is redrawn. */
+setInterval(() => document.querySelectorAll('[data-until]').forEach(el => { el.textContent = left(+el.dataset.until); }), 30000);
+
+/* ═════════════════════════════════════════════ start */
+render(true);
+if (KEY) {
+  $('#cmsg').textContent = 'Connecting… the server may need about 30 seconds to wake up.'; $('#cgo').disabled = true;
+  connect().catch(e => { render(true); $('#cmsg') && ($('#cmsg').innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`); });
+}
+</script>
+</body>
+</html>
