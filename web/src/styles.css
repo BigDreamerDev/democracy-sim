@@ -1069,3 +1069,17 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .atlas-ship path { fill: var(--brown); stroke: var(--ink); stroke-width: .8; }
 .atlas-ship path.sail { fill: var(--card); }
 .atlas-anchor circle { fill: var(--card); stroke: var(--ink); stroke-width: 1.5; }
+/* ---------- life abroad ---------- */
+.passport-abroad { display: flex; flex-wrap: wrap; gap: 18px 28px; align-items: flex-end; margin-top: 16px; padding: 18px; background: var(--passport); color: var(--on-passport); border-radius: 4px; box-shadow: 3px 3px 0 var(--shadow); }
+.passport-abroad .muted, .passport-abroad .kicker { color: var(--on-passport); opacity: .8; }
+.ladder { display: flex; gap: 4px; margin-top: 8px; }
+.ladder span { flex: 1; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 4px 6px; border: 1.5px solid currentColor; border-radius: 2px; opacity: .45; display: flex; justify-content: space-between; }
+.ladder span.on { opacity: 1; background: var(--gold); color: var(--gold-ink); border-color: var(--gold); }
+.ladder i { font-style: normal; font-weight: 400; }
+.court-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.court-grid .card { display: flex; flex-direction: column; gap: 6px; }
+.court-grid .card p { margin: 0; }
+.court-grid .card .btn { margin-top: auto; align-self: flex-start; }
+.page-body > .passport-abroad, .part-body > .passport-abroad { column-span: all; }
+.page-body > .ex-wide { column-span: all; }
+.status-banner.abroad { background: var(--passport); color: var(--on-passport); } .status-banner.abroad a { color: var(--gold); }

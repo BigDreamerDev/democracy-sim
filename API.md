@@ -221,6 +221,11 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | `memorials[]` | a war memorial vote: `names` (candidates), `votes` (MPs), `closesAt`, `status`, `carved`; carved memorials are in `fame.memorials` |
 | `exchange.motions[]` | shareholder revolts: `sym`, `by`, `prop`, `side`, `tally` (shares for/against), `votes` (yours only), `status`; carried ones show on the bill as `proposals[].lobbies` |
 | `ventures[].status` | `'seized'` when the enemy took the ship in wartime |
+| `citizens[].defected` | a defector: `nation`, `at`, `favour` (0–100), `sold`, `deeds`; `secrets` and `last` (cooldowns) are only yours. Ranks and rules in `engine/abroad.ts` |
+| `approaches`, `sweeps` | secret offers from foreign powers (to you, or sent by you); your own Security Service sweeps |
+| `hostages[]` | citizens held abroad under terms of peace: `who`, `nation`, `until`, `status` (`held`/`ransomed`/`freed`) |
+| `pensions`, `config.veteranPension` | veterans on a memorial, and what each is paid a payday |
+| `exchange.donations[]` | company gifts to parties after a revolt that got its way |
 | `conflicts[]` | wars abroad between two nations: `a`, `b`, `status` (`raging`/`over`), `mediated`, `winner`, `peaceBy` |
 | `exchange` | the stock market: `prices` (`{sym: {p, open, hist[]}}`), `index[]`, `duty`, `haltedUntil`, `holdings` (yours, plus `treasury`: the realm's wealth fund), `trades` (yours only), `register` (shares held by MPs, ministers and the head of state). Companies are listed in `engine/exchange.ts` |
 | `stories[].war` | a dispatch from a war correspondent (`army.campaign.correspondents` lists the papers at the front) |

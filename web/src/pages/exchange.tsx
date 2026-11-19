@@ -3,7 +3,7 @@
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, Empty, Field, Pick, Seg } from '../ui';
-import { bal, ca, isPM, hasPower, holderOf } from '../../../engine/index';
+import { bal, ca, isPM, hasPower, holderOf, nm } from '../../../engine/index';
 import { COMPANIES, drivers, indexNow, portfolio, halted, register, fund, MAX_HOLD, canMove } from '../../../engine/exchange';
 
 function Spark({ data, w = 120, h = 32, base }: { data: number[]; w?: number; h?: number; base?: number }) {
@@ -52,6 +52,21 @@ function Revolt({ sym }: { sym: string }) {
       <div class="grid2"><Pick value={f.prop} onChange={(v) => setF({ ...f, prop: v })} empty="Which bill?" options={bills.map((p) => [p.id, p.title])} /><Seg value={f.side} onChange={(v) => setF({ ...f, side: v })} options={[['aye', 'For it'], ['no', 'Against it']]} /></div>
       <Btn small kind="ghost" disabled={!f.prop} onClick={() => act('exchange.motion', { sym, prop: f.prop, side: f.side }, 'The vote is called.')}>Call the vote</Btn>
     </div></Card>
+  );
+}
+// corporate donations: published; and the button for whoever won a revolt
+function Donations() {
+  const { world: w, me } = useStore();
+  const [party, setParty] = useState('');
+  const due = (Object.values(w.proposals) as any[]).flatMap((p) => (p.lobbies || []).filter((l: any) => l.by === me && l.got === true && !l.donated).map((l: any) => ({ p, l })));
+  const list = (w.exchange.donations || []) as any[];
+  const parties = (Object.values(w.parties) as any[]).filter((p) => p.status === 'active' && p.leader);
+  if (!list.length && !due.length) return null;
+  return (
+    <Sec title="Corporate donations" sub="A company that gets its way on a bill can give 20 crowns to a party, directed by the shareholder who called the vote. Every gift is published here.">
+      {due.map(({ p, l }) => <Card kind="tint"><div class="stack"><b>{l.sym} got its way on “{p.title}”. Where does its donation go?</b><div class="grid2"><Pick value={party} onChange={setParty} empty="Which party?" options={parties.map((x) => [x.id, x.name])} /><Btn small style={{ alignSelf: 'end' }} disabled={!party} onClick={() => act('exchange.donate', { prop: p.id, sym: l.sym, party }, 'Donated.')}>Donate 20</Btn></div></div></Card>)}
+      {list.length > 0 && <ul class="list">{list.map((d) => <li class="row"><span><b>{d.sym}</b> to the {w.parties[d.party]?.name}<div class="small muted">Directed by {nm(w, d.by)}, after “{w.proposals[d.prop]?.title}”</div></span><b class="tnum">{d.amount}</b></li>)}</ul>}
+    </Sec>
   );
 }
 export function Exchange() {
@@ -120,6 +135,7 @@ export function Exchange() {
           </Card>
         ) : <Empty>You own no shares yet. Pick a company below.</Empty>}
       </Sec>
+      <Donations />
       <Sec title="Register of Interests" sub="Shares held by MPs, ministers, the Prime Minister and the head of state are public. Everyone else’s are private.">
         {reg.length ? <ul class="list">{reg.map((r) => <li class="row"><Who id={r.id} /><span class="small">{r.holds.map((h: any) => `${h.n} ${h.sym}`).join(', ')}</span></li>)}</ul> : <Empty>Nobody in office owns shares.</Empty>}
       </Sec>

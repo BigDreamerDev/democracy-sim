@@ -105,6 +105,10 @@ export function migrate(w: W): W {
   }
   w.conflicts ??= [];
   w.memorials ??= [];
+  w.pensions ??= {};
+  w.hostages ??= [];
+  w.approaches ??= {};
+  w.sweeps ??= [];
   w.wars ??= [];
   if (w.army) {
     w.army.troops ??= 6;

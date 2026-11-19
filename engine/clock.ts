@@ -12,7 +12,8 @@ import { seasonDue, freeFromJail, lapseLicence } from './acts';
 import { crownNow, closeHomage, lapseOffer, jubilee, circular, settleClaim as settleThrone } from './crown';
 import { spawnCrisis, timeoutCrisis, fireQueued, rule, makeFrontPage } from './society';
 import { nationsTurn, settleUltimatum } from './foreign';
-import { battle, warWeek, settleTerms, closeMemorial } from './war';
+import { battle, warWeek, settleTerms, closeMemorial, payPensions } from './war';
+import { abroadWeek } from './abroad';
 import { tickExchange, exchangePayday, closeMotion } from './exchange';
 import { expireContract, settleClaim, ghostBack, bountyDeadline, bountyDue, orderDeadline, openHunt, startHunt, finishHunt } from './streets';
 import { marketDue, staleMarket } from './markets';
@@ -147,6 +148,8 @@ function weeklyPayday(w: W) {
   maybeOffers(w);
   nationsTurn(w);
   warWeek(w);
+  abroadWeek(w);
+  if (!strikeOn(w)) payPensions(w);
   openHunt(w);
   takePoll(w);
   records(w);

@@ -36,7 +36,7 @@ export const SETTABLE: Record<string, { label: string; unit: string; min: number
   voteHours: { label: 'Voting length', unit: ' hours', min: 12, max: 48 }
 };
 export const CONSTITUTIONAL = ['constitution', 'removeHos'];
-export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'fund', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'currency', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto'];
+export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'fund', 'pension', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'currency', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto'];
 
 export function describe(w: W, e: any): string {
   switch (e.t) {
@@ -75,6 +75,8 @@ export function describe(w: W, e: any): string {
       return `Creates a civic job: ${e.title}. The Treasury pays ${e.pay} crowns each time someone does it, once a week each, signed off by the Chancellor.`;
     case 'zone':
       return `Adds a safe zone to the Streets: ${e.text}.`;
+    case 'pension':
+      return e.amount > 0 ? `Veterans on a war memorial are paid ${e.amount} crowns each payday.` : 'Veterans’ pensions are cut to nothing.';
     case 'fund':
       return `The realm’s wealth fund ${e.sell ? 'sells' : 'buys'} up to ${e.crowns} crowns of ${company(e.sym)?.name ?? e.sym} shares on the Exchange${e.sell ? ', paid to the Treasury' : ', paid for by the Treasury'}.`;
     case 'currency':
@@ -150,6 +152,9 @@ function checkClause(w: W, e: any, byDecree = false) {
       break;
     case 'zone':
       e.text = text(e.text, 4, 120, 'safe zone');
+      break;
+    case 'pension':
+      e.amount = int(e.amount, 0, 10, 'pension');
       break;
     case 'fund':
       if (typeof e.sym !== 'string' || !company(e.sym)) fail('Pick a company on the Exchange.');
@@ -907,6 +912,10 @@ export function applyClause(w: W, e: any, ref: string) {
     case 'currency':
       w.config.currency = { one: e.one, many: e.many, law: ref };
       gazette(w, 'law', `The crown is no more. From today the currency of the realm is the ${e.one}: each old crown becomes one ${e.one}.`, '#/economy');
+      break;
+    case 'pension':
+      w.config.veteranPension = e.amount;
+      gazette(w, 'law', e.amount > 0 ? `Veterans’ pensions are set at ${e.amount} crowns a payday.` : 'Veterans’ pensions are cut.', '#/fame');
       break;
     case 'fund':
       fundTrade(w, e.sym, e.crowns, !!e.sell, ref);

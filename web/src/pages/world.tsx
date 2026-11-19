@@ -64,6 +64,18 @@ export function Nation({ id }: { id: string }) {
   );
 }
 
+// counter-intelligence: sweep a nation's contacts for its agents and its own ring inside the government
+function Sweep() {
+  const { world: w, me } = useStore();
+  const [n, setN] = useState('kessmark');
+  const mine = (w.sweeps || []).filter((s: any) => s.by === me).slice(0, 5);
+  return (
+    <Sec title="Sweep for foreign agents" sub="20 from the budget, once a day. Nearly an even chance of finding each agent of that nation, and its own ring if it has one. Agents found are exiled for a week.">
+      <Card><div class="grid2"><Pick value={n} onChange={setN} options={Object.values(w.nations).map((x: any) => [x.id, x.name])} /><Btn style={{ alignSelf: 'end' }} onClick={() => act('intel.sweep', { nation: n }, 'The sweep is done.')}>Sweep</Btn></div></Card>
+      {mine.length > 0 && <ul class="list small">{mine.map((s: any) => <li class="row"><span>{w.nations[s.nation]?.name}: {s.found.length ? s.found.join(', ') : 'nothing found'}</span><span class="muted">{fmtDay(s.at)}</span></li>)}</ul>}
+    </Sec>
+  );
+}
 export function Security() {
   const { world: w, me } = useStore();
   const [n, setN] = useState('kessmark');
@@ -79,6 +91,7 @@ export function Security() {
             <Pick label="Question" value={q} onChange={setQ} options={Object.entries(INTEL_Q)} />
             <Btn full onClick={() => act('intel.request', { nation: n, q }, 'Tasked. Report in 12 hours.')}>Send (20 crowns)</Btn>
           </div></Card></Sec>
+          <Sweep />
           <Sec title="Spy rings" sub={`An agent inside a nation's government: ${RING_COST} from the budget. Each payday it reports their army and their next move, as a secret card. Every week there is a 1 in 6 chance it is rolled up, and that is a scandal.`}>
             <ul class="list">{Object.values(w.nations).map((x: any) => <li class="row"><span><b>{x.name}</b><div class="small muted">{x.ring ? `Ring in place since ${fmtDay(x.ring.at)}` : 'No ring'}</div></span>{!x.ring && <Btn small kind="ghost" onClick={() => confirm(`Plant a spy ring in ${x.name} for ${RING_COST}?`) && act('intel.ring', { nation: x.id }, 'The ring is in place.')}>Plant a ring</Btn>}</li>)}</ul>
           </Sec>

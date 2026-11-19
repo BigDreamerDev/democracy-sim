@@ -209,13 +209,13 @@ function carryOut(w: W, n: any, plan: string) {
     }
   }
 }
-function ultimatum(w: W, n: any, crowns: number) {
+export function ultimatum(w: W, n: any, crowns: number) {
   const id = newId(w, 'ul');
   w.ultimatums.unshift({ id, nation: n.id, crowns, at: w.now, dueAt: w.now + 2 * DAY, status: 'sent' });
   w.ultimatums = w.ultimatums.slice(0, 30);
   gazette(w, 'foreign', `${n.name} demands ${crowns} crowns in tribute within 2 days, or else. The ${w.offices.foreign?.holder ? 'Foreign Minister' : 'Prime Minister'} must answer.`, '#/foreign');
 }
-function sanction(w: W, n: any, why: string) {
+export function sanction(w: W, n: any, why: string) {
   n.sanctionsUntil = w.now + 7 * DAY;
   moodShift(n, 0, why);
   gazette(w, 'foreign', `${n.name} imposes sanctions for a week: no trade ventures there, and Prosperity suffers.`, '#/nation/' + n.id);

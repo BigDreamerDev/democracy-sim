@@ -675,7 +675,7 @@ export function countback(w: W) {
   const nid = national(w);
   w.seats.forEach((s: Id | null, i: number) => {
     if (s) return;
-    const next = (w.lastRanked || []).find((c: Id) => !w.seats.includes(c) && w.speaker !== c && w.hos.holder !== c && w.citizens[c]?.active && !exiled(w, c) && !barred(w, c) && !detained(w, c) && !(w.regime?.type === 'party' && w.citizens[c].party !== w.regime.party) && !(nid && w.citizens[c].party !== nid));
+    const next = (w.lastRanked || []).find((c: Id) => !w.seats.includes(c) && w.speaker !== c && w.hos.holder !== c && w.citizens[c]?.active && !w.citizens[c].defected && !exiled(w, c) && !barred(w, c) && !detained(w, c) && !(w.regime?.type === 'party' && w.citizens[c].party !== w.regime.party) && !(nid && w.citizens[c].party !== nid));
     if (next) {
       w.seats[i] = next;
       stamp(w, next, 'Took a seat', 'On countback', 'bad');

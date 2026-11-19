@@ -18,6 +18,7 @@ import * as K from './acts';
 import * as Cr from './crown';
 import * as Wr from './war';
 import * as Ex from './exchange';
+import * as Ab from './abroad';
 
 export * from './core';
 export { createWorld, createLiveWorld, NAMES } from './world';
@@ -140,6 +141,22 @@ export const COMMANDS: Record<string, Cmd> = {
   'foreign.embassy': (w, me, a) => (F.embassy(w, me, a.nation, a.open), Ex.insider(w, me, Ex.MOVES.nation(w, a.nation), `${a.open ? 'opening' : 'closing'} our embassy in ${w.nations[a.nation].name}`)),
   'foreign.embargo': (w, me, a) => (F.embargo(w, me, a.nation, a.on), Ex.insider(w, me, Ex.MOVES.nation(w, a.nation), `${a.on ? 'imposing' : 'lifting'} the embargo on ${w.nations[a.nation].name}`)),
   'foreign.mediate': (w, me, a) => (F.mediate(w, me, a.conflict), Ex.insider(w, me, Ex.MOVES.conflict(w, a.conflict), 'mediating a war abroad')),
+  'defect.go': (w, me, a) => Ab.defect(w, me, a.nation),
+  'defect.return': (w, me) => Ab.comeHome(w, me),
+  'abroad.work': (w, me) => Ab.work(w, me),
+  'abroad.counsel': (w, me, a) => Ab.counsel(w, me, a.stance),
+  'abroad.train': (w, me) => Ab.train(w, me),
+  'abroad.broadcast': (w, me, a) => Ab.broadcast(w, me, a.text),
+  'abroad.sell': (w, me, a) => Ab.sellSecret(w, me, a.secret),
+  'abroad.recruit': (w, me, a) => Ab.recruit(w, me, a.target),
+  'abroad.command': (w, me) => Ab.command(w, me),
+  'abroad.policy': (w, me, a) => Ab.policy(w, me, a.act),
+  'agent.answer': (w, me, a) => Ab.answerApproach(w, me, a.approach, a.yes, a.report),
+  'agent.leak': (w, me, a) => Ab.agentLeak(w, me, a.card),
+  'agent.quit': (w, me) => Ab.agentQuit(w, me),
+  'intel.sweep': (w, me, a) => Ab.sweep(w, me, a.nation),
+  'hostage.ransom': (w, me, a) => Ab.ransom(w, me, a.hostage),
+  'exchange.donate': (w, me, a) => Ex.donate(w, me, a.prop, a.sym, a.party),
   'war.terms': (w, me, a) => Wr.voteTerms(w, me, a.yes),
   'war.memorial': (w, me, a) => Wr.voteMemorial(w, me, a.memorial, a.names),
   'army.garrison': (w, me, a) => Wr.garrison(w, me, a.province, a.on),
@@ -326,6 +343,7 @@ export function run(world: W, actor: Id, cmd: string, args: any = {}): W {
   if (ghost(w, actor) && !R.isGhostOk(cmd)) fail(`You were assassinated. Until ${fmtTime(w, w.citizens[actor].ghostUntil)} you are a ghost: you can vote, and nothing else.`);
   Cr.syncCrown(w);
   X.gate(w, actor, cmd);
+  Ab.gateAbroad(w, actor, cmd);
   f(w, actor, args || {});
   Cr.court(w, actor, cmd);
   X.sync(w);

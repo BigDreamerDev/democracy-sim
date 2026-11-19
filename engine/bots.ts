@@ -201,6 +201,18 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
   (w.exchange?.motions || []).forEach((m: any) => m.status === 'open' && bots.forEach((b: any) => !m.votes[b.id] && p(0.2) && go(b.id, 'exchange.vote', { motion: m.id, yes: chance(w, 0.5) })));
   const dirB = w.offices.security?.holder;
   if (dirB && isBot(dirB) && p(0.03)) go(dirB, 'intel.ring', { nation: pick(w, Object.keys(w.nations)) });
+  // life abroad: bots answer approaches, the Director sweeps, a rare bot defects and then works the court
+  Object.values(w.approaches || {}).forEach((a: any) => a.status === 'open' && isBot(a.to) && p(0.4) && go(a.to, 'agent.answer', { approach: a.id, yes: chance(w, 0.2), report: chance(w, 0.3) }));
+  if (dirB && isBot(dirB) && p(0.05)) go(dirB, 'intel.sweep', { nation: pick(w, Object.keys(w.nations)) });
+  bots.forEach((b: any) => {
+    if (!b.defected) return void (p(0.0015) && go(b.id, 'defect.go', { nation: pick(w, Object.keys(w.nations)) }));
+    p(0.3) && go(b.id, 'abroad.work');
+    p(0.15) && go(b.id, 'abroad.counsel', { stance: chance(w, 0.6) ? 'cool' : 'warm' });
+    p(0.1) && go(b.id, 'abroad.train');
+    p(0.05) && b.defected.secrets?.length && go(b.id, 'abroad.sell', { secret: 0 });
+    p(0.05) && go(b.id, 'abroad.policy', { act: pick(w, ['ultimatum', 'sanction', 'aid']) });
+    p(0.03) && go(b.id, 'defect.return');
+  });
   const gen = w.offices.army?.holder;
   if (gen && isBot(gen) && intrigueOpen(w) && p(0.01)) go(gen, 'army.march');
   // a pretender's claim: the realm takes sides; the pretender looks abroad; the monarch answers

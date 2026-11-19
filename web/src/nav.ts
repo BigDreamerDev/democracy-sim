@@ -33,7 +33,7 @@ export const TABS: Tab[] = [
   ] },
   { id: 'realm', label: 'Realm', icon: 'realm', href: '#/money', sections: [
     { id: 'money', label: 'Money', href: '#/money', routes: ['money', 'realm', 'wallet', 'economy', 'exchange', 'banks', 'ventures', 'bets'], count: (w, me) => bal(w, ca(me)) },
-    { id: 'world', label: 'World', href: '#/world', routes: ['world', 'atlas', 'foreign', 'nation', 'security', 'army', 'war'], count: (w) => (w.army?.war ? 'War' : null) },
+    { id: 'world', label: 'World', href: '#/world', routes: ['world', 'atlas', 'abroad', 'foreign', 'nation', 'security', 'army', 'war'], count: (w) => (w.army?.war ? 'War' : null) },
     { id: 'society', label: 'Society', href: '#/society', routes: ['society', 'press', 'court', 'case', 'crises', 'crisis'] },
     { id: 'backroom', label: 'Backroom', href: '#/backroom', routes: ['backroom', 'plots', 'exile'], count: (w, me) => (intrigueOpen(w) ? w.cards.filter((k: any) => canSeeCard(w, k, me)).length || null : null) },
     { id: 'jail', label: 'Realm Jail', href: '#/jail', routes: ['jail'], show: (w) => !!w.acts?.jail || Object.values(w.citizens).some((c: any) => c.jail), count: (w) => Object.values(w.citizens).filter((c: any) => c.jail && (c.jail.until == null || c.jail.until > w.now)).length || null },
@@ -74,6 +74,7 @@ const PARTS: [string, string, string, string][] = [
   ['#/ventures', 'Ventures', 'money', 'trade invest business abroad'],
   ['#/bets', 'Bets', 'money', 'betting pools odds gamble wager market'],
   ['#/atlas', 'World map', 'world', 'map atlas countries nations abroad geography wars abroad mediate'],
+  ['#/abroad', 'Life abroad', 'world', 'defect defector asylum court abroad hostage ransom spy mole agent traitor'],
   ['#/foreign', 'Foreign Office', 'world', 'nations envoys treaties diplomacy relations embassy embargo alliance'],
   ['#/war', 'The war room', 'world', 'war battle front strategy regiments volunteer enlist war bonds'],
   ['#/exchange', 'The Exchange', 'money', 'stock market shares stocks trade invest dividends portfolio register of interests'],

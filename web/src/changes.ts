@@ -1,6 +1,11 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 44, text: 'Defect: leave the realm and play from a foreign court. Rise from Refugee to Chancellor, sell secrets, broadcast home, recruit agents, train their army, lead it against the realm, and set their policy. Or come home. World › Life abroad.' },
+  { n: 43, text: 'Double agents: foreign powers try to recruit citizens in secret, and run rings of their own inside the government. The Security Service can sweep for them.' },
+  { n: 42, text: 'Hostages taken under terms of peace can be ransomed early by the Treasury, and while held they may be offered a deal by their captors.' },
+  { n: 41, text: 'Companies that win a shareholder revolt can donate to a party. Every donation is published on the Exchange.' },
+  { n: 40, text: 'Veterans’ pensions: everyone carved on a war memorial is paid each payday. The House sets the amount, or cuts it, by bill.' },
   { n: 39, text: 'A peace bill can now trade land and money: a province each way, and up to 200 crowns either way.' },
   { n: 38, text: 'Provinces we take in war can rise against us each week unless the Army posts a regiment there. World › The map.' },
   { n: 37, text: 'Blockades: we have no navy, so in wartime the enemy can seize ships carrying ventures at sea.' },

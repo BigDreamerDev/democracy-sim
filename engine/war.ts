@@ -7,6 +7,7 @@
 import { W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, earn, transfer, bal, ca, hasPower, isPM, holderOf, clamp, meter, approve, stamp, bump, mustBeFree, int, legit, own, newId, pick, isMP, mps, inGov } from './core';
 import { moodShift, treatyWith, PROFILES, warSpoils, PROVINCES, seedProvinces } from './foreign';
 import { fame } from './glory';
+import { enemyKnows, takeHostage } from './abroad';
 import { imposePretender } from './crown';
 
 export const BATTLE_EVERY = 12 * HOUR;
@@ -33,7 +34,8 @@ export function power(w: W) {
   if (k?.volunteers?.length) lines.push([`${k.volunteers.length} volunteer${k.volunteers.length === 1 ? '' : 's'}`, k.volunteers.length * 0.5]);
   const us = Math.max(0.5, lines.reduce((s, l) => s + l[1], 0));
   const n = k && w.nations[k.nation];
-  const them = n ? Math.max(0.5, (n.power || 3) * (n.embargo ? 0.85 : 1)) : 1;
+  // a defector leading their army (+2 for one battle), or a mole in our government (+1), helps the enemy
+  const them = n ? Math.max(0.5, (n.power || 3) * (n.embargo ? 0.85 : 1) + (k?.enemyBoost || 0) + (enemyKnows(w, n.id) ? 1 : 0)) : 1;
   return { us: Math.round(us * 10) / 10, them: Math.round(them * 10) / 10, lines, odds: clamp(us / (us + them), 0.15, 0.85) };
 }
 
@@ -130,6 +132,7 @@ export function battle(w: W) {
     loot = Math.min(bal(w, 'nation:' + n.id), 10 + Math.round(rand(w) * 15));
     if (loot > 0) transfer(w, 'nation:' + n.id, 'treasury', loot, `Spoils of a raid on ${n.name}`);
   }
+  k.enemyBoost = 0;
   k.score = clamp(k.score + delta, -100, 100);
   const text = won ? `Victory at ${where}${loot > 0 ? `, and ${loot} crowns of spoils` : ''}.${lost ? ' A regiment is lost.' : ''}` : `Defeat at ${where}.${lost ? ' A regiment is lost.' : ''}`;
   k.battles.unshift({ at: w.now, won, where, delta, lost, loot, us: p.us, them: p.them });
@@ -334,6 +337,7 @@ export function settleTerms(w: W) {
   }
   if (t.kind === 'hostage' && w.citizens[t.hostage]) {
     const c = w.citizens[t.hostage];
+    takeHostage(w, t.hostage, n.id);
     c.exiledUntil = w.now + 7 * DAY;
     c.exileNoted = false;
     c.asylum = n.id;
@@ -366,7 +370,18 @@ export function closeMemorial(w: W, m: any) {
   m.carved = m.names.filter((id: Id) => voters > 0 && Object.values(m.votes).filter((l: any) => l.includes(id)).length * 2 > voters);
   const n = w.nations[m.nation]?.name ?? 'abroad';
   m.carved.forEach((id: Id) => stamp(w, id, 'On the memorial', `The ${n} war`, 'good'));
+  // every carved name draws a veteran's pension each payday (config.veteranPension, set by law)
+  w.pensions ??= {};
+  m.carved.forEach((id: Id) => (w.pensions[id] ??= { since: w.now, war: n }));
   const f = fame(w);
   f.memorials = [{ nation: n, outcome: m.outcome, at: w.now, names: m.carved.map((id: Id) => nm(w, id)) }, ...(f.memorials || [])].slice(0, 30);
   gazette(w, 'army', m.carved.length ? `The memorial to the ${n} war is unveiled. Carved on it: ${m.carved.map((id: Id) => nm(w, id)).join(', ')}.` : `The memorial to the ${n} war is unveiled with no names on it.`, '#/fame');
+}
+
+// ---------- veterans' pensions: paid each payday to every name on a memorial, at the rate the law sets (0 cuts them) ----------
+export const pensionRate = (w: W) => w.config.veteranPension ?? 3;
+export function payPensions(w: W) {
+  const r = pensionRate(w);
+  if (r <= 0) return;
+  Object.keys(w.pensions || {}).forEach((id) => w.citizens[id]?.active && transfer(w, 'treasury', ca(id), r, "A veteran's pension"));
 }

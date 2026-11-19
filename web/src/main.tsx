@@ -85,7 +85,7 @@ function route(hash: string) {
     search: () => <Search />, map: () => <Search />, people: () => <People />, redbox: () => <Honours focus="redbox" />, government: () => <Government />, cabinet: () => <Government focus="cabinet" />, offices: () => <Government focus="offices" />, hos: () => <Government focus="hos" />, office: () => <Office id={b} />,
     parties: () => <Parties />, party: () => <Party id={b} />,
     money: () => <Money />, realm: () => <Money />, wallet: () => <Money focus="wallet" />, economy: () => <Money focus="economy" />, banks: () => <Money focus="banks" />, ventures: () => <Money focus="ventures" />, bets: () => <Money focus="bets" />,
-    world: () => <World />, atlas: () => <World focus="atlas" />, war: () => <World focus="war" />, exchange: () => <Money focus="exchange" />, foreign: () => <World focus="foreign" />, security: () => <World focus="security" />, army: () => <World focus="army" />,
+    world: () => <World />, atlas: () => <World focus="atlas" />, abroad: () => <World focus="abroad" />, war: () => <World focus="war" />, exchange: () => <Money focus="exchange" />, foreign: () => <World focus="foreign" />, security: () => <World focus="security" />, army: () => <World focus="army" />,
     society: () => <Society />, press: () => <Society focus="press" />, court: () => <Society focus="court" />, crises: () => <Society focus="crises" />,
     honours: () => <Honours />, season: () => <Honours focus="season" />, fame: () => <Honours focus="fame" />,
     nation: () => <Nation id={b} />, case: () => <Case id={b} />, crisis: () => <Crisis id={b} />,
@@ -151,7 +151,10 @@ function Ticker() {
 }
 // on every page while it's true: the clock is paused, or the realm is under emergency rule
 function StatusBanner() {
-  const { world: w } = useStore();
+  const { world: w, me } = useStore();
+  // a defector sees the realm from across the border
+  const ab = w.citizens[me]?.defected;
+  if (ab) return <div class="status-banner abroad" role="status"><b>You live in {w.nations[ab.nation]?.name} now.</b> You can read the realm's news but not act in it. <a href="#/abroad">Go to the court</a>.</div>;
   const p = w.clock?.pausedAt;
   const m = w.martial;
   const k = w.coup, r = w.regime, t = w.transition;

@@ -7,6 +7,7 @@ import { Wallet, Economy, Banks, Ventures } from './money';
 import { Bets } from './market';
 import { Atlas, War } from './atlas';
 import { Exchange } from './exchange';
+import { Abroad } from './abroad';
 import { Foreign, Security, Army, Press, Court, Crises, Season } from './world';
 import { Backroom, Plots, Exile } from './backroom';
 import { Fame, RedBox } from './glory';
@@ -20,7 +21,7 @@ export function Money({ focus }: { focus?: string }) {
   return <Combined kicker="Crowns" title="Money" intro="Your wallet, the Treasury and the Reserve, the Exchange, banks, trade ventures abroad, and the betting pools." focus={focus} parts={[['wallet', 'Your wallet', () => <Wallet />], ['economy', 'Treasury and Reserve', () => <Economy />], ['exchange', 'The Exchange', () => <Exchange />], ['banks', 'Banks', () => <Banks />], ['ventures', 'Ventures', () => <Ventures />], ['bets', 'Bets', () => <Bets />]]} />;
 }
 export function World({ focus }: { focus?: string }) {
-  return <Combined kicker="Abroad" title="The world" intro="The map of the nations abroad, the envoys and treaties that keep them sweet, the Army and its wars, and the Security Service." focus={focus} parts={[['atlas', 'The map', () => <Atlas />], ['foreign', 'Foreign Office', () => <Foreign />], ['war', 'The war room', () => <War />], ['army', 'The Army', () => <Army />], ['security', 'Security Service', () => <Security />]]} />;
+  return <Combined kicker="Abroad" title="The world" intro="The map of the nations abroad, the envoys and treaties that keep them sweet, the Army and its wars, and the Security Service." focus={focus} parts={[['atlas', 'The map', () => <Atlas />], ['foreign', 'Foreign Office', () => <Foreign />], ['war', 'The war room', () => <War />], ['army', 'The Army', () => <Army />], ['security', 'Security Service', () => <Security />], ['abroad', 'Life abroad', () => <Abroad />]]} />;
 }
 export function Society({ focus }: { focus?: string }) {
   return <Combined kicker="Public life" title="Society" intro="The newspapers, the Supreme Court, and the crises that land on the government." focus={focus} parts={[['crises', 'Crises', () => <Crises />], ['press', 'The press', () => <Press />], ['court', 'Supreme Court', () => <Court />]]} />;

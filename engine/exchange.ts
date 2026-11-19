@@ -300,7 +300,7 @@ export function closeMotion(w: W, m: any) {
   const p = w.proposals[m.prop];
   const c = company(m.sym)!;
   if (m.yes <= m.no || !p || !['debate', 'vote'].includes(p.stage)) return gazette(w, 'money', `${c.name}'s shareholders vote the motion down, ${m.yes} shares to ${m.no}.`, '#/exchange');
-  p.lobbies = [...(p.lobbies || []), { sym: m.sym, side: m.side, at: w.now }];
+  p.lobbies = [...(p.lobbies || []), { sym: m.sym, side: m.side, at: w.now, by: m.by }];
   gazette(w, 'money', `${c.name}'s shareholders carry the motion, ${m.yes} shares to ${m.no}: the company lobbies ${m.side === 'aye' ? 'for' : 'against'} “${p.title}”.`, '#/p/' + p.id);
 }
 // proposals.ts calls this when a bill's vote closes
@@ -312,4 +312,22 @@ export function lobbyOutcome(w: W, p: any, passed: boolean) {
     q.p = clamp(Math.round(q.p * (got ? 1.06 : 0.94) * 100) / 100, 1, 999);
     l.got = got;
   });
+}
+
+// ---------- corporate donors: when a company gets its way on a bill, the shareholder who called the vote may direct a
+// donation of 20 crowns from it to a party (paid to the party's leader). Every donation is on the Register ----------
+export const DONATION = 20;
+export function donate(w: W, actor: Id, prop: unknown, sym: unknown, party: unknown) {
+  const p = typeof prop === 'string' ? w.proposals[prop] : null;
+  const l = (p?.lobbies || []).find((x: any) => x.sym === sym);
+  if (!l || l.by !== actor) fail('Only the shareholder who called the vote directs the donation.');
+  if (l.got !== true) fail('The company only donates when it gets its way.');
+  if (l.donated) fail('That donation has been made.');
+  const pt = typeof party === 'string' ? w.parties[party] : null;
+  if (!pt || pt.status !== 'active' || !pt.leader) fail('Pick a party with a leader.');
+  payOut(w, ca(pt.leader), DONATION, `Donation to ${pt.name} from ${company(l.sym)!.name}`);
+  l.donated = pt.id;
+  const x = exchange(w);
+  x.donations = [{ sym: l.sym, party: pt.id, amount: DONATION, by: actor, prop: p!.id, at: w.now }, ...(x.donations || [])].slice(0, 40);
+  gazette(w, 'money', `${company(l.sym)!.name} donates ${DONATION} crowns to the ${pt.name}.`, '#/exchange');
 }

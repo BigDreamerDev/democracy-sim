@@ -181,6 +181,16 @@ export function viewFor(full: W, me: Id): W {
     delete n.intent;
     if (!canSeeIntel(full, me)) n.ring = null;
   });
+  // life abroad: secrets carried and cooldowns are the defector's own; moles, approaches and foreign rings are secret
+  Object.values(w.citizens).forEach((c: any) => {
+    if (c.id !== me) {
+      if (c.defected) c.defected = { ...c.defected, secrets: (c.defected.secrets || []).map(() => '•'), last: {} };
+      delete c.agentOf; delete c.agentSince; delete c.handler; delete c.formerAgentOf; delete c.formerUntil;
+    }
+  });
+  Object.values(w.nations).forEach((n: any) => delete n.mole);
+  if (w.approaches) Object.keys(w.approaches).forEach((id) => { const a = w.approaches[id]; if (a.to !== me && a.by !== me) delete w.approaches[id]; });
+  w.sweeps = (w.sweeps || []).filter((s: any) => s.by === me);
   // shareholder votes: your own, and the running totals
   (w.exchange?.motions || []).forEach((m: any) => { m.tally = { yes: Object.values(m.votes).filter((v: any) => v.yes).reduce((s: number, v: any) => s + v.n, 0), no: Object.values(m.votes).filter((v: any) => !v.yes).reduce((s: number, v: any) => s + v.n, 0) }; m.votes = m.votes[me] ? { [me]: m.votes[me] } : {}; });
   // ships at sea to each nation are public; whose ventures they are is not (ventures are stripped above)
