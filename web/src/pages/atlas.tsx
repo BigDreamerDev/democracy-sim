@@ -258,6 +258,7 @@ export function WorldMap({ compact }: { compact?: boolean }) {
               <text x={c[0] + 9} y={c[1] + 15} class="atlas-town">{PROFILES[id]?.capital}</text>
               {ns[id].embassy && <path d={`M${c[0] - 12},${c[1] + 2} v-16 l10,4 l-10,4`} class="atlas-flag" />}
               <text x={l[0]} y={l[1]} text-anchor="middle" class="atlas-name">{name(id)}</text>
+              {ns[id].ruler && <text x={l[0]} y={l[1] + 28} text-anchor="middle" class="atlas-prov small">ruled by {w.citizens[ns[id].ruler.id]?.name}</text>}
               <text x={l[0]} y={l[1] + 15} text-anchor="middle" class={'atlas-mood m' + ns[id].mood}>{enemy === id ? 'At war' : MOODS[ns[id].mood]} · army {known(w, id) && ns[id].power != null ? Math.round(ns[id].power) : '?'}</text>
             </g>
           );
@@ -328,7 +329,7 @@ export function Atlas() {
             return (
               <a class="card atlas-card" href={'#/nation/' + n.id}>
                 <div class="row"><b class="serif" style={{ fontSize: 19 }}>{n.name}</b><span class={'chip ' + (n.mood >= 3 ? 'teal' : n.mood <= 1 ? 'red' : 'ink')}>{w.army?.war === n.id ? 'At war' : MOODS[n.mood]}</span></div>
-                <div class="small muted">{p?.gov}, ruled from {p?.capital}. {p?.leader}.</div>
+                <div class="small muted">{p?.gov}, ruled from {p?.capital}. {n.ruler ? <><b>{n.ruler.title} {w.citizens[n.ruler.id]?.name}</b>, once of the realm.</> : `${p?.leader}.`}</div>
                 <div class="atlas-stats small"><span>Army <b class="tnum">{known(w, n.id) && n.power != null ? `${Math.round(n.power)}/10` : 'unknown'}</b></span><span>Wealth <b class="tnum">{p?.wealth}</b>/10</span><span>{p?.exports}</span></div>
               </a>
             );
@@ -515,7 +516,7 @@ export function Diplomacy({ id }: { id: string }) {
           <div class="atlas-facts">
             <div><span class="small muted">Capital</span><b>{p.capital}</b></div>
             <div><span class="small muted">Government</span><b>{p.gov}</b></div>
-            <div><span class="small muted">Ruled by</span><b>{p.leader}</b></div>
+            <div><span class="small muted">Ruled by</span><b>{n.ruler ? `${n.ruler.title} ${w.citizens[n.ruler.id]?.name}` : p.leader}</b>{n.ruler && <span class="small muted">A defector from the realm</span>}</div>
             <div><span class="small muted">Army</span><b class="tnum">{known(w, id) && n.power != null ? `${Math.round(n.power * 10) / 10} / 10` : 'Unknown'}</b>{!(known(w, id) && n.power != null) && <span class="small muted">Open an embassy or ask the Security Service</span>}</div>
             <div><span class="small muted">Wealth</span><b class="tnum">{p.wealth} / 10</b></div>
             <div><span class="small muted">Exports</span><b>{p.exports}</b></div>

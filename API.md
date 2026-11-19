@@ -222,6 +222,7 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | `exchange.motions[]` | shareholder revolts: `sym`, `by`, `prop`, `side`, `tally` (shares for/against), `votes` (yours only), `status`; carried ones show on the bill as `proposals[].lobbies` |
 | `ventures[].status` | `'seized'` when the enemy took the ship in wartime |
 | `citizens[].defected` | a defector: `nation`, `at`, `favour` (0–100), `sold`, `deeds`; `secrets` and `last` (cooldowns) are only yours. Ranks and rules in `engine/abroad.ts` |
+| `nations[].ruler` | a defector who rules that nation: `id`, `title`, `since` (roads to power in `engine/abroad.ts` THRONES); `fame.foreignRulers` remembers them |
 | `approaches`, `sweeps` | secret offers from foreign powers (to you, or sent by you); your own Security Service sweeps |
 | `hostages[]` | citizens held abroad under terms of peace: `who`, `nation`, `until`, `status` (`held`/`ransomed`/`freed`) |
 | `pensions`, `config.veteranPension` | veterans on a memorial, and what each is paid a payday |

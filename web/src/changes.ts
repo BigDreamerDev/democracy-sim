@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 45, text: 'Defectors can take the throne abroad: marry into the royal family of Varnholm or the Isles, win an election in Kessmark, Tessaly or Sundmere, buy Aurel, or seize Drakmoor. Rulers offer the realm treaties and set policy every three days, until a palace revolt.' },
   { n: 44, text: 'Defect: leave the realm and play from a foreign court. Rise from Refugee to Chancellor, sell secrets, broadcast home, recruit agents, train their army, lead it against the realm, and set their policy. Or come home. World › Life abroad.' },
   { n: 43, text: 'Double agents: foreign powers try to recruit citizens in secret, and run rings of their own inside the government. The Security Service can sweep for them.' },
   { n: 42, text: 'Hostages taken under terms of peace can be ransomed early by the Treasury, and while held they may be offered a deal by their captors.' },

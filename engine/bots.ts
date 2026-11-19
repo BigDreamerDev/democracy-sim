@@ -211,6 +211,8 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
     p(0.1) && go(b.id, 'abroad.train');
     p(0.05) && b.defected.secrets?.length && go(b.id, 'abroad.sell', { secret: 0 });
     p(0.05) && go(b.id, 'abroad.policy', { act: pick(w, ['ultimatum', 'sanction', 'aid']) });
+    p(0.05) && go(b.id, 'abroad.marry');
+    p(0.04) && go(b.id, 'abroad.bid', { spend: 20 });
     p(0.03) && go(b.id, 'defect.return');
   });
   const gen = w.offices.army?.holder;

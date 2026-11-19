@@ -5,7 +5,8 @@ import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Pick, Opt, Meter } from '../ui';
 import { isPM, hasPower, holderOf, bal, ca, canSeeCard, nm } from '../../../engine/index';
 import { MOODS, PROFILES } from '../../../engine/foreign';
-import { RANKS, rankOf, COOL, POLICIES, RANSOM, defectorsIn } from '../../../engine/abroad';
+import { RANKS, rankOf, COOL, POLICIES, RANSOM, defectorsIn, throneOf, BID_COOL, BUY_PRICE } from '../../../engine/abroad';
+import { TREATIES } from '../../../engine/foreign';
 
 const moodColour = ['var(--red)', 'var(--amber)', 'var(--muted)', 'var(--teal)', 'var(--teal)'];
 
@@ -31,20 +32,20 @@ function Court() {
   const enemy = w.army?.war === d.nation;
   const home = (Object.values(w.citizens) as any[]).filter((c) => c.active && !c.bot && !c.defected && c.id !== me);
   return (
-    <Page back={['#/world', 'The world']} kicker={<span style={{ color: 'var(--red)' }}>You have defected · since <When at={d.at} /></span>} title={`The court in ${p?.capital ?? n.name}`} intro={`${n.name}: ${p?.gov.toLowerCase()}, ruled by ${p?.leader}. “${p?.motto}” Your old homeland is ${MOODS[n.mood].toLowerCase()} in their eyes.`}>
+    <Page back={['#/world', 'The world']} kicker={<span style={{ color: 'var(--red)' }}>You have defected · since <When at={d.at} /></span>} title={r === 4 ? `${n.ruler.title}` : `The court in ${p?.capital ?? n.name}`} intro={`${n.name}: ${p?.gov.toLowerCase()}, ruled by ${n.ruler ? `${nm(w, n.ruler.id)}${n.ruler.id === me ? ' (you)' : ''}, once of the realm` : p?.leader}. “${p?.motto}” Your old homeland is ${MOODS[n.mood].toLowerCase()} in their eyes.`}>
       <div class="passport-abroad">
         <div>
           <div class="kicker" style={{ margin: 0 }}>Your standing at court</div>
-          <div class="serif" style={{ fontSize: 34, lineHeight: 1 }}>{RANKS[r].name}</div>
-          <div class="small muted">{RANKS[r].what}</div>
+          <div class="serif" style={{ fontSize: 34, lineHeight: 1 }}>{r === 4 ? n.ruler.title : RANKS[r].name}{d.consort && r !== 4 ? ', royal consort' : ''}</div>
+          <div class="small muted">{r === 4 ? `You rule ${n.name}. Policy every 3 days, treaties for the realm, 20 a week. Watch for palace revolts.` : RANKS[r].what}</div>
         </div>
         <div style={{ minWidth: 220, flex: 1 }}>
           <div class="row small"><span>Favour</span><b class="tnum">{d.favour}/100</b></div>
           <Meter value={d.favour} max={100} color="var(--gold)" />
-          <div class="ladder">{RANKS.map((x, i) => <span class={i <= r ? 'on' : ''}>{x.name}<i>{x.min}</i></span>)}</div>
+          <div class="ladder">{RANKS.map((x, i) => <span class={i <= r ? 'on' : ''}>{i === 4 ? 'Throne' : x.name}{i < 4 && <i>{x.min}</i>}</span>)}</div>
         </div>
       </div>
-      {enemy && <Card kind="warn" style={{ marginTop: 14 }}><b>{n.name} is at war with the realm.</b> <span class="small">The front stands at {w.army.campaign.score > 0 ? '+' : ''}{w.army.campaign.score} (from the realm's side). As a Minister you can lead their army.</span></Card>}
+      {enemy && <Card kind="warn" style={{ marginTop: 14 }}><b>{n.name} is at war with the realm.</b> <span class="small">The front stands at {w.army.campaign.score > 0 ? '+' : ''}{w.army.campaign.score} (from the realm's side). Ministers and above can lead their army.</span></Card>}
       <Sec title="Your day at court" sub="Each action has its own wait. Favour lifts you up the ladder; failure costs a little.">
         <div class="court-grid">
           <Card><b>Serve the court</b><p class="small">A stipend of {5 + 3 * r} crowns and +3 favour.</p><div class="small muted">{when('work')}</div><Btn small disabled={!can('work')} onClick={() => act('abroad.work', {}, 'A day’s work done.')}>Serve</Btn></Card>
@@ -55,11 +56,12 @@ function Court() {
           {enemy && <Card kind="warn"><b>Lead their army</b><p class="small">Take command for the next battle against the realm: +2 to {n.name}'s strength.</p><div class="small muted">{when('command', 2)}</div><Btn small kind="danger" disabled={!can('command', 2)} onClick={() => act('abroad.command', {}, 'You ride at the head of their army.')}>Take command</Btn></Card>}
         </div>
       </Sec>
+      <Throne />
       <Sec title="The secrets you carried out" sub="Each one sold is printed abroad: +12 favour and 15 crowns. If you ever come home, you will be questioned at the border.">
         {d.secrets.length ? <ul class="list">{d.secrets.map((s: string, i: number) => <li class="row"><span class="small">{s}</span><Btn small kind="danger ghost" onClick={() => confirm('Sell this secret? It will be printed.') && act('abroad.sell', { secret: i }, 'Sold.')}>Sell</Btn></li>)}</ul> : <Empty>You have no secrets to sell. Agents you recruit can send you more.</Empty>}
       </Sec>
-      <Sec title="Chancellor's orders" sub={r === 3 ? `You set ${n.name}'s policy towards the realm, once a week.` : `The defector with the most favour, at 80 or more, is ${n.name}'s Chancellor and sets its policy towards the realm.`}>
-        {r === 3 ? (
+      <Sec title={r === 4 ? 'Your orders' : "Chancellor's orders"} sub={r === 4 ? `As ${n.ruler.title} you set policy towards the realm every three days.` : r === 3 ? `You set ${n.name}'s policy towards the realm, once a week.` : `The defector with the most favour, at 80 or more, is ${n.name}'s Chancellor and sets its policy towards the realm.`}>
+        {r >= 3 ? (
           <div class="stack">
             <div class="small muted">{when('policy', 3)}</div>
             {Object.entries(POLICIES).map(([k, label]) => <Opt onClick={() => can('policy', 3) && confirm(`${label}?`) && act('abroad.policy', { act: k }, 'Your orders go out.')} title={label} hint={k === 'war' ? 'Their army marches on the realm.' : k === 'peace' ? 'Only while at war. You lose a little favour.' : k === 'aid' ? '30 crowns to the realm, and they warm to it. You lose a little favour.' : 'They will remember who signed it.'} />)}
@@ -78,6 +80,42 @@ function Court() {
         </div>
       </Sec>
     </Page>
+  );
+}
+// the road to the top: marry, stand, buy or seize, depending on the nation
+function Throne() {
+  const { world: w, me } = useStore();
+  const d = w.citizens[me].defected;
+  const n = w.nations[d.nation];
+  const t = throneOf(n.id);
+  const [spend, setSpend] = useState('20');
+  const [kind, setKind] = useState('trade');
+  const mine = n.ruler?.id === me;
+  const bidIn = d.bidAt ? Math.max(0, d.bidAt + BID_COOL - w.now) : 0;
+  const need = t.way === 'buy' ? 50 : t.way === 'marry' ? 60 : 65;
+  if (mine) {
+    return (
+      <Sec title="Your reign" sub={`Ruler since ${new Date(n.ruler.since).toUTCString().slice(0, 11)}. A palace revolt is less likely the more favour you keep.`}>
+        <div class="grid2">
+          <Card><b>Offer the realm a treaty</b><p class="small">It arrives as an offer your old House can ratify by bill.</p><Pick value={kind} onChange={setKind} options={TREATIES.map((x) => [x.kind, x.title])} /><Btn small style={{ marginTop: 8 }} onClick={() => act('abroad.offer', { kind }, 'The offer is sent.')}>Send the offer</Btn></Card>
+          <Card><b>Give it up</b><p class="small">Step down. You stay at court with your favour.</p><Btn small kind="plain" onClick={() => confirm('Give up the throne?') && act('abroad.abdicate', {}, 'You have stepped down.')}>Abdicate</Btn></Card>
+        </div>
+      </Sec>
+    );
+  }
+  return (
+    <Sec title={`The road to ${t.title}`} sub={t.how}>
+      <Card kind={n.ruler ? 'warn' : 'tint'}><div class="stack">
+        {n.ruler ? <span class="small"><Who id={n.ruler.id} /> rules here now. A bid against them is harder.</span> : <span class="small">The throne is held by {PROFILES[n.id]?.leader}.</span>}
+        {t.way === 'marry' && !d.consort && <>
+          <span class="small">First, a royal marriage: 50 favour or more, and better odds with more. Every two days.</span>
+          <Btn kind="ghost" disabled={d.favour < 50} onClick={() => act('abroad.marry', {}, 'You have proposed.')}>Propose marriage</Btn>
+        </>}
+        {t.way === 'elect' && <Field label="Campaign spending (0–100 crowns)" type="number" value={spend} onInput={setSpend} />}
+        <span class="small muted">Needs {need} favour (you have {d.favour}){t.way === 'marry' ? ' and a royal marriage' : ''}{t.way === 'buy' ? `, and ${BUY_PRICE} crowns (you have ${bal(w, ca(me))})` : ''}{t.way === 'seize' ? `. Each army drill you have done helps (${d.drills || 0} so far)` : ''}.{bidIn ? <> Next bid in <Left at={w.now + bidIn} />.</> : ''}</span>
+        <Btn kind={t.way === 'seize' ? 'danger' : undefined} disabled={d.favour < need || !!bidIn || (t.way === 'marry' && !d.consort)} onClick={() => confirm(t.way === 'seize' ? 'Seize power? If you fail you are thrown out of the country.' : 'Make your bid?') && act('abroad.bid', { spend: Number(spend) }, 'The die is cast.')}>{t.way === 'marry' ? 'Claim the succession' : t.way === 'elect' ? 'Stand for election' : t.way === 'buy' ? `Buy the guilds (${BUY_PRICE})` : 'Seize power'}</Btn>
+      </div></Card>
+    </Sec>
   );
 }
 function MoveOn() {
@@ -121,7 +159,7 @@ function Home() {
         {held.length ? <ul class="list">{held.map((h: any) => <li class="row"><span><Who id={h.who} /> in {PROFILES[h.nation]?.capital}, {w.nations[h.nation]?.name}<div class="small muted">Released in <Left at={h.until} /></div></span>{canRansom && <Btn small onClick={() => act('hostage.ransom', { hostage: h.id }, 'Ransom paid.')}>Pay {RANSOM}</Btn>}</li>)}</ul> : <Empty>Nobody is held abroad.</Empty>}
       </Sec>
       <Sec title="Defectors" sub="Who has gone over, and how far they have risen at their new court.">
-        {all.length ? <ul class="list">{all.map((c) => <li class="row"><span><Who id={c.id} /> in {w.nations[c.defected.nation]?.name}<div class="small muted">Since <When at={c.defected.at} /></div></span><span class="small"><b>{RANKS[Math.max(0, rankOf(w, c.id))].name}</b> · {c.defected.favour} favour</span></li>)}</ul> : <Empty>Nobody has defected.</Empty>}
+        {all.length ? <ul class="list">{all.map((c) => <li class="row"><span><Who id={c.id} /> in {w.nations[c.defected.nation]?.name}<div class="small muted">Since <When at={c.defected.at} />{c.defected.consort ? ' · married into the royal family' : ''}</div></span><span class="small"><b>{rankOf(w, c.id) === 4 ? w.nations[c.defected.nation].ruler.title : RANKS[Math.max(0, rankOf(w, c.id))].name}</b> · {c.defected.favour} favour</span></li>)}</ul> : <Empty>Nobody has defected.</Empty>}
       </Sec>
       <Sec title="Defect" sub="Leave the realm and play from a foreign court. You give up your seat, your offices and your party, and lose 10 approval. You take whatever secrets you can see with you.">
         <Card><div class="stack">

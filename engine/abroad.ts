@@ -8,7 +8,7 @@
 // The Security Service sweeps for both. Public: who defected, where, rank and favour. Secret: secrets carried,
 // approaches, who is a mole, foreign rings.
 import { W, Id, DAY, HOUR, fail, own, cit, nm, gazette, earn, transfer, bal, ca, chance, pick, rand, clamp, approve, stamp, bump, meter, mustBeFree, text, int, isPM, isHOS, isMP, hasPower, holderOf, newId, canSeeCard, allCitizens, exiled } from './core';
-import { PROFILES, moodShift, ultimatum, sanction, atWar } from './foreign';
+import { PROFILES, moodShift, ultimatum, sanction, atWar, TREATIES as TREATY_KINDS } from './foreign';
 import { startWar, endWar } from './war';
 import { vacateSeat } from './politics';
 
@@ -16,16 +16,18 @@ export const RANKS = [
   { min: 0, name: 'Refugee', what: 'A bed, a stipend and a lot of suspicion.' },
   { min: 20, name: 'Adviser', what: 'You may counsel the court, train its army and recruit agents at home.' },
   { min: 50, name: 'Minister', what: 'You may lead its army in battle against the realm.' },
-  { min: 80, name: 'Chancellor', what: 'You set its policy towards the realm. Only one per nation.' }
+  { min: 80, name: 'Chancellor', what: 'You set its policy towards the realm. Only one per nation.' },
+  { min: 101, name: 'Ruler', what: 'The nation is yours.' }
 ];
 // the Chancellor is whoever has the most favour, at 80 or more; everyone else tops out at Minister
 export function rankOf(w: W, id: Id) {
   const d = w.citizens[id]?.defected;
   if (!d) return -1;
+  if (w.nations[d.nation]?.ruler?.id === id) return 4;
   let r = RANKS.reduce((best, x, i) => (d.favour >= x.min ? i : best), 0);
   if (r === 3) {
     const top = defectorsIn(w, d.nation).sort((a: any, b: any) => b.defected.favour - a.defected.favour)[0];
-    if (top?.id !== id) r = 2;
+    if (top?.id !== id || w.nations[d.nation]?.ruler) r = 2;
   }
   return r;
 }
@@ -55,6 +57,7 @@ export function defect(w: W, actor: Id, nid: unknown) {
   if (isHOS(w, actor)) fail('Give up the throne or the presidency first.');
   if (c.party && w.parties[c.party]?.leader === actor) fail('Stand down as party leader first.');
   const from = c.defected?.nation;
+  if (from && w.nations[from].ruler?.id === actor) w.nations[from].ruler = null;
   if (!from) {
     Object.values(w.offices).forEach((o: any) => { if (o.holder === actor) o.holder = null; if (o.members) o.members = o.members.filter((m: Id) => m !== actor); });
     c.party = null;
@@ -77,6 +80,7 @@ export function comeHome(w: W, actor: Id) {
   if (!d) fail('You are at home.');
   if (w.now - d.at < 2 * DAY) fail('Give it two days before you try to come home.');
   const n = w.nations[d.nation];
+  if (n.ruler?.id === actor) n.ruler = null;
   c.defected = null;
   c.defections = [...(c.defections || []), { nation: d.nation, from: d.at, to: w.now, rank: RANKS[Math.max(0, rankOfFavour(d.favour))].name, sold: d.sold }].slice(-5);
   approve(w, actor, -5);
@@ -87,7 +91,7 @@ export function comeHome(w: W, actor: Id) {
     gazette(w, 'foreign', `${c.name} comes home from ${n.name} and is held at the border for questioning: they sold the realm's secrets.`, '#/abroad');
   } else gazette(w, 'foreign', `${c.name} comes home from ${n.name}.`, '#/abroad');
 }
-const rankOfFavour = (f: number) => RANKS.reduce((b, x, i) => (f >= x.min ? i : b), 0);
+const rankOfFavour = (f: number) => Math.min(3, RANKS.reduce((b, x, i) => (f >= x.min ? i : b), 0));
 
 // ---------- the court abroad: each action has its own cooldown ----------
 export const COOL: Record<string, number> = { work: 12 * HOUR, counsel: DAY, train: DAY, broadcast: DAY, recruit: 2 * DAY, policy: 7 * DAY, command: 12 * HOUR };
@@ -126,6 +130,7 @@ export function train(w: W, actor: Id) {
   const n = nationOf(w, actor);
   transfer(w, ca(actor), 'nation:' + n.id, 10, `Drilling ${n.name}'s army`);
   n.power = clamp(Math.round(((n.power || 3) + 0.3) * 10) / 10, 1, 10);
+  w.citizens[actor].defected.drills = (w.citizens[actor].defected.drills || 0) + 1;
   fav(w, actor, 3);
   deed(w, actor, `Drilled ${n.name}'s army`);
 }
@@ -183,6 +188,7 @@ export function policy(w: W, actor: Id, act: unknown) {
   if (act === 'ultimatum' && (w.ultimatums || []).some((u: any) => u.nation === n.id && u.status === 'sent')) fail('An ultimatum is already waiting for an answer.');
   if (act === 'sanction' && n.sanctionsUntil > w.now) fail('Sanctions are already in force.');
   ready(w, actor, 'policy', 3);
+  if (rankOf(w, actor) === 4) w.citizens[actor].defected.last.policy = w.now - COOL.policy + 3 * DAY;
   gazette(w, 'foreign', `Chancellor ${nm(w, actor)} of ${n.name}: ${POLICIES[act as string].toLowerCase()}.`, '#/abroad');
   if (act === 'ultimatum') (w.ultimatums ??= [], ultimatum(w, n, 30 + Math.round(rand(w) * 30)));
   if (act === 'sanction') sanction(w, n, `On the orders of Chancellor ${nm(w, actor)}`);
@@ -305,6 +311,7 @@ export function ransom(w: W, actor: Id, hid: unknown) {
 
 // ---------- once a week: stipends for moles, their leaks, foreign rings, nations' own approaches ----------
 export function abroadWeek(w: W) {
+  rulersWeek(w);
   (w.hostages || []).forEach((h: any) => h.status === 'held' && h.until <= w.now && (h.status = 'freed'));
   allCitizens(w).forEach((c: any) => {
     if (!c.agentOf) return;
@@ -331,3 +338,130 @@ export function abroadWeek(w: W) {
 }
 // war.ts: a mole in government, or a foreign ring, tells the enemy our plans
 export const enemyKnows = (w: W, nid: string) => !!w.nations[nid]?.mole || allCitizens(w).some((c: any) => c.agentOf === nid && (isMP(w, c.id) || w.pm === c.id || Object.values(w.offices).some((o: any) => o.holder === c.id)));
+
+// ---------- the throne abroad: every nation has its own road to the top ----------
+// monarchies: marry into the royal family, then claim the succession; republics: win an election (money helps);
+// Aurel: buy the guilds; Drakmoor: seize power. The ruler sets policy every 3 days, offers the realm treaties, draws a
+// stipend of 20 a week, and risks a palace revolt each week (less likely with more favour).
+export const THRONES: Record<string, { title: string; way: 'marry' | 'elect' | 'buy' | 'seize'; how: string }> = {
+  varnholm: { title: 'Grand Sovereign of Varnholm', way: 'marry', how: 'Marry into the grand ducal family, then claim the succession.' },
+  orrin: { title: 'Monarch of the Isles', way: 'marry', how: 'Marry into the royal house of the Isles, then claim the succession.' },
+  kessmark: { title: 'First Syndic of Kessmark', way: 'elect', how: 'Stand for First Syndic. The merchant houses vote; money helps.' },
+  tessaly: { title: 'First Minister of the Commonwealth', way: 'elect', how: 'Stand for First Minister in a Commonwealth election. Money helps.' },
+  sundmere: { title: 'Speaker of the Lakes', way: 'elect', how: 'Stand for Speaker of the Council of Lakes. Money helps.' },
+  aurel: { title: 'Doge of Aurel', way: 'buy', how: 'Buy the guilds: 120 crowns makes you Doge, if you have the favour.' },
+  drakmoor: { title: 'Marshal of Drakmoor', way: 'seize', how: 'Seize power from the old Marshal. Fail, and you are thrown out of the country.' }
+};
+export const BID_COOL = 3 * DAY;
+export const BUY_PRICE = 120;
+export const throneOf = (nid: string) => THRONES[nid] ?? { title: 'Ruler', way: 'elect', how: '' };
+// monarchies: a proposal of marriage to the royal family (favour 50+, every 2 days)
+export function marry(w: W, actor: Id) {
+  const d = w.citizens[actor]?.defected;
+  if (!d) fail('You have not defected.');
+  const n = nationOf(w, actor);
+  if (throneOf(n.id).way !== 'marry') fail(`${n.name} has no royal family to marry into.`);
+  if (d.consort) fail('You are already married into the family.');
+  if (d.favour < 50) fail('The family will not consider you below 50 favour.');
+  if (d.wooedAt && w.now - d.wooedAt < 2 * DAY) fail('Give it two days before you ask again.');
+  d.wooedAt = w.now;
+  if (!chance(w, 0.3 + (d.favour - 50) / 100)) {
+    fav(w, actor, -4);
+    deed(w, actor, 'Proposed to the royal family, and was refused');
+    return gazette(w, 'foreign', `${nm(w, actor)}'s proposal of marriage to the royal family of ${n.name} is politely refused.`, '#/abroad');
+  }
+  d.consort = true;
+  fav(w, actor, 10);
+  stamp(w, actor, 'Royal consort', `Married into the house of ${n.name}`, 'good');
+  deed(w, actor, 'Married into the royal family');
+  gazette(w, 'foreign', `A royal wedding in ${PROFILES[n.id]?.capital}: ${nm(w, actor)} marries into the ruling house of ${n.name}.`, '#/abroad');
+}
+// make a bid for the top: how depends on the nation; once every 3 days
+export function bid(w: W, actor: Id, spend: unknown) {
+  const d = w.citizens[actor]?.defected;
+  if (!d) fail('You have not defected.');
+  const n = nationOf(w, actor);
+  const t = throneOf(n.id);
+  if (n.ruler?.id === actor) fail('You already rule here.');
+  if (d.bidAt && w.now - d.bidAt < BID_COOL) fail('Your last bid was too recent. Wait three days.');
+  const need = t.way === 'buy' ? 50 : t.way === 'marry' ? 60 : 65;
+  if (d.favour < need) fail(`You need ${need} favour to make a bid.`);
+  if (t.way === 'marry' && !d.consort) fail('Marry into the family first.');
+  const rival = n.ruler && w.citizens[n.ruler.id] ? n.ruler.id : null;
+  let ok = false;
+  let cost = 0;
+  if (t.way === 'buy') {
+    cost = BUY_PRICE;
+    ok = true;
+  } else if (t.way === 'elect') {
+    cost = int(spend ?? 0, 0, 100, 'campaign spending');
+    ok = chance(w, clamp(d.favour / 150 + cost / 200 - (rival ? 0.15 : 0), 0.1, 0.9));
+  } else if (t.way === 'marry') ok = chance(w, clamp(0.35 + (d.favour - 60) / 80 - (rival ? 0.15 : 0), 0.15, 0.9));
+  else ok = chance(w, clamp(0.3 + (d.drills || 0) / 20 + (d.favour - 70) / 100 - (rival ? 0.1 : 0), 0.1, 0.8));
+  if (cost > 0) transfer(w, ca(actor), 'nation:' + n.id, cost, t.way === 'buy' ? 'The guilds of Aurel' : `A campaign in ${n.name}`);
+  d.bidAt = w.now;
+  if (!ok) {
+    fav(w, actor, -8);
+    deed(w, actor, `Made a bid to become ${t.title}, and failed`);
+    gazette(w, 'foreign', `${nm(w, actor)} ${t.way === 'elect' ? 'loses the election' : t.way === 'seize' ? 'tries to seize power' : 'claims the succession'} in ${n.name}, and fails.`, '#/abroad');
+    // a failed coup in Drakmoor: thrown out of the country, back to the realm and held at the border
+    if (t.way === 'seize') {
+      const c = w.citizens[actor];
+      c.defections = [...(c.defections || []), { nation: n.id, from: d.at, to: w.now, rank: 'Expelled', sold: d.sold }].slice(-5);
+      c.defected = null;
+      c.exiledUntil = w.now + 3 * DAY;
+      c.exileNoted = false;
+      gazette(w, 'foreign', `${n.name} throws ${c.name} out of the country. They are held at the realm's border.`, '#/abroad');
+    }
+    return;
+  }
+  if (rival) {
+    const rd = w.citizens[rival].defected;
+    if (rd) rd.favour = Math.min(rd.favour, 40);
+    stamp(w, rival, 'Deposed', `As ${t.title}, by ${nm(w, actor)}`, 'bad');
+  }
+  n.ruler = { id: actor, title: t.title, since: w.now };
+  fav(w, actor, 15);
+  stamp(w, actor, t.title, `Of ${n.name}`, 'ink');
+  bump(w, actor, 'ruledAbroad');
+  deed(w, actor, `Became ${t.title}`);
+  const f = (w.fame ??= {}) as any;
+  f.foreignRulers = [{ who: nm(w, actor), title: t.title, nation: n.name, at: w.now }, ...(f.foreignRulers || [])].slice(0, 30);
+  gazette(w, 'foreign', `${nm(w, actor)}, once a citizen of the realm, is now ${t.title}${t.way === 'buy' ? ', having bought the guilds' : t.way === 'seize' ? ', having seized power' : t.way === 'marry' ? ', by right of marriage' : ', elected'}.`, '#/abroad');
+}
+// a ruler offers the realm a treaty: it lands as an offer the House can ratify by bill
+export function offerTreaty(w: W, actor: Id, kind: unknown) {
+  const n = nationOf(w, actor);
+  if (n.ruler?.id !== actor) fail('Only the ruler offers treaties.');
+  const t = TREATY_KINDS.find((x) => x.kind === kind);
+  if (!t) fail('Pick a treaty.');
+  if (Object.values(w.offers).some((o: any) => o.nation === n.id)) fail('An offer to the realm is already waiting.');
+  const id = newId(w, 'of');
+  w.offers[id] = { id, nation: n.id, ...t, title: `${n.name} ${t.title}`, at: w.now, expiresAt: w.now + 5 * DAY, by: actor };
+  deed(w, actor, `Offered the realm a ${t.title}`);
+  gazette(w, 'foreign', `${n.ruler.title} ${nm(w, actor)} offers the realm a ${t.title}. The House can ratify it with a bill.`, '#/foreign');
+}
+export function abdicateAbroad(w: W, actor: Id) {
+  const n = nationOf(w, actor);
+  if (n.ruler?.id !== actor) fail('You do not rule here.');
+  gazette(w, 'foreign', `${n.ruler.title} ${nm(w, actor)} gives up the rule of ${n.name}.`, '#/abroad');
+  n.ruler = null;
+  deed(w, actor, 'Gave up the throne');
+}
+// once a week: the ruler's stipend, and the chance of a palace revolt
+export function rulersWeek(w: W) {
+  Object.values(w.nations).forEach((n: any) => {
+    const r = n.ruler;
+    if (!r) return;
+    const d = w.citizens[r.id]?.defected;
+    if (!d || d.nation !== n.id) return void (n.ruler = null);
+    const pay = Math.min(20, bal(w, 'nation:' + n.id));
+    if (pay > 0) transfer(w, 'nation:' + n.id, ca(r.id), pay, `The ${r.title}'s stipend`);
+    if (chance(w, clamp(0.2 - d.favour / 600, 0.03, 0.2))) {
+      gazette(w, 'foreign', `A palace revolt in ${n.name}: ${nm(w, r.id)} is overthrown as ${r.title}.`, '#/abroad');
+      stamp(w, r.id, 'Overthrown', `As ${r.title}`, 'bad');
+      d.favour = 40;
+      n.ruler = null;
+    }
+  });
+}
