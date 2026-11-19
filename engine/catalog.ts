@@ -158,6 +158,8 @@ export const CATALOG: Record<string, CmdInfo> = {
   'army.scrap': { about: 'General, High Commissioner or PM: stand down one piece of equipment (or a fort) to save its upkeep.', args: { item: 'string', province: 'id (province), for a fort' } },
   'privy.appoint': { about: 'The Sovereign: appoint (or, with no target, dismiss) one of the three Privy Councillors.', args: { seat: '0 | 1 | 2', target: 'id (citizen) or null' } },
   'privy.summon': { about: 'Lord Chamberlain: summon the Privy Council to an urgent sitting; an Order in debate goes to the vote within the hour. Once a day.', args: { prop: 'id (proposal)' } },
+  'privy.force': { about: 'The Sovereign or the Imperial High Commissioner: force a pending Order in Council through; it becomes law at once, without a vote.', args: { prop: 'id (proposal)' } },
+  'privy.veto': { about: 'The Sovereign, the High Commissioner, the Lord Chamberlain or the Lord Privy Seal: veto a pending Order in Council; it falls.', args: { prop: 'id (proposal)' } },
   'privy.seal': { about: 'Lord Privy Seal: set the Imperial Seal on an Order waiting for assent, so it takes effect within the hour.', args: { prop: 'id (proposal)' } },
   'war.terms': { about: "MPs, while the enemy's terms of peace are on the table (army.campaign.terms): accept or reject. A majority of votes cast after a day makes peace on those terms.", args: { yes: 'boolean' } },
   'war.memorial': { about: 'MPs, after a war: choose whose names go on the memorial (w.memorials). A name backed by a majority of MPs voting is carved.', args: { memorial: 'id (memorial)', names: 'list of ids (citizens)' } },

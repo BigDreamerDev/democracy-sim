@@ -1197,14 +1197,18 @@ function gazetteList(n, full) {
 }
 
 /* ---------------------------------------------------------------- the house */
-const PRIVY_SEATS = ['The Sovereign', 'Imperial High Commissioner', 'Lord Chamberlain', 'Lord Privy Seal', 'Privy Councillor', 'Privy Councillor', 'Privy Councillor'];
+const PRIVY_SEATS = ['The Sovereign', 'Imperial High Commissioner', 'The General', 'Lord Chamberlain', 'Lord Privy Seal', 'Privy Councillor', 'Privy Councillor', 'Privy Councillor'];
 function privyCard() {
   if (!W.privy) return '';
   const sov = W.hos?.holder === W.viewer;
   const people = coll(W.citizens).filter(([id, c]) => c.active !== false && !c.bot && !c.defected && !(W.seats || []).includes(id));
-  return `<div class="card" style="border-color:var(--acc)"><h2>The Imperial Privy Council <span class="sub">sits in place of Parliament · an Order needs ${Math.floor(7 / 2) + 1} of 7</span></h2>
-    ${(W.seats || []).map((id, i) => `<div class="item"><div class="row between"><span><span class="m">${['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'][i]} · ${esc(PRIVY_SEATS[i])}</span> <span class="t">${id ? esc(who(id)) : 'Vacant'}</span></span>
-      ${sov && i >= 4 ? `<span class="row"><select class="sm" data-pc="${i - 4}"><option value="">${id ? 'Dismiss' : 'Choose…'}</option>${people.map(([cid, c]) => `<option value="${esc(cid)}">${esc(c.name)}</option>`).join('')}</select><button class="sm" data-pcbtn="${i - 4}">Do it</button></span>` : ''}</div></div>`).join('')}</div>`;
+  return `<div class="card" style="border-color:var(--acc)"><h2>The Imperial Privy Council <span class="sub">sits in place of Parliament · an Order needs 5 of 8</span></h2>
+    ${(W.seats || []).map((id, i) => `<div class="item"><div class="row between"><span><span class="m">${['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][i]} · ${esc(PRIVY_SEATS[i])}</span> <span class="t">${id ? esc(who(id)) : 'Vacant'}</span></span>
+      ${sov && i >= 5 ? `<span class="row"><select class="sm" data-pc="${i - 5}"><option value="">${id ? 'Dismiss' : 'Choose…'}</option>${people.map(([cid, c]) => `<option value="${esc(cid)}">${esc(c.name)}</option>`).join('')}</select><button class="sm" data-pcbtn="${i - 5}">Do it</button></span>` : ''}</div></div>`).join('')}
+    ${(() => { const mine = coll(W.offices).filter(([, o]) => o.holder === W.viewer).flatMap(([, o]) => o.powers || []);
+      const force = sov || mine.includes('imperial'), veto = force || mine.includes('chamberlain') || mine.includes('seal');
+      const pending = coll(W.proposals).filter(([, p]) => p.kind === 'bill' && ['consent', 'debate', 'vote', 'assent', 'override', 'withheld'].includes(p.stage));
+      return (force || veto) && pending.length ? `<div class="small" style="margin-top:8px"><b>Your prerogatives:</b>${pending.map(([id, p]) => `<div class="row between" style="margin-top:4px"><span>${esc(p.title)} <span class="m">${esc(p.stage)}</span></span><span>${force ? btn('privy.force', { prop: id }, 'Force it through', 'aye', `Force “${p.title}” through? It becomes law at once.`) : ''}${veto ? btn('privy.veto', { prop: id }, 'Veto', 'no', `Veto “${p.title}”?`) : ''}</span></div>`).join('')}</div>` : ''; })()}</div>`;
 }
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-pcbtn]'); if (!b) return;

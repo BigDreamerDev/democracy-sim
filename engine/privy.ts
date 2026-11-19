@@ -1,14 +1,17 @@
 // The Imperial Privy Council: under the Imperial Prerogative Act, Parliament is dissolved and the Council sits in its
-// place. Seven seats: the Sovereign, the Imperial High Commissioner, the Lord Chamberlain, the Lord Privy Seal and
-// three Privy Councillors the Sovereign appoints. The Council *is* the House while it sits: syncPrivy() writes its
-// members into w.seats (w.config.seats = 7), so bills (Orders in Council), votes, questions and confidence all work
+// place. Eight seats: the Sovereign, the Imperial High Commissioner, the General, the Lord Chamberlain, the Lord Privy
+// Seal and three Privy Councillors the Sovereign appoints. The Council *is* the House while it sits: syncPrivy() writes
+// its members into w.seats (w.config.seats = 8), so bills (Orders in Council), votes, questions and confidence all work
 // unchanged. The old Parliament is kept in w.privy.parliament and comes back, with a general election, on repeal.
 // No general or Speaker elections while it sits (callGeneralElection and countback check w.privy).
 import { W, Id, DAY, HOUR, fail, nm, gazette, stamp, cit, isHOS, hasPower, exiled, detained, own, inForce, mps } from './core';
 import { createOffice } from './offices';
+import { checkClauses, enactDecree, history } from './proposals';
+import { voidMarket } from './markets';
 
-export const PRIVY_SEATS = 7;
-export const SEAT_NAMES = ['The Sovereign', 'Imperial High Commissioner', 'Lord Chamberlain', 'Lord Privy Seal', 'Privy Councillor', 'Privy Councillor', 'Privy Councillor'];
+export const PRIVY_SEATS = 8;
+export const SEAT_NAMES = ['The Sovereign', 'Imperial High Commissioner', 'The General', 'Lord Chamberlain', 'Lord Privy Seal', 'Privy Councillor', 'Privy Councillor', 'Privy Councillor'];
+export const COUNCILLOR_SEAT = 5; // seats 5–7 are the Councillors'
 const officeHolder = (w: W, tpl: string) => (Object.values(w.offices).find((o: any) => o.template === tpl) as any)?.holder || null;
 const hcHolder = (w: W) => (Object.values(w.offices).find((o: any) => o.powers?.includes('imperial')) as any)?.holder || null;
 const fit = (w: W, id: Id | null) => !!id && !!w.citizens[id]?.active && !w.citizens[id].defected && !w.citizens[id].bot;
@@ -16,7 +19,7 @@ const fit = (w: W, id: Id | null) => !!id && !!w.citizens[id]?.active && !w.citi
 // the seven, in seat order; a person holding two places sits once
 export function council(w: W): (Id | null)[] {
   if (!w.privy) return [];
-  const raw = [w.hos?.holder || null, hcHolder(w), officeHolder(w, 'chamberlain'), officeHolder(w, 'privyseal'), ...(w.privy.councillors || [null, null, null])];
+  const raw = [w.hos?.holder || null, hcHolder(w), w.offices.army?.holder || null, officeHolder(w, 'chamberlain'), officeHolder(w, 'privyseal'), ...(w.privy.councillors || [null, null, null])];
   return raw.map((id, i) => (fit(w, id) && raw.indexOf(id) === i ? id : null));
 }
 export const seatOf = (w: W, id: Id) => council(w).indexOf(id);
@@ -43,6 +46,8 @@ export function establishPrivy(w: W, ref: string) {
   const next = () => { const id = old.find((m) => !taken.has(m) && fit(w, m) && !exiled(w, m)); if (id) taken.add(id); return id || null; };
   const lc = Object.values(w.offices).find((o: any) => o.template === 'chamberlain') as any;
   const ps = Object.values(w.offices).find((o: any) => o.template === 'privyseal') as any;
+  if (w.offices.army && !w.offices.army.holder) w.offices.army.holder = next();
+  else if (w.offices.army?.holder) taken.add(w.offices.army.holder);
   if (lc && !lc.holder) lc.holder = next();
   if (ps && !ps.holder) ps.holder = next();
   w.privy.councillors = [next(), next(), next()];
@@ -103,3 +108,42 @@ export function seal(w: W, actor: Id, pid: unknown) {
   p.assentDueAt = Math.min(p.assentDueAt || Infinity, w.now + HOUR);
   gazette(w, 'proposal', `The Imperial Seal is set on ${p.title}. It takes effect within the hour.`, '#/p/' + p.id);
 }
+
+// ---------- the great officers' prerogatives in Council ----------
+// force an Order through: the Sovereign or the High Commissioner makes a pending Order law at once, without the vote
+export const canForce = (w: W, id: Id) => !!w.privy && (isHOS(w, id) || hasPower(w, id, 'imperial'));
+// veto an Order: the Sovereign, the High Commissioner, the Lord Chamberlain or the Lord Privy Seal strikes it; it falls
+export const canVeto = (w: W, id: Id) => !!w.privy && (isHOS(w, id) || hasPower(w, id, 'imperial') || hasPower(w, id, 'chamberlain') || hasPower(w, id, 'seal'));
+const PENDING = ['consent', 'debate', 'vote', 'assent', 'override', 'withheld'];
+const roleOf = (w: W, id: Id) => (isHOS(w, id) ? `the ${w.config.hosTitle || 'Sovereign'}` : hasPower(w, id, 'imperial') ? 'the Imperial High Commissioner' : hasPower(w, id, 'chamberlain') ? 'the Lord Chamberlain' : 'the Lord Privy Seal');
+const pendingOrder = (w: W, pid: unknown) => {
+  const p = own(w.proposals, pid);
+  if (!p || p.kind !== 'bill') fail('Pick an Order in Council.');
+  if (!PENDING.includes(p.stage)) fail('That Order is not pending: it is already law, or it has fallen.');
+  return p;
+};
+export function force(w: W, actor: Id, pid: unknown) {
+  if (!canForce(w, actor)) fail('Only the Sovereign or the Imperial High Commissioner can force an Order through.');
+  const p = pendingOrder(w, pid);
+  const clauses = structuredClone(p.clauses || []);
+  checkClauses(w, 'bill', clauses, true);
+  Object.values(w.markets || {}).forEach((m: any) => m.kind === 'prop' && m.ref === p.id && m.status === 'open' && voidMarket(w, m, 'Forced through before the vote.'));
+  const ref = enactDecree(w, actor, p.title, p.summary || '', clauses);
+  const law = w.laws.find((l: any) => l.ref === ref);
+  if (law) (law.commanded = p.id), (law.how = `Forced through the Privy Council by ${roleOf(w, actor)}`);
+  p.stage = 'commanded';
+  p.lawRef = ref;
+  history(w, p, actor, `Forced through as ${ref}`);
+  gazette(w, 'law', `${cap1(roleOf(w, actor))}, ${nm(w, actor)}, forces ${p.title} through the Privy Council without a vote. It is law as ${ref}.`, '#/law/' + ref);
+}
+export function veto(w: W, actor: Id, pid: unknown) {
+  if (!canVeto(w, actor)) fail('Only the Sovereign, the High Commissioner, the Lord Chamberlain or the Lord Privy Seal can veto an Order.');
+  const p = pendingOrder(w, pid);
+  if (p.clauses.some((e: any) => e.t === 'removeHos') && !isHOS(w, actor) && !inForce(w, 'protection')) fail('Only the Sovereign can veto an Order to remove the Sovereign.');
+  Object.values(w.markets || {}).forEach((m: any) => m.kind === 'prop' && m.ref === p.id && m.status === 'open' && voidMarket(w, m, 'Vetoed in Council.'));
+  p.stage = 'vetoed';
+  p.vetoedBy = actor;
+  history(w, p, actor, `Vetoed by ${roleOf(w, actor)}`);
+  gazette(w, 'proposal', `${cap1(roleOf(w, actor))}, ${nm(w, actor)}, vetoes ${p.title}. It falls.`, '#/p/' + p.id);
+}
+const cap1 = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);

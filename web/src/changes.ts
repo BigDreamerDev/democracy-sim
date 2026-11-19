@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 59, text: 'The General now sits on the Privy Council, making eight. The Empress and the High Commissioner can force an Order through; the Empress, the High Commissioner, the Lord Chamberlain and the Lord Privy Seal can veto one.' },
   { n: 58, text: 'The empire has its own look: porphyry and gold, laurel rules and imperial slogans, across the whole site.' },
   { n: 57, text: 'Military acquisitions: artillery, cavalry, ironclads (fewer ships lost to blockades), airships (see every army) and forts in provinces. World › The war room.' },
   { n: 56, text: 'The Imperial High Commissioner now commands the Army and runs the war chest: requisitions from the Treasury, shares, and takeovers of companies that can be turned to war production.' },

@@ -1127,8 +1127,8 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 :root[data-empire] .leader-rays { background: repeating-conic-gradient(from 0deg, rgba(227, 193, 111, .1) 0 6deg, transparent 6deg 15deg); }
 
 /* the Privy Council table: seven seats round an oval board */
-.privy-table { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-areas: "s4 s0 s5" "s2 board s3" "s6 s1 ."; gap: 10px; margin-top: 6px; }
-.privy-board { grid-area: board; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 120px; border-radius: 50%; background: #5E1B3C; color: #F6EBDC; border: 3px double var(--gold); box-shadow: inset 0 0 0 6px #3B0F25; text-align: center; font: 700 11px/1.2 var(--sans); letter-spacing: .2em; text-transform: uppercase; }
+.privy-table { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-areas: "s5 s0 s6" "s1 board s2" "s3 board s4" ". s7 ."; gap: 10px; margin-top: 6px; }
+.privy-board { grid-area: board; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 120px; border-radius: 50% / 40%; background: #5E1B3C; color: #F6EBDC; border: 3px double var(--gold); box-shadow: inset 0 0 0 6px #3B0F25; text-align: center; font: 700 11px/1.2 var(--sans); letter-spacing: .2em; text-transform: uppercase; }
 .privy-board small { font-weight: 400; letter-spacing: .05em; text-transform: none; opacity: .8; }
 .privy-crest { font-size: 28px; color: var(--gold); letter-spacing: 0; }
 .privy-seat { display: flex; flex-direction: column; gap: 2px; padding: 10px 10px 9px; background: var(--card); border: 1.5px solid var(--ink); border-top: 4px solid var(--gold); border-radius: 3px; box-shadow: 2px 2px 0 var(--soft); min-width: 0; }
@@ -1139,8 +1139,11 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .privy-role { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .privy-name { overflow-wrap: anywhere; }
 .privy-seat.s0 { grid-area: s0; } .privy-seat.s1 { grid-area: s1; } .privy-seat.s2 { grid-area: s2; } .privy-seat.s3 { grid-area: s3; }
-.privy-seat.s4 { grid-area: s4; } .privy-seat.s5 { grid-area: s5; } .privy-seat.s6 { grid-area: s6; }
+.privy-seat.s4 { grid-area: s4; } .privy-seat.s5 { grid-area: s5; } .privy-seat.s6 { grid-area: s6; } .privy-seat.s7 { grid-area: s7; }
+.privy-seat.s1, .privy-seat.s2 { border-top-color: var(--teal); }
+.privy-powers { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.privy-powers > div { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-left: 3px solid var(--gold); background: var(--card); }
 @media (max-width: 520px) {
-  .privy-table { grid-template-columns: 1fr 1fr; grid-template-areas: "board board" "s0 s1" "s2 s3" "s4 s5" "s6 ."; }
+  .privy-table { grid-template-columns: 1fr 1fr; grid-template-areas: "board board" "s0 s1" "s2 s3" "s4 s5" "s6 s7"; }
   .privy-board { border-radius: 999px; min-height: 84px; }
 }
