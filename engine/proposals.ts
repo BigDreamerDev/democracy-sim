@@ -1,6 +1,7 @@
 // Proposals: one lifecycle for everything Parliament does. Draft, debate, vote, then the result.
 // The kind only changes who votes and what happens. Also: laws, PM's Questions, formal questions and lobbying.
 import { startWar, endWar } from './war';
+import { company, fundTrade } from './exchange';
 import {
   W, Id, DAY, HOUR, fail, newId, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, tick, meter,
   isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, hasPower, officeWithPower, weekNo, adminDid, bump, own, text, int, inForce, inGov } from './core';
@@ -34,7 +35,7 @@ export const SETTABLE: Record<string, { label: string; unit: string; min: number
   voteHours: { label: 'Voting length', unit: ' hours', min: 12, max: 48 }
 };
 export const CONSTITUTIONAL = ['constitution', 'removeHos'];
-export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'currency', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto'];
+export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'fund', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'currency', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto'];
 
 export function describe(w: W, e: any): string {
   switch (e.t) {
@@ -73,6 +74,8 @@ export function describe(w: W, e: any): string {
       return `Creates a civic job: ${e.title}. The Treasury pays ${e.pay} crowns each time someone does it, once a week each, signed off by the Chancellor.`;
     case 'zone':
       return `Adds a safe zone to the Streets: ${e.text}.`;
+    case 'fund':
+      return `The realm’s wealth fund ${e.sell ? 'sells' : 'buys'} up to ${e.crowns} crowns of ${company(e.sym)?.name ?? e.sym} shares on the Exchange${e.sell ? ', paid to the Treasury' : ', paid for by the Treasury'}.`;
     case 'currency':
       return `Renames the currency: the crown becomes the ${e.one} (plural ${e.many}).`;
     case 'jail':
@@ -143,6 +146,11 @@ function checkClause(w: W, e: any, byDecree = false) {
       break;
     case 'zone':
       e.text = text(e.text, 4, 120, 'safe zone');
+      break;
+    case 'fund':
+      if (typeof e.sym !== 'string' || !company(e.sym)) fail('Pick a company on the Exchange.');
+      e.crowns = int(e.crowns, 10, 500, 'amount for the wealth fund');
+      e.sell = e.sell === true;
       break;
     case 'currency': {
       e.one = text(e.one, 2, 20, 'currency name').trim().toLowerCase();
@@ -884,6 +892,9 @@ export function applyClause(w: W, e: any, ref: string) {
     case 'currency':
       w.config.currency = { one: e.one, many: e.many, law: ref };
       gazette(w, 'law', `The crown is no more. From today the currency of the realm is the ${e.one}: each old crown becomes one ${e.one}.`, '#/economy');
+      break;
+    case 'fund':
+      fundTrade(w, e.sym, e.crowns, !!e.sell, ref);
       break;
     case 'permit':
       w.permits.banks = true;

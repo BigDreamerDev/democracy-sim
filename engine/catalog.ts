@@ -116,6 +116,8 @@ export const CATALOG: Record<string, CmdInfo> = {
   'war.strategy': { about: 'In wartime, the PM, the General or an officer of state: set the strategy.', args: { strategy: "'hold' | 'advance' | 'raid'" } },
   'war.enlist': { about: 'Volunteer for the front, once per war.', args: {} },
   'war.bond': { about: 'Buy war bonds (5–100, 100 in all per war). Repaid 130% on victory, 100% on peace, 50% on defeat.', args: { amount: 'number' } },
+  'war.embed': { about: 'A newspaper editor, in wartime: send a correspondent to the front (10 crowns, once per war). Your paper prints a dispatch after every battle; dispatches count double for the front page.', args: { paper: 'id' } },
+  'army.march': { about: 'The General: march the Army on the capital, starting a 12-hour coup night with the Army behind you (+3). Only as a war hero, or when Army loyalty is 2 or less; not while on the advance; once every 14 days.', args: {} },
   'exchange.buy': { about: 'Buy shares on the Exchange at the posted price, plus stamp duty.', args: { sym: 'text (a company symbol, see w.exchange.prices)', n: 'number' } },
   'exchange.sell': { about: 'Sell shares on the Exchange at the posted price.', args: { sym: 'text', n: 'number' } },
   'exchange.halt': { about: 'Chair of the Reserve: halt trading for 12 hours (once a day).', args: {} },

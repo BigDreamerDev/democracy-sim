@@ -4,7 +4,7 @@ import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, Empty, Field } from '../ui';
 import { bal, ca, isPM, hasPower, holderOf } from '../../../engine/index';
-import { COMPANIES, drivers, indexNow, portfolio, halted, register, MAX_HOLD } from '../../../engine/exchange';
+import { COMPANIES, drivers, indexNow, portfolio, halted, register, fund, MAX_HOLD } from '../../../engine/exchange';
 
 function Spark({ data, w = 120, h = 32, base }: { data: number[]; w?: number; h?: number; base?: number }) {
   if (data.length < 2) return <svg width={w} height={h} aria-hidden="true" />;
@@ -93,6 +93,12 @@ export function Exchange() {
       <Sec title="Register of Interests" sub="Shares held by MPs, ministers, the Prime Minister and the head of state are public. Everyone else’s are private.">
         {reg.length ? <ul class="list">{reg.map((r) => <li class="row"><Who id={r.id} /><span class="small">{r.holds.map((h: any) => `${h.n} ${h.sym}`).join(', ')}</span></li>)}</ul> : <Empty>Nobody in office owns shares.</Empty>}
       </Sec>
+      <Sec title="The wealth fund" sub="Shares the realm owns, bought and sold only by law. Its dividends go to the Treasury.">
+        {fund(w).rows.length ? (
+          <Card><ul class="list">{fund(w).rows.map((r) => <li class="row"><span><b>{r.sym}</b> × <span class="tnum">{r.n}</span><div class="small muted">Cost {r.cost}</div></span><span class="tnum">{r.value} <Move v={pct(r.value, r.cost)} /></span></li>)}</ul><div class="row" style={{ marginTop: 8 }}><b>Worth</b><span class="tnum"><b>{fund(w).value}</b> <Move v={pct(fund(w).value, fund(w).cost)} /></span></div></Card>
+        ) : <Empty>The realm owns no shares.</Empty>}
+        <Btn small kind="ghost" href="#/new" style={{ marginTop: 8 }}>Draft a bill to buy or sell</Btn>
+      </Sec>
       {(chair || chancellor) && (
         <Sec title="Powers over the Exchange">
           <div class="grid2">
@@ -101,7 +107,7 @@ export function Exchange() {
           </div>
         </Sec>
       )}
-      <p class="small muted">When the Exchange pays out more than it holds, it draws new money from the Reserve, and that feeds inflation. Its surplus goes back each payday.</p>
+      <p class="small muted">Every trade is on file. Anyone who trades a company in the day before taking a decision that moves it (an embargo, an embassy, the rate, the Army's orders) is found out: the Security Service and the PM get a secret card. When the Exchange pays out more than it holds, it draws new money from the Reserve, and that feeds inflation. Its surplus goes back each payday.</p>
     </Page>
   );
 }

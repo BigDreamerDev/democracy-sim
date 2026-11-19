@@ -194,6 +194,9 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
   if (w.army?.campaign && cmdr && isBot(cmdr) && p(0.1)) go(cmdr, 'war.strategy', { strategy: pick(w, ['hold', 'advance', 'raid']) });
   if (w.offices.army && cmdr && isBot(cmdr) && (w.army.troops ?? 6) < 8 && w.army.war && p(0.1)) go(cmdr, 'army.recruit', { n: 1 });
   if (w.army?.campaign) bots.forEach((b: any) => (p(0.04) && go(b.id, 'war.enlist'), p(0.03) && go(b.id, 'war.bond', { amount: 10 })));
+  if (w.army?.campaign) Object.values(w.papers).forEach((pp: any) => isBot(pp.editor) && p(0.1) && go(pp.editor, 'war.embed', { paper: pp.id }));
+  const gen = w.offices.army?.holder;
+  if (gen && isBot(gen) && intrigueOpen(w) && p(0.01)) go(gen, 'army.march');
   // a pretender's claim: the realm takes sides; the pretender looks abroad; the monarch answers
   const cl = w.crown?.reign?.claim;
   if (cl) {

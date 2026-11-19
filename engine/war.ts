@@ -4,7 +4,7 @@
 // Victory and defeat feed the coup system (backroom.ts): a war hero weighs more on a coup night, a beaten Army
 // leans towards the plotters, and an Army at the front cannot defend the capital.
 // State: w.army.war = the enemy's id (as before), w.army.campaign = this war, w.army.hero, w.army.defeatedAt, w.wars (history).
-import { W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, earn, transfer, bal, ca, hasPower, isPM, holderOf, clamp, meter, approve, stamp, bump, mustBeFree, int, legit, own } from './core';
+import { W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, earn, transfer, bal, ca, hasPower, isPM, holderOf, clamp, meter, approve, stamp, bump, mustBeFree, int, legit, own, newId, pick } from './core';
 import { moodShift, treatyWith, PROFILES } from './foreign';
 import { imposePretender } from './crown';
 
@@ -133,6 +133,7 @@ export function battle(w: W) {
   k.battles.unshift({ at: w.now, won, where, delta, lost, loot, us: p.us, them: p.them });
   k.battles = k.battles.slice(0, 30);
   gazette(w, 'army', `${text} The front stands at ${k.score > 0 ? '+' : ''}${k.score}.`, '#/war');
+  dispatches(w, k, won, where, delta, loot, lost);
   if (k.score >= 100) endWar(w, 'victory');
   else if (k.score <= -100) endWar(w, 'defeat');
 }
@@ -215,3 +216,37 @@ export const heroOf = (w: W): Id | null => (w.army?.hero && w.army.hero.until > 
 export const beaten = (w: W) => !!w.army?.defeatedAt && w.now - w.army.defeatedAt < 14 * DAY;
 export const atFront = (w: W) => !!w.army?.campaign && w.army.campaign.strategy === 'advance';
 export const capitalOf = (nid: Id) => PROFILES[nid]?.capital ?? nid;
+
+// ---------- war correspondents: a paper's editor sends a reporter to the front (10 crowns, once per war). After every
+// battle the paper prints a dispatch under the editor's name; dispatches count double for the front page (society.ts) ----------
+export const EMBED_COST = 10;
+export function embed(w: W, actor: Id, pid: unknown) {
+  const k = war(w);
+  if (!k) fail('There is no war to report on.');
+  mustBeFree(w, actor);
+  const p = own(w.papers, pid);
+  if (!p || p.editor !== actor) fail('Only the editor can send a correspondent.');
+  if (w.acts?.press && p.licence !== 'granted') fail('Your paper needs a licence to report from the front.');
+  k.correspondents ??= [];
+  if (k.correspondents.includes(p.id)) fail(`${p.name} already has a reporter at the front.`);
+  transfer(w, ca(actor), 'treasury', EMBED_COST, 'A correspondent’s pass');
+  k.correspondents.push(p.id);
+  gazette(w, 'press', `${p.name} sends a correspondent to the front.`, '#/war');
+}
+const OPENERS: Record<string, string[]> = {
+  won: ['Our boys hold {where}', 'Triumph at {where}', 'The line advances at {where}', 'A famous day at {where}'],
+  lost: ['Disaster at {where}', 'Retreat from {where}', 'Grim news from {where}', 'Blood and mud at {where}']
+};
+function dispatches(w: W, k: any, won: boolean, where: string, delta: number, loot: number, lost: number) {
+  (k.correspondents || []).forEach((pid: string) => {
+    const p = w.papers[pid];
+    if (!p || !w.citizens[p.editor]?.active) return;
+    const n = w.nations[k.nation];
+    const headline = pick(w, OPENERS[won ? 'won' : 'lost']).replace('{where}', where);
+    const body = `From our correspondent with the Army. ${pick(w, won ? [`The ${n.name} line broke after a hard day's fighting`, `${n.name}'s men fell back in good order, but they fell back`, `Our lads were singing by nightfall`] : [`${n.name}'s guns had the range from first light`, `We were outnumbered and it showed`, `The rain, the mud and ${n.name}'s cavalry did for us`])}${loot ? `, and the wagons came back with ${loot} crowns of spoils` : ''}.${lost ? ' One of our regiments did not come back.' : ''} The front now stands at ${k.score > 0 ? '+' : ''}${k.score}${delta ? ` (${delta > 0 ? '+' : ''}${delta} today)` : ''}.`;
+    w.stories.unshift({ id: newId(w, 'st'), paper: pid, by: p.editor, headline, body, photo: null, status: 'published', at: w.now, cheers: [], war: true });
+  });
+  // keep the 40 newest dispatches: a long war shouldn't bury the paper
+  let n = 0;
+  w.stories = w.stories.filter((s: any) => !s.war || ++n <= 40);
+}

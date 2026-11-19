@@ -1,3 +1,4 @@
+import { COMPANIES } from '../../../engine/exchange';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { drafts, getDraft, newDraftId, hasContent, saveDraft, deleteDraft, flushDraft, forgetDraft } from '../drafts';
 import { useStore, act, getState, toast as say } from '../store';
@@ -343,7 +344,7 @@ export const CLAUSES: [string, string][] = [
   ['text', 'A rule in words'], ['office', 'Create an office'], ['set', 'Change a number'], ['budget', 'Set an office budget'], ['abolish', 'Abolish an office'],
   ['permit', 'Allow banks'], ['treaty', 'Ratify a treaty'], ['breakTreaty', 'Break a treaty'], ['repeal', 'Repeal a law'],
   ['constitution', 'Change the constitution'], ['removeHos', 'Remove the head of state'], ['war', 'Declare war'], ['peace', 'Make peace'],
-  ['job', 'Create a civic job (paid wage)'], ['zone', 'Add a Streets safe zone'], ['currency', 'Rename the currency'],
+  ['job', 'Create a civic job (paid wage)'], ['zone', 'Add a Streets safe zone'], ['currency', 'Rename the currency'], ['fund', 'Wealth fund: buy or sell shares'],
   ['jail', 'Act: Public Order and Detention (the Realm Jail)'], ['decrees', 'Act: Government Powers (rule by decree)'],
   ['continuity', 'Act: Continuity of Parliament (no more elections)'], ['unity', 'Act: National Unity (one party)'],
   ['protection', 'Act: Protection of the State'], ['press', 'Act: Press and Information'], ['security', 'Act: State Security'],
@@ -672,6 +673,7 @@ export function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; 
     job: { t: 'job', title: '', pay: 5 },
     zone: { t: 'zone', text: '' },
     currency: { t: 'currency', one: '', many: '' },
+    fund: { t: 'fund', sym: 'NGR', crowns: 100, sell: false },
     jail: { t: 'jail' },
     decrees: { t: 'decrees' },
     continuity: { t: 'continuity' },
@@ -727,6 +729,7 @@ export function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; 
           </>
         )}
         {e.t === 'job' && <><Field label="The job" value={e.title} onInput={(v) => onChange({ ...e, title: v })} placeholder="e.g. Pick up litter in a park for 20 minutes" /><Field label="Wage each time (1–30 crowns)" type="number" value={e.pay} onInput={(v) => onChange({ ...e, pay: Math.max(1, whole(v, 30)) })} /><p class="small muted" style={{ margin: 0 }}>Anyone can claim it once a week. The Chancellor (or PM) signs off each claim; the Treasury pays.</p></>}
+        {e.t === 'fund' && <><div class="grid2"><Pick label="Company" value={e.sym} onChange={(v) => onChange({ ...e, sym: v })} options={COMPANIES.map((c) => [c.sym, `${c.sym} ${c.name}`])} /><Field label="Crowns (10–500)" type="number" value={e.crowns} onInput={(v) => onChange({ ...e, crowns: Math.max(10, whole(v, 500)) })} /></div><Seg value={e.sell ? 'sell' : 'buy'} onChange={(v) => onChange({ ...e, sell: v === 'sell' })} options={[['buy', 'Buy'], ['sell', 'Sell']]} /><p class="small muted" style={{ margin: 0 }}>The Treasury trades at the price on the day the bill becomes law. Dividends go to the Treasury.</p></>}
         {e.t === 'currency' && <div class="grid2"><Field label="New name (one)" value={e.one || ''} onInput={(v) => onChange({ ...e, one: v })} placeholder="e.g. ducat" /><Field label="Plural (optional)" value={e.many || ''} onInput={(v) => onChange({ ...e, many: v })} placeholder="e.g. ducats" /></div>}
         {e.t === 'zone' && <Field label="Where nothing counts" value={e.text} onInput={(v) => onChange({ ...e, text: v })} placeholder="e.g. The library" />}
         {(e.t === 'war' || e.t === 'peace') && <Pick value={e.nation} onChange={(v) => onChange({ ...e, nation: v })} options={Object.values(w.nations).map((x: any) => [x.id, x.name])} />}

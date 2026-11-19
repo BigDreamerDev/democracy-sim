@@ -306,6 +306,34 @@ export function launchCoup(w: W, actor: Id, pid: Id) {
   meter(w, 'stability', -8, 'Soldiers in the streets');
   gazette(w, 'crisis', `Coup attempt. ${nm(w, actor)} and ${p.members.length - 1} other${p.members.length === 2 ? '' : 's'} move against the ${w.coup.against}. Every citizen has 12 hours to declare for the coup or against it.`, '#/regime');
 }
+// ---------- the march on the capital: the General turns the Army on the government, with no plot behind it.
+// Only a war hero, or a General whose Army has lost faith in the government (loyalty 2 or less), can make soldiers
+// follow; never while the Army is on the advance abroad. It is a contested night like any coup, with the Army's
+// weight (+3) on the General's side; if it fails, the General is treated as a failed plotter. Once every 14 days. ----------
+export const MARCH_EVERY = 14 * DAY;
+export function canMarch(w: W, id: Id) {
+  if (!w.offices.army || holderOf(w, 'army') !== id) return 'Only the General can order the Army to march.';
+  if (heroOf(w) !== id && w.army.loyalty > 2) return 'The soldiers will not follow you: be a war hero, or wait until the Army has lost faith in the government (loyalty 2 or less).';
+  if (atFront(w)) return 'The Army is away at the front.';
+  if (w.army.marchedAt && w.now - w.army.marchedAt < MARCH_EVERY) return 'The Army will not march again so soon.';
+  return null;
+}
+export function marchOnCapital(w: W, actor: Id) {
+  needIntrigue(w);
+  mustBeFree(w, actor);
+  if (w.coup) fail('A coup is already under way.');
+  if (w.phase !== 'running') fail('There is nothing to seize yet.');
+  if (w.regime && (w.regime.leader === actor || w.regime.council.includes(actor))) fail('You are already the regime.');
+  const why = canMarch(w, actor);
+  if (why) fail(why);
+  w.army.marchedAt = w.now;
+  const id = newId(w, 'pl');
+  w.plots[id] = { id, name: 'The March on the Capital', leader: actor, members: [actor], invited: {}, informers: [], chest: 0, paid: {}, backer: null, asked: {}, heat: 0, status: 'launched', at: w.now, nextCheck: null, march: true };
+  w.coup = { plot: id, name: 'The March on the Capital', leader: actor, plotters: [actor], defected: [], declared: {}, startedAt: w.now, endsAt: w.now + NIGHT, backer: null, pretext: pretext(w), chest: 0, against: w.regime && w.regime.type !== 'civil' ? 'regime' : 'government', march: true };
+  meter(w, 'stability', -10, 'The Army marches on the capital');
+  gazette(w, 'crisis', `The Army marches on the capital. ${nm(w, actor)}, the General${heroOf(w) === actor ? ' and a war hero' : ''}, moves against the ${w.coup.against}. Every citizen has 12 hours to declare for the Army or against it.`, '#/regime');
+}
+
 // the General speaks for the Army (3), the head of state for the realm (2), everyone else for themselves
 // a General back from a victory (a war hero, war.ts) speaks for the Army with 4
 export const coupWeight = (w: W, id: Id) => (w.offices.army && holderOf(w, 'army') === id ? (heroOf(w) === id ? 4 : 3) : isHOS(w, id) || (inForce(w, 'security') && isPM(w, id)) ? 2 : 1);
@@ -321,6 +349,7 @@ export function coupTally(w: W) {
     add('gov', 3, 'Loyal security forces');
     [w.pm, ...Object.values(w.offices).filter((o: any) => o.fill === 'pm').map((o: any) => o.holder)].filter((id, i, a) => id && a.indexOf(id) === i && !k.plotters.includes(id) && !k.declared[id] && w.citizens[id]?.active).forEach((id: Id) => add('gov', coupWeight(w, id), `${nm(w, id)}, ${w.pm === id ? 'Prime Minister' : 'minister'}`));
   }
+  add('coup', k.march ? 3 : 0, 'The Army marches with its General');
   add('coup', k.backer ? 1 : 0, `Backed by ${w.nations[k.backer]?.name}`);
   add('coup', k.pretext ? 1 : 0, 'A realm already in trouble');
   add('coup', k.chest >= CHEST_FULL ? 2 : k.chest >= CHEST_FULL / 2 ? 1 : 0, 'A war chest');

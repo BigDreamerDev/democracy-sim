@@ -69,7 +69,8 @@ export function cheer(w: W, actor: Id, sid: Id) {
 export function makeFrontPage(w: W) {
   const since = w.now - WEEK;
   const stories = w.stories.filter((s: any) => s.status === 'published' && s.at > since);
-  const score = (s: any) => s.cheers.length * 2 + (w.papers[s.paper]?.followers.length || 0) / 4 + (s.leak ? 3 : 0);
+  // a dispatch from a war correspondent counts double
+  const score = (s: any) => (s.cheers.length * 2 + (w.papers[s.paper]?.followers.length || 0) / 4 + (s.leak ? 3 : 0)) * (s.war ? 2 : 1);
   const lead = stories.sort((a: any, b: any) => score(b) - score(a))[0] || null;
   if (lead) {
     if (!lead.underground || lead.named) w.citizens[lead.by].stats.frontPage = true;

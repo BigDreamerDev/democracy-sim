@@ -4,7 +4,7 @@
 // Money: buying pays the 'exchange' account, plus stamp duty to the Treasury; selling and dividends are paid from
 // it. When it runs short it draws on the Reserve (new money, which feeds inflation); its surplus goes back each payday.
 // Holdings are private (view.ts), except the Register of Interests: what MPs, ministers and the head of state own.
-import { W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, transfer, bal, ca, hasPower, isPM, holderOf, clamp, mustBeFree, int, bump, inGov, isMP } from './core';
+import { W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, transfer, bal, ca, hasPower, isPM, holderOf, clamp, mustBeFree, int, bump, inGov, isMP, addCard, fmtTime } from './core';
 import { atWar, conflictOf } from './foreign';
 
 export type Company = { sym: string; name: string; sector: string; nation: string | null; base: number; yield: number; about: string };
@@ -142,6 +142,7 @@ export function buy(w: W, actor: Id, sym: unknown, n: unknown) {
   h[c.sym] = { n: have + k, cost: (h[c.sym]?.cost || 0) + cost };
   x.volume += k;
   bump(w, actor, 'trades');
+  logTrade(w, actor, c.sym, 'buy', k);
 }
 export function sell(w: W, actor: Id, sym: unknown, n: unknown) {
   mustBeFree(w, actor);
@@ -160,6 +161,7 @@ export function sell(w: W, actor: Id, sym: unknown, n: unknown) {
   x.volume += k;
   if (got > 0) payOut(w, ca(actor), got, `Sold ${k} ${c.sym} at ${price(w, c.sym)}`);
   bump(w, actor, 'trades');
+  logTrade(w, actor, c.sym, 'sell', k);
   if (got - basis >= 50) gazette(w, 'money', `${nm(w, actor)} makes a killing on the Exchange.`, '#/exchange');
 }
 // the Chair of the Reserve (or the PM, with no Chair) stops trading for 12 hours, once a day
@@ -185,13 +187,13 @@ export function exchangePayday(w: W) {
   const x = exchange(w);
   let paid = 0;
   Object.entries(x.holdings).forEach(([id, h]: [string, any]) => {
-    if (!w.citizens[id]?.active) return;
+    if (id !== FUND && !w.citizens[id]?.active) return;
     const amt = Object.keys(h).reduce((s, sym) => {
       const c = company(sym);
       return s + (c && h[sym].n > 0 ? (h[sym].n * price(w, sym) * c.yield) / 100 : 0);
     }, 0);
     const d = Math.floor(amt);
-    if (d > 0) (payOut(w, ca(id), d, 'Dividends from the Exchange'), (paid += d));
+    if (d > 0) (payOut(w, id === FUND ? 'treasury' : ca(id), d, id === FUND ? 'Dividends to the wealth fund' : 'Dividends from the Exchange'), (paid += d));
   });
   const spare = bal(w, 'exchange') - FLOAT;
   if (spare > 0) transfer(w, 'exchange', 'reserve', spare, 'The Exchange returned its surplus to the Reserve');
@@ -200,5 +202,58 @@ export function exchangePayday(w: W) {
 // the Register of Interests: shares held by MPs, ministers, the Prime Minister and the head of state are public
 export function register(w: W) {
   const x = exchange(w);
-  return Object.entries(x.holdings).filter(([id]) => isMP(w, id) || inGov(w, id) || w.hos?.holder === id).map(([id, h]: [string, any]) => ({ id, holds: Object.keys(h).filter((s) => h[s].n > 0).map((s) => ({ sym: s, n: h[s].n })) })).filter((r) => r.holds.length);
+  return Object.entries(x.holdings).filter(([id]) => id !== FUND).filter(([id]) => isMP(w, id) || inGov(w, id) || w.hos?.holder === id).map(([id, h]: [string, any]) => ({ id, holds: Object.keys(h).filter((s) => h[s].n > 0).map((s) => ({ sym: s, n: h[s].n })) })).filter((r) => r.holds.length);
 }
+
+// ---------- insider trading: every trade is logged privately. Someone who traded a company in the 24 hours before
+// taking a decision that moves it is found out: a secret card for the Security Service and the PM, ready to leak ----------
+function logTrade(w: W, id: Id, sym: string, side: 'buy' | 'sell', n: number) {
+  const x = exchange(w);
+  x.trades = [{ id, sym, side, n, at: w.now }, ...(x.trades || [])].slice(0, 300);
+}
+// the companies a decision moves
+export const MOVES: Record<string, (w: W, a: any) => string[]> = {
+  nation: (w, nid) => COMPANIES.filter((c) => c.nation === nid).map((c) => c.sym),
+  conflict: (w, cid) => { const k = (w.conflicts || []).find((c: any) => c.id === cid); return k ? COMPANIES.filter((c) => c.nation === k.a || c.nation === k.b || c.sector === 'Finance').map((c) => c.sym) : []; },
+  arms: () => ['IRF', 'DSF'],
+  rate: () => ['CMB'],
+  all: () => COMPANIES.map((c) => c.sym)
+};
+export function insider(w: W, actor: Id, syms: string[], what: string) {
+  const x = w.exchange;
+  if (!x || !syms.length) return;
+  const t = (x.trades || []).find((r: any) => r.id === actor && syms.includes(r.sym) && w.now - r.at <= DAY && !r.caught);
+  if (!t) return;
+  t.caught = true;
+  bump(w, actor, 'insider');
+  addCard(w, { title: `${nm(w, actor)} ${t.side === 'buy' ? 'bought' : 'sold'} ${t.n} ${t.sym} shares at ${fmtTime(w, t.at)}, shortly before ${what}.`, about: actor, from: 'The Exchange', level: 'secret', viewers: w.offices.security ? ['office:security', 'pm'] : ['pm'] });
+}
+
+// ---------- the sovereign wealth fund: by law the Treasury buys or sells shares. It holds them as 'treasury';
+// its dividends go to the Treasury; it is always on the Register of Interests ----------
+export const FUND = 'treasury';
+export function fundTrade(w: W, sym: string, crowns: number, sell: boolean, ref: string) {
+  const c = company(sym);
+  const x = exchange(w);
+  if (!c) return;
+  const p = price(w, sym);
+  const h = (x.holdings[FUND] ??= {});
+  if (!sell) {
+    const n = Math.min(MAX_HOLD * 5 - (h[sym]?.n || 0), Math.floor(crowns / p));
+    if (n < 1) return gazette(w, 'money', `${ref}: the wealth fund could not buy any ${sym}.`, '#/exchange');
+    const cost = Math.ceil(n * p);
+    transfer(w, 'treasury', 'exchange', cost, `Wealth fund bought ${n} ${sym} (${ref})`);
+    h[sym] = { n: (h[sym]?.n || 0) + n, cost: (h[sym]?.cost || 0) + cost };
+    return gazette(w, 'money', `The realm’s wealth fund buys ${n} shares of ${c.name} for ${cost} crowns, under ${ref}.`, '#/exchange');
+  }
+  const have = h[sym]?.n || 0;
+  const n = Math.min(have, Math.ceil(crowns / p));
+  if (n < 1) return gazette(w, 'money', `${ref}: the wealth fund holds no ${sym} to sell.`, '#/exchange');
+  const got = Math.floor(n * p);
+  h[sym].cost -= Math.round((h[sym].cost * n) / have);
+  h[sym].n -= n;
+  if (!h[sym].n) delete h[sym];
+  if (got > 0) payOut(w, 'treasury', got, `Wealth fund sold ${n} ${sym} (${ref})`);
+  gazette(w, 'money', `The realm’s wealth fund sells ${n} shares of ${c.name} for ${got} crowns, under ${ref}.`, '#/exchange');
+}
+export const fund = (w: W) => portfolio(w, FUND);

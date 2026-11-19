@@ -1,6 +1,10 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 28, text: 'The realm can own shares: a bill can have the wealth fund buy or sell on the Exchange, with the dividends going to the Treasury.' },
+  { n: 27, text: 'Newspapers can send a correspondent to the front. Their paper prints a dispatch after every battle, and dispatches count double for the front page.' },
+  { n: 26, text: 'A war-hero General, or one whose Army has lost faith in the government, can march on the capital: a coup night with the Army behind them.' },
+  { n: 25, text: 'Insider trading: trade a company in the day before you take a decision that moves it, and the Security Service gets a secret card on you.' },
   { n: 24, text: 'The Exchange is open: ten companies at home and abroad, prices that move with the realm and the world, dividends each payday. What MPs and ministers own is on a public Register of Interests. Money › The Exchange.' },
   { n: 23, text: 'Pretenders can write a manifesto, seek a foreign power’s recognition, and try again after ten days; a dethroned monarch can claim back the crown. The monarch can rally the realm or offer a dukedom. A failed foreign-backed claim can start a war.' },
   { n: 22, text: 'War is now a campaign: battles every 12 hours, regiments, strategy, volunteers and war bonds, in the new war room. A war hero weighs more on a coup night, a beaten Army leans to the plotters, and an Army on the advance can’t defend the capital.' },

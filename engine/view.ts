@@ -167,7 +167,9 @@ export function viewFor(full: W, me: Id): W {
   // the Exchange: your own portfolio; MPs', ministers' and the head of state's holdings are on the public Register of Interests
   if (w.exchange) {
     w.exchange.register = register(full);
-    w.exchange.holdings = w.exchange.holdings[me] ? { [me]: w.exchange.holdings[me] } : {};
+    // the wealth fund's holdings are public; so is nobody else's trading record but your own
+    w.exchange.holdings = { ...(w.exchange.holdings[me] ? { [me]: w.exchange.holdings[me] } : {}), ...(w.exchange.holdings.treasury ? { treasury: w.exchange.holdings.treasury } : {}) };
+    w.exchange.trades = (w.exchange.trades || []).filter((t: any) => t.id === me);
   }
   // war bonds: your own, and the total
   if (w.army?.campaign) w.army.campaign.bonds = w.army.campaign.bonds[me] ? { [me]: w.army.campaign.bonds[me] } : {};

@@ -6,7 +6,8 @@ import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Seg, Opt } from '../ui';
 import { isPM, hasPower, holderOf, standing, bal, ca } from '../../../engine/index';
 import { MOODS, PROFILES, TREATIES } from '../../../engine/foreign';
-import { power, STRATEGIES, REGIMENT_COST, MAX_REGIMENTS, BOND_PAYS, allies } from '../../../engine/war';
+import { power, STRATEGIES, REGIMENT_COST, MAX_REGIMENTS, BOND_PAYS, allies, EMBED_COST } from '../../../engine/war';
+import { canMarch } from '../../../engine/backroom';
 
 type Pt = [number, number];
 const W = 1000;
@@ -231,6 +232,7 @@ export function War() {
         {w.army.hero && w.army.hero.until > w.now && <Card kind="tint" style={{ marginTop: 14 }}><b><Who id={w.army.hero.id} /> is a war hero.</b> <span class="small">Until <When at={w.army.hero.until} />, they weigh 4 on a coup night instead of 3.</span></Card>}
         {w.army.defeatedAt && w.now - w.army.defeatedAt < 14 * 86400000 && <Card kind="warn" style={{ marginTop: 14 }}><b>The Army came home beaten.</b> <span class="small">For two weeks after a defeat it leans towards plotters and pretenders.</span></Card>}
         <Regiments cmd={cmd} n={n} setN={setN} troops={troops} />
+        <March />
         <Past />
       </Page>
     );
@@ -259,7 +261,9 @@ export function War() {
         </div>
         {k.volunteers.length > 0 && <p class="small muted">Volunteers: {k.volunteers.map((id: string) => w.citizens[id]?.name).join(', ')}.</p>}
       </Sec>
+      <Correspondents />
       <Regiments cmd={cmd} n={n} setN={setN} troops={troops} war />
+      <March />
       <Sec title="Dispatches from the front">
         <ul class="list">{k.battles.map((b: any) => <li class="row"><span><b style={{ color: b.won ? 'var(--teal)' : 'var(--red)' }}>{b.won ? 'Victory' : 'Defeat'}</b> at {b.where}{b.loot ? `, ${b.loot} in spoils` : ''}{b.lost ? ', a regiment lost' : ''}<div class="small muted"><When at={b.at} /> · {b.us} against {b.them}</div></span><b class="tnum" style={{ color: b.delta > 0 ? 'var(--teal)' : 'var(--red)' }}>{b.delta > 0 ? '+' : ''}{b.delta}</b></li>)}</ul>
         {!k.battles.length && <Empty>No battles yet.</Empty>}
@@ -273,6 +277,38 @@ function Regiments({ cmd, n, setN, troops, war }: { cmd: boolean; n: string; set
     <Sec title="Regiments" sub={`${troops} of ${MAX_REGIMENTS}. Each new one costs ${REGIMENT_COST} from the Treasury, and every one over six adds 3 a week to upkeep.`}>
       <div class="regiments" aria-hidden="true">{Array.from({ length: MAX_REGIMENTS }, (_, i) => <i class={i < troops ? 'on' : ''} />)}</div>
       {cmd && <div class="grid2" style={{ marginTop: 10 }}><Field label="Regiments (1–5)" type="number" value={n} onInput={setN} /><div class="row" style={{ alignSelf: 'end', gap: 6 }}><Btn small onClick={() => act('army.recruit', { n: Number(n) }, 'Raised.')}>Raise</Btn>{!war && <Btn small kind="plain" onClick={() => confirm('Disband regiments? The Army will not like it.') && act('army.disband', { n: Number(n) }, 'Disbanded.')}>Disband</Btn>}</div></div>}
+    </Sec>
+  );
+}
+// the General's last resort: the Army against the government
+function March() {
+  const { world: w, me } = useStore();
+  if (holderOf(w, 'army') !== me) return null;
+  const why = canMarch(w, me);
+  return (
+    <Sec title="March on the capital" sub="Only you can see this.">
+      <Card kind="warn"><div class="stack">
+        <span class="small">Turn the Army on the {w.regime && w.regime.type !== 'civil' ? 'regime' : 'government'}. It starts a 12-hour coup night with the Army's weight (+3) behind you. Everyone declares a side; if you lose, you are treated as a failed plotter.</span>
+        {why ? <span class="small muted">{why}</span> : <Btn kind="danger" onClick={() => confirm('March the Army on the capital? There is no going back.') && act('army.march', {}, 'The Army is marching.')}>Order the march</Btn>}
+      </div></Card>
+    </Sec>
+  );
+}
+// war correspondents: an editor sends a reporter, and the paper prints a dispatch after every battle
+function Correspondents() {
+  const { world: w, me } = useStore();
+  const k = w.army.campaign;
+  const mine = Object.values(w.papers).find((p: any) => p.editor === me) as any;
+  const sent = (k.correspondents || []) as string[];
+  const latest = w.stories.filter((s: any) => s.war && s.status === 'published').slice(0, 3);
+  return (
+    <Sec title="From our correspondents" sub="Papers with a reporter at the front print a dispatch after every battle. Dispatches count double for the front page.">
+      <div class="stack">
+        {sent.length > 0 && <div class="chips">{sent.map((id) => <span class="chip ink">{w.papers[id]?.name}</span>)}</div>}
+        {latest.map((s: any) => <Card><div class="kicker" style={{ margin: 0 }}>{w.papers[s.paper]?.name} · <When at={s.at} /></div><div class="serif" style={{ fontSize: 20, lineHeight: 1.15 }}>{s.headline}</div><p class="small" style={{ margin: '4px 0 0' }}>{s.body}</p></Card>)}
+        {mine && !sent.includes(mine.id) && <Btn small kind="ghost" onClick={() => act('war.embed', { paper: mine.id }, 'Your reporter is on the way to the front.')}>Send a correspondent from {mine.name} ({EMBED_COST})</Btn>}
+        {!sent.length && !mine && <Empty>No paper has a reporter at the front. An editor can send one.</Empty>}
+      </div>
     </Sec>
   );
 }
