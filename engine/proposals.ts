@@ -1,10 +1,11 @@
 // Proposals: one lifecycle for everything Parliament does. Draft, debate, vote, then the result.
 // The kind only changes who votes and what happens. Also: laws, PM's Questions, formal questions and lobbying.
 import { startWar, endWar } from './war';
-import { company, fundTrade } from './exchange';
+import { company, fundTrade, lobbyOutcome } from './exchange';
+import { PROVINCES } from './foreign';
 import {
   W, Id, DAY, HOUR, fail, newId, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, tick, meter,
-  isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, hasPower, officeWithPower, weekNo, adminDid, bump, own, text, int, inForce, inGov } from './core';
+  isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, hasPower, officeWithPower, weekNo, adminDid, bump, own, text, int, inForce, inGov, bal } from './core';
 import { ACTS, ACT_KEYS, ENTRENCHED, PREROGATIVE_DAYS, applyAct, repealAct, describeAct, national, expelNational } from './acts';
 import { TEMPLATES, POWERS, FILL, createOffice } from './offices';
 import { startHosSelection, callGeneralElection, governmentFalls, vacateSeat, HOS_METHODS, countback } from './politics';
@@ -91,8 +92,11 @@ export function describe(w: W, e: any): string {
       return describeAct(e.t);
     case 'war':
       return `Declares war on ${w.nations[e.nation]?.name}.`;
-    case 'peace':
-      return `Makes peace with ${w.nations[e.nation]?.name}.`;
+    case 'peace': {
+      const n = w.nations[e.nation]?.name;
+      const extra = [e.gain && `${n} gives up ${PROVINCES[e.gain]?.name}`, e.cede && `the realm gives up ${PROVINCES[e.cede]?.name}`, e.crowns > 0 && `${n} pays ${e.crowns} crowns`, e.crowns < 0 && `the realm pays ${-e.crowns} crowns`].filter(Boolean);
+      return `Makes peace with ${n}${extra.length ? `: ${extra.join('; ')}` : ''}.`;
+    }
   }
   return '';
 }
@@ -188,9 +192,19 @@ function checkClause(w: W, e: any, byDecree = false) {
       if (inForce(w, e.t)) fail(`The ${ACTS[e.t as 'jail'].name} Act is already law.`);
       break;
     case 'war':
-    case 'peace':
       if (!own(w.nations, e.nation)) fail('Pick a nation.');
       break;
+    case 'peace': {
+      if (!own(w.nations, e.nation)) fail('Pick a nation.');
+      // a peace can trade land and money: provinces must belong to the side giving them up
+      const owner = (id: string) => w.provinces?.[id]?.owner ?? PROVINCES[id]?.start;
+      e.gain = e.gain || null;
+      e.cede = e.cede || null;
+      if (e.gain && (!own(PROVINCES, e.gain) || owner(e.gain) !== e.nation)) fail(`${w.nations[e.nation].name} does not hold that province.`);
+      if (e.cede && (!own(PROVINCES, e.cede) || owner(e.cede) !== 'realm')) fail('The realm does not hold that province.');
+      e.crowns = e.crowns ? int(e.crowns, -200, 200, 'crowns in the peace') : 0;
+      break;
+    }
     case 'constitution': {
       const ok: Record<string, unknown[]> = { seats: [3, 5, 7, 9], termDays: [14, 21, 28], hos: ['monarchy', 'republic'] };
       if (e.key === 'hosMethod') ok.hosMethod = (HOS_METHODS[w.config.hos] || []).map((m: any) => m.id);
@@ -650,6 +664,7 @@ export function closeVote(w: W, p: any) {
   p.result = { ayes, noes, passed, note };
   trackWhip(w, p);
   royalWhipSettle(w, p);
+  lobbyOutcome(w, p, passed);
   settleMarket(w, 'prop', p.id, passed ? 'yes' : 'no', Object.keys(p.votes).filter((k) => p.votes[k] === (passed ? 'aye' : 'no')).map((id) => ({ id, did: `voted ${passed ? 'for' : 'against'} it` })));
   if (passed && ayes - noes === 1) bump(w, p.by, 'squeakers');
   if (!passed && p.kind === 'no_confidence' && w.pm) bump(w, w.pm, 'survived');
@@ -985,6 +1000,7 @@ export function applyClause(w: W, e: any, ref: string) {
       break;
     case 'peace':
       if (!own(w.nations, e.nation)) break;
+      peaceTerms(w, e);
       if (w.army.war === e.nation) endWar(w, 'peace');
       else {
         w.nations[e.nation].mood = Math.max(1, w.nations[e.nation].mood);
@@ -992,6 +1008,15 @@ export function applyClause(w: W, e: any, ref: string) {
       }
       break;
   }
+}
+// the land and money a peace bill trades, checked again on the day it becomes law
+function peaceTerms(w: W, e: any) {
+  const n = w.nations[e.nation];
+  const owner = (id: string) => w.provinces?.[id]?.owner;
+  if (e.gain && owner(e.gain) === n.id) (w.provinces[e.gain] = { owner: 'realm', since: w.now, from: n.id, garrison: false }), gazette(w, 'army', `${PROVINCES[e.gain].name} passes to the realm under the peace.`, '#/atlas');
+  if (e.cede && owner(e.cede) === 'realm') (w.provinces[e.cede] = { owner: n.id, since: w.now, from: 'realm' }), gazette(w, 'army', `${PROVINCES[e.cede].name} passes to ${n.name} under the peace.`, '#/atlas');
+  if (e.crowns > 0) { const c = Math.min(e.crowns, bal(w, 'nation:' + n.id)); if (c > 0) transfer(w, 'nation:' + n.id, 'treasury', c, `Peace payment from ${n.name}`); }
+  if (e.crowns < 0) transfer(w, 'treasury', 'nation:' + n.id, -e.crowns, `Peace payment to ${n.name}`);
 }
 export function answerDissolution(w: W, actor: Id, pid: Id, yes: boolean) {
   const p = own(w.proposals, pid);

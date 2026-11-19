@@ -104,6 +104,7 @@ export function migrate(w: W): W {
     Object.values(w.nations).forEach((n: any) => ((n.power ??= PROFILES[n.id]?.strength ?? 4), (n.embassy ??= false), (n.embargo ??= false)));
   }
   w.conflicts ??= [];
+  w.memorials ??= [];
   w.wars ??= [];
   if (w.army) {
     w.army.troops ??= 6;

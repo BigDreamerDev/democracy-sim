@@ -1,4 +1,5 @@
 import { COMPANIES } from '../../../engine/exchange';
+import { PROVINCES } from '../../../engine/foreign';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { drafts, getDraft, newDraftId, hasContent, saveDraft, deleteDraft, flushDraft, forgetDraft } from '../drafts';
 import { useStore, act, getState, toast as say } from '../store';
@@ -177,6 +178,7 @@ export function Proposal({ id }: { id: string }) {
     <Page back={['#/house', 'The House']} kicker={<>{KINDS[p.kind].name}{p.kind === 'bill' ? ` ${p.n}` : ''}, by <Who id={p.by} />{p.sponsors?.length ? <>, with {p.sponsors.map((x: string, i: number) => <>{i ? ', ' : ''}<Who id={x} /></>)}</> : ''}{p.crossParty ? ', cross-party' : ''}{p.constitutional ? ', constitutional' : ''}{p.fast ? ', fast-tracked' : ''}</>} title={p.title}>
       {['enacted', 'passed', 'failed', 'vetoed', 'withdrawn'].includes(p.stage) && <Stamp label={['enacted', 'passed'].includes(p.stage) ? 'Passed' : p.stage === 'vetoed' ? 'Vetoed' : p.stage === 'withdrawn' ? 'Withdrawn' : 'Defeated'} sub={p.lawRef || (p.result ? `${p.result.ayes} to ${p.result.noes}` : '')} red={failed} style={{ top: 70, right: 16, transformOrigin: '100% 0' }} />}
       {p.summary && <p class="intro">{p.summary}</p>}
+      {(p.lobbies || []).length > 0 && <div class="chips">{p.lobbies.map((l: any) => <span class={'chip ' + (l.side === 'aye' ? 'teal' : 'red')} title="Carried by a shareholder vote">{l.sym} lobbies {l.side === 'aye' ? 'for' : 'against'}{l.got === true ? ' · got its way' : l.got === false ? ' · lost' : ''}</span>)}</div>}
       {p.crown && <p class="small" style={{ margin: '6px 0 0' }}><span class="chip gold">Crown bill</span> Tabled by the Crown’s household; it went straight to debate.</p>}
       {p.stage === 'struck' && <Card kind="warn" style={{ marginTop: 12 }}><b>Struck by Royal Command.</b> It fell and cannot become law.</Card>}
       {p.stage === 'commanded' && <Card kind="tint" style={{ marginTop: 12 }}><b>Enacted by Royal Command</b> as <a href={'#/law/' + p.lawRef}>{p.lawRef}</a>, without a vote.</Card>}
@@ -732,7 +734,19 @@ export function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; 
         {e.t === 'fund' && <><div class="grid2"><Pick label="Company" value={e.sym} onChange={(v) => onChange({ ...e, sym: v })} options={COMPANIES.map((c) => [c.sym, `${c.sym} ${c.name}`])} /><Field label="Crowns (10–500)" type="number" value={e.crowns} onInput={(v) => onChange({ ...e, crowns: Math.max(10, whole(v, 500)) })} /></div><Seg value={e.sell ? 'sell' : 'buy'} onChange={(v) => onChange({ ...e, sell: v === 'sell' })} options={[['buy', 'Buy'], ['sell', 'Sell']]} /><p class="small muted" style={{ margin: 0 }}>The Treasury trades at the price on the day the bill becomes law. Dividends go to the Treasury.</p></>}
         {e.t === 'currency' && <div class="grid2"><Field label="New name (one)" value={e.one || ''} onInput={(v) => onChange({ ...e, one: v })} placeholder="e.g. ducat" /><Field label="Plural (optional)" value={e.many || ''} onInput={(v) => onChange({ ...e, many: v })} placeholder="e.g. ducats" /></div>}
         {e.t === 'zone' && <Field label="Where nothing counts" value={e.text} onInput={(v) => onChange({ ...e, text: v })} placeholder="e.g. The library" />}
-        {(e.t === 'war' || e.t === 'peace') && <Pick value={e.nation} onChange={(v) => onChange({ ...e, nation: v })} options={Object.values(w.nations).map((x: any) => [x.id, x.name])} />}
+        {(e.t === 'war' || e.t === 'peace') && <Pick value={e.nation} onChange={(v) => onChange({ ...e, nation: v, gain: null, cede: null })} options={Object.values(w.nations).map((x: any) => [x.id, x.name])} />}
+        {e.t === 'peace' && (() => {
+          const owner = (id: string) => w.provinces?.[id]?.owner ?? PROVINCES[id].start;
+          const theirs = Object.keys(PROVINCES).filter((id) => owner(id) === e.nation);
+          const ours = Object.keys(PROVINCES).filter((id) => owner(id) === 'realm' && PROVINCES[id].claims.includes(e.nation));
+          return <>
+            <div class="grid2">
+              <Pick label="They give us" value={e.gain || ''} onChange={(v) => onChange({ ...e, gain: v || null })} empty="No land" options={theirs.map((id) => [id, PROVINCES[id].name])} />
+              <Pick label="We give them" value={e.cede || ''} onChange={(v) => onChange({ ...e, cede: v || null })} empty="No land" options={ours.map((id) => [id, PROVINCES[id].name])} />
+            </div>
+            <Field label="Money (+ they pay us, − we pay them; up to 200)" type="number" value={e.crowns || 0} onInput={(v) => onChange({ ...e, crowns: Math.max(-200, Math.min(200, Math.round(Number(v)) || 0)) })} />
+          </>;
+        })()}
       </div>
     </Card>
   );

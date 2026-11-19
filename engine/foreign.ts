@@ -167,28 +167,47 @@ export function nationsTurn(w: W) {
       gazette(w, 'foreign', `${n.name} lifts its sanctions.`, '#/nation/' + n.id);
     }
     if (n.sanctionsUntil) sanctioned++;
-    const pending = w.ultimatums.some((u: any) => u.nation === n.id && u.status === 'sent');
-    if (n.mood === 0 && !pending && chance(w, 0.45)) {
-      // a non-aggression pact holds them back; a strong nation facing a small Army is bolder
-      const bold = 0.35 + (w.offices.army && (n.power || 0) > (w.army.troops ?? 6) ? 0.15 : 0);
-      if (w.offices.army && !w.army.war && !treatyWith(w, n.id, 'nonaggression') && chance(w, bold)) startWar(w, n.id, 'them');
-      else ultimatum(w, n, 30 + Math.round(rand(w) * 30));
-    } else if (n.mood === 1 && !pending && chance(w, 0.3)) {
-      if (!n.sanctionsUntil && chance(w, 0.5)) sanction(w, n, 'They don’t like the look of us');
-      else ultimatum(w, n, 15 + Math.round(rand(w) * 20));
-    } else if (n.mood >= 3 && chance(w, 0.25)) {
-      const amt = 15 + Math.round(rand(w) * 25);
-      if (bal(w, 'nation:' + n.id) >= amt) {
-        transfer(w, 'nation:' + n.id, 'treasury', amt, `Aid from ${n.name}`);
-        meter(w, 'prosperity', 1, `Aid from ${n.name}`);
-        gazette(w, 'foreign', `${n.name} sends ${amt} crowns of aid, as friends do.`, '#/nation/' + n.id);
-      }
-    }
+    // each nation acts on the plan it made a week ago (n.intent, secret: a spy ring reads it), then makes the next one
+    const plan = n.intent ?? decide(w, n);
+    carryOut(w, n, plan);
+    n.intent = decide(w, n);
+    ringWeek(w, n);
   });
   if (sanctioned) meter(w, 'prosperity', -2 * sanctioned, 'Foreign sanctions');
   embassiesWeek(w);
   conflictsWeek(w);
   provincesWeek(w);
+}
+// what a nation means to do at the next payday
+export const PLANS: Record<string, string> = { war: 'declare war on us', ultimatum: 'send us an ultimatum', sanction: 'impose sanctions on us', aid: 'send us aid', none: 'do nothing in particular' };
+function decide(w: W, n: any) {
+  if (n.mood === 0 && chance(w, 0.45)) {
+    // a non-aggression pact holds them back; a strong nation facing a small Army is bolder
+    const bold = 0.35 + (w.offices.army && (n.power || 0) > (w.army.troops ?? 6) ? 0.15 : 0);
+    return w.offices.army && !treatyWith(w, n.id, 'nonaggression') && chance(w, bold) ? 'war' : 'ultimatum';
+  }
+  if (n.mood === 1 && chance(w, 0.3)) return !n.sanctionsUntil && chance(w, 0.5) ? 'sanction' : 'ultimatum';
+  if (n.mood >= 3 && chance(w, 0.25)) return 'aid';
+  return 'none';
+}
+// a plan made a week ago still needs the mood to match: a nation we have won round since then thinks better of it
+function carryOut(w: W, n: any, plan: string) {
+  const pending = w.ultimatums.some((u: any) => u.nation === n.id && u.status === 'sent');
+  if (['war', 'ultimatum', 'sanction'].includes(plan) && (n.mood >= 2 || pending)) return;
+  if (plan === 'aid' && n.mood < 3) return;
+  if (plan === 'war') {
+    if (w.offices.army && !w.army.war && !treatyWith(w, n.id, 'nonaggression')) startWar(w, n.id, 'them');
+    else ultimatum(w, n, 30 + Math.round(rand(w) * 30));
+  } else if (plan === 'ultimatum') ultimatum(w, n, (n.mood === 0 ? 30 : 15) + Math.round(rand(w) * (n.mood === 0 ? 30 : 20)));
+  else if (plan === 'sanction') (n.sanctionsUntil ? ultimatum(w, n, 15 + Math.round(rand(w) * 20)) : sanction(w, n, 'They don’t like the look of us'));
+  else if (plan === 'aid') {
+    const amt = 15 + Math.round(rand(w) * 25);
+    if (bal(w, 'nation:' + n.id) >= amt) {
+      transfer(w, 'nation:' + n.id, 'treasury', amt, `Aid from ${n.name}`);
+      meter(w, 'prosperity', 1, `Aid from ${n.name}`);
+      gazette(w, 'foreign', `${n.name} sends ${amt} crowns of aid, as friends do.`, '#/nation/' + n.id);
+    }
+  }
 }
 function ultimatum(w: W, n: any, crowns: number) {
   const id = newId(w, 'ul');
@@ -336,7 +355,7 @@ export function mediate(w: W, actor: Id, cid: Id) {
 // ---------- fog of war: we only know a nation's army strength through an embassy, a Security Service report in the
 // last week, or by fighting it. Otherwise view.ts hides it ----------
 export const KNOWN_FOR = 7 * DAY;
-export const known = (w: W, nid: string) => { const n = w.nations[nid]; return !!n && (!!n.embassy || atWar(w, nid) || (!!n.seenAt && w.now - n.seenAt < KNOWN_FOR)); };
+export const known = (w: W, nid: string) => { const n = w.nations[nid]; return !!n && (!!n.embassy || !!n.ring || atWar(w, nid) || (!!n.seenAt && w.now - n.seenAt < KNOWN_FOR)); };
 
 // ---------- disputed provinces: border lands that change hands in war. Each has its owner ('realm' or a nation)
 // and the nations that claim it. Win a war and the enemy's claimed provinces are ours; lose and they take one back.
@@ -357,7 +376,7 @@ export function warSpoils(w: W, nid: string, won: boolean) {
   const n = w.nations[nid];
   if (won) {
     Object.keys(PROVINCES).filter((id) => w.provinces[id].owner === nid).forEach((id) => {
-      w.provinces[id] = { owner: 'realm', since: w.now };
+      w.provinces[id] = { owner: 'realm', since: w.now, from: nid, garrison: false };
       meter(w, 'prosperity', 2, `${pname(id)} is ours`);
       meter(w, 'stability', 2, `${pname(id)} is ours`);
       moodShift(n, 0, `We took ${pname(id)}`);
@@ -367,7 +386,7 @@ export function warSpoils(w: W, nid: string, won: boolean) {
   }
   const lost = Object.keys(PROVINCES).find((id) => w.provinces[id].owner === 'realm' && PROVINCES[id].claims.includes(nid));
   if (!lost) return;
-  w.provinces[lost] = { owner: nid, since: w.now };
+  w.provinces[lost] = { owner: nid, since: w.now, from: 'realm' };
   meter(w, 'stability', -3, `${pname(lost)} is lost`);
   meter(w, 'prosperity', -2, `${pname(lost)} is lost`);
   gazette(w, 'army', `${pname(lost)} is ceded to ${n.name} in the terms of defeat.`, '#/atlas');
@@ -375,6 +394,15 @@ export function warSpoils(w: W, nid: string, won: boolean) {
 // once a week: a nation whose claimed province we hold may cool on us
 function provincesWeek(w: W) {
   seedProvinces(w);
+  // a province we took (not one we always held) may rise unless a regiment is posted there
+  Object.entries(PROVINCES).forEach(([id, p]) => {
+    const pr = w.provinces[id];
+    if (pr.owner !== 'realm' || p.start === 'realm' || pr.garrison || !chance(w, 0.35)) return;
+    const back = pr.from && pr.from !== 'realm' && w.nations[pr.from] ? pr.from : p.claims[0];
+    w.provinces[id] = { owner: back, since: w.now, from: 'realm' };
+    meter(w, 'stability', -2, `${p.name} rose against us`);
+    gazette(w, 'army', `Uprising in ${p.name}: with no garrison to stop them, its towns declare for ${w.nations[back]?.name}.`, '#/atlas');
+  });
   Object.entries(PROVINCES).forEach(([id, p]) => {
     if (w.provinces[id].owner !== 'realm') return;
     p.claims.forEach((nid) => {
@@ -392,3 +420,33 @@ export function shipping(w: W) {
 }
 // a sea lane is closed by sanctions, our embargo, war, or a nation that refuses to trade
 export const laneClosed = (w: W, nid: string) => { const n = w.nations[nid]; return !n || n.embargo || atWar(w, nid) || (n.sanctionsUntil && n.sanctionsUntil > w.now) || n.mood < 1; };
+
+// ---------- spy rings: the Security Service plants an agent in a nation's government (60 from its budget). While it
+// lasts we see their army strength and, each payday, what they mean to do next. Each week there is a 1 in 6 chance
+// it is rolled up: a diplomatic scandal ----------
+export const RING_COST = 60;
+export function plantRing(w: W, actor: Id, nid: Id) {
+  if (!w.offices.security) fail('Spy rings need a Security Service.');
+  if (!hasPower(w, actor, 'intel') && !(isPM(w, actor) && !holderOf(w, 'security'))) fail('Only the Director of the Security Service plants agents.');
+  const n = own(w.nations, nid);
+  if (!n) fail('Unknown country.');
+  if (n.ring) fail(`We already have a ring in ${n.name}.`);
+  if (bal(w, 'office:security') < RING_COST) fail(`A ring costs ${RING_COST} from the Service's budget. It has ${bal(w, 'office:security')}.`);
+  transfer(w, 'office:security', 'nation:' + nid, RING_COST, 'Paid to sources abroad');
+  n.ring = { by: actor, at: w.now };
+  addCard(w, { title: `Our ring in ${n.name}: their next move is to ${PLANS[n.intent || 'none']}.`, about: null, from: 'Security Service', level: 'secret', viewers: ['pm', 'office:security'] });
+}
+function ringWeek(w: W, n: any) {
+  if (!n.ring) return;
+  if (chance(w, 1 / 6)) {
+    const by = n.ring.by;
+    n.ring = null;
+    moodShift(n, -2, 'They rolled up our spy ring');
+    meter(w, 'stability', -1, 'A spy scandal abroad');
+    gazette(w, 'scandal', `Spy scandal: ${n.name} rolls up a ring of the realm's agents inside its government.`, '#/nation/' + n.id);
+    addCard(w, { title: `The ring rolled up in ${n.name} was planted on the orders of ${nm(w, by)}.`, about: by, from: 'Security Service', level: 'secret', viewers: ['pm', 'office:security'] });
+    return;
+  }
+  n.seenAt = w.now;
+  addCard(w, { title: `Our ring in ${n.name}: at the next payday they mean to ${PLANS[n.intent || 'none']}. Their army stands at ${Math.round((n.power || 0) * 10) / 10}.`, about: null, from: 'Security Service', level: 'secret', viewers: ['pm', 'office:security'] });
+}

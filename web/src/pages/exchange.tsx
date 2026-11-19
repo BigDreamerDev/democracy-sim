@@ -2,9 +2,9 @@
 // selling, your portfolio, and the public Register of Interests. Prices move every three hours (engine/exchange.ts).
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
-import { Page, Sec, Card, Btn, Who, Left, Empty, Field } from '../ui';
+import { Page, Sec, Card, Btn, Who, Left, Empty, Field, Pick, Seg } from '../ui';
 import { bal, ca, isPM, hasPower, holderOf } from '../../../engine/index';
-import { COMPANIES, drivers, indexNow, portfolio, halted, register, fund, MAX_HOLD } from '../../../engine/exchange';
+import { COMPANIES, drivers, indexNow, portfolio, halted, register, fund, MAX_HOLD, canMove } from '../../../engine/exchange';
 
 function Spark({ data, w = 120, h = 32, base }: { data: number[]; w?: number; h?: number; base?: number }) {
   if (data.length < 2) return <svg width={w} height={h} aria-hidden="true" />;
@@ -25,6 +25,35 @@ function Spark({ data, w = 120, h = 32, base }: { data: number[]; w?: number; h?
 const pct = (a: number, b: number) => (b ? ((a - b) / b) * 100 : 0);
 const Move = ({ v }: { v: number }) => <b class="tnum" style={{ color: v > 0.05 ? 'var(--teal)' : v < -0.05 ? 'var(--red)' : 'var(--muted)' }}>{v > 0 ? '▲' : v < 0 ? '▼' : '·'} {Math.abs(v).toFixed(1)}%</b>;
 
+// a shareholder revolt: big holders put a motion; every holder votes, weighted by shares
+function Revolt({ sym }: { sym: string }) {
+  const { world: w, me } = useStore();
+  const [f, setF] = useState({ prop: '', side: 'aye' });
+  const open = (w.exchange.motions || []).find((m: any) => m.sym === sym && m.status === 'open');
+  const bills = (Object.values(w.proposals) as any[]).filter((p) => ['debate', 'vote'].includes(p.stage));
+  const mine = w.exchange.holdings?.[me]?.[sym]?.n || 0;
+  if (open) {
+    // online the server sends the totals; the demo adds them up from the votes
+    const sum = (y: boolean) => Object.values(open.votes).filter((v: any) => v.yes === y).reduce((n: number, v: any) => n + v.n, 0);
+    const t = open.tally || { yes: sum(true), no: sum(false) };
+    return (
+      <Card kind="warn" style={{ marginTop: 10 }}><div class="stack">
+        <b>Shareholder revolt: lobby {open.side === 'aye' ? 'for' : 'against'} “{w.proposals[open.prop]?.title}”</b>
+        <span class="small">Called by <Who id={open.by} />. {t.yes} shares for, {t.no} against so far. Closes in <Left at={open.closesAt} />.</span>
+        {mine ? <div class="grid2"><Btn small onClick={() => act('exchange.vote', { motion: open.id, yes: true }, 'Voted with your shares.')}>For ({mine})</Btn><Btn small kind="plain" onClick={() => act('exchange.vote', { motion: open.id, yes: false }, 'Voted with your shares.')}>Against ({mine})</Btn></div> : <span class="small muted">Only {sym} shareholders vote.</span>}
+      </div></Card>
+    );
+  }
+  if (!canMove(w, me, sym) || !bills.length) return null;
+  return (
+    <Card style={{ marginTop: 10 }}><div class="stack">
+      <b>Call a shareholder vote</b>
+      <span class="small muted">You hold enough {sym} to make the company take a side on a bill. If it carries, the company lobbies publicly, and its price jumps 6% if it gets its way (falls 6% if not).</span>
+      <div class="grid2"><Pick value={f.prop} onChange={(v) => setF({ ...f, prop: v })} empty="Which bill?" options={bills.map((p) => [p.id, p.title])} /><Seg value={f.side} onChange={(v) => setF({ ...f, side: v })} options={[['aye', 'For it'], ['no', 'Against it']]} /></div>
+      <Btn small kind="ghost" disabled={!f.prop} onClick={() => act('exchange.motion', { sym, prop: f.prop, side: f.side }, 'The vote is called.')}>Call the vote</Btn>
+    </div></Card>
+  );
+}
 export function Exchange() {
   const { world: w, me } = useStore();
   const [open, setOpen] = useState<string | null>(null);
@@ -68,6 +97,7 @@ export function Exchange() {
                   <div class="ex-more">
                     <p class="small" style={{ margin: '0 0 6px' }}>{c.about} Dividend about {c.yield}% a week.</p>
                     <ul class="list small">{drivers(w, c).map(([why, v]) => <li class="row"><span>{why}</span><b class="tnum" style={{ color: v > 0 ? 'var(--teal)' : 'var(--red)' }}>{v > 0 ? '+' : ''}{v.toFixed(2)}%</b></li>)}</ul>
+                    <Revolt sym={c.sym} />
                     <div class="grid2" style={{ marginTop: 10 }}>
                       <Field label={`Shares (you hold ${held}, ${MAX_HOLD} at most)`} type="number" value={n} onInput={setN} />
                       <div class="row" style={{ alignSelf: 'end', gap: 6 }}>

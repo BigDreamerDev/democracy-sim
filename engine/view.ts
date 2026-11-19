@@ -175,7 +175,14 @@ export function viewFor(full: W, me: Id): W {
   // war bonds: your own, and the total
   if (w.army?.campaign) w.army.campaign.bonds = w.army.campaign.bonds[me] ? { [me]: w.army.campaign.bonds[me] } : {};
   // fog of war: a nation's army strength is known only through an embassy, a recent intelligence report, or a war
-  Object.values(w.nations).forEach((n: any) => { if (!known(full, n.id)) n.power = null; });
+  Object.values(w.nations).forEach((n: any) => {
+    if (!known(full, n.id)) n.power = null;
+    // what a nation means to do next is known only through a spy ring, and only to the PM and the Director (by card)
+    delete n.intent;
+    if (!canSeeIntel(full, me)) n.ring = null;
+  });
+  // shareholder votes: your own, and the running totals
+  (w.exchange?.motions || []).forEach((m: any) => { m.tally = { yes: Object.values(m.votes).filter((v: any) => v.yes).reduce((s: number, v: any) => s + v.n, 0), no: Object.values(m.votes).filter((v: any) => !v.yes).reduce((s: number, v: any) => s + v.n, 0) }; m.votes = m.votes[me] ? { [me]: m.votes[me] } : {}; });
   // ships at sea to each nation are public; whose ventures they are is not (ventures are stripped above)
   w.shipping = shipping(full);
   // Treasury bonds: what each citizen holds is their own business; the issue and the total stay public

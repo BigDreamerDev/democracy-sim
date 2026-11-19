@@ -4,7 +4,7 @@
 // Money: buying pays the 'exchange' account, plus stamp duty to the Treasury; selling and dividends are paid from
 // it. When it runs short it draws on the Reserve (new money, which feeds inflation); its surplus goes back each payday.
 // Holdings are private (view.ts), except the Register of Interests: what MPs, ministers and the head of state own.
-import { W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, transfer, bal, ca, hasPower, isPM, holderOf, clamp, mustBeFree, int, bump, inGov, isMP, addCard, fmtTime } from './core';
+import { W, Id, DAY, HOUR, fail, rand, chance, nm, newId, gazette, transfer, bal, ca, hasPower, isPM, holderOf, clamp, mustBeFree, int, bump, inGov, isMP, addCard, fmtTime } from './core';
 import { atWar, conflictOf } from './foreign';
 
 export type Company = { sym: string; name: string; sector: string; nation: string | null; base: number; yield: number; about: string };
@@ -257,3 +257,59 @@ export function fundTrade(w: W, sym: string, crowns: number, sell: boolean, ref:
   gazette(w, 'money', `The realm’s wealth fund sells ${n} shares of ${c.name} for ${got} crowns, under ${ref}.`, '#/exchange');
 }
 export const fund = (w: W) => portfolio(w, FUND);
+
+// ---------- shareholder revolts: anyone holding at least a tenth of a company's citizen-held shares (and 5 or more)
+// can put a motion to its shareholders: that the company lobby for or against a bill before the House. Shareholders
+// vote for a day, weighted by their shares (votes are private, the totals public). Carried, the company's lobby is
+// public on the bill, and when the House decides, the company's price jumps 6% if it got its way and falls 6% if not ----------
+export const MOTION_HOURS = 24;
+const held = (w: W, id: Id, sym: string) => (id === FUND ? 0 : exchange(w).holdings[id]?.[sym]?.n || 0);
+const floatOf = (w: W, sym: string) => Object.keys(exchange(w).holdings).reduce((s, id) => s + held(w, id, sym), 0);
+export function canMove(w: W, id: Id, sym: string) { const n = held(w, id, sym); return n >= 5 && n * 10 >= floatOf(w, sym); }
+export function shareMotion(w: W, actor: Id, sym: unknown, prop: unknown, side: unknown) {
+  mustBeFree(w, actor);
+  const c = typeof sym === 'string' ? company(sym) : undefined;
+  if (!c) fail('Pick a company on the Exchange.');
+  if (!canMove(w, actor, c.sym)) fail(`You need at least 5 ${c.sym} shares and a tenth of all held to call a vote.`);
+  const p = typeof prop === 'string' ? w.proposals[prop] : null;
+  if (!p || !['debate', 'vote'].includes(p.stage)) fail('Pick a bill before the House.');
+  if (side !== 'aye' && side !== 'no') fail('For or against?');
+  const x = exchange(w);
+  x.motions ??= [];
+  if (x.motions.some((m: any) => m.status === 'open' && m.sym === c.sym)) fail(`${c.name} already has a shareholder vote open.`);
+  if ((p.lobbies || []).some((l: any) => l.sym === c.sym)) fail(`${c.name} has already taken a side on that bill.`);
+  x.motions.unshift({ id: newId(w, 'sm'), sym: c.sym, by: actor, prop: p.id, side, votes: { [actor]: { yes: true, n: held(w, actor, c.sym) } }, at: w.now, closesAt: w.now + MOTION_HOURS * HOUR, status: 'open' });
+  x.motions = x.motions.slice(0, 30);
+  gazette(w, 'money', `Shareholder revolt: ${nm(w, actor)} calls on ${c.name} to lobby ${side === 'aye' ? 'for' : 'against'} “${p.title}”. Shareholders vote for a day.`, '#/exchange');
+}
+export function voteMotion(w: W, actor: Id, mid: unknown, yes: unknown) {
+  const m = (exchange(w).motions || []).find((x: any) => x.id === mid);
+  if (!m || m.status !== 'open') fail('That vote has closed.');
+  mustBeFree(w, actor);
+  const n = held(w, actor, m.sym);
+  if (!n) fail(`Only ${m.sym} shareholders vote.`);
+  if (yes !== true && yes !== false) fail('For or against?');
+  m.votes[actor] = { yes, n };
+}
+export function closeMotion(w: W, m: any) {
+  m.status = 'closed';
+  // weight is what each voter holds when the vote closes, at most what they held when they voted
+  const tally = (y: boolean) => Object.entries(m.votes).filter(([, v]: any) => v.yes === y).reduce((s, [id, v]: any) => s + Math.min(v.n, held(w, id, m.sym)), 0);
+  m.yes = tally(true);
+  m.no = tally(false);
+  const p = w.proposals[m.prop];
+  const c = company(m.sym)!;
+  if (m.yes <= m.no || !p || !['debate', 'vote'].includes(p.stage)) return gazette(w, 'money', `${c.name}'s shareholders vote the motion down, ${m.yes} shares to ${m.no}.`, '#/exchange');
+  p.lobbies = [...(p.lobbies || []), { sym: m.sym, side: m.side, at: w.now }];
+  gazette(w, 'money', `${c.name}'s shareholders carry the motion, ${m.yes} shares to ${m.no}: the company lobbies ${m.side === 'aye' ? 'for' : 'against'} “${p.title}”.`, '#/p/' + p.id);
+}
+// proposals.ts calls this when a bill's vote closes
+export function lobbyOutcome(w: W, p: any, passed: boolean) {
+  (p.lobbies || []).forEach((l: any) => {
+    const q = exchange(w).prices[l.sym];
+    if (!q) return;
+    const got = (l.side === 'aye') === passed;
+    q.p = clamp(Math.round(q.p * (got ? 1.06 : 0.94) * 100) / 100, 1, 999);
+    l.got = got;
+  });
+}

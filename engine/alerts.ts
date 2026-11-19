@@ -177,6 +177,9 @@ export function needs(w: W, me: Id): Alert[] {
     out.push({ key: 'war:' + war.startedAt, href: '#/war', label: 'War', title: `The realm is at war with ${w.nations[war.nation]?.name}. Enlist, or buy war bonds` });
     if (isPM(w, me) || hasPower(w, me, 'army')) out.push({ key: 'warcmd:' + war.startedAt, href: '#/war', label: 'War', title: 'Choose the Army’s strategy', at: war.nextBattleAt });
   }
+  if (war?.terms?.status === 'open' && isMP(w, me) && war.terms.votes[me] === undefined) out.push({ key: 'terms:' + war.terms.id, href: '#/war', label: 'Terms of peace', title: `${w.nations[war.nation]?.name} offers terms. Accept or reject`, at: war.terms.closesAt, urgent: true });
+  (w.memorials || []).forEach((m: any) => m.status === 'open' && isMP(w, me) && !m.votes[me] && out.push({ key: 'memorial:' + m.id, href: '#/war', label: 'War memorial', title: 'Choose the names for the memorial', at: m.closesAt }));
+  (w.exchange?.motions || []).forEach((m: any) => m.status === 'open' && w.exchange.holdings?.[me]?.[m.sym]?.n && !m.votes[me] && out.push({ key: 'smotion:' + m.id, href: '#/exchange', label: 'Shareholder vote', title: `${m.sym} shareholders vote on a revolt`, at: m.closesAt }));
   (w.conflicts || []).forEach((c: any) => c.status === 'raging' && !c.mediated && hasPower(w, me, 'envoy') && out.push({ key: 'mediate:' + c.id, href: '#/atlas', label: 'War abroad', title: `${w.nations[c.a]?.name} and ${w.nations[c.b]?.name} are at war. Offer to mediate` }));
   if (w.crown?.offer?.heir === me) out.push({ key: 'heir:' + w.crown.offer.until, href: '#/hos', label: 'The throne is offered', title: 'Accept the crown, or decline', at: w.crown.offer.until, urgent: true });
   return out;

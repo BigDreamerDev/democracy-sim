@@ -217,6 +217,10 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | `army.troops`, `army.campaign`, `wars[]` | regiments; the current war (`nation`, `score` −100…100, `strategy`, `nextBattleAt`, `battles[]`, `volunteers`, `bonds` (yours only), `pretender`); past wars. `army.hero` and `army.defeatedAt` feed the coup tally |
 | `provinces` | disputed border lands: `{id: {owner, since}}`, owner `'realm'` or a nation id (names and claims in `engine/foreign.ts`) |
 | `shipping` | trade ventures at sea to each nation: `{nationId: count}` |
+| `army.campaign.terms` | the enemy's terms of peace: `kind` (`land`/`tribute`/`hostage`), `ahead`, `province`, `crowns`, `hostage`, `votes` (MPs, public), `closesAt`, `status` |
+| `memorials[]` | a war memorial vote: `names` (candidates), `votes` (MPs), `closesAt`, `status`, `carved`; carved memorials are in `fame.memorials` |
+| `exchange.motions[]` | shareholder revolts: `sym`, `by`, `prop`, `side`, `tally` (shares for/against), `votes` (yours only), `status`; carried ones show on the bill as `proposals[].lobbies` |
+| `ventures[].status` | `'seized'` when the enemy took the ship in wartime |
 | `conflicts[]` | wars abroad between two nations: `a`, `b`, `status` (`raging`/`over`), `mediated`, `winner`, `peaceBy` |
 | `exchange` | the stock market: `prices` (`{sym: {p, open, hist[]}}`), `index[]`, `duty`, `haltedUntil`, `holdings` (yours, plus `treasury`: the realm's wealth fund), `trades` (yours only), `register` (shares held by MPs, ministers and the head of state). Companies are listed in `engine/exchange.ts` |
 | `stories[].war` | a dispatch from a war correspondent (`army.campaign.correspondents` lists the papers at the front) |

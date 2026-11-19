@@ -4,9 +4,9 @@
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Seg, Opt } from '../ui';
-import { isPM, hasPower, holderOf, standing, bal, ca } from '../../../engine/index';
+import { isPM, hasPower, holderOf, standing, bal, ca, isMP } from '../../../engine/index';
 import { MOODS, PROFILES, TREATIES, PROVINCES, known, shipping, laneClosed } from '../../../engine/foreign';
-import { power, STRATEGIES, REGIMENT_COST, MAX_REGIMENTS, BOND_PAYS, allies, EMBED_COST } from '../../../engine/war';
+import { power, STRATEGIES, REGIMENT_COST, MAX_REGIMENTS, BOND_PAYS, allies, EMBED_COST, termsText, garrisoned } from '../../../engine/war';
 import { canMarch } from '../../../engine/backroom';
 
 type Pt = [number, number];
@@ -313,7 +313,13 @@ export function Atlas() {
         </div>
       </Sec>
       <Sec title="Disputed provinces" sub="Border lands that change hands in war. Win a war and the enemy's claimed provinces are ours; lose one and they take one back. A nation whose province we hold resents it.">
-        <ul class="list">{Object.keys(PROVINCES).map((id) => { const o = w.provinces?.[id]?.owner || PROVINCES[id].start; return <li class="row"><span><b>{PROVINCES[id].name}</b><div class="small muted">{PROVINCES[id].blurb} Claimed by {PROVINCES[id].claims.map((n) => w.nations[n]?.name).join(' and ')}.</div></span><span class={'chip ' + (o === 'realm' ? 'teal' : 'red')}>{o === 'realm' ? 'Ours' : w.nations[o]?.name}</span></li>; })}</ul>
+        <ul class="list">{Object.keys(PROVINCES).map((id) => {
+          const pr = w.provinces?.[id] || { owner: PROVINCES[id].start };
+          const o = pr.owner;
+          const taken = o === 'realm' && PROVINCES[id].start !== 'realm';
+          const cmd = !!w.offices.army && (hasPower(w, me, 'army') || isPM(w, me) || hasPower(w, me, 'govern'));
+          return <li class="row"><span><b>{PROVINCES[id].name}</b><div class="small muted">{PROVINCES[id].blurb} Claimed by {PROVINCES[id].claims.map((n) => w.nations[n]?.name).join(' and ')}.{taken ? (pr.garrison ? ' A regiment is posted there.' : ' Taken in war and ungarrisoned: it may rise any week.') : ''}</div>{o === 'realm' && cmd && <Btn small kind="ghost" style={{ marginTop: 6 }} onClick={() => act('army.garrison', { province: id, on: !pr.garrison }, pr.garrison ? 'Garrison withdrawn.' : 'A regiment is on its way.')}>{pr.garrison ? 'Withdraw the garrison' : 'Post a garrison (1 regiment)'}</Btn>}</span><span class={'chip ' + (o === 'realm' ? 'teal' : 'red')}>{o === 'realm' ? (pr.garrison ? 'Ours · garrisoned' : 'Ours') : w.nations[o]?.name}</span></li>;
+        })}</ul>
       </Sec>
       <Sec title="The nations">
         <div class="atlas-cards">
@@ -359,6 +365,7 @@ export function War() {
         {w.army.defeatedAt && w.now - w.army.defeatedAt < 14 * 86400000 && <Card kind="warn" style={{ marginTop: 14 }}><b>The Army came home beaten.</b> <span class="small">For two weeks after a defeat it leans towards plotters and pretenders.</span></Card>}
         <Regiments cmd={cmd} n={n} setN={setN} troops={troops} />
         <March />
+        <Memorials />
         <Past />
       </Page>
     );
@@ -369,6 +376,7 @@ export function War() {
   return (
     <Page back={['#/world', 'The world']} kicker={<span style={{ color: 'var(--red)' }}>At war since <When at={k.startedAt} /></span>} title={`War with ${enemy.name}`} intro={<>{k.pretender ? <>They fight to put <Who id={k.pretender} /> on our throne. </> : ''}The next battle is in <Left at={k.nextBattleAt} />. Win at +100; at −100 we are beaten. Parliament can make peace at any time with a bill.</>}>
       <Sec><Front score={k.score} /></Sec>
+      <Terms />
       <Sec title="The odds" sub={`Each battle we win about ${Math.round(p.odds * 100)} times in 100.`}>
         <div class="grid2">
           <Card><div class="kicker" style={{ margin: 0 }}>Our strength</div><div class="serif tnum" style={{ fontSize: 34 }}>{p.us}</div><ul class="list small">{p.lines.filter((l) => Math.abs(l[1]) >= 0.05).map(([why, v]) => <li class="row"><span>{why}</span><b class="tnum">{v > 0 ? '+' : ''}{Math.round(v * 10) / 10}</b></li>)}</ul></Card>
@@ -390,6 +398,7 @@ export function War() {
       <Correspondents />
       <Regiments cmd={cmd} n={n} setN={setN} troops={troops} war />
       <March />
+      <Memorials />
       <Sec title="Dispatches from the front">
         <ul class="list">{k.battles.map((b: any) => <li class="row"><span><b style={{ color: b.won ? 'var(--teal)' : 'var(--red)' }}>{b.won ? 'Victory' : 'Defeat'}</b> at {b.where}{b.loot ? `, ${b.loot} in spoils` : ''}{b.lost ? ', a regiment lost' : ''}<div class="small muted"><When at={b.at} /> · {b.us} against {b.them}</div></span><b class="tnum" style={{ color: b.delta > 0 ? 'var(--teal)' : 'var(--red)' }}>{b.delta > 0 ? '+' : ''}{b.delta}</b></li>)}</ul>
         {!k.battles.length && <Empty>No battles yet.</Empty>}
@@ -435,6 +444,46 @@ function Correspondents() {
         {mine && !sent.includes(mine.id) && <Btn small kind="ghost" onClick={() => act('war.embed', { paper: mine.id }, 'Your reporter is on the way to the front.')}>Send a correspondent from {mine.name} ({EMBED_COST})</Btn>}
         {!sent.length && !mine && <Empty>No paper has a reporter at the front. An editor can send one.</Empty>}
       </div>
+    </Sec>
+  );
+}
+// the enemy's terms of peace, on the table for a day: MPs accept or reject
+function Terms() {
+  const { world: w, me } = useStore();
+  const k = w.army.campaign;
+  const t = k?.terms;
+  if (!t || t.status !== 'open') return t ? <p class="small muted">Last terms ({termsText(w, t, w.nations[k.nation].name)}) were rejected{t.result ? `, ${t.result.ayes} to ${t.result.noes}` : ''}. New terms may come at the next payday.</p> : null;
+  const v = Object.values(t.votes);
+  const mine = t.votes[me];
+  return (
+    <Sec title="Terms of peace" sub={<>On the table for <Left at={t.closesAt} />. A majority of MPs voting makes peace on these terms; otherwise the war goes on.</>}>
+      <Card kind="warn"><div class="stack">
+        <b class="serif" style={{ fontSize: 20 }}>{w.nations[k.nation].name} proposes: {termsText(w, t, w.nations[k.nation].name)}.</b>
+        <span class="small">{v.filter((x) => x).length} accept, {v.filter((x) => !x).length} reject so far.{t.kind === 'hostage' ? ' A hostage spends a week in exile abroad, and comes home to +5 approval.' : ''}</span>
+        {isMP(w, me) ? <div class="grid2"><Btn kind={mine === true ? undefined : 'ghost'} onClick={() => act('war.terms', { yes: true }, 'You vote to accept.')}>Accept{mine === true ? ' ✓' : ''}</Btn><Btn kind={mine === false ? 'danger' : 'danger ghost'} onClick={() => act('war.terms', { yes: false }, 'You vote to fight on.')}>Reject{mine === false ? ' ✓' : ''}</Btn></div> : <span class="small muted">Only MPs vote. Lobby yours.</span>}
+      </div></Card>
+    </Sec>
+  );
+}
+// after a war, MPs choose the names for its memorial
+function Memorials() {
+  const { world: w, me } = useStore();
+  const open = (w.memorials || []).filter((m: any) => m.status === 'open') as any[];
+  const [pick, setPick] = useState<Record<string, string[]>>({});
+  if (!open.length) return null;
+  return (
+    <Sec title="The war memorial" sub="Whose names are carved? A name backed by a majority of MPs voting goes on it, with a stamp and a place in the Hall of Fame.">
+      {open.map((m) => {
+        const chosen = pick[m.id] ?? m.votes[me] ?? m.names;
+        return (
+          <Card><div class="stack">
+            <b>The {w.nations[m.nation]?.name} war</b>
+            <span class="small muted">Closes in <Left at={m.closesAt} />. {Object.keys(m.votes).length === 1 ? '1 MP has' : `${Object.keys(m.votes).length} MPs have`} voted.</span>
+            {m.names.map((id: string) => <label class="tick"><input type="checkbox" checked={chosen.includes(id)} disabled={!isMP(w, me)} onChange={(e: any) => setPick({ ...pick, [m.id]: e.target.checked ? [...chosen, id] : chosen.filter((x: string) => x !== id) })} /><span><Who id={id} />{holderOf(w, 'army') === id ? ', the General' : ', volunteer'}</span></label>)}
+            {isMP(w, me) && <Btn small onClick={() => act('war.memorial', { memorial: m.id, names: chosen }, 'Your choice is recorded.')}>{m.votes[me] ? 'Change my choice' : 'Choose these names'}</Btn>}
+          </div></Card>
+        );
+      })}
     </Sec>
   );
 }

@@ -128,6 +128,11 @@ export function Fame() {
           {!f.seasons.length && <Empty>No season has ended yet.</Empty>}
         </div>
       </Sec>
+      {(f.memorials || []).length > 0 && (
+        <Sec title="War memorials" sub="Names carved by the House after each war.">
+          <div class="stack">{f.memorials.map((m: any) => <Card><div class="serif" style={{ fontSize: 20 }}>The {m.nation} war</div><div class="small muted">{m.outcome === 'victory' ? 'Won' : m.outcome === 'defeat' ? 'Lost' : 'Ended in peace'}, {fmtDay(m.at)}</div><div style={{ marginTop: 6 }}>{m.names.length ? m.names.join(' · ') : <span class="muted">No names were carved.</span>}</div></Card>)}</div>
+        </Sec>
+      )}
       <Btn kind="plain" href="#/season">This season’s leaderboard</Btn>
     </Page>
   );

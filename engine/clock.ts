@@ -12,8 +12,8 @@ import { seasonDue, freeFromJail, lapseLicence } from './acts';
 import { crownNow, closeHomage, lapseOffer, jubilee, circular, settleClaim as settleThrone } from './crown';
 import { spawnCrisis, timeoutCrisis, fireQueued, rule, makeFrontPage } from './society';
 import { nationsTurn, settleUltimatum } from './foreign';
-import { battle, warWeek } from './war';
-import { tickExchange, exchangePayday } from './exchange';
+import { battle, warWeek, settleTerms, closeMemorial } from './war';
+import { tickExchange, exchangePayday, closeMotion } from './exchange';
 import { expireContract, settleClaim, ghostBack, bountyDeadline, bountyDue, orderDeadline, openHunt, startHunt, finishHunt } from './streets';
 import { marketDue, staleMarket } from './markets';
 import { rollDaily, takePoll, records, afterChange } from './glory';
@@ -122,6 +122,9 @@ function collect(w: W): D[] {
   (w.ultimatums || []).forEach((u: any) => u.status === 'sent' && add(u.dueAt, () => settleUltimatum(w, u, false), u.id));
   // the war: a battle every 12 hours. The Exchange: prices move every 3 hours once the realm is running
   if (w.army?.campaign) add(w.army.campaign.nextBattleAt, () => battle(w), 'battle');
+  if (w.army?.campaign?.terms?.status === 'open') add(w.army.campaign.terms.closesAt, () => settleTerms(w), 'terms');
+  (w.memorials || []).forEach((m: any) => m.status === 'open' && add(m.closesAt, () => closeMemorial(w, m), m.id));
+  (w.exchange?.motions || []).forEach((m: any) => m.status === 'open' && add(m.closesAt, () => closeMotion(w, m), m.id));
   if (w.phase === 'running' && w.exchange) add(w.exchange.nextAt, () => tickExchange(w), 'exchange');
   if (w.daily) add(w.daily.endsAt, () => rollDaily(w));
   if (w.hunt?.status === 'signup') add(w.hunt.startsAt, () => startHunt(w));

@@ -195,6 +195,12 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
   if (w.offices.army && cmdr && isBot(cmdr) && (w.army.troops ?? 6) < 8 && w.army.war && p(0.1)) go(cmdr, 'army.recruit', { n: 1 });
   if (w.army?.campaign) bots.forEach((b: any) => (p(0.04) && go(b.id, 'war.enlist'), p(0.03) && go(b.id, 'war.bond', { amount: 10 })));
   if (w.army?.campaign) Object.values(w.papers).forEach((pp: any) => isBot(pp.editor) && p(0.1) && go(pp.editor, 'war.embed', { paper: pp.id }));
+  const tm = w.army?.campaign?.terms;
+  if (tm?.status === 'open') bots.forEach((b: any) => isMP(w, b.id) && tm.votes[b.id] === undefined && p(0.3) && go(b.id, 'war.terms', { yes: chance(w, 0.5) }));
+  (w.memorials || []).forEach((m: any) => m.status === 'open' && bots.forEach((b: any) => isMP(w, b.id) && !m.votes[b.id] && p(0.3) && go(b.id, 'war.memorial', { memorial: m.id, names: m.names.filter(() => chance(w, 0.7)) })));
+  (w.exchange?.motions || []).forEach((m: any) => m.status === 'open' && bots.forEach((b: any) => !m.votes[b.id] && p(0.2) && go(b.id, 'exchange.vote', { motion: m.id, yes: chance(w, 0.5) })));
+  const dirB = w.offices.security?.holder;
+  if (dirB && isBot(dirB) && p(0.03)) go(dirB, 'intel.ring', { nation: pick(w, Object.keys(w.nations)) });
   const gen = w.offices.army?.holder;
   if (gen && isBot(gen) && intrigueOpen(w) && p(0.01)) go(gen, 'army.march');
   // a pretender's claim: the realm takes sides; the pretender looks abroad; the monarch answers

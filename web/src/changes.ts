@@ -1,6 +1,12 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 39, text: 'A peace bill can now trade land and money: a province each way, and up to 200 crowns either way.' },
+  { n: 38, text: 'Provinces we take in war can rise against us each week unless the Army posts a regiment there. World › The map.' },
+  { n: 37, text: 'Blockades: we have no navy, so in wartime the enemy can seize ships carrying ventures at sea.' },
+  { n: 36, text: 'Spy rings: the Security Service can plant agents inside a foreign government. They report its army and its next move each payday, until they are rolled up in a scandal.' },
+  { n: 35, text: 'Peace conferences and war memorials: a stalled war brings terms of peace for MPs to accept or reject, and after a war MPs choose whose names are carved on its memorial in the Hall of Fame.' },
+  { n: 34, text: 'Shareholder revolts: a big enough shareholder can make a company lobby for or against a bill. If the company gets its way its shares jump; if not, they fall.' },
   { n: 32, text: 'Fog of war: a nation’s army strength is unknown unless we have an embassy there, a Security Service report from the last week, or are fighting them.' },
   { n: 31, text: 'Sea lanes on the map: a ship for every trade venture at sea, and a red cross where sanctions, an embargo or war have shut trade.' },
   { n: 30, text: 'Disputed provinces: the Kess Valley, the North Fells and the Westwold change hands when wars are won and lost.' },

@@ -4,8 +4,9 @@
 // Victory and defeat feed the coup system (backroom.ts): a war hero weighs more on a coup night, a beaten Army
 // leans towards the plotters, and an Army at the front cannot defend the capital.
 // State: w.army.war = the enemy's id (as before), w.army.campaign = this war, w.army.hero, w.army.defeatedAt, w.wars (history).
-import { W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, earn, transfer, bal, ca, hasPower, isPM, holderOf, clamp, meter, approve, stamp, bump, mustBeFree, int, legit, own, newId, pick } from './core';
-import { moodShift, treatyWith, PROFILES, warSpoils } from './foreign';
+import { W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, earn, transfer, bal, ca, hasPower, isPM, holderOf, clamp, meter, approve, stamp, bump, mustBeFree, int, legit, own, newId, pick, isMP, mps, inGov } from './core';
+import { moodShift, treatyWith, PROFILES, warSpoils, PROVINCES, seedProvinces } from './foreign';
+import { fame } from './glory';
 import { imposePretender } from './crown';
 
 export const BATTLE_EVERY = 12 * HOUR;
@@ -24,8 +25,9 @@ const canCommand = (w: W, id: Id) => hasPower(w, id, 'army') || isPM(w, id) || h
 export const allies = (w: W) => Object.values(w.nations).filter((n: any) => n.id !== w.army.war && treatyWith(w, n.id, 'alliance') && n.mood >= 2) as any[];
 export function power(w: W) {
   const k = war(w);
-  const troops = w.army.troops ?? 6;
-  const lines: [string, number][] = [[`${troops} regiments`, troops], [`Readiness: ${w.army.readiness}`, troops * (READY[w.army.readiness] - 1)], [`Loyalty ${w.army.loyalty}/5`, troops * (w.army.loyalty - 3) * 0.1]];
+  const garrisons = garrisoned(w);
+  const troops = Math.max(0, (w.army.troops ?? 6) - garrisons);
+  const lines: [string, number][] = [[`${troops} regiments in the field${garrisons ? ` (${garrisons} on garrison duty)` : ''}`, troops], [`Readiness: ${w.army.readiness}`, troops * (READY[w.army.readiness] - 1)], [`Loyalty ${w.army.loyalty}/5`, troops * (w.army.loyalty - 3) * 0.1]];
   if (holderOf(w, 'army')) lines.push(['A General in command', 1]);
   allies(w).forEach((n) => lines.push([`${n.name} fights beside us`, Math.round((n.power || 3) / 2)]));
   if (k?.volunteers?.length) lines.push([`${k.volunteers.length} volunteer${k.volunteers.length === 1 ? '' : 's'}`, k.volunteers.length * 0.5]);
@@ -134,6 +136,7 @@ export function battle(w: W) {
   k.battles = k.battles.slice(0, 30);
   gazette(w, 'army', `${text} The front stands at ${k.score > 0 ? '+' : ''}${k.score}.`, '#/war');
   dispatches(w, k, won, where, delta, loot, lost);
+  blockade(w, k);
   if (k.score >= 100) endWar(w, 'victory');
   else if (k.score <= -100) endWar(w, 'defeat');
 }
@@ -149,6 +152,7 @@ export function endWar(w: W, how: 'victory' | 'defeat' | 'peace') {
   const general = holderOf(w, 'army');
   const record = { nation: nid, startedAt: k.startedAt, endedAt: w.now, outcome: how, score: k.score, battles: k.battles.length, won: k.battles.filter((b: any) => b.won).length, volunteers: k.volunteers, general, pm: w.pm, pretender: k.pretender || null };
   w.wars = [record, ...(w.wars || [])].slice(0, 20);
+  openMemorial(w, record, k);
   // war bonds are repaid from the Treasury, which borrows if it must
   Object.entries(k.bonds || {}).forEach(([id, amt]: any) => {
     const pay = Math.round(amt * BOND_PAYS[how]);
@@ -211,6 +215,7 @@ export function warWeek(w: W) {
   const k = war(w);
   if (!k) return;
   meter(w, 'stability', -1, 'War weariness');
+  proposeTerms(w, k);
   if (k.score < -40) (w.army.loyalty = clamp(w.army.loyalty - 1, 0, 5)), w.army.reasons.unshift({ sign: '−', text: 'A war going badly' });
 }
 export const heroOf = (w: W): Id | null => (w.army?.hero && w.army.hero.until > w.now ? w.army.hero.id : null);
@@ -250,4 +255,118 @@ function dispatches(w: W, k: any, won: boolean, where: string, delta: number, lo
   // keep the 40 newest dispatches: a long war shouldn't bury the paper
   let n = 0;
   w.stories = w.stories.filter((s: any) => !s.war || ++n <= 40);
+}
+
+// ---------- garrisons: a regiment left in a province we took keeps it from rising (foreign.ts provincesWeek) ----------
+export const garrisoned = (w: W) => Object.values(w.provinces || {}).filter((p: any) => p.owner === 'realm' && p.garrison).length;
+export function garrison(w: W, actor: Id, pid: unknown, on: unknown) {
+  if (!w.offices.army) fail('There is no Army.');
+  if (!canCommand(w, actor)) fail('Only the General, the Prime Minister or an officer of state posts garrisons.');
+  seedProvinces(w);
+  const p = own(w.provinces, pid);
+  if (!p || p.owner !== 'realm') fail('That province is not ours to garrison.');
+  if (on !== true && on !== false) fail('Post a garrison or withdraw it.');
+  if (!!p.garrison === on) fail(on ? 'There is already a garrison there.' : 'There is no garrison there.');
+  if (on && (w.army.troops ?? 6) - garrisoned(w) < 2) fail('The Army needs at least one regiment in the field.');
+  p.garrison = on;
+  gazette(w, 'army', on ? `A regiment is posted to ${PROVINCES[pid as string].name}.` : `The garrison leaves ${PROVINCES[pid as string].name}.`, '#/atlas');
+}
+
+// ---------- blockades: we have no navy. In wartime, each battle the enemy may seize ships at sea ----------
+function blockade(w: W, k: any) {
+  const n = w.nations[k.nation];
+  w.ventures.forEach((v: any) => {
+    if (v.status !== 'out' || !chance(w, 0.12)) return;
+    v.status = 'seized';
+    v.returned = 0;
+    gazette(w, 'army', `${n.name}'s raiders seize a ship bound for ${w.nations[v.nation]?.name}. ${nm(w, v.by)}'s venture is lost.`, '#/war');
+  });
+}
+
+// ---------- peace conferences: once a week while a war is stalled, the enemy proposes terms. MPs vote for a day;
+// a majority of votes cast makes peace on those terms. Terms follow the front: losing, they ask; winning, we are asked ----------
+export const TERMS_HOURS = 24;
+function proposeTerms(w: W, k: any) {
+  if (k.terms?.status === 'open' || w.now - k.startedAt < 4 * DAY || Math.abs(k.score) >= 60) return;
+  seedProvinces(w);
+  const n = w.nations[k.nation];
+  const ahead = k.score > 0; // we are winning: they offer; otherwise they demand
+  const kinds = ['tribute', 'land', 'hostage'];
+  const land = Object.keys(PROVINCES).find((id) => (ahead ? w.provinces[id].owner === n.id : w.provinces[id].owner === 'realm' && PROVINCES[id].claims.includes(n.id)));
+  let kind = pick(w, kinds.filter((x) => x !== 'land' || land));
+  // the enemy asks for a minister, or failing that any MP
+  const hostages = (mps(w).filter((id) => inGov(w, id)).length ? mps(w).filter((id) => inGov(w, id)) : mps(w)).filter((id) => w.citizens[id]?.active);
+  if (kind === 'hostage' && (ahead || !hostages.length)) kind = 'tribute';
+  const crowns = 30 + Math.round(rand(w) * 50);
+  k.terms = { id: newId(w, 'tm'), kind, ahead, province: kind === 'land' ? land : null, crowns: kind === 'tribute' ? crowns : 0, hostage: kind === 'hostage' ? pick(w, hostages) : null, at: w.now, closesAt: w.now + TERMS_HOURS * HOUR, votes: {}, status: 'open' };
+  gazette(w, 'army', `${n.name} proposes peace: ${termsText(w, k.terms, n.name)}. MPs have a day to accept or reject.`, '#/war');
+}
+export function termsText(w: W, t: any, name: string) {
+  if (t.kind === 'land') return t.ahead ? `they give up ${PROVINCES[t.province]?.name}` : `we give up ${PROVINCES[t.province]?.name}`;
+  if (t.kind === 'hostage') return `${nm(w, t.hostage)} goes to ${name} as a hostage for a week`;
+  return t.ahead ? `they pay us ${t.crowns} crowns` : `we pay them ${t.crowns} crowns`;
+}
+export function voteTerms(w: W, actor: Id, yes: unknown) {
+  const k = war(w);
+  const t = k?.terms;
+  if (!t || t.status !== 'open') fail('There are no terms on the table.');
+  if (!isMP(w, actor)) fail('Only MPs vote on terms of peace.');
+  mustBeFree(w, actor);
+  if (yes !== true && yes !== false) fail('Accept or reject.');
+  t.votes[actor] = yes;
+}
+export function settleTerms(w: W) {
+  const k = war(w);
+  const t = k?.terms;
+  if (!t || t.status !== 'open') return;
+  const v = Object.values(t.votes);
+  const ayes = v.filter((x) => x).length;
+  const noes = v.length - ayes;
+  t.status = ayes > noes ? 'accepted' : 'rejected';
+  t.result = { ayes, noes };
+  const n = w.nations[k.nation];
+  if (t.status === 'rejected') return gazette(w, 'army', `The House rejects ${n.name}'s terms, ${ayes} to ${noes}. The war goes on.`, '#/war');
+  gazette(w, 'army', `The House accepts ${n.name}'s terms, ${ayes} to ${noes}: ${termsText(w, t, n.name)}.`, '#/war');
+  if (t.kind === 'land' && t.province) w.provinces[t.province] = { owner: t.ahead ? 'realm' : n.id, since: w.now, garrison: false };
+  if (t.kind === 'tribute') {
+    if (t.ahead) { const c = Math.min(t.crowns, bal(w, 'nation:' + n.id)); if (c > 0) transfer(w, 'nation:' + n.id, 'treasury', c, `Peace terms from ${n.name}`); }
+    else transfer(w, 'treasury', 'nation:' + n.id, t.crowns, `Peace terms to ${n.name}`);
+  }
+  if (t.kind === 'hostage' && w.citizens[t.hostage]) {
+    const c = w.citizens[t.hostage];
+    c.exiledUntil = w.now + 7 * DAY;
+    c.exileNoted = false;
+    c.asylum = n.id;
+    stamp(w, t.hostage, 'Hostage', `Held in ${PROFILES[n.id]?.capital} for the peace`, 'ink');
+    approve(w, t.hostage, 5);
+  }
+  endWar(w, 'peace');
+}
+
+// ---------- the war memorial: after a war, MPs vote for two days on whose names go on it (the volunteers and the
+// General). A name with a majority of the MPs who voted is carved: a stamp, and a place in the Hall of Fame ----------
+function openMemorial(w: W, record: any, k: any) {
+  const names = [...new Set([...(k.volunteers || []), record.general].filter((id: any) => id && w.citizens[id]))] as Id[];
+  if (!names.length || record.battles < 2) return;
+  w.memorials ??= [];
+  w.memorials.unshift({ id: newId(w, 'mem'), nation: record.nation, outcome: record.outcome, names, votes: {}, closesAt: w.now + 2 * DAY, status: 'open', carved: [] });
+  w.memorials = w.memorials.slice(0, 10);
+  gazette(w, 'army', `The House will decide whose names go on the memorial to the ${w.nations[record.nation].name} war. MPs have two days.`, '#/war');
+}
+export function voteMemorial(w: W, actor: Id, mid: unknown, names: unknown) {
+  const m = (w.memorials || []).find((x: any) => x.id === mid);
+  if (!m || m.status !== 'open') fail('That memorial vote is closed.');
+  if (!isMP(w, actor)) fail('Only MPs decide the memorial.');
+  if (!Array.isArray(names) || names.length > 30 || names.some((x) => typeof x !== 'string' || !m.names.includes(x))) fail('Pick names from the list.');
+  m.votes[actor] = [...new Set(names as string[])];
+}
+export function closeMemorial(w: W, m: any) {
+  m.status = 'closed';
+  const voters = Object.keys(m.votes).length;
+  m.carved = m.names.filter((id: Id) => voters > 0 && Object.values(m.votes).filter((l: any) => l.includes(id)).length * 2 > voters);
+  const n = w.nations[m.nation]?.name ?? 'abroad';
+  m.carved.forEach((id: Id) => stamp(w, id, 'On the memorial', `The ${n} war`, 'good'));
+  const f = fame(w);
+  f.memorials = [{ nation: n, outcome: m.outcome, at: w.now, names: m.carved.map((id: Id) => nm(w, id)) }, ...(f.memorials || [])].slice(0, 30);
+  gazette(w, 'army', m.carved.length ? `The memorial to the ${n} war is unveiled. Carved on it: ${m.carved.map((id: Id) => nm(w, id)).join(', ')}.` : `The memorial to the ${n} war is unveiled with no names on it.`, '#/fame');
 }

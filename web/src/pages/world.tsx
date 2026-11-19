@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Field, Pick, Locked, Seg, Opt, Photo, PhotoPick } from '../ui';
 import { nm, isPM, allCitizens, fmtTime, fmtDay, bal, hasPower, holderOf, standing, isMP } from '../../../engine/index';
-import { MOODS, INTEL_Q } from '../../../engine/foreign';
+import { MOODS, INTEL_Q, RING_COST } from '../../../engine/foreign';
 import { Diplomacy, WorldMap } from './atlas';
 import { armyCost } from '../../../engine/economy';
 import { CRISES, MOVES, grudgeAgainst } from '../../../engine/society';
@@ -79,6 +79,9 @@ export function Security() {
             <Pick label="Question" value={q} onChange={setQ} options={Object.entries(INTEL_Q)} />
             <Btn full onClick={() => act('intel.request', { nation: n, q }, 'Tasked. Report in 12 hours.')}>Send (20 crowns)</Btn>
           </div></Card></Sec>
+          <Sec title="Spy rings" sub={`An agent inside a nation's government: ${RING_COST} from the budget. Each payday it reports their army and their next move, as a secret card. Every week there is a 1 in 6 chance it is rolled up, and that is a scandal.`}>
+            <ul class="list">{Object.values(w.nations).map((x: any) => <li class="row"><span><b>{x.name}</b><div class="small muted">{x.ring ? `Ring in place since ${fmtDay(x.ring.at)}` : 'No ring'}</div></span>{!x.ring && <Btn small kind="ghost" onClick={() => confirm(`Plant a spy ring in ${x.name} for ${RING_COST}?`) && act('intel.ring', { nation: x.id }, 'The ring is in place.')}>Plant a ring</Btn>}</li>)}</ul>
+          </Sec>
           <Sec title="Reports" sub="Each briefing also lands as a secret card in your backroom.">
             <div class="stack">{w.intel.map((r: any) => <Card><div class="small">{w.nations[r.nation].name}: {INTEL_Q[r.q]}</div>{r.status === 'pending' ? <p class="small">Ready in <Left at={r.readyAt} /></p> : <p style={{ margin: '6px 0 0' }}>{r.text}{r.status === 'ready' && <span class="small"> (confidence {r.confidence}/3)</span>}</p>}</Card>)}{!w.intel.length && <Empty>No reports.</Empty>}</div>
           </Sec>
