@@ -19,14 +19,15 @@ const AUREL: Pt = [420, 612];
 const CAP: Record<string, Pt> = { orrin: [104, 440], aurel: AUREL };
 const LABEL: Record<string, Pt> = { orrin: [118, 382], aurel: [500, 606] };
 const moodFill = ['var(--red)', 'var(--amber)', 'var(--soft)', 'var(--teal)', 'var(--teal)'];
-const moodAlpha = [0.32, 0.26, 1, 0.18, 0.34];
+// neutral countries show the bare parchment
+const moodAlpha = [0.34, 0.3, 0, 0.22, 0.38];
 
-// a wobbly closed outline: an ellipse roughed up with a few sine waves, so it reads as a coastline
+// a wobbly closed outline: an ellipse roughed up with a few sine waves (the warp below makes it a coastline)
 function blob(cx: number, cy: number, rx: number, ry: number, seed: number, n = 140): Pt[] {
   const out: Pt[] = [];
   for (let i = 0; i < n; i++) {
     const t = (i / n) * Math.PI * 2;
-    const r = 1 + 0.07 * Math.sin(3 * t + seed) + 0.05 * Math.sin(7 * t + seed * 2.3) + 0.025 * Math.sin(17 * t + seed * 0.7) + 0.012 * Math.sin(31 * t + seed);
+    const r = 1 + 0.07 * Math.sin(3 * t + seed) + 0.05 * Math.sin(7 * t + seed * 2.3) + 0.025 * Math.sin(17 * t + seed * 0.7);
     out.push([cx + Math.cos(t) * rx * r, cy + Math.sin(t) * ry * r]);
   }
   return out;
@@ -50,10 +51,63 @@ function clip(poly: Pt[], a: Pt, b: Pt): Pt[] {
   }
   return out;
 }
+// ---------- making it look drawn, not computed ----------
+// smooth value noise, a few octaves of it, and a warp of the whole plane built from it. Every line on the map
+// (coasts, borders, rivers, capitals) goes through the same warp, so neighbouring borders still meet exactly.
+const hash = (x: number, y: number, s: number) => { const h = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453; return h - Math.floor(h); };
+function noise(x: number, y: number, s: number) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash(xi, yi, s), b = hash(xi + 1, yi, s), c = hash(xi, yi + 1, s), d = hash(xi + 1, yi + 1, s);
+  return (a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) * 2 - 1;
+}
+function fbm(x: number, y: number, s: number, octaves = 4) {
+  let t = 0, amp = 1, f = 1, n = 0;
+  for (let i = 0; i < octaves; i++) (t += amp * noise(x * f, y * f, s + i * 13)), (n += amp), (amp *= 0.5), (f *= 2);
+  return t / n;
+}
+const warp = ([x, y]: Pt): Pt => [x + 46 * fbm(x / 190, y / 190, 1) + 22 * fbm(x / 70, y / 70, 3, 3) + 8 * fbm(x / 26, y / 26, 5, 3), y + 46 * fbm(x / 190, y / 190, 9) + 22 * fbm(x / 70, y / 70, 11, 3) + 8 * fbm(x / 26, y / 26, 17, 3)];
+// put a point every few pixels along a closed outline, so the warp has something to bend
+function resample(poly: Pt[], step = 4, open = false): Pt[] {
+  const out: Pt[] = [];
+  for (let i = 0; i < poly.length - (open ? 1 : 0); i++) {
+    const p = poly[i];
+    const q = poly[(i + 1) % poly.length];
+    const n = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / step));
+    for (let k = 0; k < n; k++) out.push([p[0] + ((q[0] - p[0]) * k) / n, p[1] + ((q[1] - p[1]) * k) / n]);
+  }
+  return out;
+}
+const natural = (poly: Pt[]) => resample(poly).map(warp);
 const path = (pts: Pt[]) => 'M' + pts.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L') + 'Z';
-const CONTINENT = blob(560, 330, 420, 245, 1.7);
-const CELLS: Record<string, Pt[]> = Object.fromEntries(Object.keys(SITES).map((k) => [k, Object.keys(SITES).reduce((poly, o) => (o === k ? poly : clip(poly, SITES[k], SITES[o])), CONTINENT)]));
-const capital = (id: string): Pt => CAP[id] || SITES[id] || SITES.realm;
+// an open line through points, smoothed (Catmull-Rom as cubic Béziers)
+function curve(raw: Pt[]) {
+  const pts = resample(raw, 10, true).concat([raw[raw.length - 1]]).map(warp);
+  let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    d += ` C${(p1[0] + (p2[0] - p0[0]) / 6).toFixed(1)},${(p1[1] + (p2[1] - p0[1]) / 6).toFixed(1)} ${(p2[0] - (p3[0] - p1[0]) / 6).toFixed(1)},${(p2[1] - (p3[1] - p1[1]) / 6).toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+const RAW_CONTINENT = blob(560, 330, 420, 245, 1.7);
+const RAW_CELLS: Record<string, Pt[]> = Object.fromEntries(Object.keys(SITES).map((k) => [k, Object.keys(SITES).reduce((poly, o) => (o === k ? poly : clip(poly, SITES[k], SITES[o])), RAW_CONTINENT)]));
+const COAST = path(natural(RAW_CONTINENT));
+const CELLS: Record<string, string> = Object.fromEntries(Object.keys(RAW_CELLS).map((k) => [k, path(natural(RAW_CELLS[k]))]));
+const ISLE_PATHS = ISLES.map((i) => path(natural(blob(i.at[0], i.at[1], i.rx, i.ry, i.seed, 60))));
+const AUREL_PATH = path(natural(blob(AUREL[0], AUREL[1], 30, 20, 5, 50)));
+const capital = (id: string): Pt => warp(CAP[id] || SITES[id] || SITES.realm);
+// the lie of the land: rivers run from the hills to the sea; mountains in the north, forest in Varnholm, lakes in Sundmere
+const RIVERS: { pts: Pt[]; name?: string; at?: number }[] = [
+  { pts: [[705, 70], [698, 150], [712, 210], [690, 290], [702, 380], [722, 460], [700, 600]], name: 'the Kess', at: 2 },
+  { pts: [[575, 205], [530, 250], [488, 318], [462, 390], [444, 470], [430, 590]], name: 'the Ald', at: 3 },
+  { pts: [[330, 150], [280, 200], [215, 250], [120, 300]] },
+  { pts: [[850, 175], [830, 240], [800, 300]] }
+];
+const MOUNTAINS: Pt[] = [[770, 110], [800, 102], [832, 112], [860, 124], [846, 150], [884, 168], [560, 205], [586, 196], [612, 208], [540, 214], [598, 222], [330, 140], [352, 130]];
+const FOREST: Pt[] = [[220, 245], [236, 262], [252, 248], [268, 270], [284, 256], [205, 280], [230, 298], [300, 285], [318, 262], [258, 300], [190, 230], [300, 170], [318, 186], [600, 560], [618, 574], [584, 576]];
+const LAKES: { at: Pt; rx: number; ry: number }[] = [{ at: [430, 165], rx: 18, ry: 9 }, { at: [575, 150], rx: 12, ry: 7 }, { at: [455, 196], rx: 8, ry: 5 }];
+const LAKE_PATHS = LAKES.map((l, i) => path(natural(blob(l.at[0], l.at[1], l.rx, l.ry, i + 2, 30))));
 const arc = (a: Pt, b: Pt, bend = 0.18) => {
   const mx = (a[0] + b[0]) / 2 - (b[1] - a[1]) * bend;
   const my = (a[1] + b[1]) / 2 + (b[0] - a[0]) * bend;
@@ -97,17 +151,31 @@ export function WorldMap({ compact }: { compact?: boolean }) {
         </defs>
         <rect width={W} height={H} class="atlas-sea" />
         <rect width={W} height={H} fill="url(#atlas-waves)" />
-        {/* the coast, drawn twice for an inked edge */}
-        <path d={path(CONTINENT)} class="atlas-coast-halo" />
-        {Object.keys(SITES).filter((k) => k !== 'realm').map((id) => nation(id, (f: string, a: number) => <path d={path(CELLS[id])} fill={f} fill-opacity={a} class="atlas-cell" />))}
-        <path d={path(CELLS.realm)} class="atlas-realm" />
-        <path d={path(CELLS.realm)} fill="url(#atlas-realm)" class="atlas-cell" />
-        {ISLES.map((i) => nation('orrin', (f: string, a: number) => <path d={path(blob(i.at[0], i.at[1], i.rx, i.ry, i.seed, 60))} fill={f} fill-opacity={a} class="atlas-cell isle" />))}
-        {nation('aurel', (f: string, a: number) => <path d={path(blob(AUREL[0], AUREL[1], 30, 20, 5, 50))} fill={f} fill-opacity={a} class="atlas-cell isle" />)}
-        <path d={path(CONTINENT)} class="atlas-coast" />
-        {/* the great river, through Kessmark to the southern sea */}
-        <path d="M700 92 C690 150 720 190 700 240 S668 330 690 380 S730 470 700 560" class="atlas-river" />
-        <text x="712" y="210" class="atlas-sea-label small" transform="rotate(78 712 210)">the Kess</text>
+        <clipPath id="atlas-landclip"><path d={COAST} /></clipPath>
+        {/* contour lines in the sea, the old engravers' way: a wide stroke, then the sea painted back over most of it */}
+        {[44, 26].map((wd) => [COAST, ...ISLE_PATHS, AUREL_PATH].map((d) => <g><path d={d} class="atlas-contour" stroke-width={wd} /><path d={d} class="atlas-contour-sea" stroke-width={wd - 2.5} /></g>))}
+        {[COAST, ...ISLE_PATHS, AUREL_PATH].map((d) => <path d={d} class="atlas-shallows" />)}
+        <path d={COAST} class="atlas-landbase" />
+        {ISLE_PATHS.map((d) => <path d={d} class="atlas-landbase" />)}
+        <path d={AUREL_PATH} class="atlas-landbase" />
+        {Object.keys(SITES).filter((k) => k !== 'realm').map((id) => nation(id, (f: string, a: number) => <path d={CELLS[id]} fill={f} fill-opacity={a} class="atlas-cell" />))}
+        <path d={CELLS.realm} class="atlas-realm" />
+        <path d={CELLS.realm} fill="url(#atlas-realm)" class="atlas-cell" />
+        {ISLE_PATHS.map((d) => nation('orrin', (f: string, a: number) => <path d={d} fill={f} fill-opacity={a} class="atlas-cell isle" />))}
+        {nation('aurel', (f: string, a: number) => <path d={AUREL_PATH} fill={f} fill-opacity={a} class="atlas-cell isle" />)}
+        {/* the land itself: lakes, rivers, hills and woods, under the names */}
+        <g clip-path="url(#atlas-landclip)" pointer-events="none">
+          {RIVERS.map((r) => <path d={curve(r.pts)} class="atlas-river" />)}
+        </g>
+        <g pointer-events="none">
+          {LAKE_PATHS.map((d) => <path d={d} class="atlas-lake" />)}
+          {MOUNTAINS.map((m) => { const [x, y] = warp(m); return <g class="atlas-mtn"><path d={`M${x - 10},${y + 6} L${x},${y - 9} L${x + 10},${y + 6}`} /><path d={`M${x},${y - 9} L${x + 3},${y - 2} M${x + 2},${y - 4} L${x + 6},${y + 2} M${x + 5},${y} L${x + 8},${y + 5}`} class="hatch" /></g>; })}
+          {FOREST.map((t) => { const [x, y] = warp(t); return <g class="atlas-tree"><line x1={x} y1={y + 2} x2={x} y2={y + 7} /><circle cx={x} cy={y - 1} r="4.2" /></g>; })}
+          {RIVERS.filter((r) => r.name).map((r) => { const [x, y] = warp(r.pts[r.at!]); return <text x={x + 8} y={y} class="atlas-sea-label small">{r.name}</text>; })}
+        </g>
+        <path d={COAST} class="atlas-coast" />
+        {ISLE_PATHS.map((d) => <path d={d} class="atlas-coast thin" />)}
+        <path d={AUREL_PATH} class="atlas-coast thin" />
         <text x="40" y="150" class="atlas-sea-label">The Grey Sea</text>
         <text x="560" y="636" class="atlas-sea-label">Gulf of Aurel</text>
         <text x="300" y="40" class="atlas-sea-label">The Northern Reach</text>
@@ -129,7 +197,7 @@ export function WorldMap({ compact }: { compact?: boolean }) {
         {/* capitals and names */}
         {Object.keys(ns).map((id) => {
           const c = capital(id);
-          const l = LABEL[id] || [c[0], c[1] - 30];
+          const l = LABEL[id] ? warp(LABEL[id]) : [c[0], c[1] - 30];
           return (
             <g class="atlas-capital" pointer-events="none">
               <rect x={c[0] - 4} y={c[1] - 4} width="8" height="8" transform={`rotate(45 ${c[0]} ${c[1]})`} />
@@ -153,6 +221,7 @@ export function WorldMap({ compact }: { compact?: boolean }) {
       </svg>
       {!compact && (
         <figcaption class="atlas-key">
+          <span><i class="sw" style={{ background: 'var(--gold)', opacity: 0.6 }} /> The realm</span>
           <span><i class="sw" style={{ background: 'var(--teal)', opacity: 0.6 }} /> Friendly or allied</span>
           <span><i class="sw" style={{ background: 'var(--soft)' }} /> Neutral</span>
           <span><i class="sw" style={{ background: 'var(--amber)', opacity: 0.6 }} /> Cold</span>

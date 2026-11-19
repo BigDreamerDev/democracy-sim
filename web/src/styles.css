@@ -964,16 +964,11 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .atlas-link { display: block; text-decoration: none; }
 .atlas-sea { fill: color-mix(in srgb, var(--teal-tint) 70%, var(--paper)); }
 .atlas-wave { fill: none; stroke: var(--teal); stroke-opacity: .12; stroke-width: 1.2; }
-.atlas-coast-halo { fill: none; stroke: var(--teal); stroke-opacity: .18; stroke-width: 14; stroke-linejoin: round; }
-.atlas-coast { fill: none; stroke: var(--ink); stroke-width: 2.2; stroke-linejoin: round; }
-.atlas-cell { stroke: var(--ink); stroke-width: 1.2; stroke-dasharray: 5 3; stroke-linejoin: round; transition: fill-opacity .2s var(--ease); }
-.atlas-cell.isle { stroke-dasharray: none; stroke-width: 1.8; }
 .atlas-land { cursor: pointer; }
 .atlas-land:hover .atlas-cell, .atlas-land.on .atlas-cell, .atlas-land:focus-visible .atlas-cell { fill-opacity: .55; }
 .atlas-realm { fill: var(--gold); fill-opacity: .42; stroke: var(--ink); stroke-width: 1.4; stroke-dasharray: 5 3; }
 .atlas-dot { fill: var(--brown); fill-opacity: .35; }
 .atlas-hatchline { stroke: var(--red); stroke-width: 2.2; stroke-opacity: .55; }
-.atlas-river { fill: none; stroke: var(--teal); stroke-opacity: .55; stroke-width: 3.5; stroke-linecap: round; }
 .atlas-sea-label { font-family: var(--serif); font-style: italic; font-size: 19px; fill: var(--teal); fill-opacity: .75; letter-spacing: .06em; }
 .atlas-sea-label.small { font-size: 13px; }
 .atlas-name { font-family: var(--serif); font-size: 21px; fill: var(--ink); paint-order: stroke; stroke: var(--card); stroke-width: 4px; stroke-linejoin: round; }
@@ -1048,3 +1043,19 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .page-body > .atlas, .part-body > .atlas, .page-body > .ex-head, .part-body > .ex-head, .page-body > .ticker, .part-body > .ticker { column-span: all; }
 .page-body > .ex-wide, .part-body > .ex-wide { column-span: all; }
 @media (min-width: 1280px) { .ex-wide .ex-list { columns: 2; column-gap: 32px; } .ex-wide .ex-row { break-inside: avoid; } }
+
+/* the map, drawn by hand: contour lines offshore, a parchment land, inked coasts, rivers, hills, woods and lakes */
+.atlas-contour { fill: none; stroke: var(--teal); stroke-opacity: .28; stroke-linejoin: round; }
+.atlas-contour-sea { fill: none; stroke: color-mix(in srgb, var(--teal-tint) 70%, var(--paper)); stroke-linejoin: round; }
+.atlas-shallows { fill: none; stroke: var(--teal); stroke-opacity: .16; stroke-width: 10; stroke-linejoin: round; }
+.atlas-landbase { fill: color-mix(in srgb, var(--brown-tint) 55%, var(--card)); }
+.atlas-cell { stroke: var(--ink); stroke-opacity: .55; stroke-width: 1.1; stroke-dasharray: 4 2.5; stroke-linejoin: round; transition: fill-opacity .2s var(--ease); }
+.atlas-cell.isle { stroke: none; }
+.atlas-coast { fill: none; stroke: var(--ink); stroke-width: 1.9; stroke-linejoin: round; stroke-linecap: round; }
+.atlas-coast.thin { stroke-width: 1.5; }
+.atlas-river { fill: none; stroke: var(--teal); stroke-opacity: .7; stroke-width: 2.4; stroke-linecap: round; }
+.atlas-lake { fill: color-mix(in srgb, var(--teal-tint) 70%, var(--paper)); stroke: var(--teal); stroke-opacity: .7; stroke-width: 1.2; }
+.atlas-mtn path { fill: color-mix(in srgb, var(--brown-tint) 40%, var(--card)); stroke: var(--brown); stroke-width: 1.4; stroke-linejoin: round; }
+.atlas-mtn path.hatch { fill: none; stroke-width: 1; stroke-opacity: .8; }
+.atlas-tree circle { fill: var(--teal); fill-opacity: .35; stroke: var(--teal-dark); stroke-width: 1; }
+.atlas-tree line { stroke: var(--brown); stroke-width: 1.2; }
