@@ -1,7 +1,9 @@
 // The Crown: a new monarch's accession and coronation, homage, coronation honours, abdication to an heir,
 // jubilees and pretenders. Everything here is public. State: w.crown = { reign, offer }, and the line of
 // monarchs in w.fame.monarchs. syncCrown() runs after every command and deadline and whenever the throne changes hands.
-import { W, Id, DAY, HOUR, fail, cit, nm, own, text, allCitizens, exiled, detained, mustBeFree, gazette, stamp, approve, meter, bump, transfer, ca, earn } from './core';
+import { W, Id, DAY, HOUR, fail, cit, nm, own, text, int, chance, allCitizens, exiled, detained, mustBeFree, gazette, stamp, approve, meter, bump, transfer, ca, earn, holderOf } from './core';
+import { moodShift } from './foreign';
+import { startWar, heroOf, beaten } from './war';
 import { setHos, startHosSelection } from './politics';
 import { fame } from './glory';
 import { household } from './offices';
@@ -255,22 +257,61 @@ export function jubilee(w: W) {
   gazette(w, 'hos', `Jubilee: ${regnal(w, r)} has reigned ${r.jubilees * JUBILEE_DAYS} days. A public holiday, and ${JUBILEE_BOUNTY} crowns for every citizen.`, '#/hos');
 }
 
-// pretenders: someone who refused homage may claim the throne. Citizens back the claim in public for two days.
-// It succeeds with more backers than citizens still sworn to the monarch, and at least a third of the realm.
+// pretenders: someone who refused homage, or a monarch who lost the throne, may claim it. The realm takes sides in
+// public for two days. Each side has weight: a backer counts 1, the General 3 (4 as a war hero); a foreign power that
+// recognises the pretender adds 2, the monarch's rally 2, a loyal Army stands with the throne. The claim succeeds with
+// at least a third of the realm behind it and more weight than the throne. The monarch may instead buy the pretender
+// off with a dukedom. A foreign power whose pretender fails may go to war for them (war.ts); if that war is lost, the
+// enemy puts its pretender on the throne. History: w.crown.claims.
 export const claimNeed = (w: W) => Math.max(2, Math.ceil(everyone(w).length / 3));
-export const sworn = (w: W, r: any) => Object.keys(r.homage).filter((id) => r.homage[id] === true && !(r.claim?.backers || []).includes(id));
-export function claim(w: W, actor: Id) {
-  const r = crown(w).reign;
+export const CLAIM_COOLDOWN = 10 * DAY;
+export const RALLY_COST = 20;
+export const sworn = (w: W, r: any) => Object.keys(r.homage).filter((id) => r.homage[id] === true && !(r.claim?.backers || []).includes(id) && w.citizens[id]?.active && !exiled(w, id) && !detained(w, id));
+// who may claim: refused homage to this monarch, or once wore the crown themselves (a restoration)
+export const mayClaim = (w: W, r: any, id: Id) => own(r.homage, id) === false || (fame(w).monarchs || []).some((m: any) => m.id === id && /dethroned|deposed|vacant/.test(m.end || ''));
+const weight = (w: W, id: Id) => (w.offices.army && holderOf(w, 'army') === id ? (heroOf(w) === id ? 4 : 3) : 1);
+// foreign recognition is likelier from a nation that dislikes the realm
+const RECOGNISE = [0.7, 0.5, 0.35, 0.2, 0.1];
+export function claimTally(w: W, r: any = crown(w).reign) {
+  const c = r?.claim;
+  const lines: [string, number, string][] = [];
+  if (!c) return { claim: 0, throne: 0, lines, heads: 0 };
+  const add = (side: string, n: number, why: string) => n && lines.push([side, n, why]);
+  const live = c.backers.filter((id: Id) => w.citizens[id]?.active && !exiled(w, id) && !detained(w, id));
+  live.forEach((id: Id) => add('claim', weight(w, id), id === c.by ? `${nm(w, id)}, the pretender` : nm(w, id)));
+  sworn(w, r).forEach((id) => add('throne', weight(w, id), nm(w, id)));
+  if (c.backer && w.nations[c.backer]) {
+    add('claim', 2, `Recognised by ${w.nations[c.backer].name}`);
+    // a hostile power's candidate looks like a puppet
+    if (w.nations[c.backer].mood === 0 || w.army?.war === c.backer) add('throne', 1, `${w.nations[c.backer].name}'s puppet?`);
+  }
+  add('throne', c.rally ? 2 : 0, 'The royal proclamation');
+  const general = holderOf(w, 'army');
+  const silent = !general || (!live.includes(general) && !sworn(w, r).includes(general));
+  add('throne', w.offices.army && silent && w.army.loyalty >= 4 ? 2 : 0, 'A loyal Army');
+  add('claim', w.offices.army && silent && w.army.loyalty <= 1 ? 1 : 0, 'A restless Army');
+  add('claim', w.offices.army && silent && beaten(w) ? 1 : 0, 'An Army beaten abroad');
+  const sum = (s: string) => lines.filter((l) => l[0] === s).reduce((n, l) => n + l[1], 0);
+  return { claim: sum('claim'), throne: sum('throne'), lines, heads: live.length };
+}
+export function claim(w: W, actor: Id, manifesto?: unknown) {
+  const k = crown(w);
+  const r = k.reign;
   if (!r || !r.crownedAt) fail('There is no crowned monarch to challenge.');
   if (rough(w)) fail('Nobody can claim the throne until the country is settled.');
   mustBeFree(w, actor);
-  if (own(r.homage, actor) !== false) fail('Only someone who refused homage can claim the throne.');
+  if (actor === r.id) fail('The throne is already yours.');
+  if (!mayClaim(w, r, actor)) fail('Only someone who refused homage, or a monarch who lost the throne, can claim it.');
   if (r.claim) fail('A claim is already being pressed.');
-  if (r.claimed.includes(actor)) fail('You have already pressed your claim against this monarch.');
+  r.lastClaim ??= {};
+  if (r.lastClaim[actor] && w.now - r.lastClaim[actor] < CLAIM_COOLDOWN) fail('Your last claim failed too recently. Wait ten days before pressing it again.');
+  const words = text(manifesto, 0, 240, 'manifesto');
   r.claimed.push(actor);
-  r.claim = { by: actor, at: w.now, until: w.now + 2 * DAY, backers: [actor] };
+  r.lastClaim[actor] = w.now;
+  const restoration = own(r.homage, actor) !== false;
+  r.claim = { by: actor, at: w.now, until: w.now + 2 * DAY, backers: [actor], manifesto: words, restoration, backer: null, asked: {}, rally: false, parley: null };
   meter(w, 'stability', -3, 'A pretender claims the throne');
-  gazette(w, 'hos', `${nm(w, actor)} claims the throne against ${regnal(w, r)}. The realm has two days to choose.`, '#/hos');
+  gazette(w, 'hos', `${nm(w, actor)} ${restoration ? 'claims back the throne they once held' : 'claims the throne'} against ${regnal(w, r)}.${words ? ` “${words}”` : ''} The realm has two days to choose.`, '#/hos');
 }
 export function back(w: W, actor: Id) {
   const r = crown(w).reign;
@@ -286,26 +327,138 @@ export function back(w: W, actor: Id) {
   }
   gazette(w, 'hos', `${nm(w, actor)} backs ${nm(w, c.by)}'s claim to the throne.`, '#/hos');
 }
+// change your mind before it is settled (the pretender cannot)
+export function unback(w: W, actor: Id) {
+  const c = crown(w).reign?.claim;
+  if (!c || !c.backers.includes(actor)) fail('You are not backing a claim.');
+  if (c.by === actor) fail('It is your claim. Withdraw it, or see it through.');
+  c.backers = c.backers.filter((id: Id) => id !== actor);
+  approve(w, actor, -1);
+  gazette(w, 'hos', `${nm(w, actor)} no longer backs ${nm(w, c.by)}'s claim.`, '#/hos');
+}
+// the pretender gives up: the claim fails at once, without the usual disgrace
+export function withdrawClaim(w: W, actor: Id) {
+  const r = crown(w).reign;
+  const c = r?.claim;
+  if (!c || c.by !== actor) fail('You are not pressing a claim.');
+  r.claim = null;
+  refundParley(w, c);
+  logClaim(w, r, c, 'withdrawn', { claim: 0, throne: 0 });
+  approve(w, actor, -2);
+  gazette(w, 'hos', `${nm(w, actor)} withdraws the claim to the throne. ${regnal(w, r)} reigns on.`, '#/hos');
+}
+// the pretender asks a foreign power to recognise them: once per nation per claim
+export function seekRecognition(w: W, actor: Id, nid: Id) {
+  const c = crown(w).reign?.claim;
+  if (!c || c.by !== actor) fail('Only the pretender seeks foreign recognition.');
+  const n = own(w.nations, nid);
+  if (!n) fail('Unknown country.');
+  if (c.backer) fail(`${w.nations[c.backer].name} already recognises you.`);
+  if (c.asked[nid]) fail(`You have already asked ${n.name}.`);
+  const yes = chance(w, RECOGNISE[n.mood] ?? 0.3);
+  c.asked[nid] = yes ? 'yes' : 'no';
+  if (!yes) return gazette(w, 'foreign', `${n.name} refuses to recognise ${nm(w, actor)}'s claim to our throne.`, '#/hos');
+  c.backer = nid;
+  gazette(w, 'foreign', `${n.name} recognises ${nm(w, actor)} as the rightful ${w.config.hosTitle}. The palace is furious.`, '#/hos');
+}
+// the monarch's answers: a proclamation (once per claim, costs the monarch 20), or terms
+export function rally(w: W, actor: Id) {
+  const r = crown(w).reign;
+  const c = r?.claim;
+  if (!r || r.id !== actor || !c) fail('Only a monarch facing a claim can issue a proclamation.');
+  if (c.rally) fail('You have already rallied the realm against this claim.');
+  mustBeFree(w, actor);
+  transfer(w, ca(actor), 'treasury', RALLY_COST, 'Alms for the royal proclamation');
+  c.rally = true;
+  gazette(w, 'hos', `${regnal(w, r)} issues a proclamation to the realm against ${nm(w, c.by)}'s claim, and gives alms in every town.`, '#/hos');
+}
+// offer the pretender a dukedom and up to 100 crowns from the monarch's own purse (held until they answer)
+export function parley(w: W, actor: Id, amount: unknown) {
+  const r = crown(w).reign;
+  const c = r?.claim;
+  if (!r || r.id !== actor || !c) fail('Only a monarch facing a claim can offer terms.');
+  if (c.parley) fail('You have already made an offer. Wait for the answer.');
+  if (c.parleyRefused) fail('The pretender has already refused your terms.');
+  const amt = int(amount, 0, 100, 'purse');
+  if (amt > 0) transfer(w, ca(actor), 'escrow', amt, 'A purse for the pretender');
+  c.parley = { crowns: amt, at: w.now };
+  gazette(w, 'hos', `${regnal(w, r)} offers ${nm(w, c.by)} a dukedom${amt ? ` and ${amt} crowns` : ''} to give up the claim.`, '#/hos');
+}
+function refundParley(w: W, c: any) {
+  const r = crown(w).reign;
+  if (c.parley?.crowns > 0 && r && w.citizens[r.id]) transfer(w, 'escrow', ca(r.id), c.parley.crowns, 'The purse returned');
+  c.parley = null;
+}
+export function answerTerms(w: W, actor: Id, yes: unknown) {
+  const r = crown(w).reign;
+  const c = r?.claim;
+  if (!c || c.by !== actor || !c.parley) fail('You have no terms to answer.');
+  if (yes !== true) {
+    refundParley(w, c);
+    c.parleyRefused = true;
+    return gazette(w, 'hos', `${nm(w, actor)} refuses the dukedom. The claim stands.`, '#/hos');
+  }
+  const amt = c.parley.crowns;
+  if (amt > 0) transfer(w, 'escrow', ca(actor), amt, 'A ducal purse');
+  c.parley = null;
+  r.claim = null;
+  logClaim(w, r, c, 'bought off', { claim: 0, throne: 0 });
+  stamp(w, actor, 'Ennobled', `Gave up the claim against ${regnal(w, r)}`, 'ink');
+  approve(w, actor, -2);
+  approve(w, r.id, 2);
+  meter(w, 'stability', 2, 'A claim to the throne was settled');
+  gazette(w, 'hos', `${nm(w, actor)} accepts a dukedom${amt ? ` and ${amt} crowns` : ''} and gives up the claim. ${regnal(w, r)} reigns on.`, '#/hos');
+}
+function logClaim(w: W, r: any, c: any, outcome: string, t: { claim: number; throne: number }) {
+  const k = crown(w);
+  k.claims = [{ by: c.by, against: r.id, monarch: regnal(w, r), at: c.at, settledAt: w.now, outcome, claim: t.claim, throne: t.throne, backers: c.backers.length, backer: c.backer || null, manifesto: c.manifesto || '' }, ...(k.claims || [])].slice(0, 20);
+}
 export function settleClaim(w: W) {
   const k = crown(w);
   const r = k.reign;
   const c = r?.claim;
   if (!r || !c) return;
+  const t = claimTally(w, r);
   r.claim = null;
-  const backers = c.backers.filter((id: Id) => w.citizens[id]?.active && !exiled(w, id) && !detained(w, id));
-  const ok = backers.includes(c.by) && !rough(w) && backers.length >= claimNeed(w) && backers.length > sworn(w, { ...r, claim: c }).length;
+  refundParley(w, c);
+  const ok = c.backers.includes(c.by) && !exiled(w, c.by) && !detained(w, c.by) && !rough(w) && t.heads >= claimNeed(w) && t.claim > t.throne;
   if (!ok) {
+    logClaim(w, r, c, 'failed', t);
     approve(w, c.by, -5);
     stamp(w, c.by, 'Pretender', `Failed against ${regnal(w, r)}`, 'bad');
     approve(w, r.id, 3);
-    return gazette(w, 'hos', `${nm(w, c.by)}'s claim to the throne fails with ${backers.length} behind it. ${regnal(w, r)} reigns on.`, '#/hos');
+    gazette(w, 'hos', `${nm(w, c.by)}'s claim to the throne fails, ${t.claim} to ${t.throne}, with ${t.heads} behind it. ${regnal(w, r)} reigns on.`, '#/hos');
+    // the foreign power that recognised them loses face; a cold one may fight for its candidate
+    const n = c.backer && w.nations[c.backer];
+    if (n) {
+      moodShift(n, -1, 'Their pretender failed');
+      if (n.mood <= 1 && w.offices.army && !w.army.war && chance(w, 0.5)) startWar(w, n.id, 'them', { pretender: c.by });
+    }
+    return;
   }
+  logClaim(w, r, c, 'succeeded', t);
   const was = regnal(w, r);
   stamp(w, r.id, 'Dethroned', `By ${nm(w, c.by)}`, 'bad');
   stamp(w, c.by, 'Took the throne', `From ${was}`, 'ink');
   meter(w, 'stability', -6, 'The throne changes hands');
-  gazette(w, 'hos', `${was} is dethroned. ${nm(w, c.by)} takes the crown with ${backers.length} behind the claim.`, '#/hos');
+  if (c.backer && w.nations[c.backer]) moodShift(w.nations[c.backer], 2, 'Their candidate took our throne');
+  gazette(w, 'hos', `${was} is dethroned, ${t.claim} to ${t.throne}. ${nm(w, c.by)} takes the crown with ${t.heads} behind the claim.`, '#/hos');
   k.ending = 'dethroned by a pretender';
   setHos(w, c.by, null);
+  syncCrown(w);
+}
+// a war lost to the power that backed a pretender: they crown their candidate
+export function imposePretender(w: W, id: Id, by: string) {
+  const k = crown(w);
+  const r = k.reign;
+  if (!w.citizens[id]?.active || r?.id === id) return;
+  if (r) {
+    stamp(w, r.id, 'Dethroned', `By ${by}, for ${nm(w, id)}`, 'bad');
+    if (r.claim) refundParley(w, r.claim), (r.claim = null);
+  }
+  stamp(w, id, 'Took the throne', `Installed by ${by}`, 'ink');
+  gazette(w, 'hos', `${by} installs ${nm(w, id)} on the throne of the realm.`, '#/hos');
+  k.ending = `deposed by ${by}`;
+  setHos(w, id, null);
   syncCrown(w);
 }

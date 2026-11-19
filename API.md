@@ -195,7 +195,7 @@ Admin actions are never available through the API.
 ## 6. The world
 
 Times are milliseconds since 1970 (UTC). Ids are strings. Citizens are `u<number>`.
-Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, `bank:<id>`.
+Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, `bank:<id>`, `exchange`.
 
 | Field | What |
 |-|-|
@@ -213,7 +213,11 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | `offices` | created by law: `name`, `title`, `holder`, `members`, `powers`, `budget` |
 | `accounts`, `ledger` | public accounts and your own; ledger rows you're party to, plus public grants/fines/lobbying |
 | `economy`, `banks`, `ventures` | rate and prices; banks (your deposits/loans only); your ventures |
-| `nations`, `treaties`, `offers`, `army` | foreign affairs |
+| `nations`, `treaties`, `offers`, `army` | foreign affairs. Nations also have `power` (army, 0–10), `embassy`, `embargo`; treaty kinds include `alliance` and `nonaggression` |
+| `army.troops`, `army.campaign`, `wars[]` | regiments; the current war (`nation`, `score` −100…100, `strategy`, `nextBattleAt`, `battles[]`, `volunteers`, `bonds` (yours only), `pretender`); past wars. `army.hero` and `army.defeatedAt` feed the coup tally |
+| `conflicts[]` | wars abroad between two nations: `a`, `b`, `status` (`raging`/`over`), `mediated`, `winner`, `peaceBy` |
+| `exchange` | the stock market: `prices` (`{sym: {p, open, hist[]}}`), `index[]`, `duty`, `haltedUntil`, `holdings` (yours only), `register` (shares held by MPs, ministers and the head of state). Companies are listed in `engine/exchange.ts` |
+| `crown.reign.claim`, `crown.claims[]` | a pretender's claim (`by`, `backers`, `manifesto`, `backer` nation, `rally`, `parley`) and past claims |
 | `papers`, `stories`, `frontpages` | the press |
 | `crises`, `crisisQueue` | each crisis: `type`, `title`, `text`, `extreme`, `options` (`[{label, what, effects}]`, in order: `choice` is the index), `status`, `house` (MPs vote with `crisis.vote` instead of the PM deciding), `votes`, `cause` (set when it's a consequence of an earlier choice), `decideBy`, `cast` (`[{id, role}]`: who is caught up in it), `responses` (their moves; a cash-in shows as `quiet` to others until it comes out), `helpers` (relief fund gifts), `bribes` (yours, or all of them if you are the PM); `crisisQueue` holds consequences still to come |
 | `cases`, `meters` | court, crises, and the `prosperity`/`stability` meters (0–100) |

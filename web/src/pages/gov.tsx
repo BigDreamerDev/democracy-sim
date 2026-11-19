@@ -5,7 +5,7 @@ import { nm, isMP, isPM, isHOS, mps, sideOf, sideName, majority, allCitizens, ex
 import { leaderOfOpposition, leaderOfSide, sideSeats, supportFor, members, HOS_METHODS , commands, FORM_DAYS, challengeNeed, BREAKAWAY_MPS } from '../../../engine/politics';
 import { POWERS, TEMPLATES, FILL, canAppoint } from '../../../engine/offices';
 import { RoleChips } from '../Roles';
-import { OATHS, regnal, claimNeed, sworn, CORONATION_BOUNTY } from '../../../engine/crown';
+import { OATHS, regnal, claimNeed, CORONATION_BOUNTY, claimTally, mayClaim, CLAIM_COOLDOWN, RALLY_COST } from '../../../engine/crown';
 import { watchCoronation } from '../Coronation';
 import { sovereign, stateMode } from '../state';
 
@@ -177,6 +177,76 @@ export function HOS() {
   );
 }
 
+// a pretender's claim: the two sides' weight, the pretender's moves abroad, the monarch's answers
+function ClaimCard({ r, who, answered }: { r: any; who: string; answered: any }) {
+  const { world: w, me } = useStore();
+  const [purse, setPurse] = useState('20');
+  const [nation, setNation] = useState('');
+  const c = r.claim;
+  const t = claimTally(w, r);
+  const mine = r.id === me;
+  const pretender = c.by === me;
+  const backing = c.backers.includes(me);
+  const total = Math.max(1, t.claim + t.throne);
+  const asked = Object.keys(c.asked || {});
+  return (
+    <Card kind="warn"><div class="stack">
+      <div class="row"><b><Who id={c.by} /> {c.restoration ? 'claims back the throne' : 'claims the throne'}</b><span class="small">settled in <Left at={c.until} /></span></div>
+      {c.manifesto && <q class="serif" style={{ fontSize: 18 }}>{c.manifesto}</q>}
+      <div class="claim-scale" role="img" aria-label={`The claim ${t.claim}, the throne ${t.throne}`}>
+        <i class="claim" style={{ width: `${(t.claim / total) * 100}%` }} /><i class="throne" style={{ width: `${(t.throne / total) * 100}%` }} />
+      </div>
+      <div class="grid2 small">
+        <div><b style={{ color: 'var(--red)' }}>The claim: {t.claim}</b><ul class="list">{t.lines.filter((l) => l[0] === 'claim').map(([, n, why]) => <li class="row"><span>{why}</span><b class="tnum">{n}</b></li>)}</ul></div>
+        <div><b style={{ color: 'var(--teal)' }}>The throne: {t.throne}</b><ul class="list">{t.lines.filter((l) => l[0] === 'throne').map(([, n, why]) => <li class="row"><span>{why}</span><b class="tnum">{n}</b></li>)}</ul>{!t.lines.some((l) => l[0] === 'throne') && <span class="muted">Nobody yet.</span>}</div>
+      </div>
+      <span class="small">It needs {claimNeed(w)} people behind it ({t.heads} so far) and more weight than the throne. The General counts 3, a war hero 4; a foreign power's recognition 2.</span>
+      {c.backer && <span class="small"><b>{w.nations[c.backer]?.name}</b> recognises the pretender. If the claim fails, a cold power may go to war for them.</span>}
+      {c.parley && <span class="small">{who} offers a dukedom{c.parley.crowns ? ` and ${c.parley.crowns} crowns` : ''} to give it up.</span>}
+      {!mine && !backing && <Btn kind="danger" onClick={() => confirm(answered === true ? 'You swore homage. Backing the claim breaks your oath and costs you approval. Go on?' : 'Back the claim in public?') && act('crown.back', {}, 'You back the claim.')}>Back the claim</Btn>}
+      {backing && !pretender && <Btn kind="plain" onClick={() => act('crown.unback', {}, 'You have stepped back.')}>Stop backing it (−1 approval)</Btn>}
+      {pretender && (
+        <>
+          {!c.backer && <div class="grid2"><select class="input" value={nation} onChange={(e: any) => setNation(e.target.value)} aria-label="Nation"><option value="">Ask a foreign power…</option>{Object.values(w.nations).filter((n: any) => !asked.includes(n.id)).map((n: any) => <option value={n.id}>{n.name}</option>)}</select><Btn small kind="ghost" disabled={!nation} onClick={() => act('crown.recognise', { nation }, 'Your envoy has gone.')}>Seek recognition</Btn></div>}
+          {asked.length > 0 && <span class="small muted">Asked: {asked.map((id) => `${w.nations[id]?.name} (${c.asked[id] === 'yes' ? 'yes' : 'no'})`).join(', ')}. Unfriendly powers say yes more often.</span>}
+          {c.parley && <div class="grid2"><Btn onClick={() => act('crown.terms', { yes: true }, 'You accept the dukedom.')}>Accept the terms</Btn><Btn kind="plain" onClick={() => act('crown.terms', { yes: false }, 'You refuse.')}>Refuse</Btn></div>}
+          <Btn kind="plain" small onClick={() => confirm('Give up your claim?') && act('crown.withdrawClaim', {}, 'Claim withdrawn.')}>Withdraw the claim</Btn>
+        </>
+      )}
+      {mine && (
+        <div class="grid2">
+          <Btn disabled={c.rally} onClick={() => act('crown.rally', {}, 'The proclamation is read in every town.')}>{c.rally ? 'Proclamation issued' : `Issue a proclamation (${RALLY_COST})`}</Btn>
+          {!c.parley && !c.parleyRefused ? <div class="row" style={{ gap: 6 }}><Field label="Purse (0–100)" type="number" value={purse} onInput={setPurse} /><Btn small kind="ghost" style={{ alignSelf: 'end' }} onClick={() => act('crown.parley', { crowns: Number(purse) }, 'Terms offered.')}>Offer a dukedom</Btn></div> : <span class="small muted">{c.parleyRefused ? 'Your terms were refused.' : 'Waiting for an answer to your terms.'}</span>}
+        </div>
+      )}
+    </div></Card>
+  );
+}
+function ClaimStart({ lastAt }: { lastAt?: number }) {
+  const { world: w } = useStore();
+  const [m, setM] = useState('');
+  const wait = lastAt && w.now - lastAt < CLAIM_COOLDOWN ? lastAt + CLAIM_COOLDOWN : 0;
+  if (wait) return <p class="small muted">You may press a claim again in <Left at={wait} />.</p>;
+  return (
+    <details class="card dashed"><summary><b>Claim the throne</b> <span class="small muted">public; it costs you approval if it fails</span></summary>
+      <div class="stack" style={{ marginTop: 8 }}>
+        <Field label="Your manifesto (optional, 240 at most)" area value={m} onInput={(v) => setM(v.slice(0, 240))} placeholder="Why the realm should crown you instead" />
+        <Btn kind="danger" onClick={() => confirm('Claim the throne? The realm will take sides for two days.') && act('crown.claim', { manifesto: m }, 'You have claimed the throne.')}>Press the claim</Btn>
+      </div>
+    </details>
+  );
+}
+function PastClaims() {
+  const { world: w } = useStore();
+  const list = (w.crown?.claims || []) as any[];
+  if (!list.length) return null;
+  return (
+    <Sec title="Pretenders" sub="Every claim to the throne, and how it ended.">
+      <ul class="list">{list.map((c) => <li class="row"><span><Who id={c.by} /> against {c.monarch}<div class="small muted"><When at={c.at} />{c.outcome === 'failed' || c.outcome === 'succeeded' ? ` · ${c.claim} to ${c.throne}, ${c.backers} behind it` : ''}{c.backer ? ` · recognised by ${w.nations[c.backer]?.name}` : ''}</div></span><span class={'chip ' + (c.outcome === 'succeeded' ? 'red' : c.outcome === 'failed' ? 'teal' : 'ink')}>{c.outcome}</span></li>)}</ul>
+    </Sec>
+  );
+}
+
 // The Crown: the coronation, homage, abdication, a pretender's claim, and the line of monarchs
 function Crown() {
   const { world: w, me } = useStore();
@@ -231,14 +301,8 @@ function Crown() {
               </div></Card>
             )}
             {roll.length > 0 && <Card kind="tint"><b>The homage roll</b><div class="small" style={{ marginTop: 4 }}>Sworn: {roll.filter((id) => r.homage[id]).map((id) => nm(w, id)).join(', ') || 'nobody yet'}.<br />Refused: {roll.filter((id) => !r.homage[id]).map((id) => nm(w, id)).join(', ') || 'nobody'}.</div></Card>}
-            {c && (
-              <Card kind="warn"><div class="stack">
-                <b><Who id={c.by} /> claims the throne</b>
-                <span class="small">{c.backers.length} behind the claim ({c.backers.map((id: string) => nm(w, id)).join(', ')}), {sworn(w, r).length} still sworn to {who}. It needs {claimNeed(w)} backers and more than the sworn. Settled in <Left at={c.until} />.</span>
-                {!mine && !c.backers.includes(me) && <Btn kind="danger" onClick={() => confirm(answered === true ? 'You swore homage. Backing the claim breaks your oath and costs you approval. Go on?' : 'Back the claim in public?') && act('crown.back', {}, 'You back the claim.')}>Back the claim</Btn>}
-              </div></Card>
-            )}
-            {!c && !mine && answered === false && !r.claimed.includes(me) && <Btn kind="danger ghost" onClick={() => confirm('Claim the throne? It is public, and it costs you approval if it fails.') && act('crown.claim', {}, 'You have claimed the throne.')}>Claim the throne</Btn>}
+            {c && <ClaimCard r={r} who={who} answered={answered} />}
+            {!c && !mine && mayClaim(w, r, me) && <ClaimStart lastAt={r.lastClaim?.[me]} />}
           </div>
         </Sec>
       )}
@@ -259,6 +323,7 @@ function Crown() {
           </div></Card>
         </Sec>
       )}
+      <PastClaims />
       {line.length > 0 && <Sec title="The line of monarchs"><ul class="list">{line.map((m: any) => <li><span><b>{m.title} {m.name} {m.numeral}</b> <span class="muted">({m.who})</span><div class="small muted">{m.crownedAt ? 'Crowned' : 'Never crowned'}, reigned {Math.max(1, Math.round((m.until - m.at) / 86400000))} day{Math.round((m.until - m.at) / 86400000) > 1 ? 's' : ''}; {m.end}.</div></span></li>)}</ul></Sec>}
     </>
   );

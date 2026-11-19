@@ -36,7 +36,8 @@ export function payroll(w: W) {
 export const ARMY_COST: Record<string, number> = { down: 10, ready: 25, mobilised: 50 };
 export function armyCost(w: W) {
   // supplies come from abroad: a weak crown makes them dearer
-  return w.offices.army ? Math.round((ARMY_COST[w.army.readiness] * (w.army.war ? 2 : 1)) / fx(w, Object.keys(w.nations)[0])) : 0;
+  // each regiment over the six the Army starts with costs 3 more a week
+  return w.offices.army ? Math.round(((ARMY_COST[w.army.readiness] + 3 * Math.max(0, (w.army.troops ?? 6) - 6)) * (w.army.war ? 2 : 1)) / fx(w, Object.keys(w.nations)[0])) : 0;
 }
 // ---------- exchange rates: what one crown buys abroad. Inflation weakens it; good relations and prosperity strengthen it ----------
 export const fx = (w: W, nid: string) => w.economy.fx?.[nid] ?? 1;
@@ -230,6 +231,7 @@ export function startVenture(w: W, actor: Id, nid: Id, amount: number) {
   if (inDanger(w, 'standing')) fail('Embargo: no country will trade with us until our Standing recovers.');
   if (w.army.war === nid) fail('We are at war with them.');
   if (n.sanctionsUntil && n.sanctionsUntil > w.now) fail(`${n.name} has sanctions on us. No trade until they lift.`);
+  if (n.embargo) fail(`We have ${n.name} under embargo. Lift it first.`);
   if (n.mood < 1) fail(`${n.name} refuses to trade with us.`);
   amount = Math.round(Number(amount));
   if (!(amount >= 5 && amount <= 100)) fail('Put in between 5 and 100 crowns.');

@@ -187,6 +187,23 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
   // offices use their powers
   const fm = w.offices.foreign?.holder;
   if (fm && isBot(fm) && p(0.15)) go(fm, 'foreign.envoy', { nation: pick(w, Object.keys(w.nations)) });
+  if (fm && isBot(fm) && p(0.03)) go(fm, 'foreign.embassy', { nation: pick(w, Object.keys(w.nations)), open: true });
+  (w.conflicts || []).forEach((k: any) => k.status === 'raging' && !k.mediated && fm && isBot(fm) && p(0.1) && go(fm, 'foreign.mediate', { conflict: k.id }));
+  // the war: whoever commands picks a strategy; citizens enlist and buy bonds
+  const cmdr = w.offices.army?.holder || w.pm;
+  if (w.army?.campaign && cmdr && isBot(cmdr) && p(0.1)) go(cmdr, 'war.strategy', { strategy: pick(w, ['hold', 'advance', 'raid']) });
+  if (w.offices.army && cmdr && isBot(cmdr) && (w.army.troops ?? 6) < 8 && w.army.war && p(0.1)) go(cmdr, 'army.recruit', { n: 1 });
+  if (w.army?.campaign) bots.forEach((b: any) => (p(0.04) && go(b.id, 'war.enlist'), p(0.03) && go(b.id, 'war.bond', { amount: 10 })));
+  // a pretender's claim: the realm takes sides; the pretender looks abroad; the monarch answers
+  const cl = w.crown?.reign?.claim;
+  if (cl) {
+    bots.forEach((b: any) => b.id !== w.crown.reign.id && !cl.backers.includes(b.id) && w.crown.reign.homage[b.id] !== true && p(0.1) && go(b.id, 'crown.back'));
+    if (isBot(cl.by) && p(0.3)) go(cl.by, 'crown.recognise', { nation: pick(w, Object.keys(w.nations)) });
+    if (isBot(w.crown.reign.id) && p(0.3)) go(w.crown.reign.id, chance(w, 0.5) ? 'crown.rally' : 'crown.parley', { crowns: 10 });
+    if (cl.parley && isBot(cl.by) && p(0.3)) go(cl.by, 'crown.terms', { yes: chance(w, 0.4) });
+  }
+  const kr2 = w.crown?.reign;
+  if (kr2?.crownedAt && !kr2.claim) bots.forEach((b: any) => kr2.homage[b.id] === false && p(0.01) && go(b.id, 'crown.claim', { manifesto: 'The realm deserves better.' }));
   const dir = w.offices.security?.holder;
   if (dir && isBot(dir) && p(0.1)) go(dir, 'intel.request', { nation: pick(w, Object.keys(w.nations)), q: pick(w, ['plans', 'opinion', 'weak']) });
   const chair = w.offices.reserve?.holder;
@@ -200,6 +217,10 @@ export function actBots(w: W, isBot: (id: Id | null | undefined) => boolean, int
     if (w.pm && !w.questions.some((q: any) => q.by === b.id && q.week === weekNo(w)) && p(0.01)) go(b.id, 'q.ask', { text: pick(w, ['Will the PM publish what the Treasury owes?', 'When will the Army get a law of its own?', 'Will the government cut the tariff?', 'Why was the crisis handled so slowly?']) });
     const stories = w.stories.filter((s: any) => s.status === 'published' && s.by !== b.id && !s.cheers.includes(b.id));
     if (stories.length && p(0.05)) go(b.id, 'press.cheer', { story: (pick(w, stories) as any).id });
+    // the Exchange: a little buying and selling
+    if (w.exchange && p(0.03)) go(b.id, 'exchange.buy', { sym: pick(w, Object.keys(w.exchange.prices)), n: 1 + Math.floor(rand(w) * 4) });
+    const held = Object.entries(w.exchange?.holdings?.[b.id] || {}).filter(([, h]: any) => h.n > 0);
+    if (held.length && p(0.03)) go(b.id, 'exchange.sell', { sym: (pick(w, held) as any)[0], n: 1 + Math.floor(rand(w) * 3) });
     if (p(0.02)) go(b.id, 'venture.start', { nation: pick(w, Object.keys(w.nations).filter((n) => w.nations[n].mood >= 2)), amount: 10 + Math.floor(rand(w) * 30) });
     const banks = Object.values(w.banks).filter((x: any) => x.status === 'open');
     if (banks.length && p(0.02)) go(b.id, 'bank.deposit', { bank: (pick(w, banks) as any).id, amount: 10 });

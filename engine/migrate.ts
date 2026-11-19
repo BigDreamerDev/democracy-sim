@@ -4,6 +4,8 @@ import { W } from './core';
 import { SAFE_ZONES } from './streets';
 import { freshDaily } from './glory';
 import { activateParty } from './politics';
+import { seedNations, PROFILES } from './foreign';
+import { exchange } from './exchange';
 
 export function migrate(w: W): W {
   // example: w.newThing ??= {};
@@ -95,6 +97,22 @@ export function migrate(w: W): W {
   // parties no longer need co-founders: any still waiting for signatures are founded now
   Object.values(w.parties || {}).forEach((p: any) => p.status === 'forming' && activateParty(w, p));
   Object.values(w.proposals || {}).forEach((p: any) => ((p.sponsors ??= []), (p.amendments ??= []), (p.history ??= []), p.amendments.forEach((m: any) => ((m.backers ??= []), (m.whips ??= {})))));
+  // the wider world: two more nations, embassies and embargoes, wars abroad, the war campaign, the Exchange
+  if (w.nations && w.accounts) {
+    seedNations(w);
+    Object.values(w.nations).forEach((n: any) => ((n.power ??= PROFILES[n.id]?.strength ?? 4), (n.embassy ??= false), (n.embargo ??= false)));
+  }
+  w.conflicts ??= [];
+  w.wars ??= [];
+  if (w.army) {
+    w.army.troops ??= 6;
+    w.army.hero ??= null;
+    w.army.defeatedAt ??= null;
+    w.army.campaign ??= null;
+    if (w.army.war && !w.army.campaign) w.army.campaign = { nation: w.army.war, by: 'us', startedAt: w.now, score: 0, strategy: 'hold', nextBattleAt: w.now + 12 * 3600_000, battles: [], volunteers: [], bonds: {}, bondTotal: 0, pretender: null };
+  }
+  if (w.now && w.citizens) exchange(w);
+  if (w.crown) w.crown.claims ??= [];
   // the world saved at the start of induction week comes back when it ends, so it must be upgraded too
   if (w.induction?.snapshot && !w.induction.snapshot.induction) migrate(w.induction.snapshot);
   return w;

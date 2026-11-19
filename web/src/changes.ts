@@ -1,6 +1,10 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 24, text: 'The Exchange is open: ten companies at home and abroad, prices that move with the realm and the world, dividends each payday. What MPs and ministers own is on a public Register of Interests. Money › The Exchange.' },
+  { n: 23, text: 'Pretenders can write a manifesto, seek a foreign power’s recognition, and try again after ten days; a dethroned monarch can claim back the crown. The monarch can rally the realm or offer a dukedom. A failed foreign-backed claim can start a war.' },
+  { n: 22, text: 'War is now a campaign: battles every 12 hours, regiments, strategy, volunteers and war bonds, in the new war room. A war hero weighs more on a coup night, a beaten Army leans to the plotters, and an Army on the advance can’t defend the capital.' },
+  { n: 21, text: 'There is a map of the world. Two new nations, Aurel and Drakmoor; embassies, embargoes, alliances and non-aggression pacts; and wars abroad our Foreign Office can mediate. World › The map.' },
   { n: 20, text: 'The Returning Officer can now close an election early, with a published reason and the turnout. If they’re standing in it, only once everyone has voted.' },
   { n: 19, text: 'Changed your mind about standing after people have voted for you? Ask the Returning Officer to withdraw you. Votes for you are struck out, and those voters are told to vote again.' },
   { n: 18, text: 'Forgotten your password? The Returning Officer can now send you a one-time link to choose a new one yourself.' },

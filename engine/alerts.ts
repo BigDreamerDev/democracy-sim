@@ -170,6 +170,14 @@ export function needs(w: W, me: Id): Alert[] {
     if (kr.claim && kr.id === me) out.push({ key: 'claim:' + kr.claim.at, href: '#/hos', label: 'A pretender', title: `${nm(w, kr.claim.by)} claims your throne`, at: kr.claim.until, urgent: true });
     if (kr.claim && kr.id !== me && !kr.claim.backers.includes(me)) out.push({ key: 'claimside:' + kr.claim.at, href: '#/hos', label: 'A pretender', title: `${nm(w, kr.claim.by)} claims the throne. Back the claim, or don't`, at: kr.claim.until });
   }
+  if (kr?.claim?.parley && kr.claim.by === me) out.push({ key: 'terms:' + kr.claim.parley.at, href: '#/hos', label: 'Terms from the Crown', title: `A dukedom${kr.claim.parley.crowns ? ` and ${kr.claim.parley.crowns} crowns` : ''} to drop your claim`, at: kr.claim.until, urgent: true });
+  // war: once per war, every citizen hears of it; whoever commands is told to set the strategy
+  const war = w.army?.campaign;
+  if (war) {
+    out.push({ key: 'war:' + war.startedAt, href: '#/war', label: 'War', title: `The realm is at war with ${w.nations[war.nation]?.name}. Enlist, or buy war bonds` });
+    if (isPM(w, me) || hasPower(w, me, 'army')) out.push({ key: 'warcmd:' + war.startedAt, href: '#/war', label: 'War', title: 'Choose the Army’s strategy', at: war.nextBattleAt });
+  }
+  (w.conflicts || []).forEach((c: any) => c.status === 'raging' && !c.mediated && hasPower(w, me, 'envoy') && out.push({ key: 'mediate:' + c.id, href: '#/atlas', label: 'War abroad', title: `${w.nations[c.a]?.name} and ${w.nations[c.b]?.name} are at war. Offer to mediate` }));
   if (w.crown?.offer?.heir === me) out.push({ key: 'heir:' + w.crown.offer.until, href: '#/hos', label: 'The throne is offered', title: 'Accept the crown, or decline', at: w.crown.offer.until, urgent: true });
   return out;
 }

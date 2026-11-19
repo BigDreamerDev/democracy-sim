@@ -16,6 +16,8 @@ import * as D from './drafts';
 import * as X from './regime';
 import * as K from './acts';
 import * as Cr from './crown';
+import * as Wr from './war';
+import * as Ex from './exchange';
 
 export * from './core';
 export { createWorld, createLiveWorld, NAMES } from './world';
@@ -73,8 +75,14 @@ export const COMMANDS: Record<string, Cmd> = {
   'crown.abdicate': (w, me, a) => Cr.abdicate(w, me, a.heir),
   'crown.withdraw': (w, me) => Cr.withdrawOffer(w, me),
   'crown.heir': (w, me, a) => Cr.answerHeir(w, me, a.yes),
-  'crown.claim': (w, me) => Cr.claim(w, me),
+  'crown.claim': (w, me, a) => Cr.claim(w, me, a?.manifesto),
   'crown.back': (w, me) => Cr.back(w, me),
+  'crown.unback': (w, me) => Cr.unback(w, me),
+  'crown.withdrawClaim': (w, me) => Cr.withdrawClaim(w, me),
+  'crown.recognise': (w, me, a) => Cr.seekRecognition(w, me, a.nation),
+  'crown.rally': (w, me) => Cr.rally(w, me),
+  'crown.parley': (w, me, a) => Cr.parley(w, me, a.crowns),
+  'crown.terms': (w, me, a) => Cr.answerTerms(w, me, a.yes),
   'crown.toast': (w, me) => Cr.toast(w, me),
   'crown.emeritus': (w, me, a) => O.emeritus(w, me, a.target, a.grant !== false),
   'money.print': (w, me, a) => E.moneyMotion(w, me, { kind: 'print', amount: a.amount, use: a.use }),
@@ -123,6 +131,18 @@ export const COMMANDS: Record<string, Cmd> = {
   'foreign.propose': (w, me, a) => F.proposeTreaty(w, me, a.nation, a.kind),
   'intel.request': (w, me, a) => F.requestIntel(w, me, a.nation, a.q),
   'army.readiness': (w, me, a) => F.setReadiness(w, me, a.level),
+  'army.recruit': (w, me, a) => Wr.recruit(w, me, a.n),
+  'army.disband': (w, me, a) => Wr.disband(w, me, a.n),
+  'war.strategy': (w, me, a) => Wr.setStrategy(w, me, a.strategy),
+  'war.enlist': (w, me) => Wr.enlist(w, me),
+  'war.bond': (w, me, a) => Wr.buyWarBond(w, me, a.amount),
+  'foreign.embassy': (w, me, a) => F.embassy(w, me, a.nation, a.open),
+  'foreign.embargo': (w, me, a) => F.embargo(w, me, a.nation, a.on),
+  'foreign.mediate': (w, me, a) => F.mediate(w, me, a.conflict),
+  'exchange.buy': (w, me, a) => Ex.buy(w, me, a.sym, a.n),
+  'exchange.sell': (w, me, a) => Ex.sell(w, me, a.sym, a.n),
+  'exchange.halt': (w, me) => Ex.halt(w, me),
+  'exchange.duty': (w, me, a) => Ex.setDuty(w, me, a.rate),
   'deal.offer': (w, me, a) => B.offerDeal(w, me, a.to, a.text),
   'deal.answer': (w, me, a) => B.answerDeal(w, me, a.id, a.yes),
   'deal.expose': (w, me, a) => B.exposeDeal(w, me, a.id),

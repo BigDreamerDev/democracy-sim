@@ -12,6 +12,8 @@ import { seasonDue, freeFromJail, lapseLicence } from './acts';
 import { crownNow, closeHomage, lapseOffer, jubilee, circular, settleClaim as settleThrone } from './crown';
 import { spawnCrisis, timeoutCrisis, fireQueued, rule, makeFrontPage } from './society';
 import { nationsTurn, settleUltimatum } from './foreign';
+import { battle, warWeek } from './war';
+import { tickExchange, exchangePayday } from './exchange';
 import { expireContract, settleClaim, ghostBack, bountyDeadline, bountyDue, orderDeadline, openHunt, startHunt, finishHunt } from './streets';
 import { marketDue, staleMarket } from './markets';
 import { rollDaily, takePoll, records, afterChange } from './glory';
@@ -118,6 +120,9 @@ function collect(w: W): D[] {
   (w.jobClaims || []).forEach((c: any) => c.status === 'pending' && add(c.dueAt, () => (c.status = 'lapsed'), c.id));
   Object.values(w.markets || {}).forEach((m: any) => add(marketDue(m), () => staleMarket(w, m), m.id));
   (w.ultimatums || []).forEach((u: any) => u.status === 'sent' && add(u.dueAt, () => settleUltimatum(w, u, false), u.id));
+  // the war: a battle every 12 hours. The Exchange: prices move every 3 hours once the realm is running
+  if (w.army?.campaign) add(w.army.campaign.nextBattleAt, () => battle(w), 'battle');
+  if (w.phase === 'running' && w.exchange) add(w.exchange.nextAt, () => tickExchange(w), 'exchange');
   if (w.daily) add(w.daily.endsAt, () => rollDaily(w));
   if (w.hunt?.status === 'signup') add(w.hunt.startsAt, () => startHunt(w));
   if (w.hunt?.status === 'running') add(w.hunt.endsAt, () => finishHunt(w));
@@ -132,12 +137,13 @@ function weeklyPayday(w: W) {
   w.lastEvent.payday = w.now;
   // a general strike under a regime: nobody is paid, taxed or given a dividend
   if (strikeOn(w)) gazette(w, 'money', 'The general strike holds. There is no payday this week.', '#/regime');
-  else (payday(w), regimePayday(w));
+  else (payday(w), regimePayday(w), w.exchange && exchangePayday(w));
   (['prosperity', 'stability'] as const).forEach((k) => w.meters[k] !== 50 && meter(w, k, w.meters[k] < 50 ? 2 : -1, 'The realm settles back towards normal'));
   spawnCrisis(w);
   newObjectives(w);
   maybeOffers(w);
   nationsTurn(w);
+  warWeek(w);
   openHunt(w);
   takePoll(w);
   records(w);

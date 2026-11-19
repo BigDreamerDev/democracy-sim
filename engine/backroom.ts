@@ -1,4 +1,5 @@
 // The backroom: private deals, secret cards (leak, use or burn), coups, exile and pardons. Opens in week 3.
+import { heroOf, beaten, atFront } from './war';
 import { W, Id, DAY, HOUR, fail, newId, chance, cit, nm, own, text as txt, int, clamp, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, meter, needIntrigue, canSeeCard, addCard, isHOS, isMP, isPM, inDanger, holderOf, hasPower, transfer, ca, hosTitle, bump, inForce, inGov, isMinister } from './core';
 import { vacateSeat, clearMinisters, callGeneralElection } from './politics';
 import { takePower, fallRegime } from './regime';
@@ -121,7 +122,7 @@ export function burnCard(w: W, actor: Id, kid: Id) {
 // the war chest is full. Each one also raises the chance of discovery every day.
 export const CHEST_FULL = 150;
 export const NIGHT = 12 * HOUR;
-export const pretext = (w: W) => inDanger(w, 'stability') || !!w.confidence || Object.values(w.crises).some((c: any) => c.status === 'open');
+export const pretext = (w: W) => inDanger(w, 'stability') || !!w.confidence || !!w.army?.war || beaten(w) || Object.values(w.crises).some((c: any) => c.status === 'open');
 // who a double agent reports to: the Director of the Security Service, or the Prime Minister if there is none
 export const watcher = (w: W): Id | null => holderOf(w, 'security') || w.pm || null;
 export function plotNeeds(w: W, p: any) {
@@ -221,7 +222,8 @@ export function askBacker(w: W, actor: Id, pid: Id, nid: Id) {
   if (!n) fail('Unknown country.');
   if (p.backer) fail(`${w.nations[p.backer].name} is already backing you.`);
   if (p.asked[nid]) fail('You have already asked them.');
-  const yes = chance(w, [0.1, 0.3, 0.55, 0.75, 0.9][n.mood]);
+  // the enemy in a war is glad to back anyone who would end it on their terms
+  const yes = chance(w, w.army?.war === nid ? 0.8 : [0.1, 0.3, 0.55, 0.75, 0.9][n.mood]);
   p.asked[nid] = yes ? 'yes' : 'no';
   if (yes) p.backer = nid;
   else p.heat = (p.heat || 0) + 5;
@@ -305,7 +307,8 @@ export function launchCoup(w: W, actor: Id, pid: Id) {
   gazette(w, 'crisis', `Coup attempt. ${nm(w, actor)} and ${p.members.length - 1} other${p.members.length === 2 ? '' : 's'} move against the ${w.coup.against}. Every citizen has 12 hours to declare for the coup or against it.`, '#/regime');
 }
 // the General speaks for the Army (3), the head of state for the realm (2), everyone else for themselves
-export const coupWeight = (w: W, id: Id) => (w.offices.army && holderOf(w, 'army') === id ? 3 : isHOS(w, id) || (inForce(w, 'security') && isPM(w, id)) ? 2 : 1);
+// a General back from a victory (a war hero, war.ts) speaks for the Army with 4
+export const coupWeight = (w: W, id: Id) => (w.offices.army && holderOf(w, 'army') === id ? (heroOf(w) === id ? 4 : 3) : isHOS(w, id) || (inForce(w, 'security') && isPM(w, id)) ? 2 : 1);
 export function coupTally(w: W) {
   const k = w.coup;
   if (!k) return { coup: 0, gov: 0, lines: [] as [string, number, string][] };
@@ -324,8 +327,11 @@ export function coupTally(w: W) {
   add('gov', w.meters.stability >= 60 ? 1 : 0, 'A settled realm');
   const general = holderOf(w, 'army');
   const silent = !general || (!k.plotters.includes(general) && !k.declared[general]);
-  add('gov', w.offices.army && silent && w.army.loyalty >= 4 ? 2 : 0, 'A loyal Army');
+  // the Army can only defend the capital if it is home: on the advance, it is at the front
+  add('gov', w.offices.army && silent && w.army.loyalty >= 4 && !atFront(w) ? 2 : 0, 'A loyal Army');
   add('coup', w.offices.army && silent && w.army.loyalty <= 1 ? 1 : 0, 'A restless Army');
+  add('coup', w.offices.army && silent && beaten(w) ? 1 : 0, 'An Army beaten abroad');
+  add('coup', w.offices.army && atFront(w) ? 1 : 0, 'The Army is away at the front');
   const sum = (s: string) => lines.filter((l) => l[0] === s).reduce((n, l) => n + l[1], 0);
   return { coup: sum('coup'), gov: sum('gov'), lines };
 }

@@ -100,7 +100,7 @@ export function acctLabel(w: W, a: string): string {
   if (a.startsWith('bank:')) return w.banks[a.slice(5)]?.name ?? 'a bank';
   if (a.startsWith('nation:')) return w.nations[a.slice(7)]?.name ?? 'abroad';
   if (a.startsWith('office:')) return w.offices[a.slice(7)]?.name ?? 'an office';
-  return ({ treasury: 'the Treasury', reserve: 'the Federal Reserve', escrow: 'held in escrow', ventures: 'trade ventures', market: 'the betting pool' } as any)[a] ?? a;
+  return ({ treasury: 'the Treasury', reserve: 'the Federal Reserve', escrow: 'held in escrow', ventures: 'trade ventures', market: 'the betting pool', exchange: 'the Exchange' } as any)[a] ?? a;
 }
 export function transfer(w: W, from: string, to: string, amount: number, memo: string) {
   const amt = Math.round(amount);

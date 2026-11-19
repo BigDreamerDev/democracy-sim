@@ -2,8 +2,9 @@ import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Field, Pick, Locked, Seg, Opt, Photo, PhotoPick } from '../ui';
 import { nm, isPM, allCitizens, fmtTime, fmtDay, bal, hasPower, holderOf, standing, isMP } from '../../../engine/index';
-import { MOODS, TREATIES, INTEL_Q } from '../../../engine/foreign';
-import { ARMY_COST } from '../../../engine/economy';
+import { MOODS, INTEL_Q } from '../../../engine/foreign';
+import { Diplomacy, WorldMap } from './atlas';
+import { armyCost } from '../../../engine/economy';
 import { CRISES, MOVES, grudgeAgainst } from '../../../engine/society';
 import { SeasonExtras } from './glory';
 
@@ -14,9 +15,10 @@ export function Foreign() {
   if (!w.offices.foreign) return <Page back={['#/realm', 'The realm']} title="Foreign Office"><Sec><Locked act="Foreign Affairs Act" href="#/new?office=foreign">Send envoys, receive treaty offers, raise our Standing.</Locked></Sec><Ultimatums /></Page>;
   const can = hasPower(w, me, 'envoy') || (isPM(w, me) && !holderOf(w, 'foreign'));
   return (
-    <Page back={['#/realm', 'The realm']} kicker={<>Foreign Minister <Who id={holderOf(w, 'foreign')} /></>} title="Foreign Office" intro={`Our Standing is ${standing(w)}: the average mood of the five nations. Below 15, nobody trades with us.`}>
+    <Page back={['#/realm', 'The realm']} kicker={<>Foreign Minister <Who id={holderOf(w, 'foreign')} /></>} title="Foreign Office" intro={`Our Standing is ${standing(w)}: the average mood of the ${Object.keys(w.nations).length} nations. Below 15, nobody trades with us.`}>
       <Ultimatums />
-      <Sec title="Nations"><ul class="list">{Object.values(w.nations).map((n: any) => <LinkRow href={'#/nation/' + n.id} title={n.name} sub={<span style={{ color: moodColour[n.mood], fontWeight: 700 }}>{MOODS[n.mood]}{w.army.war === n.id ? ', at war' : ''}{n.sanctionsUntil > w.now ? ', sanctions' : ''}</span>} right={<span class="pips5" aria-hidden="true">{[0, 1, 2, 3, 4].map((i) => <i class={i <= n.mood ? 'on' : ''} style={{ background: i <= n.mood ? moodColour[n.mood] : undefined }} />)}</span>} />)}</ul></Sec>
+      <Sec><a href="#/atlas" class="atlas-link" aria-label="Open the map"><WorldMap compact /></a></Sec>
+      <Sec title="Nations"><ul class="list">{Object.values(w.nations).map((n: any) => <LinkRow href={'#/nation/' + n.id} title={n.name} sub={<span style={{ color: moodColour[n.mood], fontWeight: 700 }}>{MOODS[n.mood]}{w.army.war === n.id ? ', at war' : ''}{n.sanctionsUntil > w.now ? ', sanctions' : ''}{n.embargo ? ', our embargo' : ''}{n.embassy ? ', embassy' : ''}</span>} right={<span class="pips5" aria-hidden="true">{[0, 1, 2, 3, 4].map((i) => <i class={i <= n.mood ? 'on' : ''} style={{ background: i <= n.mood ? moodColour[n.mood] : undefined }} />)}</span>} />)}</ul></Sec>
       <Sec title="Treaty offers" sub="Only the House can ratify them, with a bill.">
         <div class="stack">
           {Object.values(w.offers).map((o: any) => <Card kind="tint"><b>{o.title}</b><div class="small">We give: {o.give}. We get: {o.get}.</div><div class="small muted">Expires in <Left at={o.expiresAt} /></div><Btn small style={{ marginTop: 8 }} href={'#/new?treaty=' + o.id}>Put it to the House</Btn></Card>)}
@@ -52,25 +54,12 @@ function Ultimatums() {
 export function Nation({ id }: { id: string }) {
   const { world: w } = useStore();
   const n = w.nations[id];
-  const [k, setK] = useState('trade');
   if (!n) return <Page title="Unknown country" back={['#/foreign', 'Foreign Office']} />;
-  const asks = w.asks.filter((a: any) => a.nation === id);
   return (
-    <Page back={['#/foreign', 'Foreign Office']} kicker={<span style={{ color: moodColour[n.mood] }}>{MOODS[n.mood]}</span>} title={n.name} intro={`What they want: ${n.wants}`}>
+    <Page back={['#/atlas', 'The map']} kicker={<span style={{ color: moodColour[n.mood] }}>{w.army?.war === id ? 'At war with us' : MOODS[n.mood]}{n.embargo ? ' · under our embargo' : ''}</span>} title={n.name} intro={`What they want: ${n.wants}`}>
       <div class="pips5 big" style={{ marginTop: 12 }} aria-hidden="true">{MOODS.map((_, i) => <i class={i <= n.mood ? 'on' : ''} style={{ background: i <= n.mood ? moodColour[n.mood] : undefined }} />)}</div>
       <Sec title="Why they feel this way"><ul class="list">{n.reasons.map((r: any) => <li><b style={{ color: r.sign === '+' ? 'var(--teal)' : 'var(--red)' }}>{r.sign}</b> {r.text}</li>)}</ul></Sec>
-      <Sec title="Diplomacy">
-        <Btn full onClick={() => act('foreign.envoy', { nation: id }, 'Envoy sent.')}>Send an envoy (once a week)</Btn>
-        <p class="small muted">{n.envoyAt ? `Last envoy ${fmtTime(w, n.envoyAt)}.` : 'No envoy sent yet.'}</p>
-        <Card>
-          <div class="stack">
-            <b>Propose a treaty</b>
-            {TREATIES.map((t) => <Opt on={k === t.kind} onClick={() => setK(t.kind)} title={t.title} hint={`We give: ${t.give}. We get: ${t.get}.`} />)}
-            <Btn onClick={() => act('foreign.propose', { nation: id, kind: k }, 'Sent. They answer within a day.')}>Send proposal</Btn>
-            {asks.map((a: any) => <div class="small">{a.title}: {a.status === 'sent' ? <>answer in <Left at={a.decideAt} /></> : a.status}</div>)}
-          </div>
-        </Card>
-      </Sec>
+      <Diplomacy id={id} />
     </Page>
   );
 }
@@ -103,14 +92,14 @@ export function Army() {
   const { world: w } = useStore();
   if (!w.offices.army) return <Page back={['#/realm', 'The realm']} title="The Army"><Sec><Locked act="Defence Act" href="#/new?office=army">An Army costs upkeep. Its loyalty decides whether a coup can succeed.</Locked></Sec></Page>;
   return (
-    <Page back={['#/realm', 'The realm']} kicker={<>General <Who id={holderOf(w, 'army')} /></>} title="The Army" intro={`Readiness: ${w.army.readiness}, costing ${ARMY_COST[w.army.readiness] * (w.army.war ? 2 : 1)} crowns a week.${w.army.war ? ` At war with ${w.nations[w.army.war].name}.` : ''}`}>
+    <Page back={['#/realm', 'The realm']} kicker={<>General <Who id={holderOf(w, 'army')} /></>} title="The Army" intro={`${w.army.troops ?? 6} regiments, ${w.army.readiness}, costing ${armyCost(w)} crowns a week.${w.army.war ? ` At war with ${w.nations[w.army.war].name}.` : ''}`}>
       <Sec title="Loyalty to the government">
         <div class="pips5 big" aria-hidden="true">{[1, 2, 3, 4, 5].map((i) => <i class={i <= w.army.loyalty ? 'on' : ''} style={{ background: i <= w.army.loyalty ? (w.army.loyalty <= 2 ? 'var(--red)' : 'var(--teal)') : undefined }} />)}</div>
-        <p class="small">{w.army.loyalty}/5. At 2 or below the Army will not stop a coup.</p>
+        <p class="small">{w.army.loyalty}/5. At 2 or below the Army will not stop a coup; at 4 or more it defends the capital, unless it is away at the front.</p>
         <ul class="list">{w.army.reasons.map((r: any) => <li><b style={{ color: r.sign === '+' ? 'var(--teal)' : 'var(--red)' }}>{r.sign}</b> {r.text}</li>)}</ul>
       </Sec>
       <Sec title="Readiness" sub="The PM, the General or an officer of state. Mobilising worries the neighbours."><Seg value={w.army.readiness} onChange={(v) => act('army.readiness', { level: v })} options={[['down', 'Stood down (10)'], ['ready', 'Ready (25)'], ['mobilised', 'Mobilised (50)']]} /></Sec>
-      <Sec><p class="small muted">War and peace are declared by bill. <a href="#/new">Draft one</a>.</p></Sec>
+      <Sec><p class="small muted">War and peace are declared by bill. <a href="#/new">Draft one</a>. Regiments, strategy and the front are in <a href="#/war">the war room</a>.</p></Sec>
     </Page>
   );
 }

@@ -2,8 +2,9 @@
 // Anything secret by the rules (ballots, other people's cards, deals, plots, ambitions, wallets) is stripped here.
 import { W, Id, canSeeCard, hasPower, isPM, holderOf } from './core';
 import { crisisById } from './crises';
+import { register } from './exchange';
 const canSeeIntel = (w: W, id: Id) => hasPower(w, id, 'intel') || isPM(w, id);
-const PRIVATE_COUNTS = ['sends', 'saves', 'ventures', 'betsWon', 'betCrowns', 'insider', 'maxBalance', 'underground', 'strikes', 'jailbreaks', 'informer'];
+const PRIVATE_COUNTS = ['trades', 'sends', 'saves', 'ventures', 'betsWon', 'betCrowns', 'insider', 'maxBalance', 'underground', 'strikes', 'jailbreaks', 'informer'];
 
 export function viewFor(full: W, me: Id): W {
   // copy everything except the induction snapshot (a whole world of its own, and never sent)
@@ -163,6 +164,13 @@ export function viewFor(full: W, me: Id): W {
     w.daily.answered = Object.keys(w.daily.votes).length;
     w.daily.votes = w.daily.votes[me] !== undefined ? { [me]: w.daily.votes[me] } : {};
   }
+  // the Exchange: your own portfolio; MPs', ministers' and the head of state's holdings are on the public Register of Interests
+  if (w.exchange) {
+    w.exchange.register = register(full);
+    w.exchange.holdings = w.exchange.holdings[me] ? { [me]: w.exchange.holdings[me] } : {};
+  }
+  // war bonds: your own, and the total
+  if (w.army?.campaign) w.army.campaign.bonds = w.army.campaign.bonds[me] ? { [me]: w.army.campaign.bonds[me] } : {};
   // Treasury bonds: what each citizen holds is their own business; the issue and the total stay public
   if (w.bonds) w.bonds.holdings = (w.bonds.holdings || []).filter((h: any) => h.owner === me);
   // crises: the title, text and options, so players' apps can show them by name (all public on the crisis page)

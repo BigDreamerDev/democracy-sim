@@ -3,6 +3,7 @@ import { W, DAY, HOUR, ca, gazette, stamp, transfer, addCard, weekNo } from './c
 import { conventionClauses, assignAmbitions, newObjectives, HOS_METHODS } from './politics';
 import { createOffice } from './offices';
 import { seedNations } from './foreign';
+import { exchange, tickExchange, buy } from './exchange';
 import { SAFE_ZONES, join, postBounty, openStall, addJob } from './streets';
 import { openMarket, bet } from './markets';
 import { freshDaily, takePoll } from './glory';
@@ -30,7 +31,7 @@ function blank(seed: number, now: number): W {
     bonds: { issue: null, holdings: [], outstanding: 0, market: [] },
     conditions: [],
     banks: {}, ventures: [], nations: {}, offers: {}, treaties: {}, asks: [], intel: [],
-    army: { readiness: 'ready', loyalty: 3, reasons: [], war: null },
+    army: { readiness: 'ready', loyalty: 3, reasons: [], war: null, troops: 6, campaign: null, hero: null, defeatedAt: null }, conflicts: [], wars: [],
     deals: {}, cards: [], demands: {}, plots: {}, martial: null,
     acts: { jail: null, decrees: null, continuity: null, unity: null, national: null }, bannedParties: [], seasonDueAt: null, deputy: null, lastPM: null,
     coup: null, regime: null, transition: null, reckoning: null, reckoningDue: null, regimes: [], probes: [], probeAt: 0, scars: null,
@@ -59,6 +60,7 @@ export function createWorld(scenario: 'convention' | 'running', seed = 20261019)
   w.accounts.reserve -= 300;
   w.accounts.treasury = 300;
   seedNations(w);
+  exchange(w);
   if (scenario === 'convention') {
     gazette(w, 'convention', 'The Founding Convention is open for 3 days. Vote on each clause, add your own options, or table new clauses. A majority of citizens for one option settles a clause at once.', '#/convention');
     return w;
@@ -220,6 +222,17 @@ function running(w: W): W {
   openMarket(w, 'prop', 'p7', 'Will “Public Holidays Bill” pass the vote?', [{ key: 'yes', label: 'Passes' }, { key: 'no', label: 'Fails' }], w.proposals.p7.voteEndsAt);
   openMarket(w, 'prop', 'p10', 'Will “That this House has no confidence in the government” pass the vote?', [{ key: 'yes', label: 'Passes' }, { key: 'no', label: 'Fails' }], w.proposals.p10.voteEndsAt);
   Object.values(w.markets).forEach((m: any, i: number) => ['maya', 'sam', 'kai', 'tom', 'lee'].forEach((id, j) => bet(w, id, m.id, (i + j) % 3 ? 'yes' : 'no', 5 + j * 3)));
+  // the Exchange: five days of trading, a few portfolios (Lee and Rhea sit in the House, so theirs are on the Register)
+  w.now = day(5);
+  exchange(w).nextAt = w.now;
+  exchange(w).day = Math.floor(w.now / DAY);
+  for (let i = 0; i < 40; i++) ((w.now += 3 * HOUR), tickExchange(w));
+  [['sam', 'IRF', 5], ['lee', 'NGR', 4], ['rhea', 'CMB', 3], ['tom', 'AUT', 2], ['priya', 'TLM', 6]].forEach(([id, sym, n]) => buy(w, id as string, sym, n));
+  // a war abroad, for the Foreign Office to mediate
+  w.conflicts = [{ id: 'cf1', a: 'drakmoor', b: 'sundmere', at: day(2), weeks: 1, score: 2, status: 'raging', mediated: false, winner: null }];
+  w.now = tn;
+  w.gazette = w.gazette.filter((g: any) => !/Exchange/.test(g.text));
+  w.gazette.push({ id: 'gs-cf1', at: day(2), kind: 'foreign', text: 'War abroad: Drakmoor and Sundmere take up arms against each other. Our Foreign Office may offer to mediate.', link: '#/atlas' });
   w.gazette.sort((a: any, b: any) => b.at - a.at);
   return w;
 }
@@ -239,6 +252,7 @@ export function createLiveWorld(people: { id: string; name: string; admin: boole
   w.accounts.reserve -= 300;
   w.accounts.treasury = 300;
   seedNations(w);
+  exchange(w);
   gazette(w, 'convention', 'The Founding Convention is open for 3 days. Vote on each clause, add your own options, or table new clauses. A majority of citizens for one option settles a clause at once.', '#/convention');
   return w;
 }

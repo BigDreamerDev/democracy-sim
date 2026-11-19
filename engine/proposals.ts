@@ -1,5 +1,6 @@
 // Proposals: one lifecycle for everything Parliament does. Draft, debate, vote, then the result.
 // The kind only changes who votes and what happens. Also: laws, PM's Questions, formal questions and lobbying.
+import { startWar, endWar } from './war';
 import {
   W, Id, DAY, HOUR, fail, newId, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, tick, meter,
   isMP, mps, isPM, isHOS, inGovernment, transfer, ca, hosTitle, superMajority, majority, hasPower, officeWithPower, weekNo, adminDid, bump, own, text, int, inForce, inGov } from './core';
@@ -965,15 +966,19 @@ export function applyClause(w: W, e: any, ref: string) {
       break;
     case 'war':
       if (!own(w.nations, e.nation)) break;
-      w.army.war = e.nation;
-      w.nations[e.nation].mood = 0;
-      gazette(w, 'army', `The realm is at war with ${w.nations[e.nation].name}. Army upkeep doubles.`, '#/army');
+      if (w.army.war && w.army.war !== e.nation) {
+        gazette(w, 'army', `The declaration of war on ${w.nations[e.nation].name} waits: the realm is already at war with ${w.nations[w.army.war].name}.`, '#/war');
+        break;
+      }
+      startWar(w, e.nation, 'us');
       break;
     case 'peace':
       if (!own(w.nations, e.nation)) break;
-      if (w.army.war === e.nation) w.army.war = null;
-      w.nations[e.nation].mood = 1;
-      gazette(w, 'army', `Peace with ${w.nations[e.nation].name}.`, '#/army');
+      if (w.army.war === e.nation) endWar(w, 'peace');
+      else {
+        w.nations[e.nation].mood = Math.max(1, w.nations[e.nation].mood);
+        gazette(w, 'army', `Peace with ${w.nations[e.nation].name}.`, '#/nation/' + e.nation);
+      }
       break;
   }
 }

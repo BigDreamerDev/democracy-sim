@@ -1,24 +1,44 @@
 // The five nations, envoys, treaty offers, the Security Service and the Army.
-import { W, Id, DAY, HOUR, fail, newId, rand, chance, pick, nm, gazette, earn, transfer, bal, hasPower, isPM, addCard, holderOf, clamp, inDanger, meter, own } from './core';
+import { startWar } from './war';
+import { W, Id, DAY, HOUR, fail, newId, rand, chance, pick, nm, gazette, earn, transfer, bal, hasPower, isPM, addCard, holderOf, clamp, inDanger, meter, own, approve, stamp } from './core';
 
 export const MOODS = ['Hostile', 'Cold', 'Neutral', 'Friendly', 'Allied'];
+// who they are: fixed facts about each nation (the world map, the nation pages and the Exchange read these)
+export const PROFILES: Record<string, { capital: string; gov: string; leader: string; strength: number; wealth: number; exports: string; motto: string }> = {
+  varnholm: { capital: 'Halvik', gov: 'Grand duchy', leader: 'Grand Duke Osric IV', strength: 4, wealth: 6, exports: 'Grain, timber', motto: 'Bread before banners.' },
+  kessmark: { capital: 'Kessbridge', gov: 'Merchant republic', leader: 'First Syndic Ilse Varga', strength: 7, wealth: 7, exports: 'River trade, dyes', motto: 'The river remembers.' },
+  sundmere: { capital: 'Lowmere', gov: 'Neutral confederation', leader: 'The Council of Lakes', strength: 3, wealth: 5, exports: 'Salt, wool', motto: 'Still water.' },
+  orrin: { capital: 'Port Calloway', gov: 'Island kingdom', leader: 'Queen Maren of the Isles', strength: 5, wealth: 4, exports: 'Fish, ships', motto: 'The sea provides.' },
+  tessaly: { capital: 'New Tessa', gov: 'Parliamentary commonwealth', leader: 'Chancellor Abel Moye', strength: 4, wealth: 6, exports: 'Cloth, machines', motto: 'Many voices, one road.' },
+  aurel: { capital: 'Aurel', gov: 'Free city', leader: 'The Doge of Aurel', strength: 2, wealth: 10, exports: 'Banking, insurance', motto: 'Gold has no flag.' },
+  drakmoor: { capital: 'Ironhold', gov: 'Military hegemony', leader: 'Marshal Teodor Krell', strength: 9, wealth: 5, exports: 'Steel, coal', motto: 'Strength is peace.' }
+};
+// old quarrels between nations abroad: their wars break out along these lines
+export const RIVALS: [string, string][] = [['kessmark', 'orrin'], ['kessmark', 'varnholm'], ['drakmoor', 'sundmere'], ['drakmoor', 'tessaly'], ['drakmoor', 'aurel'], ['orrin', 'tessaly']];
+const NATIONS = [
+  { id: 'varnholm', name: 'Varnholm', mood: 3, wants: 'A steady buyer for their grain.', reasons: [{ sign: '+', text: 'We trade fairly with them' }] },
+  { id: 'kessmark', name: 'Kessmark', mood: 1, wants: 'Control of the river trade. They see us as a rival.', reasons: [{ sign: '−', text: 'They think we spy on them' }] },
+  { id: 'sundmere', name: 'Sundmere', mood: 2, wants: 'To stay out of everyone’s quarrels.', reasons: [{ sign: '+', text: 'No disputes with us' }] },
+  { id: 'orrin', name: 'Orrin Isles', mood: 2, wants: 'A defence pact against Kessmark.', reasons: [{ sign: '+', text: 'A shared rival in Kessmark' }] },
+  { id: 'tessaly', name: 'Commonwealth of Tessaly', mood: 2, wants: 'Open trade with another young parliament.', reasons: [{ sign: '+', text: 'They welcomed our new Parliament' }] },
+  { id: 'aurel', name: 'Free City of Aurel', mood: 2, wants: 'Our companies listed on their books, and no wars that spoil business.', reasons: [{ sign: '+', text: 'Bankers like a quiet neighbour' }] },
+  { id: 'drakmoor', name: 'Drakmoor', mood: 1, wants: 'Every border in the north redrawn in its favour.', reasons: [{ sign: '−', text: 'They think our Army is weak' }] }
+];
+// adds any nation the world is missing (a new world gets all of them; migrate() adds new ones to an old world)
 export function seedNations(w: W) {
-  [
-    { id: 'varnholm', name: 'Varnholm', mood: 3, wants: 'A steady buyer for their grain.', reasons: [{ sign: '+', text: 'We trade fairly with them' }] },
-    { id: 'kessmark', name: 'Kessmark', mood: 1, wants: 'Control of the river trade. They see us as a rival.', reasons: [{ sign: '−', text: 'They think we spy on them' }] },
-    { id: 'sundmere', name: 'Sundmere', mood: 2, wants: 'To stay out of everyone’s quarrels.', reasons: [{ sign: '+', text: 'No disputes with us' }] },
-    { id: 'orrin', name: 'Orrin Isles', mood: 2, wants: 'A defence pact against Kessmark.', reasons: [{ sign: '+', text: 'A shared rival in Kessmark' }] },
-    { id: 'tessaly', name: 'Commonwealth of Tessaly', mood: 2, wants: 'Open trade with another young parliament.', reasons: [{ sign: '+', text: 'They welcomed our new Parliament' }] }
-  ].forEach((n) => {
-    w.nations[n.id] = { ...n, envoyAt: 0 };
+  NATIONS.forEach((n) => {
+    if (w.nations[n.id]) return;
+    w.nations[n.id] = { ...structuredClone(n), envoyAt: 0, power: PROFILES[n.id].strength, embassy: false, embargo: false };
     w.accounts['nation:' + n.id] = 400;
     w.accounts.reserve = (w.accounts.reserve || 0) - 400;
   });
 }
-function foreignPower(w: W, id: Id) {
+export const atWar = (w: W, nid: string) => w.army?.war === nid;
+export const conflictOf = (w: W, nid: string) => (w.conflicts || []).find((c: any) => c.status === 'raging' && (c.a === nid || c.b === nid));
+export function foreignPower(w: W, id: Id) {
   return hasPower(w, id, 'envoy') || (isPM(w, id) && (!w.offices.foreign || !w.offices.foreign.holder));
 }
-function moodShift(n: any, d: number, text: string) {
+export function moodShift(n: any, d: number, text: string) {
   n.mood = clamp(n.mood + d, 0, 4);
   n.reasons.unshift({ sign: d > 0 ? '+' : '−', text });
   n.reasons = n.reasons.slice(0, 5);
@@ -30,7 +50,7 @@ export function sendEnvoy(w: W, actor: Id, nid: Id) {
   if (!n) fail('Unknown country.');
   if (n.envoyAt && w.now - n.envoyAt < 7 * DAY) fail('One envoy per country each week.');
   n.envoyAt = w.now;
-  const good = chance(w, n.envoyBoost ? 0.95 : n.mood >= 2 ? 0.7 : 0.45);
+  const good = chance(w, n.envoyBoost ? 0.95 : (n.mood >= 2 ? 0.7 : 0.45) + (n.embassy ? 0.15 : 0));
   n.envoyBoost = false;
   if (good && n.mood < 4) moodShift(n, 1, 'Our envoy was well received');
   else if (!good) moodShift(n, 0, 'Our envoy was kept waiting');
@@ -41,14 +61,17 @@ export function sendEnvoy(w: W, actor: Id, nid: Id) {
 export const TREATIES = [
   { kind: 'trade', title: 'Trade Agreement', give: 'No tariffs on their goods', get: 'No tariffs on ventures to them', effect: { tariffFree: true } },
   { kind: 'fishing', title: 'Fishing Treaty', give: 'Shared fishing waters', get: 'A steady friend at sea', effect: {} },
-  { kind: 'defence', title: 'Defence Pact', give: 'We help if they are attacked', get: 'They help if we are attacked', effect: { defence: true } }
+  { kind: 'defence', title: 'Defence Pact', give: 'We help if they are attacked', get: 'They help if we are attacked', effect: { defence: true } },
+  { kind: 'alliance', title: 'Military Alliance', give: 'We join their wars', get: 'Their army fights beside ours', effect: { alliance: true, defence: true } },
+  { kind: 'nonaggression', title: 'Non-Aggression Pact', give: 'We never attack them', get: 'They never declare war on us', effect: { nonaggression: true } }
 ];
+export const treatyWith = (w: W, nid: string, key: string) => Object.values(w.treaties).some((t: any) => t.status === 'active' && t.nation === nid && t.effect?.[key]);
 export function maybeOffers(w: W) {
   Object.values(w.nations).forEach((n: any) => {
     if (n.mood < 2 || chance(w, 0.6) || inDanger(w, 'standing')) return;
     if (Object.values(w.offers).some((o: any) => o.nation === n.id)) return;
     if (Object.values(w.treaties).some((t: any) => t.nation === n.id && t.status === 'active')) return;
-    const t = pick(w, TREATIES);
+    const t = pick(w, TREATIES.filter((x) => x.kind !== 'alliance' || n.mood >= 4));
     const id = newId(w, 'of');
     w.offers[id] = { id, nation: n.id, ...t, title: `${n.name} ${t.title}`, at: w.now, expiresAt: w.now + 5 * DAY };
     gazette(w, 'foreign', `${n.name} offers us a ${t.title}. The House can ratify it with a bill.`, '#/foreign');
@@ -67,7 +90,7 @@ export function proposeTreaty(w: W, actor: Id, nid: Id, kind: string) {
 }
 export function answerAsk(w: W, a: any) {
   const n = w.nations[a.nation];
-  const yes = chance(w, [0.05, 0.25, 0.55, 0.8, 0.95][n.mood]);
+  const yes = chance(w, [0.05, 0.25, 0.55, 0.8, 0.95][n.mood] * (a.kind === 'alliance' ? 0.6 : 1));
   a.status = yes ? 'accepted' : 'refused';
   if (yes) {
     const t = TREATIES.find((x) => x.kind === a.kind)!;
@@ -145,11 +168,10 @@ export function nationsTurn(w: W) {
     if (n.sanctionsUntil) sanctioned++;
     const pending = w.ultimatums.some((u: any) => u.nation === n.id && u.status === 'sent');
     if (n.mood === 0 && !pending && chance(w, 0.45)) {
-      if (w.offices.army && !w.army.war && chance(w, 0.35)) {
-        w.army.war = n.id;
-        gazette(w, 'army', `${n.name} declares war on the realm. Army upkeep doubles until Parliament makes peace.`, '#/army');
-        meter(w, 'stability', -6, `${n.name} declared war`);
-      } else ultimatum(w, n, 30 + Math.round(rand(w) * 30));
+      // a non-aggression pact holds them back; a strong nation facing a small Army is bolder
+      const bold = 0.35 + (w.offices.army && (n.power || 0) > (w.army.troops ?? 6) ? 0.15 : 0);
+      if (w.offices.army && !w.army.war && !treatyWith(w, n.id, 'nonaggression') && chance(w, bold)) startWar(w, n.id, 'them');
+      else ultimatum(w, n, 30 + Math.round(rand(w) * 30));
     } else if (n.mood === 1 && !pending && chance(w, 0.3)) {
       if (!n.sanctionsUntil && chance(w, 0.5)) sanction(w, n, 'They don’t like the look of us');
       else ultimatum(w, n, 15 + Math.round(rand(w) * 20));
@@ -163,6 +185,8 @@ export function nationsTurn(w: W) {
     }
   });
   if (sanctioned) meter(w, 'prosperity', -2 * sanctioned, 'Foreign sanctions');
+  embassiesWeek(w);
+  conflictsWeek(w);
 }
 function ultimatum(w: W, n: any, crowns: number) {
   const id = newId(w, 'ul');
@@ -196,4 +220,113 @@ export function settleUltimatum(w: W, u: any, pay: boolean, actor?: Id) {
   meter(w, 'stability', -2, `Standoff with ${n.name}`);
   gazette(w, 'foreign', `The realm ${actor ? 'refuses' : 'ignores'} ${n.name}’s demand.`, '#/nation/' + n.id);
   if (!n.sanctionsUntil && chance(w, 0.5)) sanction(w, n, 'We defied them');
+}
+
+// ---------- embassies: a standing mission abroad. 30 crowns to open, 5 a week to keep; envoys land better,
+// and a Cold or Hostile nation with our embassy in it drifts back towards Neutral ----------
+export const EMBASSY_COST = 30;
+export const EMBASSY_UPKEEP = 5;
+export function embassy(w: W, actor: Id, nid: Id, open: unknown) {
+  if (!w.offices.foreign) fail('Embassies need a Foreign Office: pass the Foreign Affairs Act.');
+  if (!foreignPower(w, actor)) fail('Only the Foreign Minister opens and closes embassies.');
+  const n = own(w.nations, nid);
+  if (!n) fail('Unknown country.');
+  if (open === true) {
+    if (n.embassy) fail(`We already have an embassy in ${n.name}.`);
+    if (atWar(w, nid)) fail('Not while we are at war with them.');
+    transfer(w, 'treasury', 'nation:' + nid, EMBASSY_COST, `An embassy in ${n.name}`);
+    n.embassy = true;
+    moodShift(n, n.mood < 4 ? 1 : 0, 'We opened an embassy');
+    return gazette(w, 'foreign', `The realm opens an embassy in ${PROFILES[nid]?.capital ?? n.name}, ${n.name}.`, '#/nation/' + nid);
+  }
+  if (open !== false) fail('Open or close the embassy.');
+  if (!n.embassy) fail(`We have no embassy in ${n.name}.`);
+  n.embassy = false;
+  moodShift(n, -1, 'We recalled our ambassador');
+  gazette(w, 'foreign', `The realm recalls its ambassador from ${n.name} and closes the embassy.`, '#/nation/' + nid);
+}
+function embassiesWeek(w: W) {
+  Object.values(w.nations).forEach((n: any) => {
+    if (!n.embassy) return;
+    if (atWar(w, n.id)) return void ((n.embassy = false), gazette(w, 'foreign', `Our embassy in ${n.name} is closed by the war.`, '#/nation/' + n.id));
+    transfer(w, 'treasury', 'nation:' + n.id, EMBASSY_UPKEEP, `Embassy upkeep, ${n.name}`);
+    if (n.mood < 2 && chance(w, 0.35)) moodShift(n, 1, 'Our ambassador smoothed things over');
+  });
+}
+
+// ---------- our own embargo: no ventures there, their companies suffer, and their war effort is weaker ----------
+export function embargo(w: W, actor: Id, nid: Id, on: unknown) {
+  if (!foreignPower(w, actor) && !isPM(w, actor)) fail('Only the Foreign Minister or the Prime Minister imposes an embargo.');
+  const n = own(w.nations, nid);
+  if (!n) fail('Unknown country.');
+  if (on !== true && on !== false) fail('Impose the embargo or lift it.');
+  if (!!n.embargo === on) fail(on ? 'They are already under our embargo.' : 'There is no embargo to lift.');
+  n.embargo = on;
+  if (on) {
+    moodShift(n, -1, 'We placed them under embargo');
+    meter(w, 'prosperity', -1, `An embargo on ${n.name}`);
+    gazette(w, 'foreign', `The realm places ${n.name} under a trade embargo. No ventures go there until it is lifted.`, '#/nation/' + nid);
+  } else {
+    moodShift(n, 0, 'We lifted our embargo');
+    gazette(w, 'foreign', `The realm lifts its embargo on ${n.name}.`, '#/nation/' + nid);
+  }
+}
+
+// ---------- wars abroad: rivals fight each other. The realm can broker a peace, or profit from it ----------
+export function conflictsWeek(w: W) {
+  w.conflicts ??= [];
+  w.conflicts.filter((c: any) => c.status === 'raging').forEach((c: any) => {
+    const A = w.nations[c.a];
+    const B = w.nations[c.b];
+    c.weeks += 1;
+    c.score += Math.round(((A.power || 3) - (B.power || 3)) / 2 + (rand(w) - 0.5) * 6);
+    // a treaty partner at war: they expect us to stand with them
+    [A, B].forEach((n: any) => {
+      const foe = n.id === c.a ? c.b : c.a;
+      if (treatyWith(w, n.id, 'defence') && !atWar(w, foe)) moodShift(n, -1, `We did not stand by them against ${w.nations[foe].name}`);
+    });
+    if (Math.abs(c.score) >= 6 || c.weeks >= 4) {
+      const win = c.score === 0 ? null : c.score > 0 ? A : B;
+      const lose = win === A ? B : win === B ? A : null;
+      c.status = 'over';
+      c.endedAt = w.now;
+      c.winner = win?.id ?? null;
+      if (lose) lose.power = Math.max(1, (lose.power || 3) - 1);
+      gazette(w, 'foreign', win ? `The war between ${A.name} and ${B.name} ends: ${win.name} prevails.` : `The war between ${A.name} and ${B.name} ends in exhaustion.`, '#/atlas');
+    }
+  });
+  if (w.conflicts.some((c: any) => c.status === 'raging') || !chance(w, 0.25)) return;
+  const pairs = RIVALS.filter(([a, b]) => w.nations[a] && w.nations[b] && !atWar(w, a) && !atWar(w, b) && !conflictOf(w, a) && !conflictOf(w, b));
+  if (!pairs.length) return;
+  const [a, b] = pick(w, pairs);
+  const id = newId(w, 'cf');
+  w.conflicts.unshift({ id, a, b, at: w.now, weeks: 0, score: 0, status: 'raging', mediated: false, winner: null });
+  w.conflicts = w.conflicts.slice(0, 12);
+  meter(w, 'prosperity', -1, 'War abroad unsettles trade');
+  gazette(w, 'foreign', `War abroad: ${w.nations[a].name} and ${w.nations[b].name} take up arms against each other. Our Foreign Office may offer to mediate.`, '#/atlas');
+}
+// once per war abroad: both sides must think well enough of us to listen
+export function mediate(w: W, actor: Id, cid: Id) {
+  if (!w.offices.foreign) fail('Mediation needs a Foreign Office.');
+  if (!foreignPower(w, actor)) fail('Only the Foreign Minister mediates.');
+  const c = (w.conflicts || []).find((x: any) => x.id === cid);
+  if (!c || c.status !== 'raging') fail('That war is over.');
+  if (c.mediated) fail('We have already tried. They will not sit down with us twice.');
+  c.mediated = true;
+  const A = w.nations[c.a];
+  const B = w.nations[c.b];
+  const ok = chance(w, clamp(0.15 + 0.15 * Math.min(A.mood, B.mood) + (A.embassy && B.embassy ? 0.15 : 0), 0.1, 0.85));
+  if (!ok) {
+    moodShift(A.mood <= B.mood ? A : B, -1, 'Our mediation insulted them');
+    return gazette(w, 'foreign', `Our mediation between ${A.name} and ${B.name} fails. The war goes on.`, '#/atlas');
+  }
+  c.status = 'over';
+  c.endedAt = w.now;
+  c.peaceBy = actor;
+  [A, B].forEach((n: any) => moodShift(n, 1, 'We brokered their peace'));
+  earn(w, actor, 6, 'Brokered a peace abroad');
+  approve(w, actor, 4);
+  stamp(w, actor, 'Peacemaker', `${A.name} and ${B.name}`, 'good');
+  meter(w, 'stability', 1, 'Peace abroad');
+  gazette(w, 'foreign', `${nm(w, actor)} brokers an end to the war between ${A.name} and ${B.name}.`, '#/atlas');
 }
