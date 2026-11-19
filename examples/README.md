@@ -5,6 +5,7 @@ Make keys under **You → Build your own app** in the game. See [../API.md](../A
 
 | Kit | What it does | Needs |
 |-|-|-|
+| [realm-console/](realm-console/) | the full Realm Console (the same as the site's), run from your PC: everything, including war, the Exchange and life abroad | Node 18+, or just a browser |
 | [minimal.html](minimal.html) | a whole (ugly) client in one page | a browser |
 | [whatsapp-gazette-bot/](whatsapp-gazette-bot/) | posts every Gazette entry to your WhatsApp group | a computer that stays on, a phone to scan a QR code |
 | [discord-gazette.mjs](discord-gazette.mjs) | posts every Gazette entry to a Discord channel | a Discord channel webhook URL |

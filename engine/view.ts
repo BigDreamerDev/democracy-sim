@@ -176,7 +176,8 @@ export function viewFor(full: W, me: Id): W {
   if (w.army?.campaign) w.army.campaign.bonds = w.army.campaign.bonds[me] ? { [me]: w.army.campaign.bonds[me] } : {};
   // fog of war: a nation's army strength is known only through an embassy, a recent intelligence report, or a war
   Object.values(w.nations).forEach((n: any) => {
-    if (!known(full, n.id)) n.power = null;
+    // a defector living there knows its army
+    if (!known(full, n.id) && full.citizens[me]?.defected?.nation !== n.id) n.power = null;
     // what a nation means to do next is known only through a spy ring, and only to the PM and the Director (by card)
     delete n.intent;
     if (!canSeeIntel(full, me)) n.ring = null;
