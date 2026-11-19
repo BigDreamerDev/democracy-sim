@@ -53,34 +53,60 @@ export function scene(w: any, fx: any): { emblem: string; kicker: string; name: 
   }
 }
 
-// the emblems: drawn in gold line, each with its own motion (styles.css: .cer-e-*)
+// the emblems: gold leaf on porphyry, each with its own motion (styles.css: .cer-e-*). Every moving part has its own
+// group with transform-box: fill-box, so it turns about its own centre; the SVG's own transforms sit on a parent.
 function Emblem({ e }: { e: string }) {
-  const g = { fill: 'none', stroke: 'currentColor', 'stroke-width': 4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' } as any;
+  const id = 'em-' + e;
+  const gold = `url(#${id}-gold)`;
+  const steel = `url(#${id}-steel)`;
+  const line = { fill: 'none', stroke: gold, 'stroke-width': 4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' } as any;
+  const sword = (flip: boolean, cls: string) => (
+    <g class={cls}><g transform={flip ? 'translate(200 0) scale(-1 1)' : undefined}>
+      <path d="M150 30 L162 38 L82 132 L74 124 Z" fill={steel} stroke="#5b6470" stroke-width="1.5" />
+      <path d="M156 34 L80 128" stroke="#fff" stroke-opacity=".55" stroke-width="1.5" />
+      <path d="M60 112 L94 146" stroke={gold} stroke-width="9" stroke-linecap="round" />
+      <path d="M77 129 L52 154" stroke="#3b0f25" stroke-width="9" stroke-linecap="round" />
+      <path d="M77 129 L52 154" stroke={gold} stroke-width="9" stroke-linecap="round" stroke-dasharray="3 5" />
+      <circle cx="47" cy="159" r="8" fill={gold} />
+    </g></g>
+  );
+  const coast = 'M18 118 C30 84 58 88 76 70 C92 54 118 62 136 46 C154 34 176 50 182 76 C190 104 178 136 156 150 C132 166 104 152 80 166 C56 178 26 160 18 118 Z';
   const body: Record<string, any> = {
-    crown: <g {...g}><path class="draw" d="M40 140 L30 70 L70 105 L100 50 L130 105 L170 70 L160 140 Z" /><path class="draw" d="M40 155 H160" /><circle cx="100" cy="45" r="7" /><circle cx="28" cy="66" r="6" /><circle cx="172" cy="66" r="6" /><circle cx="100" cy="122" r="8" class="jewel" /></g>,
-    key: <g {...g}><circle class="draw" cx="62" cy="100" r="26" /><circle cx="62" cy="100" r="9" /><path class="draw" d="M88 100 H170 M150 100 V122 M165 100 V116 M135 100 V118" /></g>,
-    seal: <g><circle cx="100" cy="100" r="58" class="wax" /><path class="drip" d="M70 148 q6 22 12 0 M118 152 q5 18 10 0" fill="#7a1420" /><circle cx="100" cy="100" r="44" fill="none" stroke="#e8b4a0" stroke-width="2" opacity=".6" /><text x="100" y="118" text-anchor="middle" font-size="52" fill="#f2c9b8" font-family="Gloock, serif">✠</text></g>,
-    laurel: <g {...g}><path class="draw" d="M100 165 C55 150 40 110 50 60 M100 165 C145 150 160 110 150 60" />{[0, 1, 2, 3, 4].map((i) => <g class="leaf" style={{ animationDelay: `${0.5 + i * 0.12}s` }}><ellipse cx={58 - i * 2} cy={150 - i * 20} rx="12" ry="6" transform={`rotate(${-50 + i * 8} ${58 - i * 2} ${150 - i * 20})`} /><ellipse cx={142 + i * 2} cy={150 - i * 20} rx="12" ry="6" transform={`rotate(${50 - i * 8} ${142 + i * 2} ${150 - i * 20})`} /></g>)}<path d="M100 70 l8 18 20 2 -15 13 5 19 -18 -10 -18 10 5 -19 -15 -13 20 -2z" class="star" /></g>,
-    swords: <g {...g}><g class="blade-l"><path d="M45 155 L150 50" /><path d="M58 128 L72 142 M40 160 l10 -10" /></g><g class="blade-r"><path d="M155 155 L50 50" /><path d="M142 128 L128 142 M160 160 l-10 -10" /></g></g>,
-    broken: <g {...g}><path d="M45 155 L95 105" /><path class="shard" d="M108 92 L155 45" /><path d="M58 128 L72 142" /><path d="M95 105 l8 -2 -2 8" /></g>,
-    scroll: <g {...g}><rect class="paper" x="50" y="40" width="100" height="120" rx="4" fill="#f6ebdc" stroke="currentColor" /><path d="M66 70 H134 M66 88 H134 M66 106 H120" stroke="#9b8a6e" stroke-width="3" /><g class="stamp"><circle cx="128" cy="138" r="24" fill="#c9a13b" stroke="#7a5a1e" /><text x="128" y="146" text-anchor="middle" font-size="22" fill="#5e1b3c" stroke="none" font-family="Gloock, serif">✠</text></g></g>,
-    veto: <g><rect x="44" y="40" width="112" height="120" rx="4" fill="#f6ebdc" class="paper" /><path d="M60 70 H140 M60 88 H140 M60 106 H125" stroke="#9b8a6e" stroke-width="3" /><g class="stamp"><rect x="30" y="80" width="140" height="48" rx="4" fill="none" stroke="#c0392b" stroke-width="6" transform="rotate(-12 100 104)" /><text x="100" y="118" text-anchor="middle" font-size="38" font-weight="700" fill="#c0392b" letter-spacing="6" transform="rotate(-12 100 104)" font-family="Atkinson Hyperlegible, sans-serif">VETO</text></g></g>,
-    bell: <g {...g} class="swing"><path d="M100 40 v12 M60 140 C62 90 70 60 100 56 C130 60 138 90 140 140 Z M50 140 H150" /><circle cx="100" cy="152" r="9" class="clapper" /></g>,
-    sash: <g {...g}><path class="draw" d="M40 40 L160 160" stroke-width="18" stroke="#5e1b3c" /><path class="draw" d="M40 40 L160 160" stroke-width="4" /><g class="medal"><path d="M100 100 l-14 -26 h28 z" fill="#5e1b3c" /><circle cx="100" cy="118" r="20" fill="#c9a13b" stroke="#7a5a1e" /><path d="M100 106 l4 8 9 1 -7 6 2 9 -8 -5 -8 5 2 -9 -7 -6 9 -1z" fill="#5e1b3c" stroke="none" /></g></g>,
-    map: <g><path class="coast" d="M20 120 C40 80 70 90 90 70 C110 50 140 60 160 40 C175 60 185 100 170 130 C150 160 110 150 80 165 C50 175 30 150 20 120Z" fill="#2a1a20" stroke="currentColor" stroke-width="2" /><path class="border" d="M100 62 C95 95 105 120 98 160" stroke="currentColor" stroke-dasharray="6 6" stroke-width="2" fill="none" /><path class="arrow" d="M40 125 C70 120 100 110 140 95" stroke="#e05a4a" stroke-width="7" fill="none" stroke-linecap="round" /><path class="arrowhead" d="M132 84 L150 92 L136 106" stroke="#e05a4a" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round" /><path class="arrow a2" d="M50 145 C80 140 105 135 135 125" stroke="#e05a4a" stroke-width="5" fill="none" stroke-linecap="round" opacity=".7" /></g>,
-    mapin: <g><path class="coast" d="M20 120 C40 80 70 90 90 70 C110 50 140 60 160 40 C175 60 185 100 170 130 C150 160 110 150 80 165 C50 175 30 150 20 120Z" fill="#2a1a20" stroke="currentColor" stroke-width="2" /><path class="border" d="M100 62 C95 95 105 120 98 160" stroke="currentColor" stroke-dasharray="6 6" stroke-width="2" fill="none" /><path class="arrow" d="M165 95 C135 100 105 110 65 125" stroke="#e05a4a" stroke-width="7" fill="none" stroke-linecap="round" /><path class="arrowhead" d="M74 112 L56 128 L76 136" stroke="#e05a4a" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round" /></g>,
-    march: <g {...g}><path d="M20 160 H180" opacity=".5" />{[0, 1, 2, 3].map((i) => <g class="soldier" style={{ animationDelay: `${i * 0.18}s` }} transform={`translate(${30 + i * 34} 0)`}><circle cx="10" cy="92" r="7" /><path d="M10 100 V130 M10 130 l-8 28 M10 130 l8 28 M10 108 l-10 14 M10 108 l12 -18 M22 90 V70" /></g>)}<path class="pennant" d="M168 60 V150 M168 62 l-26 10 26 10" /></g>,
-    cannon: <g {...g}><g class="barrel"><rect x="40" y="88" width="100" height="26" rx="10" fill="#2a1a20" /><circle cx="140" cy="101" r="5" /></g><circle cx="80" cy="132" r="22" /><circle cx="80" cy="132" r="5" /><circle class="puff" cx="160" cy="98" r="14" fill="#f6ebdc" stroke="none" /><circle class="puff p2" cx="174" cy="90" r="10" fill="#f6ebdc" stroke="none" /></g>,
-    horse: <g {...g}><path class="draw" d="M55 150 C50 90 60 60 100 50 C140 60 150 90 145 150" stroke-width="14" /><path d="M58 75 h-8 M60 100 h-9 M60 125 h-9 M142 75 h8 M140 100 h9 M140 125 h9" stroke-width="3" /></g>,
-    ship: <g {...g}><g class="bob"><path d="M30 120 H170 L150 150 H50 Z" fill="#2a1a20" /><rect x="70" y="92" width="60" height="28" /><path d="M90 92 V60 M110 92 V70" /><circle class="puff" cx="92" cy="50" r="9" fill="#f6ebdc" stroke="none" /></g><path class="wave" d="M10 160 q15 -10 30 0 t30 0 t30 0 t30 0 t30 0 t30 0" stroke-width="3" /></g>,
-    airship: <g {...g}><g class="float"><ellipse cx="100" cy="80" rx="70" ry="28" fill="#2a1a20" /><path d="M40 80 H160 M100 52 V108" opacity=".5" /><path d="M170 80 l14 -12 v24 z" /><path d="M80 108 l-6 20 h52 l-6 -20" /></g></g>,
-    fort: <g {...g}><path class="build" d="M40 160 V90 h20 v12 h16 v-12 h20 v12 h16 v-12 h20 v12 h16 v-12 h12 V160 Z" fill="#2a1a20" /><path d="M90 160 v-28 a10 10 0 0 1 20 0 v28" /><path class="pennant" d="M100 90 V50 M100 52 l24 9 -24 9" /></g>,
-    certificate: <g><rect class="paper" x="30" y="50" width="140" height="100" rx="4" fill="#f6ebdc" stroke="#c9a13b" stroke-width="4" /><rect x="40" y="60" width="120" height="80" fill="none" stroke="#c9a13b" stroke-width="1.5" /><text x="100" y="92" text-anchor="middle" font-size="13" fill="#5e1b3c" font-family="Gloock, serif" letter-spacing="2">SHARE CERTIFICATE</text><path d="M60 108 H140 M70 120 H130" stroke="#9b8a6e" stroke-width="2" /><g class="stamp"><circle cx="146" cy="138" r="20" fill="#5e1b3c" /><text x="146" y="145" text-anchor="middle" font-size="18" fill="#e3c16f" font-family="Gloock, serif">✠</text></g></g>,
-    flag: <g {...g}><path d="M60 170 V30" /><g class="rise"><path class="cloth" d="M62 34 C90 24 110 46 150 36 V86 C110 96 90 74 62 84 Z" fill="#5e1b3c" /><text x="104" y="68" text-anchor="middle" font-size="26" fill="#e3c16f" stroke="none" font-family="Gloock, serif">✠</text></g></g>,
-    coins: <g {...g}>{[0, 1, 2, 3, 4, 5].map((i) => <g class="coin" style={{ animationDelay: `${0.2 + i * 0.16}s` }}><ellipse cx={60 + (i % 3) * 40} cy={60} rx="16" ry="16" fill="#c9a13b" stroke="#7a5a1e" /><text x={60 + (i % 3) * 40} y={66} text-anchor="middle" font-size="16" fill="#5e1b3c" stroke="none">✠</text></g>)}<path d="M40 160 H160" /></g>,
-    eye: <g {...g}><path class="draw" d="M25 100 C60 50 140 50 175 100 C140 150 60 150 25 100 Z" /><circle cx="100" cy="100" r="22" class="jewel" /></g>
+    crown: <g><path class="fillin" d="M44 140 L32 72 L70 104 L100 52 L130 104 L168 72 L156 140 Z" fill={gold} opacity=".22" /><path class="draw" pathLength={1} {...line} d="M44 140 L32 72 L70 104 L100 52 L130 104 L168 72 L156 140 Z" /><rect class="fillin" x="40" y="142" width="120" height="14" rx="3" fill={gold} /><g class="gems"><circle cx="100" cy="46" r="7" fill={gold} /><circle cx="30" cy="67" r="6" fill={gold} /><circle cx="170" cy="67" r="6" fill={gold} /><circle cx="70" cy="149" r="4" fill="#9b1b2a" /><circle cx="100" cy="149" r="5" fill="#1f5e57" /><circle cx="130" cy="149" r="4" fill="#9b1b2a" /><circle class="jewel" cx="100" cy="118" r="9" fill="#c0392b" stroke={gold} stroke-width="2" /></g></g>,
+    key: <g class="turn"><circle {...line} stroke-width="7" cx="62" cy="100" r="28" /><path {...line} stroke-width="3" d="M62 80 l8 20 -8 20 -8 -20 z" /><path d="M90 100 H172" stroke={gold} stroke-width="10" stroke-linecap="round" /><path d="M136 100 v24 h10 v-14 h8 v18 h10 v-28" fill={gold} stroke={gold} stroke-width="3" stroke-linejoin="round" /></g>,
+    seal: <g class="press"><path d="M100 40 C122 38 142 48 152 64 C166 78 162 100 160 112 C164 130 150 150 132 156 C116 166 92 164 76 156 C56 150 40 132 42 112 C36 92 44 70 58 58 C70 46 84 42 100 40 Z" fill={`url(#${id}-wax)`} /><circle cx="100" cy="102" r="42" fill="none" stroke="#5e0f18" stroke-width="3" opacity=".7" /><circle cx="100" cy="102" r="36" fill="none" stroke="#e8a090" stroke-width="1" opacity=".35" /><text x="100" y="120" text-anchor="middle" font-size="50" fill="#f2b8a6" opacity=".9" font-family="Gloock, serif">✠</text><path d="M80 154 l-10 34 12 -8 6 12 6 -36" fill="#7a1420" class="tail" /><path d="M118 154 l12 32 -12 -6 -6 12 -4 -36" fill="#7a1420" class="tail t2" /></g>,
+    laurel: <g><path class="draw" pathLength={1} {...line} d="M100 168 C58 154 40 116 48 64 M100 168 C142 154 160 116 152 64" />{[0, 1, 2, 3, 4].map((i) => <g class="leaf" style={{ animationDelay: `${0.5 + i * 0.12}s` }}><g transform={`rotate(${-48 + i * 8} ${57 - i * 2} ${150 - i * 20})`}><ellipse cx={57 - i * 2} cy={150 - i * 20} rx="13" ry="6" fill={gold} /></g><g transform={`rotate(${48 - i * 8} ${143 + i * 2} ${150 - i * 20})`}><ellipse cx={143 + i * 2} cy={150 - i * 20} rx="13" ry="6" fill={gold} /></g></g>)}<path class="star" d="M100 66 l9 19 21 3 -15 15 4 21 -19 -10 -19 10 4 -21 -15 -15 21 -3z" fill={gold} /></g>,
+    swords: <g>{sword(false, 'blade-l')}{sword(true, 'blade-r')}</g>,
+    broken: <g><g class="hilt"><path d="M118 92 L130 82 L82 132 L74 124 Z" fill={steel} stroke="#5b6470" stroke-width="1.5" /><path d="M60 112 L94 146" stroke={gold} stroke-width="9" stroke-linecap="round" /><path d="M77 129 L52 154" stroke={gold} stroke-width="9" stroke-linecap="round" /><circle cx="47" cy="159" r="8" fill={gold} /></g><g class="shard"><path d="M150 30 L162 38 L134 72 L124 66 Z" fill={steel} stroke="#5b6470" stroke-width="1.5" /></g></g>,
+    scroll: <g><g class="paper"><rect x="52" y="44" width="96" height="116" fill="#f4e6cc" /><path d="M66 70 H134 M66 86 H134 M66 102 H134 M66 118 H112" stroke="#b49c74" stroke-width="3" stroke-linecap="round" /></g><rect x="44" y="34" width="112" height="14" rx="7" fill={gold} /><rect class="rod-b" x="44" y="156" width="112" height="14" rx="7" fill={gold} /><g class="stamp"><circle cx="128" cy="136" r="22" fill={`url(#${id}-wax)`} /><text x="128" y="144" text-anchor="middle" font-size="22" fill="#f2b8a6" font-family="Gloock, serif">✠</text></g></g>,
+    veto: <g><g class="paper"><rect x="48" y="40" width="104" height="124" rx="3" fill="#f4e6cc" /><path d="M62 66 H138 M62 82 H138 M62 98 H138 M62 114 H120" stroke="#b49c74" stroke-width="3" stroke-linecap="round" /></g><g class="stamp"><g transform="rotate(-12 100 104)"><rect x="30" y="80" width="140" height="48" rx="5" fill="#c0392b" fill-opacity=".08" stroke="#c0392b" stroke-width="6" /><text x="100" y="117" text-anchor="middle" font-size="36" font-weight="700" fill="#c0392b" letter-spacing="7" font-family="Atkinson Hyperlegible, sans-serif">VETO</text></g></g></g>,
+    bell: <g class="swing"><path d="M100 34 v14" stroke={gold} stroke-width="6" stroke-linecap="round" /><path d="M100 48 C70 52 62 82 60 134 L50 146 H150 L140 134 C138 82 130 52 100 48 Z" fill={gold} /><path d="M78 70 C72 90 70 110 70 132" stroke="#fff4d0" stroke-width="4" stroke-linecap="round" opacity=".45" fill="none" /><g class="clapper"><circle cx="100" cy="156" r="10" fill={gold} /></g></g>,
+    sash: <g><path class="band" d="M30 44 L52 30 L170 150 L148 164 Z" fill="#5e1b3c" stroke={gold} stroke-width="3" /><g class="medal"><path d="M88 74 L112 74 L106 104 L94 104 Z" fill="#5e1b3c" stroke={gold} stroke-width="2" /><circle cx="100" cy="122" r="22" fill={gold} /><path d="M100 106 l5 10 11 1 -8 8 2 11 -10 -6 -10 6 2 -11 -8 -8 11 -1z" fill="#5e1b3c" /></g></g>,
+    map: <g><path d={coast} fill="#2d1b24" stroke={gold} stroke-width="2.5" /><path d="M104 56 C96 92 110 124 100 160" stroke={gold} stroke-dasharray="5 6" stroke-width="2" fill="none" class="border" /><circle cx="56" cy="122" r="4" fill={gold} /><circle cx="146" cy="96" r="5" fill="#e05a4a" /><g class="arrow-g"><path class="arrow" pathLength={1} d="M52 128 C76 126 100 116 132 100" stroke="#e05a4a" stroke-width="8" fill="none" stroke-linecap="round" /><path class="arrowhead" d="M122 88 L144 96 L130 114 Z" fill="#e05a4a" /></g><g class="arrow-g a2"><path class="arrow" pathLength={1} d="M60 150 C86 146 108 138 132 126" stroke="#e05a4a" stroke-width="5" fill="none" stroke-linecap="round" opacity=".7" /></g></g>,
+    mapin: <g><path d={coast} fill="#2d1b24" stroke={gold} stroke-width="2.5" /><path d="M104 56 C96 92 110 124 100 160" stroke={gold} stroke-dasharray="5 6" stroke-width="2" fill="none" class="border" /><circle cx="56" cy="122" r="5" fill={gold} /><g class="arrow-g"><path class="arrow" pathLength={1} d="M164 92 C138 98 108 108 76 122" stroke="#e05a4a" stroke-width="8" fill="none" stroke-linecap="round" /><path class="arrowhead" d="M84 108 L62 126 L86 136 Z" fill="#e05a4a" /></g></g>,
+    march: <g><path d="M10 160 H190" stroke={gold} stroke-width="2" opacity=".5" /><g class="column">{[0, 1, 2, 3].map((i) => <g transform={`translate(${26 + i * 36} 0)`}><g class="soldier" style={{ animationDelay: `${i * 0.12}s` }}><circle cx="10" cy="88" r="8" fill={gold} /><path d="M2 80 h16 l-2 -8 h-12 z" fill={gold} /><path d="M10 98 V128" stroke={gold} stroke-width="8" stroke-linecap="round" /><path d="M10 128 l-8 28 M10 128 l8 28" stroke={gold} stroke-width="6" stroke-linecap="round" /><path d="M20 104 V62" stroke={gold} stroke-width="3" stroke-linecap="round" /></g></g>)}</g><g class="pennant"><path d="M176 58 V158" stroke={gold} stroke-width="3" /><path d="M177 60 l-28 11 28 11 z" fill="#c0392b" /></g></g>,
+    cannon: <g><g class="carriage"><g class="barrel"><path d="M36 92 L142 84 Q150 84 150 92 L150 104 Q150 112 142 112 L36 108 Q28 100 36 92 Z" fill={gold} /><rect x="138" y="82" width="14" height="32" rx="4" fill={gold} /><path d="M50 96 L136 90" stroke="#fff4d0" stroke-width="3" opacity=".5" /></g><circle cx="78" cy="132" r="26" fill="none" stroke={gold} stroke-width="6" /><g class="spokes"><path d="M78 108 V156 M54 132 H102 M61 115 L95 149 M95 115 L61 149" stroke={gold} stroke-width="3" /></g><circle cx="78" cy="132" r="6" fill={gold} /></g><g class="puff"><circle cx="166" cy="96" r="14" fill="#efe3cf" /><circle cx="178" cy="86" r="10" fill="#efe3cf" /><circle cx="180" cy="104" r="8" fill="#efe3cf" /></g></g>,
+    horse: <g class="gallop"><path d="M58 154 C46 92 62 52 100 46 C138 52 154 92 142 154 L120 154 C128 100 120 76 100 72 C80 76 72 100 80 154 Z" fill={gold} />{[[64, 80], [60, 108], [62, 136], [136, 80], [140, 108], [138, 136]].map(([x, y]) => <circle cx={x} cy={y} r="3.5" fill="#3b0f25" />)}</g>,
+    ship: <g><g class="bob"><path d="M24 118 H176 L156 150 H44 Z" fill="#2d1b24" stroke={gold} stroke-width="3" /><rect x="66" y="94" width="68" height="24" fill="#2d1b24" stroke={gold} stroke-width="3" /><rect x="84" y="62" width="12" height="32" fill={gold} /><rect x="106" y="70" width="10" height="24" fill={gold} /><path d="M40 132 H160" stroke={gold} stroke-width="2" stroke-dasharray="2 8" /><g class="smoke"><circle cx="90" cy="50" r="9" fill="#cfc3b3" opacity=".8" /><circle cx="100" cy="38" r="12" fill="#cfc3b3" opacity=".6" /></g></g><g class="waves"><path d="M-30 162 q15 -9 30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0" stroke={gold} stroke-width="3" fill="none" /></g></g>,
+    airship: <g class="float"><ellipse cx="100" cy="80" rx="74" ry="30" fill={`url(#${id}-env)`} stroke={gold} stroke-width="2.5" /><path d="M36 80 H164 M56 60 C80 70 120 70 144 60 M56 100 C80 90 120 90 144 100" stroke={gold} stroke-width="1.5" opacity=".6" fill="none" /><path d="M168 80 l18 -16 v32 z" fill={gold} /><path d="M80 108 L74 130 H126 L120 108" fill="#2d1b24" stroke={gold} stroke-width="2.5" /><g class="prop"><path d="M60 119 V129" stroke={gold} stroke-width="3" /></g></g>,
+    fort: <g><g class="build"><path d="M36 160 V92 h18 v12 h16 v-12 h18 v12 h16 v-12 h18 v12 h16 v-12 h18 V160 Z" fill={`url(#${id}-stone)`} stroke={gold} stroke-width="2.5" /><path d="M90 160 v-28 a10 10 0 0 1 20 0 v28" fill="#12070d" /><path d="M36 124 H164 M36 142 H164" stroke={gold} stroke-width="1" opacity=".35" /></g><g class="raise"><path d="M100 92 V44" stroke={gold} stroke-width="3" /><g class="pennant"><path d="M101 46 l26 10 -26 10 z" fill="#c0392b" /></g></g></g>,
+    certificate: <g><g class="paper"><rect x="28" y="50" width="144" height="104" rx="4" fill="#f4e6cc" stroke={gold} stroke-width="4" /><rect x="38" y="60" width="124" height="84" fill="none" stroke={gold} stroke-width="1.5" /><text x="100" y="88" text-anchor="middle" font-size="12" fill="#5e1b3c" font-family="Gloock, serif" letter-spacing="2.5">SHARE CERTIFICATE</text><path d="M58 104 H142 M68 118 H132" stroke="#b49c74" stroke-width="2" /></g><g class="stamp"><circle cx="146" cy="138" r="20" fill={`url(#${id}-wax)`} /><text x="146" y="145" text-anchor="middle" font-size="18" fill="#f2b8a6" font-family="Gloock, serif">✠</text></g></g>,
+    flag: <g><path d="M60 172 V30" stroke={gold} stroke-width="5" stroke-linecap="round" /><circle cx="60" cy="26" r="6" fill={gold} /><g class="rise"><g class="cloth"><path d="M62 34 C90 24 112 46 152 36 V88 C112 98 90 76 62 86 Z" fill="#5e1b3c" stroke={gold} stroke-width="2" /><text x="106" y="70" text-anchor="middle" font-size="28" fill={gold} font-family="Gloock, serif">✠</text></g></g></g>,
+    coins: <g><path d="M46 122 H154 V162 H46 Z" fill="#3b2412" stroke={gold} stroke-width="3" /><path d="M46 122 L56 104 H144 L154 122" fill="#4e3018" stroke={gold} stroke-width="3" /><rect x="92" y="130" width="16" height="12" rx="2" fill={gold} />{[0, 1, 2, 3, 4, 5, 6].map((i) => <g class="coin" style={{ animationDelay: `${0.3 + i * 0.22}s` }}><circle cx={74 + (i % 4) * 17} cy="40" r="11" fill={gold} stroke="#8c6a1e" stroke-width="1.5" /><circle cx={74 + (i % 4) * 17} cy="40" r="6" fill="none" stroke="#8c6a1e" stroke-width="1" /></g>)}</g>,
+    eye: <g><path class="draw" pathLength={1} {...line} d="M25 100 C60 50 140 50 175 100 C140 150 60 150 25 100 Z" /><circle class="jewel" cx="100" cy="100" r="22" fill="#c0392b" stroke={gold} stroke-width="3" /></g>
   };
-  return <svg class={'cer-emblem cer-e-' + e} viewBox="0 0 200 200" aria-hidden="true">{body[e] || body.seal}</svg>;
+  return (
+    <svg class={'cer-emblem cer-e-' + e} viewBox="0 0 200 200" aria-hidden="true">
+      <defs>
+        <linearGradient id={id + '-gold'} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFEBB0" /><stop offset=".45" stop-color="#E3BA55" /><stop offset="1" stop-color="#9C7424" /></linearGradient>
+        <linearGradient id={id + '-steel'} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FAF7F0" /><stop offset=".5" stop-color="#C9CFD6" /><stop offset="1" stop-color="#7D8793" /></linearGradient>
+        <radialGradient id={id + '-wax'} cx=".38" cy=".32" r=".8"><stop offset="0" stop-color="#d23a48" /><stop offset=".6" stop-color="#9b1b2a" /><stop offset="1" stop-color="#5e0f18" /></radialGradient>
+        <linearGradient id={id + '-env'} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7a2a50" /><stop offset="1" stop-color="#3b0f25" /></linearGradient>
+        <linearGradient id={id + '-stone'} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5a4636" /><stop offset="1" stop-color="#2d1f16" /></linearGradient>
+      </defs>
+      {body[e] || body.seal}
+    </svg>
+  );
 }
 
 export function Scene({ w, fx }: { w: any; fx: any }) {
@@ -88,10 +114,12 @@ export function Scene({ w, fx }: { w: any; fx: any }) {
   return (
     <div class={'cer-scene cer-k-' + fx.k + (s.tone ? ' tone-' + s.tone : '')}>
       <div class="cer-rays" />
-      <div class="cer-sparks">{Array.from({ length: 14 }, (_, i) => <i style={{ left: `${(i * 37) % 100}%`, animationDelay: `${1 + (i % 7) * 0.25}s` }} />)}</div>
+      <div class="cer-glow" />
+      <div class="cer-sparks">{Array.from({ length: 22 }, (_, i) => <i style={{ left: `${(i * 37 + 11) % 100}%`, animationDelay: `${0.6 + ((i * 7) % 11) * 0.28}s`, animationDuration: `${3.4 + (i % 5) * 0.5}s`, width: `${2 + (i % 3)}px`, height: `${2 + (i % 3)}px` }} />)}</div>
+      <div class="cer-grain" />
       <Emblem e={s.emblem} />
       <div class="cer-kicker">{s.kicker}</div>
-      <div class="cer-name">{s.name}</div>
+      <div class="cer-name"><span>{s.name}</span></div>
       <div class="cer-rule" />
       <div class="cer-sub">{s.sub}</div>
       <div class="cer-realm">{w.config.realmName}</div>
@@ -124,22 +152,28 @@ export function Ceremony() {
     window.addEventListener('realm-ceremony', show);
     return () => window.removeEventListener('realm-ceremony', show);
   }, []);
+  const [leaving, setLeaving] = useState(false);
   const fx = queue[0];
+  // on to the next scene; after the last, the overlay fades away rather than vanishing
+  const next = () => {
+    if (queue.length > 1) return (setQueue((q) => q.slice(1)), setN((x) => x + 1));
+    setLeaving(true);
+    setTimeout(() => (setQueue([]), setLeaving(false), setN((x) => x + 1)), 350);
+  };
   useEffect(() => {
-    if (!fx) return;
-    const t = setTimeout(() => (setQueue((q) => q.slice(1)), setN((x) => x + 1)), LONG);
+    if (!fx || (window as any).__realmCerHold) return;
+    const t = setTimeout(next, LONG);
     return () => clearTimeout(t);
-  }, [fx, n]);
+  }, [fx, n, queue.length]);
   if (!fx || !w) return null;
-  const next = () => (setQueue((q) => q.slice(1)), setN((x) => x + 1));
   return (
-    <div class="cer" role="dialog" aria-label="A ceremony" onClick={next}>
+    <div class={'cer' + (leaving ? ' leaving' : '')} role="dialog" aria-label="A ceremony" onClick={next}>
       <Scene key={n} w={w} fx={fx} />
       <div class="cer-bar" onClick={(e) => e.stopPropagation()}>
         {queue.length > 1 && <span class="cer-count">{queue.length - 1} more</span>}
         <button onClick={next}>{queue.length > 1 ? 'Next' : 'Close'}</button>
-        {queue.length > 1 && <button onClick={() => setQueue([])}>Skip all</button>}
-        <button onClick={() => (setFxOff(true), setQueue([]))}>Turn off</button>
+        {queue.length > 1 && <button onClick={() => (setQueue((q) => q.slice(0, 1)), setLeaving(true), setTimeout(() => (setQueue([]), setLeaving(false)), 350))}>Skip all</button>}
+        <button onClick={() => (setFxOff(true), setLeaving(true), setTimeout(() => (setQueue([]), setLeaving(false)), 350))}>Turn off</button>
       </div>
     </div>
   );
