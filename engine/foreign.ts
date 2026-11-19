@@ -1,7 +1,7 @@
 // The five nations, envoys, treaty offers, the Security Service and the Army.
 import { startWar } from './war';
 import { unrest } from './empire';
-import { W, Id, DAY, HOUR, fail, newId, rand, chance, pick, nm, gazette, earn, transfer, bal, hasPower, isPM, addCard, holderOf, clamp, inDanger, meter, own, approve, stamp, ratifyText } from './core';
+import { hasArmy, W, Id, DAY, HOUR, fail, newId, rand, chance, pick, nm, gazette, earn, transfer, bal, hasPower, isPM, addCard, holderOf, clamp, inDanger, meter, own, approve, stamp, ratifyText } from './core';
 
 export const MOODS = ['Hostile', 'Cold', 'Neutral', 'Friendly', 'Allied'];
 // who they are: fixed facts about each nation (the world map, the nation pages and the Exchange read these)
@@ -146,7 +146,7 @@ export function armyLoyalty(w: W, d: number, why: string) {
   w.army.reasons = w.army.reasons.slice(0, 6);
 }
 export function setReadiness(w: W, actor: Id, level: string) {
-  if (!w.offices.army) fail('There is no Army: pass the Defence Act first.');
+  if (!hasArmy(w)) fail('There is no Army: pass the Defence Act first.');
   if (!hasPower(w, actor, 'army') && !hasPower(w, actor, 'govern') && !isPM(w, actor)) fail('Only the PM, the General or an officer of state sets readiness.');
   if (!['down', 'ready', 'mobilised'].includes(level)) fail('Unknown readiness.');
   const prev = w.army.readiness;
@@ -184,8 +184,8 @@ export const PLANS: Record<string, string> = { war: 'declare war on us', ultimat
 function decide(w: W, n: any) {
   if (n.mood === 0 && chance(w, 0.45)) {
     // a non-aggression pact holds them back; a strong nation facing a small Army is bolder
-    const bold = 0.35 + (w.offices.army && (n.power || 0) > (w.army.troops ?? 6) ? 0.15 : 0);
-    return w.offices.army && !treatyWith(w, n.id, 'nonaggression') && chance(w, bold) ? 'war' : 'ultimatum';
+    const bold = 0.35 + (hasArmy(w) && (n.power || 0) > (w.army.troops ?? 6) ? 0.15 : 0);
+    return hasArmy(w) && !treatyWith(w, n.id, 'nonaggression') && chance(w, bold) ? 'war' : 'ultimatum';
   }
   if (n.mood === 1 && chance(w, 0.3)) return !n.sanctionsUntil && chance(w, 0.5) ? 'sanction' : 'ultimatum';
   if (n.mood >= 3 && chance(w, 0.25)) return 'aid';
@@ -197,7 +197,7 @@ function carryOut(w: W, n: any, plan: string) {
   if (['war', 'ultimatum', 'sanction'].includes(plan) && (n.mood >= 2 || pending)) return;
   if (plan === 'aid' && n.mood < 3) return;
   if (plan === 'war') {
-    if (w.offices.army && !w.army.war && !treatyWith(w, n.id, 'nonaggression')) startWar(w, n.id, 'them');
+    if (hasArmy(w) && !w.army.war && !treatyWith(w, n.id, 'nonaggression')) startWar(w, n.id, 'them');
     else ultimatum(w, n, 30 + Math.round(rand(w) * 30));
   } else if (plan === 'ultimatum') ultimatum(w, n, (n.mood === 0 ? 30 : 15) + Math.round(rand(w) * (n.mood === 0 ? 30 : 20)));
   else if (plan === 'sanction') (n.sanctionsUntil ? ultimatum(w, n, 15 + Math.round(rand(w) * 20)) : sanction(w, n, 'They don’t like the look of us'));
@@ -356,7 +356,7 @@ export function mediate(w: W, actor: Id, cid: Id) {
 // ---------- fog of war: we only know a nation's army strength through an embassy, a Security Service report in the
 // last week, or by fighting it. Otherwise view.ts hides it ----------
 export const KNOWN_FOR = 7 * DAY;
-export const known = (w: W, nid: string) => { const n = w.nations[nid]; return !!n && (!!n.embassy || !!n.ring || !!n.protectorate || atWar(w, nid) || (!!n.seenAt && w.now - n.seenAt < KNOWN_FOR)); };
+export const known = (w: W, nid: string) => { const n = w.nations[nid]; return !!n && ((w.army?.kit?.airship || 0) > 0 || !!n.embassy || !!n.ring || !!n.protectorate || atWar(w, nid) || (!!n.seenAt && w.now - n.seenAt < KNOWN_FOR)); };
 
 // ---------- disputed provinces: border lands that change hands in war. Each has its owner ('realm' or a nation)
 // and the nations that claim it. Win a war and the enemy's claimed provinces are ours; lose and they take one back.

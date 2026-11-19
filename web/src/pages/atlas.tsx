@@ -4,11 +4,12 @@
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Seg, Opt } from '../ui';
-import { isPM, hasPower, holderOf, standing, bal, ca, isMP, autocrat, autocratTitle, speaksForHouse, cap } from '../../../engine/index';
+import { hasArmy, isPM, hasPower, holderOf, standing, bal, ca, isMP, autocrat, autocratTitle, speaksForHouse, cap } from '../../../engine/index';
 import { MOODS, PROFILES, TREATIES, PROVINCES, known, shipping, laneClosed } from '../../../engine/foreign';
 import { power, STRATEGIES, REGIMENT_COST, MAX_REGIMENTS, BOND_PAYS, allies, EMBED_COST, termsText, garrisoned } from '../../../engine/war';
 import { canMarch } from '../../../engine/backroom';
-import { EmpirePanel } from './empire';
+import { EmpirePanel, WarMachine } from './empire';
+import { regimentCost } from '../../../engine/warmachine';
 
 type Pt = [number, number];
 const W = 1000;
@@ -320,7 +321,7 @@ export function Atlas() {
           const pr = w.provinces?.[id] || { owner: PROVINCES[id].start };
           const o = pr.owner;
           const taken = o === 'realm' && PROVINCES[id].start !== 'realm';
-          const cmd = !!w.offices.army && (hasPower(w, me, 'army') || isPM(w, me) || hasPower(w, me, 'govern'));
+          const cmd = hasArmy(w) && (hasPower(w, me, 'army') || isPM(w, me) || hasPower(w, me, 'govern'));
           return <li class="row"><span><b>{PROVINCES[id].name}</b><div class="small muted">{PROVINCES[id].blurb} Claimed by {PROVINCES[id].claims.map((n) => w.nations[n]?.name).join(' and ')}.{taken ? (pr.garrison ? ' A regiment is posted there.' : ' Taken in war and ungarrisoned: it may rise any week.') : ''}</div>{o === 'realm' && cmd && <Btn small kind="ghost" style={{ marginTop: 6 }} onClick={() => act('army.garrison', { province: id, on: !pr.garrison }, pr.garrison ? 'Garrison withdrawn.' : 'A regiment is on its way.')}>{pr.garrison ? 'Withdraw the garrison' : 'Post a garrison (1 regiment)'}</Btn>}</span><span class={'chip ' + (o === 'realm' ? 'teal' : 'red')}>{o === 'realm' ? (pr.garrison ? 'Ours · garrisoned' : 'Ours') : w.nations[o]?.name}</span></li>;
         })}</ul>
       </Sec>
@@ -357,7 +358,7 @@ export function War() {
   const { world: w, me } = useStore();
   const [bond, setBond] = useState('10');
   const [n, setN] = useState('1');
-  if (!w.offices.army) return <Page back={['#/world', 'The world']} title="The war room"><Sec><Card kind="dashed">There is no Army, so the realm cannot fight. Pass the Defence Act to raise one. Without it, a hostile nation can only threaten and sanction us.</Card></Sec><Past /></Page>;
+  if (!hasArmy(w)) return <Page back={['#/world', 'The world']} title="The war room"><Sec><Card kind="dashed">There is no Army, so the realm cannot fight. Pass the Defence Act to raise one. Without it, a hostile nation can only threaten and sanction us.</Card></Sec><Past /></Page>;
   const k = w.army.campaign;
   const cmd = hasPower(w, me, 'army') || isPM(w, me) || hasPower(w, me, 'govern');
   const troops = w.army.troops ?? 6;
@@ -367,6 +368,7 @@ export function War() {
         {w.army.hero && w.army.hero.until > w.now && <Card kind="tint" style={{ marginTop: 14 }}><b><Who id={w.army.hero.id} /> is a war hero.</b> <span class="small">Until <When at={w.army.hero.until} />, they weigh 4 on a coup night instead of 3.</span></Card>}
         {w.army.defeatedAt && w.now - w.army.defeatedAt < 14 * 86400000 && <Card kind="warn" style={{ marginTop: 14 }}><b>The Army came home beaten.</b> <span class="small">For two weeks after a defeat it leans towards plotters and pretenders.</span></Card>}
         <Regiments cmd={cmd} n={n} setN={setN} troops={troops} />
+        <WarMachine />
         <March />
         <Memorials />
         <Past />
@@ -391,6 +393,7 @@ export function War() {
         <div class="stack">{Object.entries(STRATEGIES).map(([id, s]) => <Opt on={k.strategy === id} onClick={() => cmd && k.strategy !== id && act('war.strategy', { strategy: id }, `Orders sent: ${s.label.toLowerCase()}.`)} title={s.label} hint={s.what} />)}</div>
         {k.strategy === 'advance' && <p class="small" style={{ color: 'var(--red)' }}>On the advance the Army is away from the capital: a coup would find the city undefended.</p>}
       </Sec>
+      <WarMachine />
       <Sec title="Do your bit">
         <div class="grid2">
           <Card><b>Volunteer</b><p class="small" style={{ margin: '4px 0 8px' }}>Each volunteer adds half a regiment. +2 Influence, and a Veteran stamp if we win. {k.volunteers.length} so far.</p>{k.volunteers.includes(me) ? <span class="chip teal">You volunteered</span> : <Btn small onClick={() => act('war.enlist', {}, 'You are off to the front.')}>Enlist</Btn>}</Card>
@@ -411,8 +414,9 @@ export function War() {
   );
 }
 function Regiments({ cmd, n, setN, troops, war }: { cmd: boolean; n: string; setN: (v: string) => void; troops: number; war?: boolean }) {
+  const { world: w } = useStore();
   return (
-    <Sec title="Regiments" sub={`${troops} of ${MAX_REGIMENTS}. Each new one costs ${REGIMENT_COST} from the Treasury, and every one over six adds 3 a week to upkeep.`}>
+    <Sec title="Regiments" sub={`${troops} of ${MAX_REGIMENTS}. Each new one costs ${regimentCost(w, REGIMENT_COST)} from the Treasury, and every one over six adds 3 a week to upkeep.`}>
       <div class="regiments" aria-hidden="true">{Array.from({ length: MAX_REGIMENTS }, (_, i) => <i class={i < troops ? 'on' : ''} />)}</div>
       {cmd && <div class="grid2" style={{ marginTop: 10 }}><Field label="Regiments (1–5)" type="number" value={n} onInput={setN} /><div class="row" style={{ alignSelf: 'end', gap: 6 }}><Btn small onClick={() => act('army.recruit', { n: Number(n) }, 'Raised.')}>Raise</Btn>{!war && <Btn small kind="plain" onClick={() => confirm('Disband regiments? The Army will not like it.') && act('army.disband', { n: Number(n) }, 'Disbanded.')}>Disband</Btn>}</div></div>}
     </Sec>

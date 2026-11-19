@@ -1092,3 +1092,55 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .billtext .bt-pre { margin:0; font-style:italic; color:var(--muted); }
 .billtext .bt-title { overflow-wrap:anywhere; }
 .billtext span { min-width:0; overflow-wrap:anywhere; }
+
+/* imperial stock: the realm is an Empire (web/src/main.tsx sets data-empire). Porphyry and gold on ivory, laurel rules.
+   Comes after state stock so an empire under the Crown Act reads imperial, not merely authoritarian. */
+:root[data-empire] {
+  --paper: #F1ECDF; --card: #FCF9F0; --field: #FFFDF7; --soft: #E7DFCC; --rule: #D3C49E;
+  --teal: #5E1B3C; --teal-dark: #3B0F25; --teal-tint: #F1E3E7; --passport: #4A1430; --on-passport: #F6EBDC;
+  --gold: #C9A13B; --brown: #7A5A1E; --shadow: #3B0F25; --grain: .06;
+}
+:root[data-empire][data-theme="dark"] {
+  --paper: #140E11; --card: #1D1418; --field: #170F13; --soft: #2C1E24; --rule: #4E3A2A; --ink: #EDE3D2; --muted: #B9AA94;
+  --teal: #D9A7BC; --teal-dark: #E8C46A; --teal-tint: #33202A; --passport: #4A1430; --gold: #E3C16F; --shadow: #050304;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-empire]:not([data-theme="light"]) {
+    --paper: #140E11; --card: #1D1418; --field: #170F13; --soft: #2C1E24; --rule: #4E3A2A; --ink: #EDE3D2; --muted: #B9AA94;
+    --teal: #D9A7BC; --teal-dark: #E8C46A; --teal-tint: #33202A; --passport: #4A1430; --gold: #E3C16F; --shadow: #050304;
+  }
+}
+:root[data-empire] .masthead { color: var(--brown); letter-spacing: .3em; }
+:root[data-empire] .masthead::before, :root[data-empire] .masthead::after { border-color: var(--gold); }
+:root[data-empire] h1.title { letter-spacing: .01em; }
+:root[data-empire] h1.title::after { content: ''; display: block; width: 120px; height: 7px; margin-top: 10px; background:
+  linear-gradient(var(--gold), var(--gold)) 0 0 / 100% 1.5px no-repeat, linear-gradient(var(--gold), var(--gold)) 0 100% / 100% 1.5px no-repeat; }
+:root[data-empire] .kicker { color: var(--brown); letter-spacing: .2em; }
+:root[data-empire] .card { border-color: var(--ink); box-shadow: 3px 3px 0 var(--gold); }
+:root[data-empire] .card.tint { box-shadow: 3px 3px 0 var(--teal); }
+:root[data-empire] .btn:not(.ghost):not(.plain):not(.danger) { box-shadow: 0 3px 0 var(--teal-dark), inset 0 0 0 1px rgba(227, 193, 111, .35); }
+:root[data-empire] .nav a.on .mark, :root[data-empire] .side-sub a.on { border-color: var(--gold); }
+:root[data-empire] .ticker { background: #2A0E1C; color: #E3C16F; border-bottom-color: var(--gold); }
+:root[data-empire] .status-banner { background: #2A0E1C; color: #E3C16F; border: 0; border-left: 4px solid var(--gold); }
+:root[data-empire] .status-banner a { color: #E3C16F; }
+:root[data-empire] .leader-poster, :root[data-empire] .leader-poster.royal { background: linear-gradient(160deg, #5E1B3C 0%, #2A0E1C 100%); border-color: var(--gold); box-shadow: 4px 4px 0 var(--gold); color: #FFF6E8; }
+:root[data-empire] .leader-rays { background: repeating-conic-gradient(from 0deg, rgba(227, 193, 111, .1) 0 6deg, transparent 6deg 15deg); }
+
+/* the Privy Council table: seven seats round an oval board */
+.privy-table { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-areas: "s4 s0 s5" "s2 board s3" "s6 s1 ."; gap: 10px; margin-top: 6px; }
+.privy-board { grid-area: board; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 120px; border-radius: 50%; background: #5E1B3C; color: #F6EBDC; border: 3px double var(--gold); box-shadow: inset 0 0 0 6px #3B0F25; text-align: center; font: 700 11px/1.2 var(--sans); letter-spacing: .2em; text-transform: uppercase; }
+.privy-board small { font-weight: 400; letter-spacing: .05em; text-transform: none; opacity: .8; }
+.privy-crest { font-size: 28px; color: var(--gold); letter-spacing: 0; }
+.privy-seat { display: flex; flex-direction: column; gap: 2px; padding: 10px 10px 9px; background: var(--card); border: 1.5px solid var(--ink); border-top: 4px solid var(--gold); border-radius: 3px; box-shadow: 2px 2px 0 var(--soft); min-width: 0; }
+.privy-seat.s0 { border-top-color: var(--teal); background: var(--teal-tint); }
+.privy-seat.me { box-shadow: 0 0 0 2px var(--gold); }
+.privy-seat.empty { border-style: dashed; opacity: .75; }
+.privy-num { font-family: var(--serif); font-size: 13px; color: var(--brown); }
+.privy-role { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.privy-name { overflow-wrap: anywhere; }
+.privy-seat.s0 { grid-area: s0; } .privy-seat.s1 { grid-area: s1; } .privy-seat.s2 { grid-area: s2; } .privy-seat.s3 { grid-area: s3; }
+.privy-seat.s4 { grid-area: s4; } .privy-seat.s5 { grid-area: s5; } .privy-seat.s6 { grid-area: s6; }
+@media (max-width: 520px) {
+  .privy-table { grid-template-columns: 1fr 1fr; grid-template-areas: "board board" "s0 s1" "s2 s3" "s4 s5" "s6 ."; }
+  .privy-board { border-radius: 999px; min-height: 84px; }
+}

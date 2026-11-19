@@ -344,7 +344,7 @@ function sourceFor(name, type) {
 const GROUPS = [
   ['Voting & bills', /^(prop|draft|pledge)\./], ['Elections', /^(election|newsnight)\./], ['Convention', /^(convention|tutorial)\./],
   ['Parties & coalitions', /^(party|coalition)\./], ['The Crown', /^crown\./], ['Government', /^(gov|office|hos|q|reserve)\./], ['Money', /^(money|bond|bank|venture|market|job)\./],
-  ['The Empire', /^imperial\./], ['War & the Army', /^(war|army)\./], ['The Exchange', /^exchange\./], ['Life abroad', /^(defect|abroad|agent|asylum|hostage)\.|^exile\.(declare|join|leave|return)$/],
+  ['The Empire', /^imperial\./], ['The Privy Council', /^privy\./], ['War & the Army', /^(war|army)\./], ['The Exchange', /^exchange\./], ['Life abroad', /^(defect|abroad|agent|asylum|hostage)\.|^exile\.(declare|join|leave|return)$/],
   ['Foreign affairs', /^(foreign|intel|exile)\./], ['Backroom', /^(deal|card|demand|plot|security|coup)\./],
   ['Regimes & coups', /^(regime|police|prison|transition|reckoning|jail)\./], ['Press', /^press\./], ['Court', /^court\./],
   ['Crises', /^crisis\./], ['Streets & market', /^(streets|bounty|stall|hunt)\./], ['Daily & me', /^(daily|me)\./],
@@ -480,7 +480,7 @@ const ACTS = {
   crown: 'Crown Act — the head of state is also the Prime Minister',
   prerogative: 'Royal Prerogative Act — every bill waits for Royal Assent, which can be refused; unsigned bills lapse after 3 days',
   veto: 'Royal Veto Act — the Monarch may strike any pending bill from the order paper',
-  imperial: 'Imperial Prerogative Act — an Emperor or Empress, the realm proclaimed an Empire, and the Imperial High Commission to govern provinces and protectorates'
+  imperial: 'Imperial Prerogative Act — an Emperor or Empress, an Empire, the Imperial Privy Council in place of Parliament, and the Imperial High Commission to command the forces and run the war chest'
 };
 const CLAUSE_TYPES = {
   text: 'Words only (a law in plain text)', set: 'Change a number (tax, pay, timings)', constitution: 'Change the constitution',
@@ -946,7 +946,15 @@ function viewWorld() {
       ${governs ? `<div class="row" style="margin-top:6px">${btn('imperial.levy', { province: id, on: !p.levy }, p.levy ? 'Lift the levy' : 'Levy it (10 a week)')}${p.governor ? btn('imperial.governor', { province: id, target: null }, 'Recall the governor', 'no') : `<select class="sm" data-gov="${esc(id)}">${citizensList.map(([cid, c]) => `<option value="${esc(cid)}">${esc(c.name)}</option>`).join('')}</select><button class="sm" data-govbtn="${esc(id)}">Appoint governor</button>`}</div>` : ''}</div>`).join('') || '<div class="empty">The realm holds no provinces.</div>'}
     <div class="small" style="margin-top:8px"><b>Protectorates:</b> ${ns.filter(([, n]) => n.protectorate).map(([id, n]) => `${esc(n.name)}${governs ? ' ' + btn('imperial.release', { nation: id }, 'Release', 'no', `Release ${n.name}?`) : ''}`).join(', ') || 'none'}</div>
     ${governs ? `<div class="row" style="margin-top:8px">${ns.filter(([id, n]) => !n.protectorate && !n.ruler && n.mood >= 3 && W.army?.war !== id).map(([id, n]) => btn('imperial.protectorate', { nation: id }, `Offer protection to ${n.name}`)).join('')}</div>` : ''}</div>` : '';
-  return `${abroadCard()}${empire}${warCard()}${memorialsCard()}
+  const kit = W.army?.kit || {}, firms = W.warchest?.firms || {}, wh = W.exchange?.holdings?.warchest || {};
+  const canBuy = W.pm === W.viewer || coll(W.offices).some(([, o]) => o.holder === W.viewer && (o.powers || []).some(p => p === 'army' || p === 'imperial'));
+  const canDir = hc ? hc[1].holder === W.viewer || (!hc[1].holder && W.pm === W.viewer) : W.pm === W.viewer;
+  const ITEMS = { artillery: ['Artillery battery', 40, 4], cavalry: ['Cavalry squadron', 25, 4], ironclad: ['Ironclad', 60, 3], airship: ['Airship', 50, 2] };
+  const machine = coll(W.offices).some(([, o]) => (o.powers || []).includes('army')) ? `<div class="card"><h2>The war machine <span class="sub">war chest ${W.accounts?.warchest || 0}</span></h2>
+    ${canDir ? `<div class="row">${btn('imperial.requisition', { crowns: 50 }, 'Requisition 50 from the Treasury')}${btn('imperial.repay', { crowns: 50 }, 'Give 50 back')}</div>` : ''}
+    <div class="small" style="margin-top:8px"><b>Equipment:</b> ${Object.entries(ITEMS).map(([id, [n, c, m]]) => `${esc(n)} ${kit[id] || 0}/${m}${canBuy ? ' ' + btn('army.procure', { item: id }, `Buy (${c})`) : ''}`).join(' · ')}</div>
+    <div class="small" style="margin-top:8px"><b>Companies:</b> ${Object.keys(CO_NAMES).map(sym => `${esc(sym)}${wh[sym]?.n ? ` (${wh[sym].n})` : ''}${firms[sym] ? ` <span class="tag ok">${esc(firms[sym].order)}</span>` : ''}${canDir ? ' ' + (firms[sym] ? ['dividends', 'war', 'requisition'].filter(o => o !== firms[sym].order).map(o => btn('imperial.direct', { sym, order: o }, o === 'war' ? 'War production' : o[0].toUpperCase() + o.slice(1))).join('') : btn('imperial.acquire', { sym }, 'Acquire', '', `Acquire a controlling stake in ${sym}?`)) : ''}`).join('<br>')}</div></div>` : '';
+  return `${abroadCard()}${empire}${machine}${warCard()}${memorialsCard()}
   <div class="card"><h2>The nations <span class="sub">${ns.length}${W.army?.war ? ' · at war with ' + esc(W.nations[W.army.war]?.name) : ''}</span></h2>
     ${ns.map(([id, n]) => `<div class="item"><div class="row between"><span class="t">${esc(n.name)}</span><span><span class="tag ${n.mood >= 3 ? 'ok' : n.mood <= 1 ? 'bad' : ''}">${W.army?.war === id ? 'At war' : MOODS[n.mood]}</span></span></div>
       <div class="m">Army ${knownArmy(n) ? Math.round(n.power * 10) / 10 : 'unknown'}${n.embassy ? ' · our embassy' : ''}${n.embargo ? ' · under our embargo' : ''}${n.sanctionsUntil > SERVER_NOW() ? ' · sanctions on us' : ''}${n.protectorate ? ' · our protectorate' : ''}${n.ruler ? ` · ruled by ${esc(who(n.ruler.id))}, a defector` : ''}${W.shipping?.[id] ? ` · ${W.shipping[id]} ship${W.shipping[id] === 1 ? '' : 's'} at sea` : ''}</div>
@@ -1189,11 +1197,26 @@ function gazetteList(n, full) {
 }
 
 /* ---------------------------------------------------------------- the house */
+const PRIVY_SEATS = ['The Sovereign', 'Imperial High Commissioner', 'Lord Chamberlain', 'Lord Privy Seal', 'Privy Councillor', 'Privy Councillor', 'Privy Councillor'];
+function privyCard() {
+  if (!W.privy) return '';
+  const sov = W.hos?.holder === W.viewer;
+  const people = coll(W.citizens).filter(([id, c]) => c.active !== false && !c.bot && !c.defected && !(W.seats || []).includes(id));
+  return `<div class="card" style="border-color:var(--acc)"><h2>The Imperial Privy Council <span class="sub">sits in place of Parliament · an Order needs ${Math.floor(7 / 2) + 1} of 7</span></h2>
+    ${(W.seats || []).map((id, i) => `<div class="item"><div class="row between"><span><span class="m">${['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'][i]} · ${esc(PRIVY_SEATS[i])}</span> <span class="t">${id ? esc(who(id)) : 'Vacant'}</span></span>
+      ${sov && i >= 4 ? `<span class="row"><select class="sm" data-pc="${i - 4}"><option value="">${id ? 'Dismiss' : 'Choose…'}</option>${people.map(([cid, c]) => `<option value="${esc(cid)}">${esc(c.name)}</option>`).join('')}</select><button class="sm" data-pcbtn="${i - 4}">Do it</button></span>` : ''}</div></div>`).join('')}</div>`;
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-pcbtn]'); if (!b) return;
+  const target = document.querySelector(`[data-pc="${b.dataset.pcbtn}"]`)?.value || null;
+  const r = await act('privy.appoint', { seat: Number(b.dataset.pcbtn), target });
+  toast(r.ok ? (target ? 'Sworn of the Council.' : 'Dismissed.') : r.error, !r.ok);
+});
 function viewHouse() {
   const all = coll(W.proposals).map(([, p]) => p).sort((a, b) => (b.n || 0) - (a.n || 0));
   const open = all.filter(p => !['enacted', 'failed', 'vetoed', 'withheld', 'withdrawn'].includes(p.stage));
   const done = all.filter(p => !open.includes(p)).slice(0, 15);
-  return `<div class="card"><h2>Open proposals</h2>${open.map(p => proposalCard(p)).join('') || '<div class="empty">Nothing open.</div>'}</div>
+  return `${privyCard()}<div class="card"><h2>${W.privy ? 'Orders before the Council' : 'Open proposals'}</h2>${open.map(p => proposalCard(p)).join('') || '<div class="empty">Nothing open.</div>'}</div>
     <div class="card"><h2>The statute book <span class="sub">${(W.laws || []).length} laws</span></h2>${(W.laws || []).slice().reverse().map(l => `<details class="item"><summary><span class="t">${esc(l.ref)} ${esc(l.title)}</span> <span class="m">${esc(l.summary || '')}</span></summary><ol class="small">${(l.text || []).map(t => `<li>${billHtml(t)}</li>`).join('')}</ol></details>`).join('') || '<div class="empty">No laws yet.</div>'}</div>
     <div class="card"><h2>Recently decided</h2>${done.map(p => proposalCard(p, true)).join('') || '<div class="empty">Nothing yet.</div>'}</div>`;
 }

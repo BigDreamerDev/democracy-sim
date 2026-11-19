@@ -48,6 +48,14 @@ export const TABS: Tab[] = [
   ] }
 ];
 
+// under the Imperial Prerogative Act the House is the Privy Council: the tabs say so
+export function relabel(w: any) {
+  const privy = !!w?.privy;
+  const t = TABS.find((x) => x.id === 'house')!;
+  t.label = privy ? 'Council' : 'Parliament';
+  t.sections.find((s) => s.id === 'house')!.label = privy ? 'Privy Council' : 'Chamber';
+  t.sections.find((s) => s.id === 'bills')!.label = privy ? 'Orders' : 'Bills';
+}
 export function where(hash: string) {
   const seg = hash.replace(/^#\/?/, '').split('?')[0].split('/')[0] || '';
   for (const t of TABS) for (const s of t.sections) if (s.routes.includes(seg)) return { tab: t, section: s, seg };

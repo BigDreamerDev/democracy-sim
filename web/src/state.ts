@@ -36,7 +36,9 @@ export function slogans(w: any): string[] {
   const out = s.crown
     ? [`GOD SAVE THE ${t}`, `LONG LIVE ${s.name.toUpperCase()}`, 'ALL AUTHORITY IS VESTED IN THE CROWN', 'THE CROWN ANSWERS TO NO ONE']
     : [`LONG LIVE ${who}`, 'ORDER', 'UNITY', 'CONTINUITY'];
-  if (w.acts?.continuity) out.push('THE PARLIAMENT SITS FOR EVER');
+  if (w.acts?.imperial) out.unshift(`AVE ${/^(King|Emperor)$/.test(w.config.hosTitle) ? 'IMPERATOR' : 'IMPERATRIX'}`), out.push('ONE EMPIRE · ONE CROWN', 'THE COUNCIL HAS SPOKEN');
+  if (w.privy) out.push('BY ORDER IN COUNCIL');
+  else if (w.acts?.continuity) out.push('THE PARLIAMENT SITS FOR EVER');
   if (w.acts?.unity) out.push('ONE PARTY · ONE REALM');
   if (w.acts?.jail) out.push('REPORT DISSENT');
   if (w.acts?.decrees) out.push(s.crown ? 'THE ROYAL DECREE IS THE LAW' : 'THE DECREE IS THE LAW');

@@ -20,6 +20,8 @@ import * as Wr from './war';
 import * as Ex from './exchange';
 import * as Ab from './abroad';
 import * as Em from './empire';
+import * as Wm from './warmachine';
+import * as Pv from './privy';
 
 export * from './core';
 export { createWorld, createLiveWorld, NAMES } from './world';
@@ -175,6 +177,16 @@ export const COMMANDS: Record<string, Cmd> = {
   'imperial.governor': (w, me, a) => Em.governor(w, me, a.province, a.target),
   'imperial.protectorate': (w, me, a) => Em.protectorate(w, me, a.nation),
   'imperial.release': (w, me, a) => Em.release(w, me, a.nation),
+  'imperial.requisition': (w, me, a) => Wm.requisition(w, me, a.crowns),
+  'imperial.repay': (w, me, a) => Wm.giveBack(w, me, a.crowns),
+  'imperial.trade': (w, me, a) => Wm.trade(w, me, a.sym, a.n, a.sell),
+  'imperial.acquire': (w, me, a) => Wm.acquire(w, me, a.sym),
+  'imperial.direct': (w, me, a) => Wm.direct(w, me, a.sym, a.order),
+  'army.procure': (w, me, a) => Wm.procure(w, me, a.item, a.province),
+  'army.scrap': (w, me, a) => Wm.scrap(w, me, a.item, a.province),
+  'privy.appoint': (w, me, a) => Pv.appointCouncillor(w, me, a.seat, a.target),
+  'privy.summon': (w, me, a) => Pv.summon(w, me, a.prop),
+  'privy.seal': (w, me, a) => Pv.seal(w, me, a.prop),
   'war.terms': (w, me, a) => Wr.voteTerms(w, me, a.yes),
   'war.memorial': (w, me, a) => Wr.voteMemorial(w, me, a.memorial, a.names),
   'army.garrison': (w, me, a) => Wr.garrison(w, me, a.province, a.on),

@@ -5,7 +5,10 @@
 // 5 a week, who halves the chance of an uprising), garrison them, and, while the Act is law, take friendly nations as
 // protectorates: they pay 10 a week and fight beside us, but chafe, and break away if they stop liking us.
 import { W, Id, DAY, fail, own, cit, nm, gazette, transfer, bal, ca, chance, stamp, approve, meter, mustBeFree, isPM, hasPower, newId, realmPlace, inForce, allCitizens } from './core';
-import { createOffice } from './offices';
+import { createOffice, TEMPLATES } from './offices';
+import { imperialPurse } from './warmachine';
+import { establishPrivy, dissolvePrivy } from './privy';
+import { callGeneralElection } from './politics';
 import { PROVINCES, seedProvinces, moodShift, atWar } from './foreign';
 
 export const HC = 'highcommission';
@@ -24,12 +27,12 @@ function mustGovern(w: W, actor: Id) {
 export function adoptHighCommission(w: W, ref: string | null) {
   const found = (Object.values(w.offices) as any[]).find((o) => o.template === HC || /imperial\s+high\s+commission/i.test(o.name || ''));
   if (found) {
-    const fixed = found.template !== HC || found.title !== 'Imperial High Commissioner' || !found.powers.includes('imperial');
+    const fixed = found.template !== HC || found.title !== 'Imperial High Commissioner' || !found.powers.includes('imperial') || !found.powers.includes('army');
     found.template = HC;
     found.name = 'Imperial High Commission';
     found.title = 'Imperial High Commissioner';
-    found.powers = [...new Set([...(found.powers || []), 'imperial'])];
-    found.blurb = 'Governs the empire beyond the realm: provinces, their governors and tribute, and protectorates.';
+    found.powers = [...new Set([...(found.powers || []), 'imperial', 'army'])];
+    found.blurb = TEMPLATES[HC].blurb;
     return fixed;
   }
   if (ref) createOffice(w, { template: HC }, ref);
@@ -50,12 +53,14 @@ export function proclaimEmpire(w: W, ref: string) {
   if (w.config.hos === 'monarchy') w.config.hosTitle = imperialTitle(w.config.hosTitle);
   if (!/\bempire\b/i.test(w.config.realmName)) renameRealm(w, realmPlace(w) === 'the Realm' ? 'The Empire' : `The ${realmPlace(w)} Empire`, 'the Imperial Prerogative Act');
   adoptHighCommission(w, ref);
-  gazette(w, 'law', `The Imperial Prerogative Act is law. ${w.config.hos === 'monarchy' ? `${nm(w, w.hos.holder)} reigns as ${w.config.hosTitle}` : 'The realm is an Empire'}, the ${w.config.realmName} is proclaimed, and the Imperial High Commission governs its provinces and protectorates.`, '#/atlas');
+  establishPrivy(w, ref);
+  gazette(w, 'law', `The Imperial Prerogative Act is law. ${w.config.hos === 'monarchy' ? `${nm(w, w.hos.holder)} reigns as ${w.config.hosTitle}` : 'The realm is an Empire'}, the ${w.config.realmName} is proclaimed, the Imperial Privy Council sits in place of Parliament, and the Imperial High Commission governs the empire and commands its forces.`, '#/atlas');
 }
 export function unproclaimEmpire(w: W) {
   if (w.config.hos === 'monarchy') w.config.hosTitle = royalTitle(w.config.hosTitle);
   Object.values(w.nations).forEach((n: any) => n.protectorate && ((n.protectorate = null), moodShift(n, 1, 'Our protectorate ended')));
   w.config.imperialFrom = null;
+  if (w.privy) (dissolvePrivy(w), callGeneralElection(w, w.now + 3 * DAY));
   gazette(w, 'law', `The Imperial Prerogative Act is repealed. ${w.config.hos === 'monarchy' ? `The ${w.config.hosTitle} reigns again as a monarch, not an ${/king/i.test(w.config.hosTitle) ? 'Emperor' : 'Empress'}` : 'The imperial powers lapse'}, and every protectorate is released. The realm keeps its name until a law changes it.`, '#/laws');
 }
 
@@ -147,7 +152,7 @@ export function empireWeek(w: W) {
   Object.entries(w.provinces as Record<string, any>).forEach(([id, p]) => {
     if (p.owner !== 'realm') return void ((p.levy = false), (p.governor = null));
     if (p.levy) {
-      transfer(w, 'reserve', 'treasury', LEVY, `Tribute from ${PROVINCES[id].name}`);
+      transfer(w, 'reserve', imperialPurse(w), LEVY + (w.army?.campaign ? 5 : 0), `Tribute from ${PROVINCES[id].name}${w.army?.campaign ? ' (a war levy)' : ''}`);
       // a province we always held does not rise, but it riots
       if (PROVINCES[id].start === 'realm' && chance(w, 0.2)) (meter(w, 'stability', -1, `Tax riots in ${PROVINCES[id].name}`), gazette(w, 'government', `Tax riots in ${PROVINCES[id].name} over the imperial levy.`, '#/atlas'));
     }
@@ -159,7 +164,7 @@ export function empireWeek(w: W) {
   Object.values(w.nations).forEach((n: any) => {
     if (!n.protectorate) return;
     const t = Math.min(PROTECTORATE_TRIBUTE, bal(w, 'nation:' + n.id));
-    if (t > 0) transfer(w, 'nation:' + n.id, 'treasury', t, `Tribute from the protectorate of ${n.name}`);
+    if (t > 0) transfer(w, 'nation:' + n.id, imperialPurse(w), t, `Tribute from the protectorate of ${n.name}`);
     if (!n.embassy && chance(w, 0.15)) moodShift(n, -1, 'They chafe under our protection');
     if (n.mood < 3 && chance(w, 0.4)) {
       n.protectorate = null;
@@ -170,5 +175,5 @@ export function empireWeek(w: W) {
   });
 }
 // how much more (or less) likely a province we took is to rise this week
-export const unrest = (p: any) => (p.governor ? 0.5 : 1) * 0.35 + (p.levy ? 0.15 : 0);
+export const unrest = (p: any) => ((p.governor ? 0.5 : 1) * 0.35 + (p.levy ? 0.15 : 0)) * (p.fort ? 0.4 : 1);
 export const governed = (w: W) => allCitizens(w).filter((c: any) => Object.values(w.provinces || {}).some((p: any) => p.governor === c.id));

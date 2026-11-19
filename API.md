@@ -219,6 +219,9 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | `provinces[].levy`, `.governor` | under the Imperial Prerogative Act: a weekly levy is on (bool); the citizen governing it |
 | `nations[].protectorate` | `true` while that nation is the empire's protectorate (tribute each payday; fights beside us) |
 | `acts.imperial`, `config.formerNames[]` | the Imperial Prerogative Act's law ref when in force; past names of the realm (`{name, until}`) |
+| `privy` | the Imperial Privy Council while it sits (else `null`): `since`, `ref`, `councillors` (three ids), `parliament` (the dissolved Parliament: `seats`, `n`, `speaker`). While it sits, `seats` holds the Council in order: Sovereign, High Commissioner, Lord Chamberlain, Lord Privy Seal, three Councillors |
+| `warchest`, `accounts.warchest`, `exchange.holdings.warchest` | the Imperial War Chest: `firms` (companies it controls: `{sym: {since, order, by}}`, order `dividends`/`war`/`requisition`), `drawn` this week; its balance; its shares |
+| `army.kit`, `provinces[].fort` | military acquisitions: `{artillery, cavalry, ironclad, airship}` counts; a fort in a province |
 | `shipping` | trade ventures at sea to each nation: `{nationId: count}` |
 | `army.campaign.terms` | the enemy's terms of peace: `kind` (`land`/`tribute`/`hostage`), `ahead`, `province`, `crowns`, `hostage`, `votes` (MPs, public), `closesAt`, `status` |
 | `memorials[]` | a war memorial vote: `names` (candidates), `votes` (MPs), `closesAt`, `status`, `carved`; carved memorials are in `fame.memorials` |

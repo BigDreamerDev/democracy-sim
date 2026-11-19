@@ -367,7 +367,7 @@ export function newElection(w: W, e: any) {
 }
 export function callGeneralElection(w: W, closesAt: number) {
   // under the Continuity of Parliament Act nothing calls one: not a term ending, a dissolution, a crisis or a regime falling
-  if (inForce(w, 'continuity')) return false;
+  if (inForce(w, 'continuity') || w.privy) return false;
   const g = newElection(w, { kind: 'general', title: `General election for the ${ordinal(w.season.n + 1)} Parliament`, winners: w.config.seats, closesAt });
   const s = newElection(w, { kind: 'speaker', title: 'Election for Speaker', closesAt });
   // sitting MPs and the Speaker stand again automatically; they can withdraw
@@ -671,7 +671,7 @@ export function closeElection(w: W, e: any) {
 // an empty seat goes to the next candidate in line from the last general election
 export function countback(w: W) {
   // under the Continuity of Parliament Act an empty seat waits for the Prime Minister to fill it
-  if (inForce(w, 'continuity')) return;
+  if (inForce(w, 'continuity') || w.privy) return;
   const nid = national(w);
   w.seats.forEach((s: Id | null, i: number) => {
     if (s) return;

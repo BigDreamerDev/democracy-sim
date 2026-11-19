@@ -1,3 +1,4 @@
+import { PrivyCouncil } from './privy';
 import { COMPANIES } from '../../../engine/exchange';
 import { PROVINCES } from '../../../engine/foreign';
 import { useEffect, useRef, useState } from 'preact/hooks';
@@ -17,6 +18,7 @@ const whole = (v: string, max: number) => Math.min(max, Math.max(0, Math.round(N
 
 export function House() {
   const { world: w } = useStore();
+  if (w.privy) return <PrivyCouncil />;
   const lo = leaderOfOpposition(w);
   const bench = (gov: boolean) => w.seats.filter((s: string) => s && inGovernment(w, s) === gov).sort((a: string, b: string) => (w.pm === b ? 1 : 0) - (w.pm === a ? 1 : 0) || String(w.citizens[a].party || '~').localeCompare(String(w.citizens[b].party || '~')));
   const live = Object.values(w.proposals).filter((p: any) => LIVE.includes(p.stage)).sort((a: any, b: any) => b.n - a.n) as any[];
@@ -264,7 +266,7 @@ export function Proposal({ id }: { id: string }) {
             {p.stage === 'vote' && w.speaker === me && p.voters === 'mps' && (
               <div style={{ marginTop: 10 }}><div class="small" style={{ fontWeight: 700, marginBottom: 6 }}>Your casting vote, used only on a tie</div><Seg value={p.casting || 'no'} onChange={(v) => act('prop.casting', { prop: p.id, vote: v })} options={[['aye', 'Aye'], ['no', 'No']]} /></div>
             )}
-            {p.stage === 'vote' && !canVoteOn(w, p, me) && w.speaker !== me && <p class="small muted" style={{ margin: 0 }}>Only MPs vote on this. You can still speak below.</p>}
+            {p.stage === 'vote' && !canVoteOn(w, p, me) && w.speaker !== me && <p class="small muted" style={{ margin: 0 }}>{w.privy ? 'Only the Privy Council votes on this.' : 'Only MPs vote on this.'} You can still speak below.</p>}
             {p.result && <p style={{ margin: '8px 0 0' }}><b>{p.result.passed ? 'Passed' : 'Defeated'}</b> {p.result.ayes} to {p.result.noes}{p.result.note}.</p>}
           </Card>
         </Sec>
@@ -415,7 +417,7 @@ export function NewProposal({ query }: { query: URLSearchParams }) {
   };
   const kinds = Object.entries(KINDS).filter(([k]) => (k === 'confidence' || k === 'dissolution' ? isPM(w, me) : true));
   return (
-    <Page back={['#/house', 'The House']} kicker="New proposal" title="Put it to the House" intro={isMP(w, me) || isPM(w, me) ? `You have ${c.influence} Influence.` : 'Only MPs can put proposals to the House. You can still draft one to see how it works.'}>
+    <Page back={['#/house', w.privy ? 'The Privy Council' : 'The House']} kicker={w.privy ? 'New Order in Council' : 'New proposal'} title={w.privy ? 'Lay it before the Council' : 'Put it to the House'} intro={isMP(w, me) || isPM(w, me) ? `You have ${c.influence} Influence.` : w.privy ? 'Only members of the Privy Council lay Orders before it. You can still draft one.' : 'Only MPs can put proposals to the House. You can still draft one to see how it works.'}>
       <Drafts current={draftId} />
       <Sec title="What kind?">
         <div class="stack">{kinds.map(([k, v]) => <Opt on={kind === k} onClick={() => setKind(k)} title={v.name} hint={`${v.blurb} Voted on by: ${v.who}.`} />)}</div>
@@ -441,7 +443,7 @@ export function NewProposal({ query }: { query: URLSearchParams }) {
           {kind !== 'dissolution' && <Opt on={fast} onClick={() => setFast(!fast)} title="Fast-track: half the debate and voting time" hint="Costs 15 Influence." />}
           <p class="small" style={{ fontWeight: 700, margin: '10px 0' }}>{constitutional ? `Constitutional: needs ${superMajority(w)} of ${w.config.seats} MPs. ` : ''}{cost ? `Costs ${cost} Influence.` : 'Free.'} {kind === 'dissolution' ? 'Goes straight to the head of state.' : `Debate ${fast ? w.config.debateHours / 2 : w.config.debateHours}h, then ${fast ? w.config.voteHours / 2 : w.config.voteHours}h to vote.`}</p>
           {kind !== 'dissolution' && kind !== 'confidence' && <Sponsors draftId={draftId} keep={keep} />}
-          <Btn full onClick={submit}>Put it to the House</Btn>
+          <Btn full onClick={submit}>{w.privy ? 'Lay it before the Council' : 'Put it to the House'}</Btn>
           <p class="small muted" style={{ margin: '8px 0 0' }}>{savedAt ? `Draft saved ${when(savedAt)}. ` : 'Drafts save as you type. '}<a href={'#/new?fresh=' + draftId}>Start another</a></p>
         </Card>
       </Sec>

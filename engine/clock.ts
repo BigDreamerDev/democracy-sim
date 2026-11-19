@@ -15,6 +15,7 @@ import { nationsTurn, settleUltimatum } from './foreign';
 import { battle, warWeek, settleTerms, closeMemorial, payPensions } from './war';
 import { abroadWeek } from './abroad';
 import { empireWeek } from './empire';
+import { machineWeek } from './warmachine';
 import { tickExchange, exchangePayday, closeMotion } from './exchange';
 import { expireContract, settleClaim, ghostBack, bountyDeadline, bountyDue, orderDeadline, openHunt, startHunt, finishHunt } from './streets';
 import { marketDue, staleMarket } from './markets';
@@ -151,6 +152,7 @@ function weeklyPayday(w: W) {
   warWeek(w);
   abroadWeek(w);
   empireWeek(w);
+  machineWeek(w);
   if (!strikeOn(w)) payPensions(w);
   openHunt(w);
   takePoll(w);

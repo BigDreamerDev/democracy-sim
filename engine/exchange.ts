@@ -113,7 +113,7 @@ export function tickExchange(w: W) {
 }
 
 // the exchange pays out: from its own account, drawing new money from the Reserve if it must
-function payOut(w: W, to: string, amt: number, memo: string) {
+export function payOut(w: W, to: string, amt: number, memo: string) {
   if (amt <= 0) return;
   const short = amt - bal(w, 'exchange');
   if (short > 0) {
@@ -191,13 +191,13 @@ export function exchangePayday(w: W) {
   listedPayday(w);
   let paid = 0;
   Object.entries(x.holdings).forEach(([id, h]: [string, any]) => {
-    if (id !== FUND && !w.citizens[id]?.active) return;
+    if (id !== FUND && id !== 'warchest' && !w.citizens[id]?.active) return;
     const amt = Object.keys(h).reduce((s, sym) => {
       const c = company(sym);
       return s + (c && h[sym].n > 0 ? (h[sym].n * price(w, sym) * c.yield) / 100 : 0);
     }, 0);
     const d = Math.floor(amt);
-    if (d > 0) (payOut(w, id === FUND ? 'treasury' : ca(id), d, id === FUND ? 'Dividends to the wealth fund' : 'Dividends from the Exchange'), (paid += d));
+    if (d > 0) (payOut(w, id === FUND ? 'treasury' : id === 'warchest' ? 'warchest' : ca(id), d, id === FUND ? 'Dividends to the wealth fund' : id === 'warchest' ? 'Dividends to the war chest' : 'Dividends from the Exchange'), (paid += d));
   });
   const spare = bal(w, 'exchange') - FLOAT;
   if (spare > 0) transfer(w, 'exchange', 'reserve', spare, 'The Exchange returned its surplus to the Reserve');
@@ -206,7 +206,7 @@ export function exchangePayday(w: W) {
 // the Register of Interests: shares held by MPs, ministers, the Prime Minister and the head of state are public
 export function register(w: W) {
   const x = exchange(w);
-  return Object.entries(x.holdings).filter(([id]) => id !== FUND).filter(([id]) => isMP(w, id) || inGov(w, id) || w.hos?.holder === id).map(([id, h]: [string, any]) => ({ id, holds: Object.keys(h).filter((s) => h[s].n > 0).map((s) => ({ sym: s, n: h[s].n })) })).filter((r) => r.holds.length);
+  return Object.entries(x.holdings).filter(([id]) => id !== FUND && id !== 'warchest').filter(([id]) => isMP(w, id) || inGov(w, id) || w.hos?.holder === id).map(([id, h]: [string, any]) => ({ id, holds: Object.keys(h).filter((s) => h[s].n > 0).map((s) => ({ sym: s, n: h[s].n })) })).filter((r) => r.holds.length);
 }
 
 // ---------- insider trading: every trade is logged privately. Someone who traded a company in the 24 hours before
@@ -267,7 +267,7 @@ export const fund = (w: W) => portfolio(w, FUND);
 // vote for a day, weighted by their shares (votes are private, the totals public). Carried, the company's lobby is
 // public on the bill, and when the House decides, the company's price jumps 6% if it got its way and falls 6% if not ----------
 export const MOTION_HOURS = 24;
-const held = (w: W, id: Id, sym: string) => (id === FUND ? 0 : exchange(w).holdings[id]?.[sym]?.n || 0);
+const held = (w: W, id: Id, sym: string) => (id === FUND || id === 'warchest' ? 0 : exchange(w).holdings[id]?.[sym]?.n || 0);
 export const heldBy = held;
 const floatOf = (w: W, sym: string) => Object.keys(exchange(w).holdings).reduce((s, id) => s + held(w, id, sym), 0);
 export function canMove(w: W, id: Id, sym: string) { const n = held(w, id, sym); return n >= 5 && n * 10 >= floatOf(w, sym); }

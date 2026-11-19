@@ -27,7 +27,7 @@ export function digest(w: W): string {
     return currencyText(w, L.join('\n'));
   }
   L.push('');
-  L.push(`${ordinal(Math.max(1, w.season?.n || 1))} Parliament, ${w.config.seats} seats (majority ${majority(w)}).`);
+  L.push(w.privy ? `The Imperial Privy Council sits in place of Parliament: ${w.config.seats} seats (majority ${majority(w)}).` : `${ordinal(Math.max(1, w.season?.n || 1))} Parliament, ${w.config.seats} seats (majority ${majority(w)}).`);
   L.push(`PM: ${w.pm ? nm(w, w.pm) : 'none (no one commands a majority yet)'} · ${hosTitle(w)}: ${nm(w, w.hos?.holder) || 'vacant'} · Speaker: ${nm(w, w.speaker) || 'vacant'}`);
   const seats: Record<string, number> = {};
   w.seats.filter(Boolean).forEach((m: string) => { const p = w.citizens[m]?.party; const k = p && w.parties[p] ? w.parties[p].name : 'Independents'; seats[k] = (seats[k] || 0) + 1; });

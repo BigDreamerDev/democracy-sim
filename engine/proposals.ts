@@ -225,6 +225,7 @@ function checkClause(w: W, e: any, byDecree = false) {
       const ok: Record<string, unknown[]> = { seats: [3, 5, 7, 9], termDays: [14, 21, 28], hos: ['monarchy', 'republic'] };
       if (e.key === 'hosMethod') ok.hosMethod = (HOS_METHODS[w.config.hos] || []).map((m: any) => m.id);
       if (!own(ok, e.key)) fail('Pick what to change in the constitution.');
+      if (w.privy && e.key === 'seats') fail('The Privy Council has seven seats. Repeal the Imperial Prerogative Act to bring back Parliament.');
       if ((e.key === 'hos' || e.key === 'hosMethod') && !byDecree && inForce(w, 'protection')) fail('Only a decree of the Prime Minister can change the head of state.');
       choose(e.value, ok[e.key], 'That value isn’t allowed.');
       if (e.label !== undefined) e.label = text(e.label, 0, 40, 'label');
@@ -265,7 +266,7 @@ export function propose(w: W, actor: Id, a: any) {
   const summary = text(a.summary, 0, 500, 'summary');
   if (kind === 'confidence' || kind === 'dissolution') {
     if (!isPM(w, actor)) fail(`Only the Prime Minister can ask for ${kind === 'confidence' ? 'a confidence vote' : 'a dissolution'}.`);
-  } else if (!isMP(w, actor) && !hasPower(w, actor, 'propose')) fail('Only MPs put proposals to the House.');
+  } else if (!isMP(w, actor) && !hasPower(w, actor, 'propose')) fail(w.privy ? 'Only members of the Privy Council lay Orders before it.' : 'Only MPs put proposals to the House.');
   if ((kind === 'no_confidence' || kind === 'confidence') && !w.pm) fail('There is no government.');
   if (kind === 'censure' && !own(w.citizens, a.target)?.active) fail('Pick who to censure.');
   checkClauses(w, kind, clauses);
@@ -310,7 +311,7 @@ export function propose(w: W, actor: Id, a: any) {
     across.forEach((s) => approve(w, s, 1));
   }
   if (w.proposals[id].stage === 'consent') return (gazette(w, 'proposal', `${nm(w, actor)} asks the Prime Minister’s consent to table: ${w.proposals[id].title}.`, '#/p/' + id), id);
-  gazette(w, 'proposal', `${nm(w, actor)} puts a ${across.length ? 'cross-party ' : ''}${KINDS[kind].name.toLowerCase()} to the House${sponsors.length ? `, co-sponsored by ${sponsors.map((s) => nm(w, s)).join(', ')}` : ''}: ${w.proposals[id].title}${constitutional ? ' (constitutional: needs ' + superMajority(w) + ' of ' + w.config.seats + ')' : ''}.`, '#/p/' + id);
+  gazette(w, 'proposal', `${nm(w, actor)} puts a ${across.length ? 'cross-party ' : ''}${w.privy && kind === 'bill' ? 'Order' : KINDS[kind].name.toLowerCase()} ${w.privy ? 'before the Privy Council' : 'to the House'}${sponsors.length ? `, co-sponsored by ${sponsors.map((s) => nm(w, s)).join(', ')}` : ''}: ${w.proposals[id].title}${constitutional ? ' (constitutional: needs ' + superMajority(w) + ' of ' + w.config.seats + ')' : ''}.`, '#/p/' + id);
   return id;
 }
 
@@ -620,7 +621,7 @@ export function vote(w: W, actor: Id, pid: Id, v: string) {
   if (!p) fail('No such proposal.');
   if (p.stage === 'debate') fail('Voting opens when the debate ends.');
   if (p.stage !== 'vote' && p.stage !== 'override') fail('Voting has closed.');
-  if (!canVoteOn(w, p, actor)) fail(w.speaker === actor ? 'The Speaker only votes to break a tie: set your casting vote.' : p.voters === 'all' ? 'You cannot vote in exile.' : 'Only MPs vote on this.');
+  if (!canVoteOn(w, p, actor)) fail(w.speaker === actor ? 'The Speaker only votes to break a tie: set your casting vote.' : p.voters === 'all' ? 'You cannot vote in exile.' : w.privy ? 'Only the Privy Council votes on this.' : 'Only MPs vote on this.');
   const book = p.stage === 'override' ? (p.overrideVotes = p.overrideVotes || {}) : p.votes;
   if (p.voters === 'all' && book[actor]) fail('Referendum ballots are secret and final.');
   if (book[actor] === undefined) {
@@ -645,7 +646,7 @@ export function openVote(w: W, p: any) {
   judgePledges(w);
   const baseVoteH = ['no_confidence', 'confidence', 'censure'].includes(p.kind) ? 12 : w.config.voteHours;
   p.voteEndsAt = w.now + (p.fast ? baseVoteH / 2 : baseVoteH) * HOUR;
-  gazette(w, 'proposal', `Voting opens: ${p.title}. ${p.voters === 'all' ? 'Every citizen votes.' : 'MPs vote.'}`, '#/p/' + p.id);
+  gazette(w, 'proposal', `Voting opens: ${p.title}. ${p.voters === 'all' ? 'Every citizen votes.' : w.privy ? 'The Privy Council votes.' : 'MPs vote.'}`, '#/p/' + p.id);
   openMarket(w, 'prop', p.id, `Will “${p.title}” pass the vote?`, [{ key: 'yes', label: 'Passes' }, { key: 'no', label: 'Fails' }], p.voteEndsAt);
 }
 function tally(w: W, p: any, book: any) {

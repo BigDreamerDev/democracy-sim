@@ -13,7 +13,7 @@ export function rolesOf(w: any, me: string): Role[] {
   if (isPM(w, me)) R.push({ key: 'pm', title: 'Prime Minister', tone: 'red', href: '#/government', can: ['Appoint and sack ministers', 'Answer at Prime Minister’s Questions', 'Decide crises for the realm', 'Table government bills'] });
   if (isHOS(w, me)) R.push({ key: 'hos', title: hosTitle(w), tone: 'red', href: '#/hos', can: ['Sign or refuse bills the House has passed', 'Invite whoever commands a majority to be Prime Minister'] });
   if (w.speaker === me) R.push({ key: 'speaker', title: 'Speaker', tone: 'ink', href: '#/house', can: ['Call order in debates', 'Cast the deciding vote on a tie'] });
-  if (isMP(w, me)) R.push({ key: 'mp', title: 'Member of Parliament', tone: 'teal', href: '#/house', can: ['Vote on every bill', 'Table bills and ask questions', 'Back or bring down the government'] });
+  if (isMP(w, me)) R.push(w.privy ? { key: 'mp', title: 'Privy Councillor', tone: 'teal', href: '#/house', can: ['Vote on every Order in Council', 'Lay Orders and ask questions', 'Advise the Sovereign'] } : { key: 'mp', title: 'Member of Parliament', tone: 'teal', href: '#/house', can: ['Vote on every bill', 'Table bills and ask questions', 'Back or bring down the government'] });
   try {
     if (leaderOfOpposition(w) === me) R.push({ key: 'lo', title: 'Leader of the Opposition', tone: 'brown', href: '#/government', can: ['Name the shadow cabinet', 'Lead the questions at PMQs'] });
   } catch {}

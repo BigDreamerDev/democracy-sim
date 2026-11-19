@@ -4,11 +4,12 @@
 // Victory and defeat feed the coup system (backroom.ts): a war hero weighs more on a coup night, a beaten Army
 // leans towards the plotters, and an Army at the front cannot defend the capital.
 // State: w.army.war = the enemy's id (as before), w.army.campaign = this war, w.army.hero, w.army.defeatedAt, w.wars (history).
-import { W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, earn, transfer, bal, ca, hasPower, isPM, holderOf, clamp, meter, approve, stamp, bump, mustBeFree, int, legit, own, newId, pick, isMP, mps, inGov, autocrat, autocratTitle, cap } from './core';
+import { hasArmy, W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, earn, transfer, bal, ca, hasPower, isPM, holderOf, clamp, meter, approve, stamp, bump, mustBeFree, int, legit, own, newId, pick, isMP, mps, inGov, autocrat, autocratTitle, cap } from './core';
 import { moodShift, treatyWith, PROFILES, warSpoils, PROVINCES, seedProvinces } from './foreign';
 import { fame } from './glory';
 import { enemyKnows, takeHostage } from './abroad';
 import { canGovernEmpire } from './empire';
+import { machineLines, regimentCost, blockadeFactor, raidBonus } from './warmachine';
 import { imposePretender } from './crown';
 
 export const BATTLE_EVERY = 12 * HOUR;
@@ -32,6 +33,7 @@ export function power(w: W) {
   const troops = Math.max(0, (w.army.troops ?? 6) - garrisons);
   const lines: [string, number][] = [[`${troops} regiments in the field${garrisons ? ` (${garrisons} on garrison duty)` : ''}`, troops], [`Readiness: ${w.army.readiness}`, troops * (READY[w.army.readiness] - 1)], [`Loyalty ${w.army.loyalty}/5`, troops * (w.army.loyalty - 3) * 0.1]];
   if (holderOf(w, 'army')) lines.push(['A General in command', 1]);
+  lines.push(...machineLines(w, k?.strategy || 'hold'));
   allies(w).forEach((n) => lines.push([`${n.name} fights beside us`, Math.round((n.power || 3) / 2)]));
   if (k?.volunteers?.length) lines.push([`${k.volunteers.length} volunteer${k.volunteers.length === 1 ? '' : 's'}`, k.volunteers.length * 0.5]);
   const us = Math.max(0.5, lines.reduce((s, l) => s + l[1], 0));
@@ -66,17 +68,17 @@ export function setStrategy(w: W, actor: Id, s: string) {
 }
 // raise regiments, paid from the Treasury
 export function recruit(w: W, actor: Id, n: unknown) {
-  if (!w.offices.army) fail('There is no Army: pass the Defence Act first.');
+  if (!hasArmy(w)) fail('There is no Army: pass the Defence Act first.');
   if (!canCommand(w, actor)) fail('Only the General, the Prime Minister or an officer of state raises regiments.');
   const k = int(n, 1, 5, 'number of regiments');
   const have = w.army.troops ?? 6;
   if (have + k > MAX_REGIMENTS) fail(`The realm can field ${MAX_REGIMENTS} regiments at most. It has ${have}.`);
-  transfer(w, 'treasury', 'reserve', REGIMENT_COST * k, `Raised ${k} regiment${k === 1 ? '' : 's'}`);
+  transfer(w, 'treasury', 'reserve', regimentCost(w, REGIMENT_COST) * k, `Raised ${k} regiment${k === 1 ? '' : 's'}`);
   w.army.troops = have + k;
   gazette(w, 'army', `${k} new regiment${k === 1 ? ' is' : 's are'} raised. The Army now fields ${w.army.troops}.`, '#/army');
 }
 export function disband(w: W, actor: Id, n: unknown) {
-  if (!w.offices.army) fail('There is no Army.');
+  if (!hasArmy(w)) fail('There is no Army.');
   if (!canCommand(w, actor)) fail('Only the General, the Prime Minister or an officer of state disbands regiments.');
   if (w.army.war) fail('Not in the middle of a war.');
   const k = int(n, 1, 5, 'number of regiments');
@@ -131,7 +133,7 @@ export function battle(w: W) {
   let loot = 0;
   if (won) n.power = Math.max(1, Math.round(((n.power || 3) - (k.strategy === 'raid' ? 0.5 : 0.25)) * 100) / 100);
   if (won && k.strategy === 'raid') {
-    loot = Math.min(bal(w, 'nation:' + n.id), 10 + Math.round(rand(w) * 15));
+    loot = Math.min(bal(w, 'nation:' + n.id), Math.round((10 + rand(w) * 15) * raidBonus(w)));
     if (loot > 0) transfer(w, 'nation:' + n.id, 'treasury', loot, `Spoils of a raid on ${n.name}`);
   }
   k.enemyBoost = 0;
@@ -265,7 +267,7 @@ function dispatches(w: W, k: any, won: boolean, where: string, delta: number, lo
 // ---------- garrisons: a regiment left in a province we took keeps it from rising (foreign.ts provincesWeek) ----------
 export const garrisoned = (w: W) => Object.values(w.provinces || {}).filter((p: any) => p.owner === 'realm' && p.garrison).length;
 export function garrison(w: W, actor: Id, pid: unknown, on: unknown) {
-  if (!w.offices.army) fail('There is no Army.');
+  if (!hasArmy(w)) fail('There is no Army.');
   if (!canCommand(w, actor) && !canGovernEmpire(w, actor)) fail('Only the General, the Prime Minister, an officer of state or the Imperial High Commissioner posts garrisons.');
   seedProvinces(w);
   const p = own(w.provinces, pid);
@@ -281,7 +283,7 @@ export function garrison(w: W, actor: Id, pid: unknown, on: unknown) {
 function blockade(w: W, k: any) {
   const n = w.nations[k.nation];
   w.ventures.forEach((v: any) => {
-    if (v.status !== 'out' || !chance(w, 0.12)) return;
+    if (v.status !== 'out' || !chance(w, 0.12 * blockadeFactor(w))) return;
     v.status = 'seized';
     v.returned = 0;
     gazette(w, 'army', `${n.name}'s raiders seize a ship bound for ${w.nations[v.nation]?.name}. ${nm(w, v.by)}'s venture is lost.`, '#/war');

@@ -3,13 +3,13 @@ import { useEffect, useState } from 'preact/hooks';
 import './styles.css';
 import { useStore, ONLINE, toast as say } from './store';
 import { When } from './ui';
-import { nm } from '../../engine/index';
+import { nm, imperial } from '../../engine/index';
 import { SignIn, ResetPassword } from './pages/signin';
 import { Icon, getTheme, themeBar, useRoute } from './ui';
 import { DemoPanel, DemoRail } from './DemoPanel';
 import { Sidebar } from './Sidebar';
 import { Coronation } from './Coronation';
-import { TABS, where } from './nav';
+import { TABS, where, relabel } from './nav';
 import { Search } from './search';
 import { markSeen } from './pages/today';
 import { Today, Gazette, FrontPage, Passport, Laws, Law, Calendar } from './pages/today';
@@ -114,6 +114,8 @@ function App() {
 function Game() {
   const hash = useHash();
   const { toast, offline } = useStore();
+  const { world: w0 } = useStore();
+  relabel(w0);
   const r = route(hash);
   const here = where(hash).tab.id;
   useEffect(() => markSeen(here), [here]);
@@ -122,6 +124,8 @@ function Game() {
   const { world } = useStore();
   const state = !!stateMode(world);
   useEffect(() => void document.documentElement.toggleAttribute('data-state', state), [state]);
+  const empire = !!world && imperial(world);
+  useEffect(() => void document.documentElement.toggleAttribute('data-empire', empire), [empire]);
   useCurrency(world);
   return (
     <div class={'app' + (ONLINE ? ' online' : '')}>

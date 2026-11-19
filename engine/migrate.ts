@@ -119,6 +119,10 @@ export function migrate(w: W): W {
   // an Imperial High Commission made by hand (a custom office) becomes the real one, with its powers and proper title
   if (w.offices) adoptHighCommission(w, null);
   w.config && (w.config.formerNames ??= []);
+  w.privy ??= null;
+  w.warchest ??= { firms: {}, drawn: 0, drawnWeek: 0 };
+  w.warchest.firms ??= {};
+  if (w.army) w.army.kit ??= {};
   w.wars ??= [];
   if (w.army) {
     w.army.troops ??= 6;

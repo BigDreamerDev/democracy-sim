@@ -18,6 +18,7 @@ import { checkClauses, enactDecree } from './proposals';
 import { voidMarket } from './markets';
 import { endCivil } from './regime';
 import { proclaimEmpire, unproclaimEmpire } from './empire';
+import { syncPrivy } from './privy';
 
 export type ActKey = 'jail' | 'decrees' | 'continuity' | 'unity' | 'protection' | 'press' | 'security' | 'crown' | 'prerogative' | 'veto' | 'imperial';
 export const ACT_KEYS: ActKey[] = ['jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto', 'imperial'];
@@ -26,7 +27,7 @@ export const ACTS: Record<ActKey, { name: string; text: string }> = {
   // an empire: an Emperor or Empress, a name to match, and the Imperial High Commission (empire.ts)
   imperial: {
     name: 'Imperial Prerogative',
-    text: 'The Monarch reigns as Emperor or Empress, and the realm is proclaimed an Empire (taking the name “The … Empire” unless it is one already). The Imperial High Commission is established, led by the Imperial High Commissioner, appointed by the Prime Minister: it governs the provinces of the empire, levies their tribute, names their governors and garrisons them, and may take friendly nations under the empire’s protection as protectorates, which pay tribute and fight beside the realm. If repealed, the monarch reigns as King or Queen again and every protectorate is released.'
+    text: 'The Monarch reigns as Emperor or Empress, and the realm is proclaimed an Empire (taking the name “The … Empire” unless it is one already). Parliament is dissolved and the Imperial Privy Council sits in its place: the Sovereign, the Imperial High Commissioner, the Lord Chamberlain, the Lord Privy Seal and three Privy Councillors appointed by the Sovereign. It passes Orders in Council as Parliament passed bills, and there are no general elections while it sits. The Imperial High Commission is established: the High Commissioner holds the powers of the General, runs the Imperial War Chest (which receives the empire’s levies and tribute, may draw on the Treasury, trade shares and acquire companies for war production), buys the Army’s equipment, governs the provinces and their governors, and may take friendly nations as protectorates. If repealed, the monarch reigns as King or Queen again, every protectorate is released, and Parliament returns with a general election.'
   },
   // the monarch may strike a pending bill from the order paper
   veto: {
@@ -312,6 +313,7 @@ function foundNational(w: W) {
 }
 // on every command and deadline: the Prime Minister leads the National Party, and is a member of it
 export function syncActs(w: W) {
+  syncPrivy(w);
   // the Crown Act: the head of state is Prime Minister, except while a coup regime or a provisional government rules
   const hos = w.hos?.holder;
   if (inForce(w, 'crown') && hos && w.pm !== hos && !(w.regime && w.regime.type !== 'civil') && !w.transition && w.citizens[hos]?.active) {
