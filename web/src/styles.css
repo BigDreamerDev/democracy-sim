@@ -1059,3 +1059,13 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .atlas-mtn path.hatch { fill: none; stroke-width: 1; stroke-opacity: .8; }
 .atlas-tree circle { fill: var(--teal); fill-opacity: .35; stroke: var(--teal-dark); stroke-width: 1; }
 .atlas-tree line { stroke: var(--brown); stroke-width: 1.2; }
+.atlas-cell.prov { stroke-dasharray: 1.5 3; stroke-opacity: .5; }
+.atlas-prov { font-family: var(--serif); font-style: italic; font-size: 13px; fill: var(--ink); fill-opacity: .8; paint-order: stroke; stroke: var(--card); stroke-width: 3px; }
+.atlas-prov.small { font: 10px var(--sans); font-style: normal; fill: var(--muted); }
+.atlas-lane { fill: none; stroke: var(--teal); stroke-opacity: .3; stroke-width: 1.4; stroke-dasharray: 2 5; stroke-linecap: round; }
+.atlas-lane.busy { stroke-opacity: .7; stroke-width: 1.8; stroke-dasharray: 6 4; }
+.atlas-lane.shut { stroke: var(--red); stroke-opacity: .45; }
+.atlas-lane-x { stroke: var(--red); stroke-width: 2.4; stroke-linecap: round; }
+.atlas-ship path { fill: var(--brown); stroke: var(--ink); stroke-width: .8; }
+.atlas-ship path.sail { fill: var(--card); }
+.atlas-anchor circle { fill: var(--card); stroke: var(--ink); stroke-width: 1.5; }

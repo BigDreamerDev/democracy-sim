@@ -213,8 +213,10 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | `offices` | created by law: `name`, `title`, `holder`, `members`, `powers`, `budget` |
 | `accounts`, `ledger` | public accounts and your own; ledger rows you're party to, plus public grants/fines/lobbying |
 | `economy`, `banks`, `ventures` | rate and prices; banks (your deposits/loans only); your ventures |
-| `nations`, `treaties`, `offers`, `army` | foreign affairs. Nations also have `power` (army, 0–10), `embassy`, `embargo`; treaty kinds include `alliance` and `nonaggression` |
+| `nations`, `treaties`, `offers`, `army` | foreign affairs. Nations also have `power` (army, 0–10; `null` unless we have an embassy, a Security Service report from the last 7 days in `seenAt`, or are at war with them), `embassy`, `embargo`; treaty kinds include `alliance` and `nonaggression` |
 | `army.troops`, `army.campaign`, `wars[]` | regiments; the current war (`nation`, `score` −100…100, `strategy`, `nextBattleAt`, `battles[]`, `volunteers`, `bonds` (yours only), `pretender`); past wars. `army.hero` and `army.defeatedAt` feed the coup tally |
+| `provinces` | disputed border lands: `{id: {owner, since}}`, owner `'realm'` or a nation id (names and claims in `engine/foreign.ts`) |
+| `shipping` | trade ventures at sea to each nation: `{nationId: count}` |
 | `conflicts[]` | wars abroad between two nations: `a`, `b`, `status` (`raging`/`over`), `mediated`, `winner`, `peaceBy` |
 | `exchange` | the stock market: `prices` (`{sym: {p, open, hist[]}}`), `index[]`, `duty`, `haltedUntil`, `holdings` (yours, plus `treasury`: the realm's wealth fund), `trades` (yours only), `register` (shares held by MPs, ministers and the head of state). Companies are listed in `engine/exchange.ts` |
 | `stories[].war` | a dispatch from a war correspondent (`army.campaign.correspondents` lists the papers at the front) |

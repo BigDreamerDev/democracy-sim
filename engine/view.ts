@@ -3,6 +3,7 @@
 import { W, Id, canSeeCard, hasPower, isPM, holderOf } from './core';
 import { crisisById } from './crises';
 import { register } from './exchange';
+import { known, shipping } from './foreign';
 const canSeeIntel = (w: W, id: Id) => hasPower(w, id, 'intel') || isPM(w, id);
 const PRIVATE_COUNTS = ['trades', 'sends', 'saves', 'ventures', 'betsWon', 'betCrowns', 'insider', 'maxBalance', 'underground', 'strikes', 'jailbreaks', 'informer'];
 
@@ -173,6 +174,10 @@ export function viewFor(full: W, me: Id): W {
   }
   // war bonds: your own, and the total
   if (w.army?.campaign) w.army.campaign.bonds = w.army.campaign.bonds[me] ? { [me]: w.army.campaign.bonds[me] } : {};
+  // fog of war: a nation's army strength is known only through an embassy, a recent intelligence report, or a war
+  Object.values(w.nations).forEach((n: any) => { if (!known(full, n.id)) n.power = null; });
+  // ships at sea to each nation are public; whose ventures they are is not (ventures are stripped above)
+  w.shipping = shipping(full);
   // Treasury bonds: what each citizen holds is their own business; the issue and the total stay public
   if (w.bonds) w.bonds.holdings = (w.bonds.holdings || []).filter((h: any) => h.owner === me);
   // crises: the title, text and options, so players' apps can show them by name (all public on the crisis page)

@@ -1,6 +1,9 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 32, text: 'Fog of war: a nation’s army strength is unknown unless we have an embassy there, a Security Service report from the last week, or are fighting them.' },
+  { n: 31, text: 'Sea lanes on the map: a ship for every trade venture at sea, and a red cross where sanctions, an embargo or war have shut trade.' },
+  { n: 30, text: 'Disputed provinces: the Kess Valley, the North Fells and the Westwold change hands when wars are won and lost.' },
   { n: 29, text: 'The world map is redrawn by hand: winding borders and coasts, rivers, mountains, forests, lakes and the old engravers’ contour lines at sea.' },
   { n: 28, text: 'The realm can own shares: a bill can have the wealth fund buy or sell on the Exchange, with the dividends going to the Treasury.' },
   { n: 27, text: 'Newspapers can send a correspondent to the front. Their paper prints a dispatch after every battle, and dispatches count double for the front page.' },

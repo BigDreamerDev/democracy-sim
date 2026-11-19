@@ -5,7 +5,7 @@ import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Seg, Opt } from '../ui';
 import { isPM, hasPower, holderOf, standing, bal, ca } from '../../../engine/index';
-import { MOODS, PROFILES, TREATIES } from '../../../engine/foreign';
+import { MOODS, PROFILES, TREATIES, PROVINCES, known, shipping, laneClosed } from '../../../engine/foreign';
 import { power, STRATEGIES, REGIMENT_COST, MAX_REGIMENTS, BOND_PAYS, allies, EMBED_COST } from '../../../engine/war';
 import { canMarch } from '../../../engine/backroom';
 
@@ -14,10 +14,15 @@ const W = 1000;
 const H = 660;
 // where each country's heart is: its capital sits here and the borders are drawn between these points
 const SITES: Record<string, Pt> = { realm: [470, 330], varnholm: [255, 215], sundmere: [500, 118], drakmoor: [815, 150], kessmark: [770, 365], tessaly: [640, 515] };
+// the disputed provinces sit between the realm and a neighbour: each is its own region, coloured by whoever holds it
+export const PROV_SITES: Record<string, Pt> = { kessvale: [632, 352], northfells: [492, 226], westwold: [362, 278] };
+
 const ISLES: { at: Pt; rx: number; ry: number; seed: number }[] = [{ at: [92, 430], rx: 46, ry: 70, seed: 3 }, { at: [150, 548], rx: 40, ry: 30, seed: 7 }, { at: [62, 560], rx: 18, ry: 14, seed: 11 }];
-const AUREL: Pt = [420, 612];
+const AUREL: Pt = [318, 618];
 const CAP: Record<string, Pt> = { orrin: [104, 440], aurel: AUREL };
-const LABEL: Record<string, Pt> = { orrin: [118, 382], aurel: [500, 606] };
+const LABEL: Record<string, Pt> = { orrin: [118, 382], aurel: [232, 616] };
+// where each province's name goes, clear of the capital and the battle lines
+const PROV_LABEL: Record<string, Pt> = { kessvale: [640, 402], northfells: [500, 240], westwold: [352, 312] };
 const moodFill = ['var(--red)', 'var(--amber)', 'var(--soft)', 'var(--teal)', 'var(--teal)'];
 // neutral countries show the bare parchment
 const moodAlpha = [0.34, 0.3, 0, 0.22, 0.38];
@@ -33,7 +38,7 @@ function blob(cx: number, cy: number, rx: number, ry: number, seed: number, n = 
   return out;
 }
 // keep the part of a polygon nearer to a than to b (one cut of a Voronoi cell)
-function clip(poly: Pt[], a: Pt, b: Pt): Pt[] {
+export function clip(poly: Pt[], a: Pt, b: Pt): Pt[] {
   const m: Pt = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
   const d: Pt = [b[0] - a[0], b[1] - a[1]];
   const side = (p: Pt) => (p[0] - m[0]) * d[0] + (p[1] - m[1]) * d[1];
@@ -66,7 +71,7 @@ function fbm(x: number, y: number, s: number, octaves = 4) {
   for (let i = 0; i < octaves; i++) (t += amp * noise(x * f, y * f, s + i * 13)), (n += amp), (amp *= 0.5), (f *= 2);
   return t / n;
 }
-const warp = ([x, y]: Pt): Pt => [x + 46 * fbm(x / 190, y / 190, 1) + 22 * fbm(x / 70, y / 70, 3, 3) + 8 * fbm(x / 26, y / 26, 5, 3), y + 46 * fbm(x / 190, y / 190, 9) + 22 * fbm(x / 70, y / 70, 11, 3) + 8 * fbm(x / 26, y / 26, 17, 3)];
+export const warp = ([x, y]: Pt): Pt => [x + 46 * fbm(x / 190, y / 190, 1) + 22 * fbm(x / 70, y / 70, 3, 3) + 8 * fbm(x / 26, y / 26, 5, 3), y + 46 * fbm(x / 190, y / 190, 9) + 22 * fbm(x / 70, y / 70, 11, 3) + 8 * fbm(x / 26, y / 26, 17, 3)];
 // put a point every few pixels along a closed outline, so the warp has something to bend
 function resample(poly: Pt[], step = 4, open = false): Pt[] {
   const out: Pt[] = [];
@@ -78,10 +83,10 @@ function resample(poly: Pt[], step = 4, open = false): Pt[] {
   }
   return out;
 }
-const natural = (poly: Pt[]) => resample(poly).map(warp);
-const path = (pts: Pt[]) => 'M' + pts.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L') + 'Z';
+export const natural = (poly: Pt[]) => resample(poly).map(warp);
+export const path = (pts: Pt[]) => 'M' + pts.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L') + 'Z';
 // an open line through points, smoothed (Catmull-Rom as cubic Béziers)
-function curve(raw: Pt[]) {
+export function curve(raw: Pt[]) {
   const pts = resample(raw, 10, true).concat([raw[raw.length - 1]]).map(warp);
   let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -91,14 +96,20 @@ function curve(raw: Pt[]) {
   return d;
 }
 const RAW_CONTINENT = blob(560, 330, 420, 245, 1.7);
-const RAW_CELLS: Record<string, Pt[]> = Object.fromEntries(Object.keys(SITES).map((k) => [k, Object.keys(SITES).reduce((poly, o) => (o === k ? poly : clip(poly, SITES[k], SITES[o])), RAW_CONTINENT)]));
+export const RAW_CELLS: Record<string, Pt[]> = Object.fromEntries(Object.keys(SITES).map((k) => [k, Object.keys(SITES).reduce((poly, o) => (o === k ? poly : clip(poly, SITES[k], SITES[o])), RAW_CONTINENT)]));
+// a province is a patch of land laid across a border: the coast cut down to an irregular nine-sided shape around its site
+export const PROV_RAW: Record<string, Pt[]> = Object.fromEntries(Object.entries(PROV_SITES).map(([k, c], j) => [k, Array.from({ length: 9 }, (_, i) => i).reduce((poly, i) => {
+  const t = (i / 9) * Math.PI * 2 + j;
+  const r = 2 * (58 + 14 * Math.sin(i * 2.7 + j * 1.3));
+  return clip(poly, c, [c[0] + Math.cos(t) * r, c[1] + Math.sin(t) * r * 0.8]);
+}, RAW_CONTINENT)]));
 const COAST = path(natural(RAW_CONTINENT));
-const CELLS: Record<string, string> = Object.fromEntries(Object.keys(RAW_CELLS).map((k) => [k, path(natural(RAW_CELLS[k]))]));
+export const CELLS: Record<string, string> = Object.fromEntries([...Object.keys(RAW_CELLS).map((k) => [k, path(natural(RAW_CELLS[k]))]), ...Object.keys(PROV_RAW).map((k) => [k, path(natural(PROV_RAW[k]))])]);
 const ISLE_PATHS = ISLES.map((i) => path(natural(blob(i.at[0], i.at[1], i.rx, i.ry, i.seed, 60))));
 const AUREL_PATH = path(natural(blob(AUREL[0], AUREL[1], 30, 20, 5, 50)));
 const capital = (id: string): Pt => warp(CAP[id] || SITES[id] || SITES.realm);
 // the lie of the land: rivers run from the hills to the sea; mountains in the north, forest in Varnholm, lakes in Sundmere
-const RIVERS: { pts: Pt[]; name?: string; at?: number }[] = [
+export const RIVERS: { pts: Pt[]; name?: string; at?: number }[] = [
   { pts: [[705, 70], [698, 150], [712, 210], [690, 290], [702, 380], [722, 460], [700, 600]], name: 'the Kess', at: 2 },
   { pts: [[575, 205], [530, 250], [488, 318], [462, 390], [444, 470], [430, 590]], name: 'the Ald', at: 3 },
   { pts: [[330, 150], [280, 200], [215, 250], [120, 300]] },
@@ -107,7 +118,29 @@ const RIVERS: { pts: Pt[]; name?: string; at?: number }[] = [
 const MOUNTAINS: Pt[] = [[770, 110], [800, 102], [832, 112], [860, 124], [846, 150], [884, 168], [560, 205], [586, 196], [612, 208], [540, 214], [598, 222], [330, 140], [352, 130]];
 const FOREST: Pt[] = [[220, 245], [236, 262], [252, 248], [268, 270], [284, 256], [205, 280], [230, 298], [300, 285], [318, 262], [258, 300], [190, 230], [300, 170], [318, 186], [600, 560], [618, 574], [584, 576]];
 const LAKES: { at: Pt; rx: number; ry: number }[] = [{ at: [430, 165], rx: 18, ry: 9 }, { at: [575, 150], rx: 12, ry: 7 }, { at: [455, 196], rx: 8, ry: 5 }];
-const LAKE_PATHS = LAKES.map((l, i) => path(natural(blob(l.at[0], l.at[1], l.rx, l.ry, i + 2, 30))));
+// sea lanes from the harbour at the mouth of the Ald, round the coast to each nation's port
+const HARBOUR: Pt = warp([448, 622]);
+const LANES: Record<string, Pt[]> = {
+  aurel: [[448, 622], [400, 645], [350, 630]],
+  tessaly: [[448, 622], [560, 645], [665, 612]],
+  kessmark: [[448, 622], [600, 650], [780, 632], [880, 595]],
+  orrin: [[448, 622], [300, 642], [200, 600], [150, 575]],
+  varnholm: [[448, 622], [300, 645], [100, 625], [40, 470], [70, 330], [130, 260]],
+  sundmere: [[448, 622], [300, 645], [80, 615], [25, 420], [70, 170], [240, 40], [450, 32]],
+  drakmoor: [[448, 622], [300, 645], [80, 615], [25, 420], [70, 170], [240, 40], [560, 24], [760, 36], [880, 70]]
+};
+const LANE_PATHS: Record<string, string> = Object.fromEntries(Object.entries(LANES).map(([k, v]) => [k, curve(v)]));
+// a point a fraction of the way along a lane (by length), through the same warp
+function along(pts: Pt[], t: number): Pt {
+  const seg = pts.slice(1).map((q, i) => Math.hypot(q[0] - pts[i][0], q[1] - pts[i][1]));
+  let d = seg.reduce((a, b) => a + b, 0) * t;
+  for (let i = 0; i < seg.length; i++) {
+    if (d <= seg[i]) return warp([pts[i][0] + ((pts[i + 1][0] - pts[i][0]) * d) / seg[i], pts[i][1] + ((pts[i + 1][1] - pts[i][1]) * d) / seg[i]]);
+    d -= seg[i];
+  }
+  return warp(pts[pts.length - 1]);
+}
+export const LAKE_PATHS = LAKES.map((l, i) => path(natural(blob(l.at[0], l.at[1], l.rx, l.ry, i + 2, 30))));
 const arc = (a: Pt, b: Pt, bend = 0.18) => {
   const mx = (a[0] + b[0]) / 2 - (b[1] - a[1]) * bend;
   const my = (a[1] + b[1]) / 2 + (b[0] - a[0]) * bend;
@@ -140,6 +173,7 @@ export function WorldMap({ compact }: { compact?: boolean }) {
       {hatched(id) && shape('url(#atlas-hatch)', 1)}
     </a>
   );
+  const ships = (w.shipping || shipping(w)) as Record<string, number>;
   const name = (id: string) => ns[id]?.name.replace('Commonwealth of ', '').replace('Free City of ', '') ?? id;
   return (
     <figure class={'atlas' + (compact ? ' compact' : '')}>
@@ -161,6 +195,12 @@ export function WorldMap({ compact }: { compact?: boolean }) {
         {Object.keys(SITES).filter((k) => k !== 'realm').map((id) => nation(id, (f: string, a: number) => <path d={CELLS[id]} fill={f} fill-opacity={a} class="atlas-cell" />))}
         <path d={CELLS.realm} class="atlas-realm" />
         <path d={CELLS.realm} fill="url(#atlas-realm)" class="atlas-cell" />
+        {/* disputed provinces, in their holder's colours */}
+        {Object.keys(PROV_SITES).map((id) => {
+          const owner = w.provinces?.[id]?.owner || PROVINCES[id].start;
+          const shape = <><path d={CELLS[id]} class="atlas-landbase" />{owner === 'realm' ? <><path d={CELLS[id]} class="atlas-realm" /><path d={CELLS[id]} fill="url(#atlas-realm)" class="atlas-cell prov" /></> : <path d={CELLS[id]} fill={fillOf(owner)} fill-opacity={Math.max(alphaOf(owner), 0)} class="atlas-cell prov" />}</>;
+          return <a href={owner === 'realm' ? '#/atlas' : '#/nation/' + owner} class="atlas-land" aria-label={`${PROVINCES[id].name}, held by ${owner === 'realm' ? 'the realm' : ns[owner]?.name}`}>{shape}{owner !== 'realm' && hatched(owner) && <path d={CELLS[id]} fill="url(#atlas-hatch)" class="atlas-cell prov" />}</a>;
+        })}
         {ISLE_PATHS.map((d) => nation('orrin', (f: string, a: number) => <path d={d} fill={f} fill-opacity={a} class="atlas-cell isle" />))}
         {nation('aurel', (f: string, a: number) => <path d={AUREL_PATH} fill={f} fill-opacity={a} class="atlas-cell isle" />)}
         {/* the land itself: lakes, rivers, hills and woods, under the names */}
@@ -179,6 +219,20 @@ export function WorldMap({ compact }: { compact?: boolean }) {
         <text x="40" y="150" class="atlas-sea-label">The Grey Sea</text>
         <text x="560" y="636" class="atlas-sea-label">Gulf of Aurel</text>
         <text x="300" y="40" class="atlas-sea-label">The Northern Reach</text>
+        {/* sea lanes from the harbour at Aldmouth: ships for each venture at sea; a red cross where trade is shut */}
+        {Object.keys(LANES).filter((id) => ns[id]).map((id) => {
+          const shut = laneClosed(w, id);
+          const n = Math.min(3, ships[id] || 0);
+          return (
+            <g pointer-events="none">
+              <path d={LANE_PATHS[id]} class={'atlas-lane' + (shut ? ' shut' : n ? ' busy' : '')} />
+              {shut && (() => { const [x, y] = along(LANES[id], 0.85); return <path d={`M${x - 6},${y - 6} L${x + 6},${y + 6} M${x + 6},${y - 6} L${x - 6},${y + 6}`} class="atlas-lane-x" />; })()}
+              {!shut && Array.from({ length: n }, (_, i) => { const [x, y] = along(LANES[id], 0.3 + i * 0.22); return <g transform={`translate(${x},${y})`} class="atlas-ship"><path d="M-8,0 L8,0 L5,5 L-5,5 Z" /><path d="M0,0 L0,-12 L7,-2 Z" class="sail" /></g>; })}
+            </g>
+          );
+        })}
+        <g transform={`translate(${HARBOUR[0]},${HARBOUR[1]})`} class="atlas-anchor" pointer-events="none"><circle r="4" /></g>
+        {Object.keys(PROV_SITES).map((id) => { const [x, y] = warp(PROV_LABEL[id]); const owner = w.provinces?.[id]?.owner || PROVINCES[id].start; return <g pointer-events="none"><text x={x} y={y} text-anchor="middle" class="atlas-prov">{PROVINCES[id].name}</text><text x={x} y={y + 13} text-anchor="middle" class="atlas-prov small">held by {owner === 'realm' ? 'us' : ns[owner]?.name.replace('Commonwealth of ', '')}</text></g>; })}
         {/* treaties: lines from our capital */}
         {treaties.filter((t) => ns[t.nation]).map((t) => {
           const a = arc(capital('realm'), capital(t.nation), 0.12);
@@ -204,7 +258,7 @@ export function WorldMap({ compact }: { compact?: boolean }) {
               <text x={c[0] + 9} y={c[1] + 15} class="atlas-town">{PROFILES[id]?.capital}</text>
               {ns[id].embassy && <path d={`M${c[0] - 12},${c[1] + 2} v-16 l10,4 l-10,4`} class="atlas-flag" />}
               <text x={l[0]} y={l[1]} text-anchor="middle" class="atlas-name">{name(id)}</text>
-              <text x={l[0]} y={l[1] + 15} text-anchor="middle" class={'atlas-mood m' + ns[id].mood}>{enemy === id ? 'At war' : MOODS[ns[id].mood]}</text>
+              <text x={l[0]} y={l[1] + 15} text-anchor="middle" class={'atlas-mood m' + ns[id].mood}>{enemy === id ? 'At war' : MOODS[ns[id].mood]} · army {known(w, id) && ns[id].power != null ? Math.round(ns[id].power) : '?'}</text>
             </g>
           );
         })}
@@ -258,6 +312,9 @@ export function Atlas() {
           {conflicts.filter((c) => c.status === 'over').slice(0, 4).map((c) => <div class="small muted">{w.nations[c.a]?.name} and {w.nations[c.b]?.name}: {c.peaceBy ? <>peace brokered by <Who id={c.peaceBy} /></> : c.winner ? `${w.nations[c.winner]?.name} won` : 'fought to exhaustion'}.</div>)}
         </div>
       </Sec>
+      <Sec title="Disputed provinces" sub="Border lands that change hands in war. Win a war and the enemy's claimed provinces are ours; lose one and they take one back. A nation whose province we hold resents it.">
+        <ul class="list">{Object.keys(PROVINCES).map((id) => { const o = w.provinces?.[id]?.owner || PROVINCES[id].start; return <li class="row"><span><b>{PROVINCES[id].name}</b><div class="small muted">{PROVINCES[id].blurb} Claimed by {PROVINCES[id].claims.map((n) => w.nations[n]?.name).join(' and ')}.</div></span><span class={'chip ' + (o === 'realm' ? 'teal' : 'red')}>{o === 'realm' ? 'Ours' : w.nations[o]?.name}</span></li>; })}</ul>
+      </Sec>
       <Sec title="The nations">
         <div class="atlas-cards">
           {ns.map((n) => {
@@ -266,7 +323,7 @@ export function Atlas() {
               <a class="card atlas-card" href={'#/nation/' + n.id}>
                 <div class="row"><b class="serif" style={{ fontSize: 19 }}>{n.name}</b><span class={'chip ' + (n.mood >= 3 ? 'teal' : n.mood <= 1 ? 'red' : 'ink')}>{w.army?.war === n.id ? 'At war' : MOODS[n.mood]}</span></div>
                 <div class="small muted">{p?.gov}, ruled from {p?.capital}. {p?.leader}.</div>
-                <div class="atlas-stats small"><span>Army <b class="tnum">{Math.round(n.power ?? p?.strength ?? 0)}</b>/10</span><span>Wealth <b class="tnum">{p?.wealth}</b>/10</span><span>{p?.exports}</span></div>
+                <div class="atlas-stats small"><span>Army <b class="tnum">{known(w, n.id) && n.power != null ? `${Math.round(n.power)}/10` : 'unknown'}</b></span><span>Wealth <b class="tnum">{p?.wealth}</b>/10</span><span>{p?.exports}</span></div>
               </a>
             );
           })}
@@ -410,7 +467,7 @@ export function Diplomacy({ id }: { id: string }) {
             <div><span class="small muted">Capital</span><b>{p.capital}</b></div>
             <div><span class="small muted">Government</span><b>{p.gov}</b></div>
             <div><span class="small muted">Ruled by</span><b>{p.leader}</b></div>
-            <div><span class="small muted">Army</span><b class="tnum">{Math.round((n.power ?? p.strength) * 10) / 10} / 10</b></div>
+            <div><span class="small muted">Army</span><b class="tnum">{known(w, id) && n.power != null ? `${Math.round(n.power * 10) / 10} / 10` : 'Unknown'}</b>{!(known(w, id) && n.power != null) && <span class="small muted">Open an embassy or ask the Security Service</span>}</div>
             <div><span class="small muted">Wealth</span><b class="tnum">{p.wealth} / 10</b></div>
             <div><span class="small muted">Exports</span><b>{p.exports}</b></div>
           </div>

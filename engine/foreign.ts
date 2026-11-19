@@ -126,6 +126,7 @@ export function resolveIntel(w: W, r: any) {
     return;
   }
   r.status = 'ready';
+  n.seenAt = w.now;
   r.confidence = 1 + Math.floor(rand(w) * 3);
   const offer = Object.values(w.offers).find((o: any) => o.nation === n.id) as any;
   if (r.q === 'plans') r.text = offer ? `${n.name} wants the ${offer.title} passed soon, and will cool on us if it stalls.` : n.mood >= 2 ? `${n.name} is preparing to offer us a treaty.` : `${n.name} is courting our rivals.`;
@@ -187,6 +188,7 @@ export function nationsTurn(w: W) {
   if (sanctioned) meter(w, 'prosperity', -2 * sanctioned, 'Foreign sanctions');
   embassiesWeek(w);
   conflictsWeek(w);
+  provincesWeek(w);
 }
 function ultimatum(w: W, n: any, crowns: number) {
   const id = newId(w, 'ul');
@@ -330,3 +332,63 @@ export function mediate(w: W, actor: Id, cid: Id) {
   meter(w, 'stability', 1, 'Peace abroad');
   gazette(w, 'foreign', `${nm(w, actor)} brokers an end to the war between ${A.name} and ${B.name}.`, '#/atlas');
 }
+
+// ---------- fog of war: we only know a nation's army strength through an embassy, a Security Service report in the
+// last week, or by fighting it. Otherwise view.ts hides it ----------
+export const KNOWN_FOR = 7 * DAY;
+export const known = (w: W, nid: string) => { const n = w.nations[nid]; return !!n && (!!n.embassy || atWar(w, nid) || (!!n.seenAt && w.now - n.seenAt < KNOWN_FOR)); };
+
+// ---------- disputed provinces: border lands that change hands in war. Each has its owner ('realm' or a nation)
+// and the nations that claim it. Win a war and the enemy's claimed provinces are ours; lose and they take one back.
+// A nation whose province we hold resents it ----------
+export const PROVINCES: Record<string, { name: string; claims: string[]; start: string; blurb: string }> = {
+  kessvale: { name: 'The Kess Valley', claims: ['kessmark', 'drakmoor'], start: 'kessmark', blurb: 'Rich river farmland on the west bank of the Kess. Kessmark has held it for a generation; the realm has never stopped wanting it back.' },
+  northfells: { name: 'The North Fells', claims: ['sundmere', 'drakmoor'], start: 'realm', blurb: 'Hill country under the Spine. Shepherds, slate and a road north that Drakmoor would love to own.' },
+  westwold: { name: 'The Westwold', claims: ['varnholm'], start: 'realm', blurb: 'Old forest on the Varnholm march. Varnholm’s maps still show it as theirs.' }
+};
+export function seedProvinces(w: W) {
+  w.provinces ??= {};
+  Object.entries(PROVINCES).forEach(([id, p]) => (w.provinces[id] ??= { owner: p.start, since: w.now }));
+}
+const pname = (id: string) => PROVINCES[id]?.name ?? id;
+// war.ts calls this when a war ends in victory or defeat
+export function warSpoils(w: W, nid: string, won: boolean) {
+  seedProvinces(w);
+  const n = w.nations[nid];
+  if (won) {
+    Object.keys(PROVINCES).filter((id) => w.provinces[id].owner === nid).forEach((id) => {
+      w.provinces[id] = { owner: 'realm', since: w.now };
+      meter(w, 'prosperity', 2, `${pname(id)} is ours`);
+      meter(w, 'stability', 2, `${pname(id)} is ours`);
+      moodShift(n, 0, `We took ${pname(id)}`);
+      gazette(w, 'army', `${pname(id)} passes to the realm. The flag goes up over its towns.`, '#/atlas');
+    });
+    return;
+  }
+  const lost = Object.keys(PROVINCES).find((id) => w.provinces[id].owner === 'realm' && PROVINCES[id].claims.includes(nid));
+  if (!lost) return;
+  w.provinces[lost] = { owner: nid, since: w.now };
+  meter(w, 'stability', -3, `${pname(lost)} is lost`);
+  meter(w, 'prosperity', -2, `${pname(lost)} is lost`);
+  gazette(w, 'army', `${pname(lost)} is ceded to ${n.name} in the terms of defeat.`, '#/atlas');
+}
+// once a week: a nation whose claimed province we hold may cool on us
+function provincesWeek(w: W) {
+  seedProvinces(w);
+  Object.entries(PROVINCES).forEach(([id, p]) => {
+    if (w.provinces[id].owner !== 'realm') return;
+    p.claims.forEach((nid) => {
+      const n = w.nations[nid];
+      if (n && n.mood > 1 && chance(w, 0.2)) moodShift(n, -1, `They want ${p.name} back`);
+    });
+  });
+}
+
+// ---------- shipping: how many trade ventures are at sea to each nation (public; the ventures themselves are not) ----------
+export function shipping(w: W) {
+  const out: Record<string, number> = {};
+  w.ventures.forEach((v: any) => v.status === 'out' && (out[v.nation] = (out[v.nation] || 0) + 1));
+  return out;
+}
+// a sea lane is closed by sanctions, our embargo, war, or a nation that refuses to trade
+export const laneClosed = (w: W, nid: string) => { const n = w.nations[nid]; return !n || n.embargo || atWar(w, nid) || (n.sanctionsUntil && n.sanctionsUntil > w.now) || n.mood < 1; };

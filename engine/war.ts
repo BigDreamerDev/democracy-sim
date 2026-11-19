@@ -5,7 +5,7 @@
 // leans towards the plotters, and an Army at the front cannot defend the capital.
 // State: w.army.war = the enemy's id (as before), w.army.campaign = this war, w.army.hero, w.army.defeatedAt, w.wars (history).
 import { W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, earn, transfer, bal, ca, hasPower, isPM, holderOf, clamp, meter, approve, stamp, bump, mustBeFree, int, legit, own, newId, pick } from './core';
-import { moodShift, treatyWith, PROFILES } from './foreign';
+import { moodShift, treatyWith, PROFILES, warSpoils } from './foreign';
 import { imposePretender } from './crown';
 
 export const BATTLE_EVERY = 12 * HOUR;
@@ -154,6 +154,7 @@ export function endWar(w: W, how: 'victory' | 'defeat' | 'peace') {
     const pay = Math.round(amt * BOND_PAYS[how]);
     if (pay > 0 && w.citizens[id]) transfer(w, 'treasury', ca(id), pay, `War bonds repaid (${how})`);
   });
+  if (how !== 'peace') warSpoils(w, nid, how === 'victory');
   if (how === 'victory') {
     const rep = Math.min(bal(w, 'nation:' + nid), 100);
     if (rep > 0) transfer(w, 'nation:' + nid, 'treasury', rep, `Reparations from ${n.name}`);

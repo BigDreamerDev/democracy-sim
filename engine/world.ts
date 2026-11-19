@@ -4,6 +4,7 @@ import { conventionClauses, assignAmbitions, newObjectives, HOS_METHODS } from '
 import { createOffice } from './offices';
 import { seedNations } from './foreign';
 import { exchange, tickExchange, buy } from './exchange';
+import { seedProvinces } from './foreign';
 import { SAFE_ZONES, join, postBounty, openStall, addJob } from './streets';
 import { openMarket, bet } from './markets';
 import { freshDaily, takePoll } from './glory';
@@ -60,6 +61,7 @@ export function createWorld(scenario: 'convention' | 'running', seed = 20261019)
   w.accounts.reserve -= 300;
   w.accounts.treasury = 300;
   seedNations(w);
+  seedProvinces(w);
   exchange(w);
   if (scenario === 'convention') {
     gazette(w, 'convention', 'The Founding Convention is open for 3 days. Vote on each clause, add your own options, or table new clauses. A majority of citizens for one option settles a clause at once.', '#/convention');
@@ -252,6 +254,7 @@ export function createLiveWorld(people: { id: string; name: string; admin: boole
   w.accounts.reserve -= 300;
   w.accounts.treasury = 300;
   seedNations(w);
+  seedProvinces(w);
   exchange(w);
   gazette(w, 'convention', 'The Founding Convention is open for 3 days. Vote on each clause, add your own options, or table new clauses. A majority of citizens for one option settles a clause at once.', '#/convention');
   return w;

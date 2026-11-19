@@ -4,7 +4,7 @@ import { W } from './core';
 import { SAFE_ZONES } from './streets';
 import { freshDaily } from './glory';
 import { activateParty } from './politics';
-import { seedNations, PROFILES } from './foreign';
+import { seedNations, seedProvinces, PROFILES } from './foreign';
 import { exchange } from './exchange';
 
 export function migrate(w: W): W {
@@ -100,6 +100,7 @@ export function migrate(w: W): W {
   // the wider world: two more nations, embassies and embargoes, wars abroad, the war campaign, the Exchange
   if (w.nations && w.accounts) {
     seedNations(w);
+    seedProvinces(w);
     Object.values(w.nations).forEach((n: any) => ((n.power ??= PROFILES[n.id]?.strength ?? 4), (n.embassy ??= false), (n.embargo ??= false)));
   }
   w.conflicts ??= [];
