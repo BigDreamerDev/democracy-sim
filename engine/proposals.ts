@@ -36,7 +36,7 @@ export const SETTABLE: Record<string, { label: string; unit: string; min: number
   voteHours: { label: 'Voting length', unit: ' hours', min: 12, max: 48 }
 };
 export const CONSTITUTIONAL = ['constitution', 'removeHos'];
-export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'fund', 'pension', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'currency', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto'];
+export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'fund', 'pension', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'currency', 'realmName', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto'];
 
 export function describe(w: W, e: any): string {
   switch (e.t) {
@@ -81,6 +81,8 @@ export function describe(w: W, e: any): string {
       return `The realm’s wealth fund ${e.sell ? 'sells' : 'buys'} up to ${e.crowns} crowns of ${company(e.sym)?.name ?? e.sym} shares on the Exchange${e.sell ? ', paid to the Treasury' : ', paid for by the Treasury'}.`;
     case 'currency':
       return `Renames the currency: the crown becomes the ${e.one} (plural ${e.many}).`;
+    case 'realmName':
+      return `Renames the realm from ${w.config.realmName} to ${e.name}.`;
     case 'jail':
     case 'decrees':
     case 'continuity':
@@ -166,6 +168,12 @@ function checkClause(w: W, e: any, byDecree = false) {
       e.many = e.many ? text(e.many, 2, 22, 'plural').trim().toLowerCase() : e.one + 's';
       if (![e.one, e.many].every((x: string) => /^[a-z][a-z' -]*$/.test(x))) fail('A currency name is letters only.');
       if (e.one === 'crown') fail('It is already the crown.');
+      break;
+    }
+    case 'realmName': {
+      e.name = text(e.name, 3, 60, 'realm name').trim();
+      if (!/^[\p{L}\p{N}][\p{L}\p{N} '&.,-]*$/u.test(e.name)) fail('Use letters, numbers, spaces, and ordinary punctuation in the realm name.');
+      if (e.name === w.config.realmName) fail('The realm already has that name.');
       break;
     }
     case 'treaty':
@@ -913,6 +921,12 @@ export function applyClause(w: W, e: any, ref: string) {
       w.config.currency = { one: e.one, many: e.many, law: ref };
       gazette(w, 'law', `The crown is no more. From today the currency of the realm is the ${e.one}: each old crown becomes one ${e.one}.`, '#/economy');
       break;
+    case 'realmName': {
+      const previous = w.config.realmName;
+      w.config.realmName = e.name;
+      gazette(w, 'law', `The realm's official name changes from ${previous} to ${e.name}.`, '#/law/' + ref);
+      break;
+    }
     case 'pension':
       w.config.veteranPension = e.amount;
       gazette(w, 'law', e.amount > 0 ? `Veterans’ pensions are set at ${e.amount} crowns a payday.` : 'Veterans’ pensions are cut.', '#/fame');
