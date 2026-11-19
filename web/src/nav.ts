@@ -42,7 +42,7 @@ export const TABS: Tab[] = [
   { id: 'you', label: 'You', icon: 'you', href: '#/you', sections: [
     { id: 'you', label: 'Passport', href: '#/you', routes: ['you'] },
     { id: 'honours', label: 'Honours', href: '#/honours', routes: ['honours', 'season', 'fame', 'redbox'], count: (w, me) => (w.daily && w.daily.votes?.[me] === undefined ? 1 : null) },
-    { id: 'learn', label: 'How to play', href: '#/learn', routes: ['learn'] },
+    { id: 'learn', label: 'How to play', href: '#/learn', routes: ['learn', 'ceremonies'] },
     { id: 'apps', label: 'Apps', href: '#/apps', routes: ['apps', 'app', 'developers', 'authorize'] },
     { id: 'admin', label: 'Admin', href: '#/admin', routes: ['admin', 'rolog', 'copy'], show: (w, me) => !!w.citizens[me]?.admin, count: (w) => w.pending?.length || null }
   ] }
@@ -85,6 +85,7 @@ const PARTS: [string, string, string, string][] = [
   ['#/abroad', 'Life abroad', 'world', 'defect defector asylum court abroad hostage ransom spy mole agent traitor'],
   ['#/foreign', 'Foreign Office', 'world', 'nations envoys treaties diplomacy relations embassy embargo alliance'],
   ['#/war', 'The war room', 'world', 'war battle front strategy regiments volunteer enlist war bonds'],
+  ['#/ceremonies', 'Ceremonies', 'learn', 'animations scenes appointments coronation invasion veto seal governor turn off'],
   ['#/exchange', 'The Exchange', 'money', 'stock market shares stocks trade invest dividends portfolio register of interests'],
   ['#/army', 'The Army', 'world', 'military readiness war defence'],
   ['#/security', 'Security Service', 'world', 'intel intelligence spies'],

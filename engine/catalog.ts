@@ -149,6 +149,7 @@ export const CATALOG: Record<string, CmdInfo> = {
   'imperial.governor': { about: 'Imperial High Commissioner: appoint a citizen Governor of a province (paid 5 a week; halves the chance it rises), or recall them (target empty).', args: { province: 'id (province)', target: 'id (citizen), or null to recall' } },
   'imperial.protectorate': { about: 'Imperial High Commissioner, under the Imperial Prerogative Act: ask a friendly nation to become a protectorate (tribute of 10 a week, its army fights beside ours). Once a week per nation.', args: { nation: 'id' } },
   'imperial.release': { about: 'Imperial High Commissioner: release a protectorate.', args: { nation: 'id' } },
+  'governor.decree': { about: 'A Governor: issue a decree for your province, once every three days: festival, works (public works, from your own pocket), crackdown, tribute, or militia (a free regiment, once a week).', args: { province: 'id (province)', kind: "'festival' | 'works' | 'crackdown' | 'tribute' | 'militia'" } },
   'imperial.requisition': { about: 'Imperial High Commissioner: move money from the Treasury into the war chest (100 a week at most).', args: { crowns: 'number 1–100' } },
   'imperial.repay': { about: 'Imperial High Commissioner: give money back from the war chest to the Treasury.', args: { crowns: 'number' } },
   'imperial.trade': { about: 'Imperial High Commissioner: buy or sell shares of one of the ten companies for the war chest. Holding 25 gives control.', args: { sym: 'string (company symbol)', n: 'number of shares', sell: 'boolean' } },

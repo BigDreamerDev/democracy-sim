@@ -146,9 +146,11 @@ function borrow(w: W, amt: number) {
 export const ledgerTotal = (w: W) => Object.values(w.accounts).reduce((s: number, v: any) => s + v, 0);
 
 // ---------- the Gazette: the public record ----------
-export function gazette(w: W, kind: string, text: string, link?: string) {
+// fx: a moment the site plays as a short ceremony (web/src/Ceremony.tsx): { k: kind, who?: the person it is about,
+// by?: who did it, title?, place?, to?: ids it is shown to (else everyone) }. Public, like the entry itself.
+export function gazette(w: W, kind: string, text: string, link?: string, fx?: Record<string, any>) {
   const practice = !!w.induction && !w.induction.done && kind !== 'induction';
-  w.gazette.unshift({ id: newId(w, 'g'), at: w.now, kind, text, link: link || null, ...(practice ? { practice: true } : {}) });
+  w.gazette.unshift({ id: newId(w, 'g'), at: w.now, kind, text, link: link || null, ...(practice ? { practice: true } : {}), ...(fx ? { fx } : {}) });
   if (w.gazette.length > 300) w.gazette.length = 300;
 }
 

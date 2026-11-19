@@ -117,7 +117,7 @@ export function acquire(w: W, actor: Id, sym: unknown) {
 }
 function takeControl(w: W, actor: Id, sym: string) {
   chest(w).firms[sym] = { since: w.now, order: 'dividends', by: actor };
-  gazette(w, 'money', `Acquisition: the war chest takes control of ${company(sym)!.name}. The Imperial High Commission now directs it.`, '#/war');
+  gazette(w, 'money', `Acquisition: the war chest takes control of ${company(sym)!.name}. The Imperial High Commission now directs it.`, '#/war', { k: 'acquire', by: actor, title: company(sym)!.name });
 }
 function loseControl(w: W, sym: string) {
   delete chest(w).firms[sym];
@@ -132,7 +132,7 @@ export function direct(w: W, actor: Id, sym: unknown, order: unknown) {
   if (f.order === order) fail('That is already its order.');
   f.order = order;
   const co = company(sym as string)!;
-  gazette(w, 'money', order === 'war' ? `${co.name} turns to war production: ${WAR_USE[co.sym]?.label.toLowerCase() || 'supplies for the Army'}.` : order === 'requisition' ? `${co.name}'s profits are requisitioned for the war chest.` : `${co.name} goes back to business as usual.`, '#/war');
+  gazette(w, 'money', order === 'war' ? `${co.name} turns to war production: ${WAR_USE[co.sym]?.label.toLowerCase() || 'supplies for the Army'}.` : order === 'requisition' ? `${co.name}'s profits are requisitioned for the war chest.` : `${co.name} goes back to business as usual.`, '#/war', order === 'war' ? { k: 'production', by: actor, title: co.name } : undefined);
 }
 
 // ---------- military acquisitions ----------
@@ -168,7 +168,7 @@ export function procure(w: W, actor: Id, item: unknown, province: unknown) {
     k[item as string] = (k[item as string] || 0) + 1;
   }
   const from = payFor(w, p.cost, `${p.name}${where}`);
-  gazette(w, 'army', `Military acquisition: ${/^[aeiou]/i.test(p.name) ? 'an' : 'a'} ${p.name.toLowerCase()}${where}, ${p.cost} crowns from ${from}.`, '#/war');
+  gazette(w, 'army', `Military acquisition: ${/^[aeiou]/i.test(p.name) ? 'an' : 'a'} ${p.name.toLowerCase()}${where}, ${p.cost} crowns from ${from}.`, '#/war', { k: 'procure', by: actor, title: p.name, item: item as string, place: where.replace(/^ in /, '') || null });
 }
 export function scrap(w: W, actor: Id, item: unknown, province: unknown) {
   if (!canProcure(w, actor)) fail('Only the General, the High Commissioner or the Prime Minister can do that.');

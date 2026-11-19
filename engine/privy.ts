@@ -53,7 +53,7 @@ export function establishPrivy(w: W, ref: string) {
   w.privy.councillors = [next(), next(), next()];
   syncPrivy(w);
   council(w).forEach((id, i) => id && stamp(w, id, SEAT_NAMES[i], 'The Privy Council', 'ink'));
-  gazette(w, 'law', `Parliament is dissolved. The Imperial Privy Council sits in its place: ${council(w).map((id, i) => (id ? `${nm(w, id)} (${SEAT_NAMES[i]})` : null)).filter(Boolean).join(', ')}. There will be no general elections while it sits.`, '#/house');
+  gazette(w, 'law', `Parliament is dissolved. The Imperial Privy Council sits in its place: ${council(w).map((id, i) => (id ? `${nm(w, id)} (${SEAT_NAMES[i]})` : null)).filter(Boolean).join(', ')}. There will be no general elections while it sits.`, '#/house', { k: 'council', who: w.hos?.holder || null });
 }
 export function dissolvePrivy(w: W) {
   const p = w.privy;
@@ -84,7 +84,7 @@ export function appointCouncillor(w: W, actor: Id, seat: unknown, target: unknow
   w.privy.councillors[seat] = c.id;
   syncPrivy(w);
   stamp(w, c.id, 'Privy Councillor', 'Appointed by the Sovereign', 'ink');
-  gazette(w, 'government', `${c.name} is sworn of the Privy Council${was ? `, in place of ${nm(w, was)}` : ''}.`, '#/house');
+  gazette(w, 'government', `${c.name} is sworn of the Privy Council${was ? `, in place of ${nm(w, was)}` : ''}.`, '#/house', { k: 'sworn', who: c.id, by: actor, title: 'Privy Councillor' });
 }
 
 // the Lord Chamberlain summons the Council: a bill in debate goes to the vote within the hour (once a day)
@@ -95,7 +95,7 @@ export function summon(w: W, actor: Id, pid: unknown) {
   if (w.privy?.summonedAt && w.now - w.privy.summonedAt < DAY) fail('The Council can be summoned once a day.');
   if (w.privy) w.privy.summonedAt = w.now;
   p.debateEndsAt = Math.min(p.debateEndsAt, w.now + HOUR);
-  gazette(w, 'proposal', `The Lord Chamberlain summons the Council to an urgent sitting: ${p.title} goes to the vote within the hour.`, '#/p/' + p.id);
+  gazette(w, 'proposal', `The Lord Chamberlain summons the Council to an urgent sitting: ${p.title} goes to the vote within the hour.`, '#/p/' + p.id, { k: 'summon', by: actor, title: p.title });
 }
 // the Lord Privy Seal seals a passed Order: it takes effect within the hour (not under the Royal Prerogative Act)
 export function seal(w: W, actor: Id, pid: unknown) {
@@ -106,7 +106,7 @@ export function seal(w: W, actor: Id, pid: unknown) {
   if (p.sealed) fail('It already bears the Seal.');
   p.sealed = true;
   p.assentDueAt = Math.min(p.assentDueAt || Infinity, w.now + HOUR);
-  gazette(w, 'proposal', `The Imperial Seal is set on ${p.title}. It takes effect within the hour.`, '#/p/' + p.id);
+  gazette(w, 'proposal', `The Imperial Seal is set on ${p.title}. It takes effect within the hour.`, '#/p/' + p.id, { k: 'seal', by: actor, title: p.title });
 }
 
 // ---------- the great officers' prerogatives in Council ----------
@@ -134,7 +134,7 @@ export function force(w: W, actor: Id, pid: unknown) {
   p.stage = 'commanded';
   p.lawRef = ref;
   history(w, p, actor, `Forced through as ${ref}`);
-  gazette(w, 'law', `${cap1(roleOf(w, actor))}, ${nm(w, actor)}, forces ${p.title} through the Privy Council without a vote. It is law as ${ref}.`, '#/law/' + ref);
+  gazette(w, 'law', `${cap1(roleOf(w, actor))}, ${nm(w, actor)}, forces ${p.title} through the Privy Council without a vote. It is law as ${ref}.`, '#/law/' + ref, { k: 'force', by: actor, title: p.title, role: roleOf(w, actor) });
 }
 export function veto(w: W, actor: Id, pid: unknown) {
   if (!canVeto(w, actor)) fail('Only the Sovereign, the High Commissioner, the Lord Chamberlain or the Lord Privy Seal can veto an Order.');
@@ -144,6 +144,6 @@ export function veto(w: W, actor: Id, pid: unknown) {
   p.stage = 'vetoed';
   p.vetoedBy = actor;
   history(w, p, actor, `Vetoed by ${roleOf(w, actor)}`);
-  gazette(w, 'proposal', `${cap1(roleOf(w, actor))}, ${nm(w, actor)}, vetoes ${p.title}. It falls.`, '#/p/' + p.id);
+  gazette(w, 'proposal', `${cap1(roleOf(w, actor))}, ${nm(w, actor)}, vetoes ${p.title}. It falls.`, '#/p/' + p.id, { k: 'veto', by: actor, title: p.title, role: roleOf(w, actor) });
 }
 const cap1 = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);

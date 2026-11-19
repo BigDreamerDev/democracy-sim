@@ -4,7 +4,7 @@
 // the realm: it can levy tribute from provinces (more money, more unrest), name a governor for each (a citizen, paid
 // 5 a week, who halves the chance of an uprising), garrison them, and, while the Act is law, take friendly nations as
 // protectorates: they pay 10 a week and fight beside us, but chafe, and break away if they stop liking us.
-import { W, Id, DAY, fail, own, cit, nm, gazette, transfer, bal, ca, chance, stamp, approve, meter, mustBeFree, isPM, hasPower, newId, realmPlace, inForce, allCitizens } from './core';
+import { W, Id, DAY, fail, own, cit, nm, gazette, transfer, bal, ca, chance, stamp, approve, meter, mustBeFree, isPM, hasPower, newId, realmPlace, inForce, allCitizens, earn, bump } from './core';
 import { createOffice, TEMPLATES } from './offices';
 import { imperialPurse } from './warmachine';
 import { establishPrivy, dissolvePrivy } from './privy';
@@ -54,7 +54,7 @@ export function proclaimEmpire(w: W, ref: string) {
   if (!/\bempire\b/i.test(w.config.realmName)) renameRealm(w, realmPlace(w) === 'the Realm' ? 'The Empire' : `The ${realmPlace(w)} Empire`, 'the Imperial Prerogative Act');
   adoptHighCommission(w, ref);
   establishPrivy(w, ref);
-  gazette(w, 'law', `The Imperial Prerogative Act is law. ${w.config.hos === 'monarchy' ? `${nm(w, w.hos.holder)} reigns as ${w.config.hosTitle}` : 'The realm is an Empire'}, the ${w.config.realmName} is proclaimed, the Imperial Privy Council sits in place of Parliament, and the Imperial High Commission governs the empire and commands its forces.`, '#/atlas');
+  gazette(w, 'law', `The Imperial Prerogative Act is law. ${w.config.hos === 'monarchy' ? `${nm(w, w.hos.holder)} reigns as ${w.config.hosTitle}` : 'The realm is an Empire'}, the ${w.config.realmName} is proclaimed, the Imperial Privy Council sits in place of Parliament, and the Imperial High Commission governs the empire and commands its forces.`, '#/atlas', { k: 'empire', who: w.hos?.holder || null, title: w.config.hosTitle, place: w.config.realmName });
 }
 export function unproclaimEmpire(w: W) {
   if (w.config.hos === 'monarchy') w.config.hosTitle = royalTitle(w.config.hosTitle);
@@ -97,7 +97,7 @@ export function levy(w: W, actor: Id, pid: unknown, on: unknown) {
   const p = held(w, pid);
   if (on !== true && on !== false) fail('Levy tribute, or stop.');
   p.levy = on;
-  gazette(w, 'government', on ? `The Imperial High Commission levies tribute on ${PROVINCES[pid as string].name}: ${LEVY} crowns a week, and resentment.` : `The levy on ${PROVINCES[pid as string].name} is lifted.`, '#/atlas');
+  gazette(w, 'government', on ? `The Imperial High Commission levies tribute on ${PROVINCES[pid as string].name}: ${LEVY} crowns a week, and resentment.` : `The levy on ${PROVINCES[pid as string].name} is lifted.`, '#/atlas', on ? { k: 'levy', by: actor, place: PROVINCES[pid as string].name } : undefined);
 }
 export function governor(w: W, actor: Id, pid: unknown, target: unknown) {
   mustGovern(w, actor);
@@ -114,7 +114,7 @@ export function governor(w: W, actor: Id, pid: unknown, target: unknown) {
   mustBeFree(w, c.id);
   p.governor = c.id;
   stamp(w, c.id, 'Governor', name, 'ink');
-  gazette(w, 'government', `${c.name} is appointed Governor of ${name}.`, '#/atlas');
+  gazette(w, 'government', `${c.name} is appointed Governor of ${name}.`, '#/atlas', { k: 'governor', who: c.id, by: actor, place: name });
 }
 // take a friendly nation under the empire's protection (the Act must be law); once a week per nation
 export function protectorate(w: W, actor: Id, nid: unknown) {
@@ -135,7 +135,7 @@ export function protectorate(w: W, actor: Id, nid: unknown) {
   }
   n.protectorate = { since: w.now, by: actor };
   approve(w, actor, 3);
-  gazette(w, 'foreign', `${n.name} becomes a protectorate of the ${w.config.realmName}: tribute of ${PROTECTORATE_TRIBUTE} crowns a week, and its army at our side.`, '#/nation/' + n.id);
+  gazette(w, 'foreign', `${n.name} becomes a protectorate of the ${w.config.realmName}: tribute of ${PROTECTORATE_TRIBUTE} crowns a week, and its army at our side.`, '#/nation/' + n.id, { k: 'protectorate', place: n.name, by: actor });
 }
 export function release(w: W, actor: Id, nid: unknown) {
   mustGovern(w, actor);
@@ -154,7 +154,7 @@ export function empireWeek(w: W) {
     if (p.levy) {
       transfer(w, 'reserve', imperialPurse(w), LEVY + (w.army?.campaign ? 5 : 0), `Tribute from ${PROVINCES[id].name}${w.army?.campaign ? ' (a war levy)' : ''}`);
       // a province we always held does not rise, but it riots
-      if (PROVINCES[id].start === 'realm' && chance(w, 0.2)) (meter(w, 'stability', -1, `Tax riots in ${PROVINCES[id].name}`), gazette(w, 'government', `Tax riots in ${PROVINCES[id].name} over the imperial levy.`, '#/atlas'));
+      if (PROVINCES[id].start === 'realm' && !(p.calmUntil > w.now) && chance(w, 0.2)) (meter(w, 'stability', -1, `Tax riots in ${PROVINCES[id].name}`), gazette(w, 'government', `Tax riots in ${PROVINCES[id].name} over the imperial levy.`, '#/atlas'));
     }
     if (p.governor) {
       if (!w.citizens[p.governor]?.active || w.citizens[p.governor].defected) p.governor = null;
@@ -175,5 +175,47 @@ export function empireWeek(w: W) {
   });
 }
 // how much more (or less) likely a province we took is to rise this week
-export const unrest = (p: any) => ((p.governor ? 0.5 : 1) * 0.35 + (p.levy ? 0.15 : 0)) * (p.fort ? 0.4 : 1);
+export const unrest = (p: any, now = 0) => (p.calmUntil > now ? 0 : ((p.governor ? 0.5 : 1) * 0.35 + (p.levy ? 0.15 : 0)) * (p.fort ? 0.4 : 1) * (p.strainUntil > now ? 1.5 : 1));
+
+// ---------- the Governor's own powers: one decree for their province every three days ----------
+export const GOVERNOR_DECREES: Record<string, { label: string; what: string }> = {
+  festival: { label: 'Hold a festival', what: '10 from the Treasury. No unrest in the province for a week. +1 approval.' },
+  works: { label: 'Pay for public works', what: '15 from your own pocket. No unrest for a week. +2 approval and 2 Influence.' },
+  crackdown: { label: 'Crack down', what: 'No unrest for a week, but Stability −1 and −2 approval.' },
+  tribute: { label: 'Squeeze extra tribute', what: '12 crowns to the empire now; unrest half as likely again for a week.' },
+  militia: { label: 'Raise a militia', what: 'A new regiment for the Army, free (once a week); unrest half as likely again for a week.' }
+};
+export const DECREE_EVERY = 3 * DAY;
+export function governorDecree(w: W, actor: Id, pid: unknown, kind: unknown) {
+  seedProvinces(w);
+  const p = own(w.provinces, pid);
+  if (!p || p.owner !== 'realm') fail('That province is not part of the empire.');
+  if (p.governor !== actor) fail('Only its Governor can issue a decree for that province.');
+  mustBeFree(w, actor);
+  const d = own(GOVERNOR_DECREES, kind);
+  if (!d) fail('Pick a decree.');
+  if (p.decreeAt && w.now - p.decreeAt < DECREE_EVERY) fail('A Governor issues one decree every three days.');
+  const name = PROVINCES[pid as string].name;
+  const week = w.now + 7 * DAY;
+  if (kind === 'festival') (transfer(w, 'treasury', 'reserve', 10, `A festival in ${name}`), (p.calmUntil = week), approve(w, actor, 1));
+  if (kind === 'works') {
+    if (bal(w, ca(actor)) < 15) fail('Public works cost 15 crowns from your own pocket.');
+    transfer(w, ca(actor), 'reserve', 15, `Public works in ${name}`);
+    p.calmUntil = week;
+    approve(w, actor, 2);
+    earn(w, actor, 2, `Public works in ${name}`);
+  }
+  if (kind === 'crackdown') (p.calmUntil = week, meter(w, 'stability', -1, `A crackdown in ${name}`), approve(w, actor, -2));
+  if (kind === 'tribute') (transfer(w, 'reserve', imperialPurse(w), 12, `Extra tribute from ${name}`), (p.strainUntil = week));
+  if (kind === 'militia') {
+    if (p.militiaAt && w.now - p.militiaAt < 7 * DAY) fail('The province raised a militia this week already.');
+    if ((w.army.troops ?? 6) >= 20) fail('The Army has all the regiments it can field.');
+    w.army.troops = (w.army.troops ?? 6) + 1;
+    p.militiaAt = w.now;
+    p.strainUntil = week;
+  }
+  p.decreeAt = w.now;
+  bump(w, actor, 'decrees');
+  gazette(w, 'government', `Governor ${nm(w, actor)} of ${name}: ${({ festival: 'a festival is held for the whole province', works: 'new roads and wells, paid for out of the Governor’s own pocket', crackdown: 'soldiers on the streets, and a curfew', tribute: 'the tax collectors go round again', militia: 'a provincial militia marches to join the Army' } as any)[kind as string]}.`, '#/atlas', { k: 'gdecree', who: actor, place: name, title: d.label, decree: kind });
+}
 export const governed = (w: W) => allCitizens(w).filter((c: any) => Object.values(w.provinces || {}).some((p: any) => p.governor === c.id));

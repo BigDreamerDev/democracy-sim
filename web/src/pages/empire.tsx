@@ -2,13 +2,13 @@
 // Commission's desk: tribute and governors for the provinces, and protectorates abroad. Rules in engine/empire.ts.
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
-import { Sec, Card, Btn, Who, Pick, Field } from '../ui';
+import { Sec, Card, Btn, Who, Pick, Field, When } from '../ui';
 import { hasArmy, isPM, inForce, allCitizens, hasPower, imperial, bal } from '../../../engine/index';
 import { COMPANIES } from '../../../engine/exchange';
 import { CHEST, CONTROL, REQUISITION_CAP, WAR_USE, ORDERS, PROCUREMENT, canDirect, canProcure } from '../../../engine/warmachine';
 import { PROVINCES, MOODS } from '../../../engine/foreign';
 import { ACTS } from '../../../engine/acts';
-import { highCommission, canGovernEmpire, LEVY, GOVERNOR_PAY, PROTECTORATE_TRIBUTE } from '../../../engine/empire';
+import { highCommission, canGovernEmpire, LEVY, GOVERNOR_PAY, PROTECTORATE_TRIBUTE, GOVERNOR_DECREES, DECREE_EVERY } from '../../../engine/empire';
 
 export function EmpirePanel({ compact }: { compact?: boolean }) {
   const { world: w, me } = useStore();
@@ -43,7 +43,7 @@ export function EmpirePanel({ compact }: { compact?: boolean }) {
         <div class="stack">
           <Card><div class="stack">
             <b>Provinces</b>
-            <span class="small muted">A levy brings {LEVY} crowns a week and unrest. A governor is paid {GOVERNOR_PAY} a week and halves the chance a conquered province rises. A garrison stops it rising at all.</span>
+            <span class="small muted">A levy brings {LEVY} crowns a week and unrest. A governor is paid {GOVERNOR_PAY} a week, halves the chance a conquered province rises, and can issue a decree for it every three days: a festival, public works, a crackdown, extra tribute or a militia. A garrison stops it rising at all.</span>
             {provinces.length ? <ul class="list">{provinces.map(([id, p]) => (
               <li class="row" style={{ flexWrap: 'wrap', gap: 6 }}>
                 <span><b>{PROVINCES[id]?.name}</b><div class="small muted">{p.levy ? 'Levied' : 'No levy'} · {p.governor ? <>Governor <Who id={p.governor} /></> : 'no governor'} · {p.garrison ? 'garrisoned' : 'no garrison'}</div></span>
@@ -53,6 +53,12 @@ export function EmpirePanel({ compact }: { compact?: boolean }) {
                   <Btn small kind="ghost" onClick={() => act('imperial.governor', { province: id, target: gov[id] || null }, gov[id] ? 'Governor appointed.' : 'Governor recalled.')}>{gov[id] ? 'Appoint' : p.governor ? 'Recall' : 'Appoint'}</Btn>
                   {hasArmy(w) && <Btn small kind="ghost" onClick={() => act('army.garrison', { province: id, on: !p.garrison }, p.garrison ? 'Garrison withdrawn.' : 'Garrison posted.')}>{p.garrison ? 'Withdraw garrison' : 'Garrison'}</Btn>}
                 </span>}
+                {p.governor === me && (
+                  <div class="gov-desk">
+                    <div class="small"><b>Your province.</b> {p.calmUntil > w.now ? <>Calm until <When at={p.calmUntil} />. </> : ''}{p.strainUntil > w.now ? <>Restless until <When at={p.strainUntil} />. </> : ''}{p.decreeAt && w.now - p.decreeAt < DECREE_EVERY ? <>Your next decree: <When at={p.decreeAt + DECREE_EVERY} />.</> : 'You can issue a decree now.'}</div>
+                    <div class="row" style={{ gap: 6, flexWrap: 'wrap' }}>{Object.entries(GOVERNOR_DECREES).map(([k, d]) => <Btn small kind="ghost" disabled={!!p.decreeAt && w.now - p.decreeAt < DECREE_EVERY} onClick={() => confirm(`${d.label}? ${d.what}`) && act('governor.decree', { province: id, kind: k }, 'Your decree is published.')}>{d.label}</Btn>)}</div>
+                  </div>
+                )}
               </li>
             ))}</ul> : <span class="small">The empire holds no provinces beyond the realm. Win them in war, or by a peace.</span>}
           </div></Card>

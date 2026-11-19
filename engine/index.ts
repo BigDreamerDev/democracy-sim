@@ -177,6 +177,7 @@ export const COMMANDS: Record<string, Cmd> = {
   'imperial.governor': (w, me, a) => Em.governor(w, me, a.province, a.target),
   'imperial.protectorate': (w, me, a) => Em.protectorate(w, me, a.nation),
   'imperial.release': (w, me, a) => Em.release(w, me, a.nation),
+  'governor.decree': (w, me, a) => Em.governorDecree(w, me, a.province, a.kind),
   'imperial.requisition': (w, me, a) => Wm.requisition(w, me, a.crowns),
   'imperial.repay': (w, me, a) => Wm.giveBack(w, me, a.crowns),
   'imperial.trade': (w, me, a) => Wm.trade(w, me, a.sym, a.n, a.sell),

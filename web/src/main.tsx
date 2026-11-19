@@ -9,6 +9,8 @@ import { Icon, getTheme, themeBar, useRoute } from './ui';
 import { DemoPanel, DemoRail } from './DemoPanel';
 import { Sidebar } from './Sidebar';
 import { Coronation } from './Coronation';
+import { Ceremony } from './Ceremony';
+import { Ceremonies } from './pages/ceremonies';
 import { TABS, where, relabel } from './nav';
 import { Search } from './search';
 import { markSeen } from './pages/today';
@@ -93,7 +95,7 @@ function route(hash: string) {
     // an invitation link opened while already signed in: nothing to do but say so
     reset: () => <ResetPassword code={b || ''} />,
     join: () => (setTimeout(() => (say('You are already signed in. Invitations are for new players.'), (location.hash = '#/')), 0), <Today />),
-    streets: () => <Streets />, hunt: () => <Hunt />, tag: () => <TagLanding code={b || ''} />, meet: () => <Meet code={b} />, market: () => <Market />, polls: () => <Polls />,
+    streets: () => <Streets />, hunt: () => <Hunt />, tag: () => <TagLanding code={b || ''} />, meet: () => <Meet code={b} />, market: () => <Market />, polls: () => <Polls />, ceremonies: () => <Ceremonies query={q} />,
     // the copy desk only exists on the development server (npm run dev)
     ...(import.meta.env.DEV ? { copy: () => <CopyDesk /> } : {})
   };
@@ -139,6 +141,7 @@ function Game() {
       {toast && <div class={'toast' + (toast.err ? ' err' : '')} role="status">{toast.text}</div>}
       {offline && <div class="toast err" role="status">Can't reach the server. Retrying…</div>}
       <Coronation />
+      <Ceremony />
       <UpdateBar />
       <Tour />
       {!ONLINE && <DemoPanel />}

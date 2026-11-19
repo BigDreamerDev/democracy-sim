@@ -398,7 +398,7 @@ function provincesWeek(w: W) {
   // a province we took (not one we always held) may rise unless a regiment is posted there
   Object.entries(PROVINCES).forEach(([id, p]) => {
     const pr = w.provinces[id];
-    if (pr.owner !== 'realm' || p.start === 'realm' || pr.garrison || !chance(w, unrest(pr))) return;
+    if (pr.owner !== 'realm' || p.start === 'realm' || pr.garrison || !chance(w, unrest(pr, w.now))) return;
     const back = pr.from && pr.from !== 'realm' && w.nations[pr.from] ? pr.from : p.claims[0];
     w.provinces[id] = { owner: back, since: w.now, from: 'realm' };
     meter(w, 'stability', -2, `${p.name} rose against us`);

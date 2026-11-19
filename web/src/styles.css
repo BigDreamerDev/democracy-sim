@@ -1147,3 +1147,109 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
   .privy-table { grid-template-columns: 1fr 1fr; grid-template-areas: "board board" "s0 s1" "s2 s3" "s4 s5" "s6 s7"; }
   .privy-board { border-radius: 999px; min-height: 84px; }
 }
+
+/* ceremonies (web/src/Ceremony.tsx): a full-screen scene in porphyry and gold, about five seconds each */
+.cer { position: fixed; inset: 0; z-index: 9000; background: #12070d; color: #E3C16F; cursor: pointer; overflow: hidden; animation: cer-in .5s ease both; }
+@keyframes cer-in { from { opacity: 0; } }
+.cer-scene { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; background: radial-gradient(ellipse at 50% 42%, #4a1430 0%, #22091a 45%, #12070d 80%); }
+.cer-scene.tone-red { background: radial-gradient(ellipse at 50% 42%, #5a1616 0%, #2a0b0b 45%, #120707 80%); }
+.cer-scene.tone-gold { background: radial-gradient(ellipse at 50% 42%, #5e3f12 0%, #2a1a0b 45%, #120c07 80%); }
+.cer-rays { position: absolute; left: 50%; top: 42%; width: 1600px; height: 1600px; margin: -800px 0 0 -800px; background: repeating-conic-gradient(from 0deg, rgba(227, 193, 111, .07) 0 5deg, transparent 5deg 15deg); border-radius: 50%; animation: cer-spin 40s linear infinite, cer-fade 1.2s ease both; }
+@keyframes cer-spin { to { transform: rotate(360deg); } }
+@keyframes cer-fade { from { opacity: 0; transform: scale(.6); } }
+.cer-sparks i { position: absolute; bottom: -10px; width: 4px; height: 4px; border-radius: 50%; background: #E3C16F; box-shadow: 0 0 8px #E3C16F; opacity: 0; animation: cer-spark 3.2s ease-out infinite; }
+@keyframes cer-spark { 0% { opacity: 0; transform: translateY(0); } 15% { opacity: 1; } 100% { opacity: 0; transform: translateY(-70vh) translateX(20px); } }
+.tone-red .cer-sparks i { background: #e05a4a; box-shadow: 0 0 8px #e05a4a; }
+.cer-emblem { position: relative; width: min(42vw, 220px); height: min(42vw, 220px); color: #E3C16F; filter: drop-shadow(0 0 18px rgba(227, 193, 111, .35)); animation: cer-emb 1s cubic-bezier(.34, 1.4, .5, 1) both .2s; }
+@keyframes cer-emb { from { opacity: 0; transform: scale(.4) translateY(40px); } }
+.cer-kicker { position: relative; margin-top: 18px; font: 700 13px/1.3 var(--sans); letter-spacing: .32em; text-transform: uppercase; color: #C9A13B; animation: cer-up .8s ease both 1s; }
+.cer-name { position: relative; max-width: 900px; margin-top: 10px; font-family: var(--serif); font-size: clamp(38px, 8vw, 84px); line-height: 1.02; color: #FFF6E8; text-wrap: balance; animation: cer-name 1.2s cubic-bezier(.2, .8, .3, 1) both 1.3s; }
+@keyframes cer-name { from { opacity: 0; letter-spacing: .3em; filter: blur(8px); } }
+.tone-red .cer-name { color: #FFE8E2; }
+.cer-rule { position: relative; width: 220px; height: 7px; margin: 18px 0 14px; border-top: 1.5px solid #C9A13B; border-bottom: 1.5px solid #C9A13B; transform-origin: center; animation: cer-rule .9s ease both 1.9s; }
+@keyframes cer-rule { from { transform: scaleX(0); } }
+.cer-sub { position: relative; max-width: 640px; font: 400 18px/1.4 var(--sans); color: #F1E3D0; animation: cer-up .8s ease both 2.3s; }
+.cer-realm { position: absolute; bottom: 64px; font: 700 11px/1 var(--sans); letter-spacing: .4em; text-transform: uppercase; color: rgba(227, 193, 111, .55); animation: cer-up 1s ease both 2.8s; }
+@keyframes cer-up { from { opacity: 0; transform: translateY(14px); } }
+.cer-bar { position: absolute; left: 0; right: 0; bottom: 16px; display: flex; justify-content: center; align-items: center; gap: 8px; }
+.cer-bar button { font: 700 13px var(--sans); padding: 8px 14px; border-radius: 3px; border: 1px solid rgba(227, 193, 111, .5); background: rgba(18, 7, 13, .6); color: #E3C16F; cursor: pointer; }
+.cer-count { font: 400 12px var(--sans); color: rgba(227, 193, 111, .7); }
+/* the scene's progress: a gold thread across the top */
+.cer-scene::after { content: ''; position: absolute; left: 0; top: 0; height: 3px; width: 100%; background: #C9A13B; transform-origin: left; animation: cer-prog 5.6s linear both; }
+@keyframes cer-prog { from { transform: scaleX(0); } }
+
+/* emblem motions */
+.cer-emblem .draw { stroke-dasharray: 600; stroke-dashoffset: 600; animation: cer-draw 1.4s ease forwards .4s; }
+@keyframes cer-draw { to { stroke-dashoffset: 0; } }
+.cer-emblem .jewel { fill: #c0392b; animation: cer-glint 1.6s ease-in-out infinite 1.4s; }
+@keyframes cer-glint { 50% { fill: #ff8a7a; } }
+.cer-e-crown { animation: cer-crown 1.4s cubic-bezier(.34, 1.4, .5, 1) both .2s; }
+@keyframes cer-crown { 0% { opacity: 0; transform: translateY(-120px) rotate(-8deg); } 70% { transform: translateY(6px); } }
+.cer-e-seal .wax { fill: #9b1b2a; }
+.cer-e-seal, .cer-e-veto .stamp, .cer-e-scroll .stamp, .cer-e-certificate .stamp { transform-box: fill-box; transform-origin: center; }
+.cer-e-seal { animation: cer-press 1.2s cubic-bezier(.3, 1.6, .5, 1) both .3s; }
+@keyframes cer-press { 0% { opacity: 0; transform: scale(2.2) translateY(-40px); } 45% { opacity: 1; transform: scale(.9, 1.08); } 60% { transform: scale(1.06, .94); } }
+.cer-e-seal .drip { transform-box: fill-box; transform-origin: top; animation: cer-drip 1.2s ease both 1.2s; }
+@keyframes cer-drip { from { transform: scaleY(0); } }
+.cer-e-veto .stamp, .cer-e-scroll .stamp, .cer-e-certificate .stamp { animation: cer-slam .6s cubic-bezier(.2, 1.6, .4, 1) both 1.1s; }
+@keyframes cer-slam { 0% { opacity: 0; transform: scale(3) rotate(-20deg); } 100% { opacity: 1; } }
+.cer-e-veto, .cer-e-scroll { animation: cer-emb 1s cubic-bezier(.34, 1.4, .5, 1) both .2s, cer-shake .35s ease 1.3s; }
+@keyframes cer-shake { 25% { transform: translate(-6px, 3px); } 50% { transform: translate(5px, -3px); } 75% { transform: translate(-3px, 2px); } }
+.cer-e-scroll .paper, .cer-e-certificate .paper { transform-box: fill-box; transform-origin: top; animation: cer-unroll .9s ease both .3s; }
+@keyframes cer-unroll { from { transform: scaleY(.05); } }
+.cer-e-bell .swing, .cer-e-bell > g { transform-origin: 100px 40px; animation: cer-swing .7s ease-in-out 4 alternate .6s; }
+@keyframes cer-swing { from { transform: rotate(-16deg); } to { transform: rotate(16deg); } }
+.cer-e-laurel .leaf { opacity: 0; animation: cer-show .4s ease forwards; }
+@keyframes cer-show { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.cer-e-laurel .star { fill: #E3C16F; stroke: none; transform-box: fill-box; transform-origin: center; animation: cer-star 1s cubic-bezier(.34, 1.6, .5, 1) both 1.2s; }
+@keyframes cer-star { from { transform: scale(0) rotate(-180deg); } }
+.cer-e-swords .blade-l { transform-origin: 100px 100px; animation: cer-cross-l .7s cubic-bezier(.3, 1.5, .5, 1) both .4s; }
+.cer-e-swords .blade-r { transform-origin: 100px 100px; animation: cer-cross-r .7s cubic-bezier(.3, 1.5, .5, 1) both .4s; }
+@keyframes cer-cross-l { from { transform: translateX(-90px) rotate(-30deg); opacity: 0; } }
+@keyframes cer-cross-r { from { transform: translateX(90px) rotate(30deg); opacity: 0; } }
+.cer-e-broken .shard { animation: cer-shard 1s ease both 1s; }
+@keyframes cer-shard { to { transform: translate(18px, -22px) rotate(25deg); opacity: .5; } }
+.cer-e-sash .medal { transform-box: fill-box; transform-origin: top; animation: cer-medal 1.4s cubic-bezier(.34, 1.4, .5, 1) both 1.2s; }
+@keyframes cer-medal { 0% { opacity: 0; transform: translateY(-60px) rotate(-30deg); } 60% { transform: rotate(12deg); } 80% { transform: rotate(-6deg); } }
+.cer-e-map .arrow, .cer-e-mapin .arrow { stroke-dasharray: 200; stroke-dashoffset: 200; animation: cer-draw 1.6s ease forwards 1s; }
+.cer-e-map .a2 { animation-delay: 1.5s; }
+.cer-e-map .arrowhead, .cer-e-mapin .arrowhead { opacity: 0; animation: cer-show .3s ease forwards 2.5s; }
+.cer-e-map .border, .cer-e-mapin .border { animation: cer-march 1s linear infinite; }
+@keyframes cer-march { to { stroke-dashoffset: -24; } }
+.cer-e-march .soldier { animation: cer-step .5s ease-in-out infinite alternate; }
+@keyframes cer-step { to { transform: translateY(-5px); } }
+.cer-e-march > g { animation: cer-walk 4s linear both; }
+.cer-e-march .soldier { animation: cer-step .4s ease-in-out infinite alternate; }
+@keyframes cer-walk { from { transform: translateX(-60px); } to { transform: translateX(20px); } }
+.cer-e-march .pennant, .cer-e-fort .pennant { animation: cer-wave 1s ease-in-out infinite alternate; transform-origin: 100px 90px; }
+@keyframes cer-wave { to { transform: skewY(-6deg); } }
+.cer-e-cannon { animation: cer-roll 1.2s ease-out both .2s; }
+@keyframes cer-roll { from { transform: translateX(-140px); opacity: 0; } }
+.cer-e-cannon .barrel { animation: cer-recoil .4s ease 1.6s; }
+@keyframes cer-recoil { 40% { transform: translateX(-14px); } }
+.cer-e-cannon .puff, .cer-e-ship .puff { opacity: 0; transform-box: fill-box; transform-origin: center; animation: cer-puff 1.2s ease-out 1.6s; }
+.cer-e-cannon .p2 { animation-delay: 1.75s; }
+@keyframes cer-puff { 0% { opacity: .95; transform: scale(.3); } 100% { opacity: 0; transform: scale(2.6) translate(10px, -10px); } }
+.cer-e-ship .bob { animation: cer-bob 1.6s ease-in-out infinite alternate; }
+@keyframes cer-bob { to { transform: translateY(6px) rotate(1.5deg); } }
+.cer-e-ship .wave { animation: cer-waves 1.2s linear infinite; }
+@keyframes cer-waves { to { transform: translateX(-30px); } }
+.cer-e-airship .float { animation: cer-float 3s ease-in-out infinite alternate; }
+@keyframes cer-float { from { transform: translate(-20px, 6px); } to { transform: translate(20px, -6px); } }
+.cer-e-fort .build { transform-box: fill-box; transform-origin: bottom; animation: cer-build 1.4s cubic-bezier(.34, 1.3, .5, 1) both .4s; }
+@keyframes cer-build { from { transform: scaleY(0); } }
+.cer-e-flag .rise { animation: cer-hoist 1.8s ease-out both .4s; }
+@keyframes cer-hoist { from { transform: translateY(90px); } }
+.cer-e-flag .cloth { animation: cer-wave 1s ease-in-out infinite alternate; transform-origin: 62px 60px; }
+.cer-e-coins .coin { opacity: 0; animation: cer-coin .9s cubic-bezier(.5, 0, .7, 1.4) forwards; }
+@keyframes cer-coin { 0% { opacity: 0; transform: translateY(-120px); } 30% { opacity: 1; } 100% { opacity: 1; transform: translateY(70px); } }
+.cer-e-horse .draw { stroke: #C9A13B; }
+.cer-e-horse { animation: cer-gallop .5s ease-in-out infinite alternate .8s, cer-emb 1s both .2s; }
+@keyframes cer-gallop { to { transform: translateY(-8px) rotate(-4deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .cer *, .cer-scene::after { animation-duration: .01s !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; }
+  .cer-emblem .draw, .cer-e-map .arrow, .cer-e-mapin .arrow { stroke-dashoffset: 0; }
+}
+/* the gallery of ceremonies (#/ceremonies) */
+.cer-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.gov-desk { flex-basis: 100%; display: grid; gap: 6px; margin-top: 6px; padding: 10px; border-left: 3px solid var(--gold); background: var(--soft); }

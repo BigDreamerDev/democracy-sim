@@ -139,7 +139,7 @@ export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
     o.holder = target;
     t.stats.heldOffice = true;
     stamp(w, target, o.title, 'Appointed by ' + nm(w, actor), 'ink');
-    gazette(w, 'government', `${t.name} is appointed ${o.title}.`, '#/offices');
+    gazette(w, 'government', `${t.name} is appointed ${o.title}.`, '#/offices', { k: 'appoint', who: t.id, by: actor, title: o.title, office: o.template || o.id });
     if (promised && promised !== target) gazette(w, 'government', `The PM broke a coalition promise: the ${o.title} post was promised to ${nm(w, promised as string)}.`, '#/cabinet');
   } else {
     o.holder = null;

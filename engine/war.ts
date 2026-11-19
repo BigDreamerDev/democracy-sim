@@ -52,8 +52,8 @@ export function startWar(w: W, nid: Id, by: 'us' | 'them', cause?: { pretender?:
   n.embassy = false;
   w.army.campaign = { nation: nid, by, startedAt: w.now, score: 0, strategy: 'hold', nextBattleAt: w.now + BATTLE_EVERY, battles: [], volunteers: [], bonds: {}, bondTotal: 0, pretender: cause?.pretender || null };
   meter(w, 'stability', by === 'them' ? -6 : -3, by === 'them' ? `${n.name} declared war` : `War with ${n.name}`);
-  if (by === 'them') gazette(w, 'army', cause?.pretender ? `${n.name} declares war to put ${nm(w, cause.pretender)} on our throne. The first battle is in 12 hours.` : `${n.name} declares war on the realm. Army upkeep doubles until the war is won, lost, or Parliament makes peace. The first battle is in 12 hours.`, '#/war');
-  else gazette(w, 'army', `The realm is at war with ${n.name}. Army upkeep doubles. The first battle is in 12 hours.`, '#/war');
+  if (by === 'them') gazette(w, 'army', cause?.pretender ? `${n.name} declares war to put ${nm(w, cause.pretender)} on our throne. The first battle is in 12 hours.` : `${n.name} declares war on the realm. Army upkeep doubles until the war is won, lost, or Parliament makes peace. The first battle is in 12 hours.`, '#/war', { k: 'invaded', place: n.name, nation: n.id });
+  else gazette(w, 'army', `The realm is at war with ${n.name}. Army upkeep doubles. The first battle is in 12 hours.`, '#/war', { k: 'invade', place: n.name, nation: n.id });
 }
 
 // the General, the PM or an officer of state picks how the Army fights
@@ -64,7 +64,7 @@ export function setStrategy(w: W, actor: Id, s: string) {
   if (!own(STRATEGIES, s)) fail('Hold, advance or raid.');
   if (k.strategy === s) fail('That is already the order.');
   k.strategy = s;
-  gazette(w, 'army', `New orders at the front: ${STRATEGIES[s].label.toLowerCase()}.`, '#/war');
+  gazette(w, 'army', `New orders at the front: ${STRATEGIES[s].label.toLowerCase()}.`, '#/war', { k: 'orders', title: s, place: w.nations[k.nation]?.name, by: actor });
 }
 // raise regiments, paid from the Treasury
 export function recruit(w: W, actor: Id, n: unknown) {
@@ -75,7 +75,7 @@ export function recruit(w: W, actor: Id, n: unknown) {
   if (have + k > MAX_REGIMENTS) fail(`The realm can field ${MAX_REGIMENTS} regiments at most. It has ${have}.`);
   transfer(w, 'treasury', 'reserve', regimentCost(w, REGIMENT_COST) * k, `Raised ${k} regiment${k === 1 ? '' : 's'}`);
   w.army.troops = have + k;
-  gazette(w, 'army', `${k} new regiment${k === 1 ? ' is' : 's are'} raised. The Army now fields ${w.army.troops}.`, '#/army');
+  gazette(w, 'army', `${k} new regiment${k === 1 ? ' is' : 's are'} raised. The Army now fields ${w.army.troops}.`, '#/army', { k: 'raise', n: k, by: actor, to: [actor] });
 }
 export function disband(w: W, actor: Id, n: unknown) {
   if (!hasArmy(w)) fail('There is no Army.');
@@ -141,7 +141,7 @@ export function battle(w: W) {
   const text = won ? `Victory at ${where}${loot > 0 ? `, and ${loot} crowns of spoils` : ''}.${lost ? ' A regiment is lost.' : ''}` : `Defeat at ${where}.${lost ? ' A regiment is lost.' : ''}`;
   k.battles.unshift({ at: w.now, won, where, delta, lost, loot, us: p.us, them: p.them });
   k.battles = k.battles.slice(0, 30);
-  gazette(w, 'army', `${text} The front stands at ${k.score > 0 ? '+' : ''}${k.score}.`, '#/war');
+  gazette(w, 'army', `${text} The front stands at ${k.score > 0 ? '+' : ''}${k.score}.`, '#/war', { k: 'battle', won, place: where, nation: n.id, delta, score: k.score });
   dispatches(w, k, won, where, delta, loot, lost);
   blockade(w, k);
   if (k.score >= 100) endWar(w, 'victory');
@@ -191,7 +191,7 @@ export function endWar(w: W, how: 'victory' | 'defeat' | 'peace') {
       w.citizens[k.pretender].exileNoted = false;
       gazette(w, 'hos', `${nm(w, k.pretender)}, whose claim ${n.name} fought for, goes into exile for a week.`, '#/exile');
     }
-    gazette(w, 'army', `Victory. ${n.name} sues for peace and pays ${rep} crowns in reparations.${general ? ` ${nm(w, general)} comes home a war hero.` : ''} War bonds are repaid at 130%.`, '#/war');
+    gazette(w, 'army', `Victory. ${n.name} sues for peace and pays ${rep} crowns in reparations.${general ? ` ${nm(w, general)} comes home a war hero.` : ''} War bonds are repaid at 130%.`, '#/war', { k: 'victory', place: n.name, who: general || null });
   } else if (how === 'defeat') {
     const tribute = 60;
     transfer(w, 'treasury', 'nation:' + nid, tribute, `Tribute to ${n.name} after defeat`);
@@ -206,7 +206,7 @@ export function endWar(w: W, how: 'victory' | 'defeat' | 'peace') {
     if (w.pm) approve(w, w.pm, -6);
     if (general) approve(w, general, -4);
     legit(w, -4, `Lost the war against ${n.name}`);
-    gazette(w, 'army', `Defeat. The realm pays ${n.name} ${tribute} crowns in tribute. The Army comes home beaten and angry. War bonds are repaid at half.`, '#/war');
+    gazette(w, 'army', `Defeat. The realm pays ${n.name} ${tribute} crowns in tribute. The Army comes home beaten and angry. War bonds are repaid at half.`, '#/war', { k: 'defeat', place: n.name });
     // a war fought to crown a pretender, lost: the enemy puts them on the throne
     if (k.pretender && w.config.hos === 'monarchy' && w.citizens[k.pretender]?.active) imposePretender(w, k.pretender, n.name);
   } else {
@@ -276,7 +276,7 @@ export function garrison(w: W, actor: Id, pid: unknown, on: unknown) {
   if (!!p.garrison === on) fail(on ? 'There is already a garrison there.' : 'There is no garrison there.');
   if (on && (w.army.troops ?? 6) - garrisoned(w) < 2) fail('The Army needs at least one regiment in the field.');
   p.garrison = on;
-  gazette(w, 'army', on ? `A regiment is posted to ${PROVINCES[pid as string].name}.` : `The garrison leaves ${PROVINCES[pid as string].name}.`, '#/atlas');
+  gazette(w, 'army', on ? `A regiment is posted to ${PROVINCES[pid as string].name}.` : `The garrison leaves ${PROVINCES[pid as string].name}.`, '#/atlas', on ? { k: 'march', place: PROVINCES[pid as string].name, by: actor } : undefined);
 }
 
 // ---------- blockades: we have no navy. In wartime, each battle the enemy may seize ships at sea ----------
@@ -387,7 +387,7 @@ export function closeMemorial(w: W, m: any) {
   m.carved.forEach((id: Id) => (w.pensions[id] ??= { since: w.now, war: n }));
   const f = fame(w);
   f.memorials = [{ nation: n, outcome: m.outcome, at: w.now, names: m.carved.map((id: Id) => nm(w, id)) }, ...(f.memorials || [])].slice(0, 30);
-  gazette(w, 'army', m.carved.length ? `The memorial to the ${n} war is unveiled. Carved on it: ${m.carved.map((id: Id) => nm(w, id)).join(', ')}.` : `The memorial to the ${n} war is unveiled with no names on it.`, '#/fame');
+  gazette(w, 'army', m.carved.length ? `The memorial to the ${n} war is unveiled. Carved on it: ${m.carved.map((id: Id) => nm(w, id)).join(', ')}.` : `The memorial to the ${n} war is unveiled with no names on it.`, '#/fame', { k: 'memorial', place: n });
 }
 
 // ---------- veterans' pensions: paid each payday to every name on a memorial, at the rate the law sets (0 cuts them) ----------
