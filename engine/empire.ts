@@ -8,7 +8,7 @@ import { theName, W, Id, DAY, fail, own, cit, nm, gazette, transfer, bal, ca, ch
 import { createOffice, TEMPLATES } from './offices';
 import { imperialPurse } from './warmachine';
 import { establishPrivy, dissolvePrivy } from './privy';
-import { callOath, endOath, mustHaveSworn } from './oath';
+import { callOath, endOath, notRefused } from './oath';
 import { callGeneralElection } from './politics';
 import { PROVINCES, seedProvinces, moodShift, atWar } from './foreign';
 
@@ -114,7 +114,7 @@ export function governor(w: W, actor: Id, pid: unknown, target: unknown) {
   }
   const c = cit(w, target as Id);
   if (!c.active || c.bot || c.defected) fail('Pick a citizen at home.');
-  mustHaveSworn(w, c.id, c.name);
+  notRefused(w, c.id, c.name);
   mustBeFree(w, c.id);
   p.governor = c.id;
   stamp(w, c.id, 'Governor', name, 'ink');

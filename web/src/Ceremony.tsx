@@ -30,7 +30,7 @@ export function scene(w: any, fx: any): { emblem: string; kicker: string; name: 
     case 'governor': return { emblem: 'sash', kicker: `Governor of ${fx.place}`, name: who(fx.who), sub: 'Appointed by the Imperial High Commission' };
     case 'gdecree': return { emblem: 'scroll', kicker: `By decree of the Governor of ${fx.place}`, name: fx.title, sub: who(fx.who) };
     case 'oath': return { emblem: 'oath', kicker: 'Sworn', name: who(fx.who), sub: `The Imperial Oath, to ${sov}` };
-    case 'oathcall': return { emblem: 'oath', kicker: 'By Imperial command', name: 'The Imperial Oath', sub: 'Every citizen must swear allegiance' };
+    case 'oathcall': return { emblem: 'oath', kicker: 'By Imperial command', name: 'The Imperial Oath', sub: 'Every citizen is called to swear allegiance' };
     case 'refuse': return { emblem: 'broken', kicker: 'Refused the Imperial Oath', name: who(fx.who), sub: 'And loses every office', tone: 'red' };
     case 'council': return { emblem: 'crown', kicker: 'Parliament is dissolved', name: 'The Imperial Privy Council', sub: 'Eight sit in Council. Its Orders are the law.' };
     case 'empire': return { emblem: 'crown', kicker: 'Proclaimed', name: fx.place || w.config.realmName, sub: fx.who ? `${fx.title || ''} ${who(fx.who)}`.trim() : 'An Empire' };

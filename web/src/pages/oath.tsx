@@ -1,10 +1,10 @@
-// The Imperial Oath: the words, who has sworn, and the prompt every citizen sees until they swear or refuse.
+// The Imperial Oath: the words, who has sworn, and the prompt a citizen sees until they swear or refuse.
 // Rules in engine/oath.ts.
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, When } from '../ui';
 import { allCitizens } from '../../../engine/index';
-import { oathWords, owesOath, refusedOath } from '../../../engine/oath';
+import { oathWords, owesOath, refusedOath, OATH_INFLUENCE } from '../../../engine/oath';
 
 function Roll() {
   const { world: w } = useStore();
@@ -17,7 +17,7 @@ function Roll() {
   return (
     <div class="stack" style={{ gap: 6 }}>
       <div class="small"><b>Sworn ({sworn.length}):</b> {list(sworn)}</div>
-      {!o.settled && <div class="small"><b>Yet to swear ({waiting.length}):</b> {list(waiting)}</div>}
+      <div class="small"><b>Yet to swear ({waiting.length}):</b> {list(waiting)}</div>
       <div class="small"><b>Refused ({refused.length}):</b> {list(refused)}</div>
     </div>
   );
@@ -29,14 +29,14 @@ export function OathPanel() {
   if (!o) return null;
   const owes = owesOath(w, me);
   return (
-    <Sec title="The Imperial Oath" sub={o.settled ? 'The time for swearing is over. Those who refused may still swear.' : <>Every citizen must swear by <When at={o.dueAt} />. Until then they cannot vote in Council or hold office.</>}>
+    <Sec title="The Imperial Oath" sub={`Swearing earns ${OATH_INFLUENCE} Influence. Refusing costs every office, Council seat and governorship, and bars new appointments until you swear. Not having sworn yet costs nothing.`}>
       <Card><div class="stack">
         <blockquote class="oath-words">{oathWords(w)}</blockquote>
         {me === w.hos?.holder ? <span class="small muted">The oath is sworn to you.</span>
           : !owes ? <span class="chip teal" style={{ alignSelf: 'flex-start' }}>You swore it <When at={o.sworn[me]} /></span>
           : <div class="row" style={{ gap: 8, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-              <Btn onClick={() => act('oath.swear', {}, 'You have sworn the Imperial Oath.')}>I swear it</Btn>
-              {!o.refused[me] && <Btn kind="danger ghost" onClick={() => confirm('Refuse the Imperial Oath? You lose 3 approval and every office, Council seat and governorship you hold.') && act('oath.refuse', {}, 'You refused the oath.')}>I refuse</Btn>}
+              <Btn onClick={() => act('oath.swear', {}, `You have sworn the Imperial Oath. +${OATH_INFLUENCE} Influence.`)}>I swear it</Btn>
+              {!o.refused[me] && <Btn kind="danger ghost" onClick={() => confirm('Refuse the Imperial Oath? You lose every office, Council seat and governorship you hold, and cannot be appointed until you swear.') && act('oath.refuse', {}, 'You refused the oath.')}>I refuse</Btn>}
             </div>}
         <Roll />
       </div></Card>
@@ -66,10 +66,10 @@ export function OathPrompt() {
         <div class="oath-kicker">By Imperial command</div>
         <h2 class="oath-title">The Imperial Oath</h2>
         <blockquote class="oath-words">{oathWords(w)}</blockquote>
-        <p class="small oath-note">Until you swear you cannot vote in Council, lay an Order or hold office. {w.oath.settled ? '' : <>Swear by <When at={w.oath.dueAt} />, or you will be taken to have refused.</>}</p>
+        <p class="small oath-note">Swear it and earn {OATH_INFLUENCE} Influence. Refuse it and you lose every office you hold. You can also leave it for now: nothing happens until you choose.</p>
         <div class="oath-actions">
-          <Btn onClick={() => act('oath.swear', {}, 'You have sworn the Imperial Oath.')}>I swear it</Btn>
-          <Btn kind="danger ghost" onClick={() => confirm('Refuse the Imperial Oath? You lose 3 approval and every office, Council seat and governorship you hold.') && act('oath.refuse', {}, 'You refused the oath.')}>I refuse</Btn>
+          <Btn onClick={() => act('oath.swear', {}, `You have sworn the Imperial Oath. +${OATH_INFLUENCE} Influence.`)}>I swear it</Btn>
+          <Btn kind="danger ghost" onClick={() => confirm('Refuse the Imperial Oath? You lose every office, Council seat and governorship you hold, and cannot be appointed until you swear.') && act('oath.refuse', {}, 'You refused the oath.')}>I refuse</Btn>
           <button class="linkish small" onClick={() => ((later = true), setHide(true))}>Not now</button>
         </div>
       </div>

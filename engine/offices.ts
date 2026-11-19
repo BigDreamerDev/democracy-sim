@@ -1,6 +1,6 @@
 // Offices: every role in government is one of these. A law creates an office from a template or from
 // a list of powers; whoever holds it gets those powers as buttons.
-import { mustHaveSworn } from './oath';
+import { notRefused } from './oath';
 import { W, Id, approve, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, isHOS, hasPower, exiled, barred, detained, holdsAnything, own, text, int } from './core';
 
 export const POWERS: Record<string, { label: string; strong?: boolean }> = {
@@ -114,7 +114,7 @@ export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
     if (exiled(w, target)) fail('They are in exile.');
     if (barred(w, target)) fail('They are barred from office for now.');
     if (detained(w, target)) fail('A detainee cannot hold office.');
-    mustHaveSworn(w, target, t.name);
+    notRefused(w, target, t.name);
     if (w.regime?.type === 'party' && t.party !== w.regime.party) fail('Only members of the Party may hold office.');
   }
   // the Monarch Emeritus holds every past monarch the Crown grants it to: appoint adds one; "leave vacant" clears it

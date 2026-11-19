@@ -16,7 +16,6 @@ import { battle, warWeek, settleTerms, closeMemorial, payPensions } from './war'
 import { abroadWeek } from './abroad';
 import { empireWeek } from './empire';
 import { machineWeek } from './warmachine';
-import { settleOath } from './oath';
 import { tickExchange, exchangePayday, closeMotion } from './exchange';
 import { expireContract, settleClaim, ghostBack, bountyDeadline, bountyDue, orderDeadline, openHunt, startHunt, finishHunt } from './streets';
 import { marketDue, staleMarket } from './markets';
@@ -47,7 +46,6 @@ function collect(w: W): D[] {
   Object.values(w.parties).forEach((p: any) => p.challenge?.status === 'open' && add(p.challenge.dueAt, () => lapseChallenge(w, p), 'ch' + p.id));
   Object.values(w.breakaways || {}).forEach((b: any) => b.status === 'plotting' && add(b.dueAt, () => lapseBreakaway(w, b), b.id));
   if (w.phase === 'convention' && w.convention.closesAt) add(w.convention.closesAt, () => closeConvention(w));
-  if (w.oath && !w.oath.settled) add(w.oath.dueAt, () => settleOath(w), 'oath');
   if (w.induction && !w.induction.done) add(w.induction.until, () => endInduction(w));
   // practice bots take a turn every two hours during induction
   if (w.induction && !w.induction.done && w.induction.nextBotAt) add(w.induction.nextBotAt, () => ((w.induction.nextBotAt = w.now + 2 * HOUR), actBots(w, (id) => !!id && !!w.citizens[id]?.bot, 0.6)));

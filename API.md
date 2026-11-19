@@ -224,7 +224,7 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | `army.kit`, `provinces[].fort` | military acquisitions: `{artillery, cavalry, ironclad, airship}` counts; a fort in a province |
 | `gazette[].fx` | a moment the site plays as a ceremony: `k` (kind, e.g. `appoint`, `sworn`, `governor`, `veto`, `force`, `seal`, `invade`, `battle`, `victory`), with `who`, `by`, `title`, `place`, and `to` (ids it is shown to) where they apply |
 | `provinces[].calmUntil`, `.strainUntil`, `.decreeAt` | a Governor's decrees: no unrest until; unrest half as likely again until; the last decree |
-| `oath` | the Imperial Oath while the Imperial Prerogative Act is law (else `null`): `since`, `dueAt`, `sworn` and `refused` (`{id: at}`, public), `settled`. Until a citizen swears (`oath.swear`), they cannot vote on or lay an Order or be appointed; `oath.refuse` or the deadline strips their offices |
+| `oath` | the Imperial Oath while the Imperial Prerogative Act is law (else `null`): `since`, `sworn` and `refused` (`{id: at}`, public). `oath.swear` earns 5 Influence; `oath.refuse` strips every office and bars new appointments until the citizen swears. Not having sworn has no effect |
 | `shipping` | trade ventures at sea to each nation: `{nationId: count}` |
 | `army.campaign.terms` | the enemy's terms of peace: `kind` (`land`/`tribute`/`hostage`), `ahead`, `province`, `crowns`, `hostage`, `votes` (MPs, public), `closesAt`, `status` |
 | `memorials[]` | a war memorial vote: `names` (candidates), `votes` (MPs), `closesAt`, `status`, `carved`; carved memorials are in `fame.memorials` |

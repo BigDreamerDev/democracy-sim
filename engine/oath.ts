@@ -1,28 +1,29 @@
-// The Imperial Oath: under the Imperial Prerogative Act every citizen swears allegiance to the Sovereign. Public.
-// w.oath = { since, dueAt, sworn: {id: at}, refused: {id: at}, settled }. The Sovereign takes no oath.
-// Until they swear, a citizen cannot vote on or lay an Order, or be appointed to anything. Refusing (or letting the
-// deadline pass) costs approval and every office, Council seat and governorship held. A refuser may swear later.
-import { W, Id, DAY, fail, nm, gazette, stamp, approve, allCitizens, bump, theName } from './core';
+// The Imperial Oath: under the Imperial Prerogative Act every citizen is asked to swear allegiance to the Sovereign.
+// Public: w.oath = { since, sworn: {id: at}, refused: {id: at} }. The Sovereign takes no oath.
+// Swearing earns Influence. Not having sworn yet costs nothing: you can vote, lay Orders and hold office as before.
+// Refusing outright strips every office, Council seat and governorship, and bars new appointments until you swear.
+import { W, Id, fail, nm, gazette, stamp, earn, allCitizens, bump, theName } from './core';
 
-export const OATH_DAYS = 2;
+export const OATH_INFLUENCE = 5;
 const sovereignOf = (w: W) => w.hos?.holder || null;
 export const oathWords = (w: W) => {
   const him = /^(King|Emperor)$/.test(w.config.hosTitle);
   const sov = sovereignOf(w);
   return `I swear that I will be faithful and bear true allegiance to ${him ? 'His' : 'Her'} Imperial Majesty${sov ? ` ${w.config.hosTitle} ${nm(w, sov)}` : ''}, ${him ? 'his' : 'her'} heirs and successors, and that I will serve ${theName(w.config.realmName)} according to its laws, in Council and out of it.`;
 };
-// does this citizen still owe the oath? (nobody does without one; the Sovereign never does)
+// still to swear (nobody is without an oath; the Sovereign never is)
 export const owesOath = (w: W, id: Id) => !!w.oath && !w.oath.sworn?.[id] && id !== sovereignOf(w) && !w.citizens[id]?.bot;
 export const refusedOath = (w: W, id: Id) => !!w.oath && !!w.oath.refused?.[id] && !w.oath.sworn?.[id];
-export function mustHaveSworn(w: W, id: Id, what: string) {
-  if (owesOath(w, id)) fail(`${what === 'you' ? 'You must' : `${what} must`} swear the Imperial Oath first.`);
+// only a refuser is barred from new appointments; someone who simply has not sworn yet is not
+export function notRefused(w: W, id: Id, name: string) {
+  if (refusedOath(w, id)) fail(`${name} refused the Imperial Oath, and cannot be appointed until they swear it.`);
 }
 
 export function callOath(w: W) {
   if (w.oath) return;
-  w.oath = { since: w.now, dueAt: w.now + OATH_DAYS * DAY, sworn: {}, refused: {}, settled: false };
+  w.oath = { since: w.now, sworn: {}, refused: {} };
   allCitizens(w).forEach((c: any) => c.bot && (w.oath.sworn[c.id] = w.now));
-  gazette(w, 'law', `Every citizen must swear the Imperial Oath of allegiance within ${OATH_DAYS} days. Until they do, they may not vote in Council or hold any office.`, '#/house', { k: 'oathcall', who: sovereignOf(w) });
+  gazette(w, 'law', `Every citizen is called to swear the Imperial Oath of allegiance. Those who swear earn ${OATH_INFLUENCE} Influence; those who refuse lose any office they hold.`, '#/oath', { k: 'oathcall', who: sovereignOf(w) });
 }
 export function endOath(w: W) {
   w.oath = null;
@@ -35,10 +36,10 @@ export function swear(w: W, actor: Id) {
   const late = !!w.oath.refused[actor];
   w.oath.sworn[actor] = w.now;
   delete w.oath.refused[actor];
-  approve(w, actor, late ? 0 : 1);
+  if (!late) earn(w, actor, OATH_INFLUENCE, 'Swore the Imperial Oath');
   stamp(w, actor, 'Imperial Oath', late ? 'Sworn at last' : 'Sworn', 'ink');
   bump(w, actor, 'oaths');
-  gazette(w, 'government', late ? `${nm(w, actor)} swears the Imperial Oath at last.` : `${nm(w, actor)} swears the Imperial Oath.`, '#/house', { k: 'oath', who: actor, to: [actor] });
+  gazette(w, 'government', late ? `${nm(w, actor)} swears the Imperial Oath at last.` : `${nm(w, actor)} swears the Imperial Oath.`, '#/oath', { k: 'oath', who: actor, to: [actor] });
 }
 export function refuse(w: W, actor: Id) {
   if (!w.oath) fail('There is no oath to refuse.');
@@ -46,26 +47,12 @@ export function refuse(w: W, actor: Id) {
   if (w.oath.sworn[actor]) fail('You have sworn already. There is no taking it back.');
   if (w.oath.refused[actor]) fail('You have already refused it.');
   w.oath.refused[actor] = w.now;
-  strip(w, actor);
-  gazette(w, 'government', `${nm(w, actor)} refuses to swear the Imperial Oath, and loses every office they held.`, '#/house', { k: 'refuse', who: actor });
-}
-// the deadline: whoever has not sworn is taken to have refused
-export function settleOath(w: W) {
-  if (!w.oath || w.oath.settled) return;
-  w.oath.settled = true;
-  const late = allCitizens(w).filter((c: any) => owesOath(w, c.id) && !w.oath.refused[c.id]);
-  late.forEach((c: any) => ((w.oath.refused[c.id] = w.now), strip(w, c.id)));
-  const n = Object.keys(w.oath.sworn).length;
-  gazette(w, 'government', late.length ? `The time for the Imperial Oath is up. ${n} have sworn. ${late.map((c: any) => c.name).join(', ')} did not, and lose any office they held.` : `The time for the Imperial Oath is up. Every citizen has sworn.`, '#/house');
-}
-// a refuser loses approval, every office, their Council seat and any governorship
-function strip(w: W, id: Id) {
-  approve(w, id, -3);
-  stamp(w, id, 'Imperial Oath', 'Refused', 'bad');
+  stamp(w, actor, 'Imperial Oath', 'Refused', 'bad');
   Object.values(w.offices).forEach((o: any) => {
-    if (o.holder === id) o.holder = null;
-    if (o.members?.includes(id)) o.members = o.members.filter((m: Id) => m !== id);
+    if (o.holder === actor) o.holder = null;
+    if (o.members?.includes(actor)) o.members = o.members.filter((m: Id) => m !== actor);
   });
-  if (w.privy) w.privy.councillors = (w.privy.councillors || []).map((c: Id | null) => (c === id ? null : c));
-  Object.values(w.provinces || {}).forEach((p: any) => p.governor === id && (p.governor = null));
+  if (w.privy) w.privy.councillors = (w.privy.councillors || []).map((c: Id | null) => (c === actor ? null : c));
+  Object.values(w.provinces || {}).forEach((p: any) => p.governor === actor && (p.governor = null));
+  gazette(w, 'government', `${nm(w, actor)} refuses to swear the Imperial Oath, and loses every office they held.`, '#/oath', { k: 'refuse', who: actor });
 }

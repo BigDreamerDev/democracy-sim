@@ -1,7 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
-  { n: 65, text: 'The Imperial Oath: under the Imperial Prerogative Act every citizen must swear allegiance to the Sovereign within two days. Until you do, you cannot vote in Council or hold office; refusing costs you every office you hold.' },
+  { n: 65, text: 'The Imperial Oath: under the Imperial Prerogative Act every citizen is called to swear allegiance to the Sovereign. Swearing earns 5 Influence. Refusing costs every office you hold. Not having sworn yet costs nothing.' },
   { n: 64, text: 'The Realm Console has caught up: the Privy Council’s powers, governors’ decrees, the war chest, acquisitions and forts, and the Gazette’s great moments.' },
   { n: 63, text: 'The ceremonies are smoother: richer gilded emblems, cleaner motion, and scenes that fade into one another.' },
   { n: 62, text: 'One person can now hold several places on the Privy Council, and has a vote for each place they hold.' },

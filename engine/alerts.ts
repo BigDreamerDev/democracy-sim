@@ -20,7 +20,7 @@ export function needs(w: W, me: Id): Alert[] {
   Object.values(w.elections).forEach((e: any) => {
     if (e.status === 'open' && canVote(w, e, me) && !e.ballots[me]) out.push({ key: 'election:' + e.id, href: '#/election/' + e.id, label: `${Object.keys(e.candidates).length} standing`, title: e.title, at: e.closesAt });
   });
-  if (owesOath(w, me)) out.push({ key: 'oath:' + w.oath.since, href: '#/oath', label: w.oath.refused?.[me] ? 'You refused' : 'Imperial Oath', title: 'Swear the Imperial Oath', at: w.oath.settled ? undefined : w.oath.dueAt, urgent: true });
+  if (owesOath(w, me)) out.push({ key: 'oath:' + w.oath.since, href: '#/oath', label: w.oath.refused?.[me] ? 'You refused' : 'Imperial Oath', title: w.oath.refused?.[me] ? 'Swear the Imperial Oath to hold office again' : 'Swear the Imperial Oath (+5 Influence)' });
   Object.values(w.proposals).forEach((p: any) => {
     const book = p.stage === 'override' ? p.overrideVotes || {} : p.votes;
     const line = p.stage === 'vote' && p.voters === 'mps' ? whipLine(w, p, me) : null;

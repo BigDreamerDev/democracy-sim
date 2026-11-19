@@ -123,6 +123,7 @@ export function migrate(w: W): W {
   w.privy ??= null;
   w.oath ??= null;
   if (w.acts?.imperial && !w.oath) callOath(w);
+  if (w.oath) (delete w.oath.dueAt, delete w.oath.settled);
   w.warchest ??= { firms: {}, drawn: 0, drawnWeek: 0 };
   w.warchest.firms ??= {};
   if (w.army) w.army.kit ??= {};

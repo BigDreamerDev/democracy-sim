@@ -1218,10 +1218,10 @@ function oathCard() {
   const sworn = people.filter(([id]) => o.sworn?.[id]), refused = people.filter(([id]) => o.refused?.[id] && !o.sworn?.[id]), waiting = people.filter(([id]) => !o.sworn?.[id] && !o.refused?.[id]);
   const owe = W.viewer !== sov && !o.sworn?.[W.viewer];
   const names = xs => xs.map(([, c]) => esc(c.name)).join(', ') || 'nobody';
-  return `<div class="card" style="border-color:#C9A13B"><h2>The Imperial Oath <span class="sub">${o.settled ? 'the time for swearing is over' : 'swear by ' + esc(new Date(o.dueAt - (serverOffset || 0)).toLocaleString())}</span></h2>
+  return `<div class="card" style="border-color:#C9A13B"><h2>The Imperial Oath <span class="sub">swearing earns 5 Influence · refusing costs every office</span></h2>
     <p style="font-style:italic;margin:0 0 8px">I swear that I will be faithful and bear true allegiance to ${him ? 'His' : 'Her'} Imperial Majesty${sov ? ' ' + esc(W.config.hosTitle) + ' ' + esc(who(sov)) : ''}, ${him ? 'his' : 'her'} heirs and successors, and that I will serve ${esc(W.config.realmName)} according to its laws, in Council and out of it.</p>
-    ${owe ? `<div class="row">${btn('oath.swear', {}, 'I swear it', 'aye')}${o.refused?.[W.viewer] ? '' : btn('oath.refuse', {}, 'I refuse', 'no', 'Refuse the Imperial Oath? You lose 3 approval and every office you hold.')}</div><p class="small mut">Until you swear you cannot vote in Council, lay an Order or hold office.</p>` : W.viewer === sov ? '<p class="small mut">The oath is sworn to you.</p>' : '<p class="small">You have sworn it.</p>'}
-    <div class="small"><b>Sworn (${sworn.length}):</b> ${names(sworn)}</div>${o.settled ? '' : `<div class="small"><b>Yet to swear (${waiting.length}):</b> ${names(waiting)}</div>`}<div class="small"><b>Refused (${refused.length}):</b> ${names(refused)}</div></div>`;
+    ${owe ? `<div class="row">${btn('oath.swear', {}, 'I swear it', 'aye')}${o.refused?.[W.viewer] ? '' : btn('oath.refuse', {}, 'I refuse', 'no', 'Refuse the Imperial Oath? You lose every office you hold, and cannot be appointed until you swear.')}</div><p class="small mut">Not having sworn yet costs nothing.</p>` : W.viewer === sov ? '<p class="small mut">The oath is sworn to you.</p>' : '<p class="small">You have sworn it.</p>'}
+    <div class="small"><b>Sworn (${sworn.length}):</b> ${names(sworn)}</div><div class="small"><b>Yet to swear (${waiting.length}):</b> ${names(waiting)}</div><div class="small"><b>Refused (${refused.length}):</b> ${names(refused)}</div></div>`;
 }
 function privyCard() {
   if (!W.privy) return '';
