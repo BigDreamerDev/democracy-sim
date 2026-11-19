@@ -100,6 +100,7 @@ export const ca = (id: Id) => 'c:' + id;
 export function acctLabel(w: W, a: string): string {
   if (a.startsWith('c:')) return nm(w, a.slice(2));
   if (a.startsWith('bank:')) return w.banks[a.slice(5)]?.name ?? 'a bank';
+  if (a.startsWith('co:')) return w.exchange?.listed?.[a.slice(3)]?.name ?? 'a company';
   if (a.startsWith('nation:')) return w.nations[a.slice(7)]?.name ?? 'abroad';
   if (a.startsWith('office:')) return w.offices[a.slice(7)]?.name ?? 'an office';
   return ({ treasury: 'the Treasury', reserve: 'the Federal Reserve', escrow: 'held in escrow', ventures: 'trade ventures', market: 'the betting pool', exchange: 'the Exchange' } as any)[a] ?? a;

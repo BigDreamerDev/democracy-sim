@@ -229,6 +229,7 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | `approaches`, `sweeps` | secret offers from foreign powers (to you, or sent by you); your own Security Service sweeps |
 | `hostages[]` | citizens held abroad under terms of peace: `who`, `nation`, `until`, `status` (`held`/`ransomed`/`freed`) |
 | `pensions`, `config.veteranPension` | veterans on a memorial, and what each is paid a payday |
+| `exchange.listed` | companies and banks floated by citizens: `sym`, `name`, `kind` (`company`/`bank`), `owner`, `shares`, `unsold`, `mm` (held by the Exchange), `ipo`, `status` (`listed`/`bust`), `profits`; a company's cash is the account `co:<sym>` |
 | `exchange.donations[]` | company gifts to parties after a revolt that got its way |
 | `conflicts[]` | wars abroad between two nations: `a`, `b`, `status` (`raging`/`over`), `mediated`, `winner`, `peaceBy` |
 | `exchange` | the stock market: `prices` (`{sym: {p, open, hist[]}}`), `index[]`, `duty`, `haltedUntil`, `holdings` (yours, plus `treasury`: the realm's wealth fund), `trades` (yours only), `register` (shares held by MPs, ministers and the head of state). Companies are listed in `engine/exchange.ts` |

@@ -4,7 +4,7 @@ import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, Empty, Field, Pick, Seg } from '../ui';
 import { bal, ca, isPM, hasPower, holderOf, nm } from '../../../engine/index';
-import { COMPANIES, drivers, indexNow, portfolio, halted, register, fund, MAX_HOLD, canMove } from '../../../engine/exchange';
+import { COMPANIES, drivers, indexNow, portfolio, halted, register, fund, MAX_HOLD, canMove, listings, fairPrice, worth, LIST_FEE, SECTORS } from '../../../engine/exchange';
 
 function Spark({ data, w = 120, h = 32, base }: { data: number[]; w?: number; h?: number; base?: number }) {
   if (data.length < 2) return <svg width={w} height={h} aria-hidden="true" />;
@@ -38,7 +38,7 @@ function Revolt({ sym }: { sym: string }) {
     const t = open.tally || { yes: sum(true), no: sum(false) };
     return (
       <Card kind="warn" style={{ marginTop: 10 }}><div class="stack">
-        <b>Shareholder revolt: lobby {open.side === 'aye' ? 'for' : 'against'} “{w.proposals[open.prop]?.title}”</b>
+        <b>{open.oust ? `Boardroom revolt: remove ${nm(w, w.exchange.listed?.[sym]?.owner)} as owner` : <>Shareholder revolt: lobby {open.side === 'aye' ? 'for' : 'against'} “{w.proposals[open.prop]?.title}”</>}</b>
         <span class="small">Called by <Who id={open.by} />. {t.yes} shares for, {t.no} against so far. Closes in <Left at={open.closesAt} />.</span>
         {mine ? <div class="grid2"><Btn small onClick={() => act('exchange.vote', { motion: open.id, yes: true }, 'Voted with your shares.')}>For ({mine})</Btn><Btn small kind="plain" onClick={() => act('exchange.vote', { motion: open.id, yes: false }, 'Voted with your shares.')}>Against ({mine})</Btn></div> : <span class="small muted">Only {sym} shareholders vote.</span>}
       </div></Card>
@@ -55,6 +55,101 @@ function Revolt({ sym }: { sym: string }) {
   );
 }
 // corporate donations: published; and the button for whoever won a revolt
+// companies and banks floated by citizens: the list, their owners' controls, and the form to float your own
+function Citizens() {
+  const { world: w, me } = useStore();
+  const [open, setOpen] = useState<string | null>(null);
+  const [n, setN] = useState('1');
+  const [amt, setAmt] = useState('10');
+  const ls = listings(w).sort((a, b) => (a.status === b.status ? b.at - a.at : a.status === 'listed' ? -1 : 1));
+  const x = w.exchange;
+  return (
+    <div class="ex-wide">
+      <Sec title="Floated by citizens" sub="Companies and banks run by players. Buying new shares from the float pays the company; after that you trade with the Exchange. Prices drift towards what each one is worth.">
+        {ls.length ? (
+          <ul class="list ex-list">
+            {ls.map((l) => {
+              const q = x.prices[l.sym] || { p: 0, open: 0, hist: [0] };
+              const held = x.holdings?.[me]?.[l.sym]?.n || 0;
+              const on = open === l.sym;
+              const bust = l.status !== 'listed';
+              const mine = l.owner === me;
+              const canOust = !mine && !bust && canMove(w, me, l.sym);
+              return (
+                <li class={'ex-row' + (on ? ' on' : '')}>
+                  <button type="button" class="ex-sum" aria-expanded={on ? 'true' : 'false'} onClick={() => setOpen(on ? null : l.sym)}>
+                    <span class="ex-sym">{l.sym}</span>
+                    <span class="ex-name"><b>{l.name}</b><span class="small muted">{l.kind === 'bank' ? 'Bank' : l.sector} · {nm(w, l.owner)}{mine ? ' (you)' : ''}{held ? ` · you hold ${held}` : ''}{bust ? ' · BUST' : ''}</span></span>
+                    <Spark data={q.hist} w={96} h={28} />
+                    <span class="ex-price"><b class="tnum">{bust ? '—' : q.p.toFixed(2)}</b>{!bust && <Move v={pct(q.p, q.open)} />}</span>
+                  </button>
+                  {on && (
+                    <div class="ex-more">
+                      <p class="small" style={{ margin: '0 0 6px' }}>{l.about}</p>
+                      <ul class="list small">
+                        <li class="row"><span>Worth</span><b class="tnum">{worth(w, l)} crowns, {fairPrice(w, l).toFixed(2)} a share</b></li>
+                        <li class="row"><span>Shares</span><b class="tnum">{l.shares} · {l.unsold} new for sale · {l.mm} held by the Exchange</b></li>
+                        {l.kind === 'company' && (l.profits || []).length > 0 && <li class="row"><span>Last paydays</span><b class="tnum">{l.profits.slice(0, 4).map((d: number) => (d > 0 ? '+' : '') + d).join(', ')}</b></li>}
+                      </ul>
+                      {!bust && (
+                        <div class="grid2" style={{ marginTop: 10 }}>
+                          <Field label={`Shares (you hold ${held})`} type="number" value={n} onInput={setN} />
+                          <div class="row" style={{ alignSelf: 'end', gap: 6 }}>
+                            <Btn small disabled={halted(w)} onClick={() => act('exchange.buy', { sym: l.sym, n: Number(n) }, `Bought ${n} ${l.sym}.`)}>Buy · {Math.ceil(Number(n || 0) * q.p)}</Btn>
+                            <Btn small kind="plain" disabled={halted(w) || !held} onClick={() => act('exchange.sell', { sym: l.sym, n: Number(n) }, `Sold ${n} ${l.sym}.`)}>Sell</Btn>
+                          </div>
+                        </div>
+                      )}
+                      {mine && !bust && (
+                        <Card kind="tint" style={{ marginTop: 10 }}><div class="stack">
+                          <b>You own it</b>
+                          <div class="grid2"><Field label="Crowns" type="number" value={amt} onInput={setAmt} /><div class="row" style={{ alignSelf: 'end', gap: 6 }}>{l.kind === 'company' && <Btn small kind="ghost" onClick={() => act('exchange.invest', { sym: l.sym, amount: Number(amt) }, 'Invested.')}>Put money in</Btn>}<Btn small onClick={() => act('exchange.dividend', { sym: l.sym, amount: Number(amt) }, 'Dividend paid.')}>Pay a dividend</Btn></div></div>
+                          <span class="small muted">A dividend is shared by every share in hands, including yours.</span>
+                        </div></Card>
+                      )}
+                      {canOust && !(x.motions || []).some((m: any) => m.sym === l.sym && m.status === 'open') && <Btn small kind="danger ghost" style={{ marginTop: 10 }} onClick={() => confirm(`Call a vote to remove ${nm(w, l.owner)} as owner?`) && act('exchange.oust', { sym: l.sym }, 'The vote is called.')}>Call a vote to remove the owner</Btn>}
+                      <Revolt sym={l.sym} />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        ) : <Empty>No citizen has floated a company yet. Be the first.</Empty>}
+        <Float />
+      </Sec>
+    </div>
+  );
+}
+function Float() {
+  const { world: w, me } = useStore();
+  const bank = Object.values(w.banks).find((b: any) => b.owner === me && b.status === 'open') as any;
+  const [f, setF] = useState({ kind: 'company', sym: '', name: '', sector: 'Trade', about: '', shares: '200', price: '2', keep: '50', capital: '50' });
+  const set = (k: string, v: string) => setF({ ...f, [k]: v });
+  const sell = Math.max(0, Number(f.shares) - Number(f.keep));
+  return (
+    <details class="card dashed" style={{ marginTop: 12 }}>
+      <summary><b>Float your own company or bank</b> <span class="small muted">{LIST_FEE} crowns to list</span></summary>
+      <div class="stack" style={{ marginTop: 10 }}>
+        <Seg value={f.kind} onChange={(v) => set('kind', v)} options={[['company', 'A new company'], ['bank', bank ? `My bank, ${bank.name}` : 'My bank']]} />
+        {f.kind === 'bank' && !bank && <span class="small muted">You run no open bank. Open one on the Banks page first (it needs the Banking Act).</span>}
+        <div class="grid2">
+          <Field label="Ticker (3–4 letters)" value={f.sym} onInput={(v) => set('sym', v.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4))} placeholder="e.g. MAYA" />
+          {f.kind === 'company' && <Field label="Company name" value={f.name} onInput={(v) => set('name', v)} placeholder="e.g. Harbour Lights Ltd" />}
+        </div>
+        {f.kind === 'company' && <div class="grid2"><Pick label="Sector" value={f.sector} onChange={(v) => set('sector', v)} options={SECTORS.map((x) => [x, x])} /><Field label="Starting capital you put in (20–500)" type="number" value={f.capital} onInput={(v) => set('capital', v)} /></div>}
+        {f.kind === 'company' && <Field label="What it does (optional)" value={f.about} onInput={(v) => set('about', v.slice(0, 160))} />}
+        <div class="grid2">
+          <Field label="Shares in all (50–1000)" type="number" value={f.shares} onInput={(v) => set('shares', v)} />
+          <Field label="Opening price (1–50)" type="number" value={f.price} onInput={(v) => set('price', v)} />
+        </div>
+        <Field label="Shares you keep for yourself (a tenth at least)" type="number" value={f.keep} onInput={(v) => set('keep', v)} />
+        <span class="small">You sell {sell} new shares at {f.price}: up to {Math.floor(sell * Number(f.price || 0))} crowns raised for {f.kind === 'bank' ? "the bank's reserves" : 'the company'}. Its price will then follow what it is really worth.</span>
+        <Btn disabled={f.sym.length < 3 || (f.kind === 'bank' && !bank)} onClick={() => act('exchange.float', { ...f, shares: Number(f.shares), price: Number(f.price), keep: Number(f.keep), capital: Number(f.capital) }, `${f.sym} is listed.`)}>Float it ({LIST_FEE})</Btn>
+      </div>
+    </details>
+  );
+}
 function Donations() {
   const { world: w, me } = useStore();
   const [party, setParty] = useState('');
@@ -127,6 +222,7 @@ export function Exchange() {
           })}
         </ul>
       </Sec></div>
+      <Citizens />
       <Sec title="Your portfolio" sub={`Stamp duty on purchases: ${x.duty}%. You have ${bal(w, ca(me))} crowns.`}>
         {mine.rows.length ? (
           <Card>

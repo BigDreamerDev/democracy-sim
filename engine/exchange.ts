@@ -4,7 +4,7 @@
 // Money: buying pays the 'exchange' account, plus stamp duty to the Treasury; selling and dividends are paid from
 // it. When it runs short it draws on the Reserve (new money, which feeds inflation); its surplus goes back each payday.
 // Holdings are private (view.ts), except the Register of Interests: what MPs, ministers and the head of state own.
-import { W, Id, DAY, HOUR, fail, rand, chance, nm, newId, gazette, transfer, bal, ca, hasPower, isPM, holderOf, clamp, mustBeFree, int, bump, inGov, isMP, addCard, fmtTime } from './core';
+import { own, text, stamp, W, Id, DAY, HOUR, fail, rand, chance, nm, newId, gazette, transfer, bal, ca, hasPower, isPM, holderOf, clamp, mustBeFree, int, bump, inGov, isMP, addCard, fmtTime } from './core';
 import { atWar, conflictOf } from './foreign';
 
 export type Company = { sym: string; name: string; sector: string; nation: string | null; base: number; yield: number; about: string };
@@ -97,6 +97,7 @@ export function tickExchange(w: W) {
     q.hist.push(q.p);
     if (q.hist.length > HIST) q.hist.shift();
   });
+  tickListed(w, shock);
   const idx = indexNow(w);
   x.index.push(idx);
   if (x.index.length > HIST) x.index.shift();
@@ -107,7 +108,7 @@ export function tickExchange(w: W) {
     if (Math.abs(move) >= 5) gazette(w, 'money', `The Exchange closes the day ${move > 0 ? 'up' : 'down'} ${Math.abs(move).toFixed(1)}%, at ${idx}.`, '#/exchange');
     x.day = day;
     x.dayOpen = idx;
-    COMPANIES.forEach((c) => (x.prices[c.sym].open = x.prices[c.sym].p));
+    Object.keys(x.prices).forEach((s) => (x.prices[s].open = x.prices[s].p));
   }
 }
 
@@ -125,6 +126,7 @@ function payOut(w: W, to: string, amt: number, memo: string) {
 
 export function buy(w: W, actor: Id, sym: unknown, n: unknown) {
   mustBeFree(w, actor);
+  if (typeof sym === 'string' && own(exchange(w).listed || {}, sym)) return buyListed(w, actor, sym, n);
   const c = typeof sym === 'string' ? company(sym) : undefined;
   if (!c) fail('Pick a company on the Exchange.');
   if (halted(w)) fail('Trading is halted. It resumes when the halt ends.');
@@ -146,6 +148,7 @@ export function buy(w: W, actor: Id, sym: unknown, n: unknown) {
 }
 export function sell(w: W, actor: Id, sym: unknown, n: unknown) {
   mustBeFree(w, actor);
+  if (typeof sym === 'string' && own(exchange(w).listed || {}, sym)) return sellListed(w, actor, sym, n);
   const c = typeof sym === 'string' ? company(sym) : undefined;
   if (!c) fail('Pick a company on the Exchange.');
   if (halted(w)) fail('Trading is halted. It resumes when the halt ends.');
@@ -185,6 +188,7 @@ export function setDuty(w: W, actor: Id, rate: unknown) {
 // payday: dividends to holders, then any surplus above the float goes back to the Reserve
 export function exchangePayday(w: W) {
   const x = exchange(w);
+  listedPayday(w);
   let paid = 0;
   Object.entries(x.holdings).forEach(([id, h]: [string, any]) => {
     if (id !== FUND && !w.citizens[id]?.active) return;
@@ -264,11 +268,12 @@ export const fund = (w: W) => portfolio(w, FUND);
 // public on the bill, and when the House decides, the company's price jumps 6% if it got its way and falls 6% if not ----------
 export const MOTION_HOURS = 24;
 const held = (w: W, id: Id, sym: string) => (id === FUND ? 0 : exchange(w).holdings[id]?.[sym]?.n || 0);
+export const heldBy = held;
 const floatOf = (w: W, sym: string) => Object.keys(exchange(w).holdings).reduce((s, id) => s + held(w, id, sym), 0);
 export function canMove(w: W, id: Id, sym: string) { const n = held(w, id, sym); return n >= 5 && n * 10 >= floatOf(w, sym); }
 export function shareMotion(w: W, actor: Id, sym: unknown, prop: unknown, side: unknown) {
   mustBeFree(w, actor);
-  const c = typeof sym === 'string' ? company(sym) : undefined;
+  const c = typeof sym === 'string' ? companyOf(w, sym) : undefined;
   if (!c) fail('Pick a company on the Exchange.');
   if (!canMove(w, actor, c.sym)) fail(`You need at least 5 ${c.sym} shares and a tenth of all held to call a vote.`);
   const p = typeof prop === 'string' ? w.proposals[prop] : null;
@@ -298,7 +303,8 @@ export function closeMotion(w: W, m: any) {
   m.yes = tally(true);
   m.no = tally(false);
   const p = w.proposals[m.prop];
-  const c = company(m.sym)!;
+  const c = companyOf(w, m.sym)!;
+  if (m.oust) return settleOust(w, m, c);
   if (m.yes <= m.no || !p || !['debate', 'vote'].includes(p.stage)) return gazette(w, 'money', `${c.name}'s shareholders vote the motion down, ${m.yes} shares to ${m.no}.`, '#/exchange');
   p.lobbies = [...(p.lobbies || []), { sym: m.sym, side: m.side, at: w.now, by: m.by }];
   gazette(w, 'money', `${c.name}'s shareholders carry the motion, ${m.yes} shares to ${m.no}: the company lobbies ${m.side === 'aye' ? 'for' : 'against'} “${p.title}”.`, '#/p/' + p.id);
@@ -325,9 +331,217 @@ export function donate(w: W, actor: Id, prop: unknown, sym: unknown, party: unkn
   if (l.donated) fail('That donation has been made.');
   const pt = typeof party === 'string' ? w.parties[party] : null;
   if (!pt || pt.status !== 'active' || !pt.leader) fail('Pick a party with a leader.');
-  payOut(w, ca(pt.leader), DONATION, `Donation to ${pt.name} from ${company(l.sym)!.name}`);
+  payOut(w, ca(pt.leader), DONATION, `Donation to ${pt.name} from ${companyOf(w, l.sym)!.name}`);
   l.donated = pt.id;
   const x = exchange(w);
   x.donations = [{ sym: l.sym, party: pt.id, amount: DONATION, by: actor, prop: p!.id, at: w.now }, ...(x.donations || [])].slice(0, 40);
-  gazette(w, 'money', `${company(l.sym)!.name} donates ${DONATION} crowns to the ${pt.name}.`, '#/exchange');
+  gazette(w, 'money', `${companyOf(w, l.sym)!.name} donates ${DONATION} crowns to the ${pt.name}.`, '#/exchange');
+}
+
+// ---------- citizens' own companies and banks on the Exchange ----------
+// A citizen floats a company (with starting capital they put in) or their bank. They choose the number of shares, the
+// opening price and how many to keep. The rest is the float: buying from it pays the company (or the bank's reserves),
+// so floating really raises money. After that, shares trade against the Exchange, which holds what it buys back
+// (its inventory) and sells it on. A listed company's price drifts towards what it is worth: its cash per share for a
+// company, the bank's cash plus loans out minus what it owes savers for a bank. A company earns or loses each payday
+// with the realm's prosperity. The owner pays dividends from its funds; shareholders can vote the owner out.
+// State: w.exchange.listed[sym]; its cash in the account 'co:<sym>' (companies) or 'bank:<id>' (banks).
+export const LIST_FEE = 25;
+export const SECTORS = ['Trade', 'Shipping', 'Farming', 'Mining', 'Building', 'Media', 'Leisure', 'Technology'];
+export const listed = (w: W, sym: string) => own(w.exchange?.listed || {}, sym);
+export const listings = (w: W) => Object.values(w.exchange?.listed || {}) as any[];
+export function companyOf(w: W, sym: string): Company | undefined {
+  const c = company(sym);
+  if (c) return c;
+  const l = listed(w, sym);
+  return l ? { sym: l.sym, name: l.name, sector: l.sector, nation: null, base: l.ipo, yield: 0, about: l.about } : undefined;
+}
+const acct = (l: any) => (l.kind === 'bank' ? 'bank:' + l.bank : 'co:' + l.sym);
+// what a listed company is worth, in all and per share
+export function worth(w: W, l: any) {
+  if (l.status === 'bust') return 0;
+  if (l.kind === 'bank') {
+    const b = w.banks[l.bank];
+    if (!b || b.status === 'failed') return 0;
+    const owed = Object.values(b.deposits).reduce((s: number, v: any) => s + v, 0) as number;
+    const lent = (b.loans || []).reduce((s: number, x: any) => s + (x.left || 0), 0);
+    return Math.max(0, bal(w, acct(l)) + lent - owed);
+  }
+  return bal(w, acct(l));
+}
+// per share in issue: shares still unsold in the float have not been paid for, so they dilute nothing
+export const issued = (l: any) => Math.max(1, l.shares - l.unsold);
+export const fairPrice = (w: W, l: any) => Math.max(0, Math.round((worth(w, l) / issued(l)) * 100) / 100);
+export function floatCompany(w: W, actor: Id, a: any) {
+  mustBeFree(w, actor);
+  const x = exchange(w);
+  x.listed ??= {};
+  const kind = a?.kind === 'bank' ? 'bank' : a?.kind === 'company' ? 'company' : fail('Float a company or a bank.');
+  const sym = text(a?.sym, 3, 4, 'ticker').toUpperCase();
+  if (!/^[A-Z]{3,4}$/.test(sym)) fail('A ticker is 3 or 4 letters.');
+  if (company(sym) || own(x.listed, sym)) fail(`${sym} is taken.`);
+  if (listings(w).filter((l) => l.owner === actor && l.status === 'listed').length >= 2) fail('You can run two listed companies at most.');
+  const shares = int(a?.shares, 50, 1000, 'number of shares');
+  const ipo = Math.round(Number(a?.price) * 100) / 100;
+  if (!(ipo >= 1 && ipo <= 50)) fail('The opening price must be from 1 to 50 crowns.');
+  // the founder keeps at least a tenth, and sells at least 10
+  const keep = int(a?.keep ?? 0, Math.ceil(shares / 10), shares - 10, 'shares you keep');
+  let name: string;
+  let bankId: string | null = null;
+  if (kind === 'bank') {
+    const b = Object.values(w.banks).find((x: any) => x.owner === actor && x.status === 'open') as any;
+    if (!b) fail('You run no open bank to float.');
+    if (listings(w).some((l) => l.bank === b.id && l.status === 'listed')) fail(`${b.name} is already listed.`);
+    name = b.name;
+    bankId = b.id;
+  } else {
+    name = text(a?.name, 3, 40, 'company name');
+  }
+  const capital = kind === 'company' ? int(a?.capital, 20, 500, 'starting capital') : 0;
+  transfer(w, ca(actor), 'treasury', LIST_FEE, `Listing ${sym} on the Exchange`);
+  const l = { sym, name, kind, bank: bankId, owner: actor, founder: actor, sector: kind === 'bank' ? 'Banking' : SECTORS.includes(a?.sector) ? a.sector : 'Trade', about: kind === 'bank' ? `${name}, a citizen's bank.` : text(a?.about, 0, 160, 'description') || `${name}, founded by ${nm(w, actor)}.`, shares, unsold: shares - keep, mm: 0, ipo, at: w.now, status: 'listed', profits: [] as number[] };
+  x.listed[sym] = l;
+  if (capital) transfer(w, ca(actor), acct(l), capital, `Starting capital for ${name}`);
+  if (keep) (x.holdings[actor] ??= {})[sym] = { n: keep, cost: 0 };
+  x.prices[sym] = { p: ipo, open: ipo, hist: [ipo] };
+  gazette(w, 'money', `${nm(w, actor)} floats ${name} (${sym}) on the Exchange: ${shares - keep} shares at ${ipo} crowns.`, '#/exchange');
+}
+function buyListed(w: W, actor: Id, sym: string, n: unknown) {
+  const x = exchange(w);
+  const l = x.listed[sym];
+  if (l.status !== 'listed') fail(`${l.name} has gone bust.`);
+  if (halted(w)) fail('Trading is halted. It resumes when the halt ends.');
+  const k = int(n, 1, MAX_HOLD, 'number of shares');
+  const h = (x.holdings[actor] ??= {});
+  const have = h[sym]?.n || 0;
+  if (have + k > MAX_HOLD) fail(`You can hold ${MAX_HOLD} shares of a company at most. You hold ${have}.`);
+  if (k > l.unsold + l.mm) fail(`Only ${l.unsold + l.mm} ${sym} shares are for sale.`);
+  const p = price(w, sym);
+  const cost = Math.ceil(k * p);
+  const duty = Math.ceil((cost * x.duty) / 100);
+  if (bal(w, ca(actor)) < cost + duty) fail(`That costs ${cost}${duty ? ` plus ${duty} stamp duty` : ''}. You have ${bal(w, ca(actor))}.`);
+  // new shares from the float first (the money goes to the company), then the Exchange's own stock
+  const fresh = Math.min(k, l.unsold);
+  const fromFloat = Math.ceil(fresh * p);
+  if (fromFloat > 0) transfer(w, ca(actor), acct(l), fromFloat, `Bought ${fresh} new ${sym} shares`);
+  if (cost - fromFloat > 0) transfer(w, ca(actor), 'exchange', cost - fromFloat, `Bought ${k - fresh} ${sym} at ${p}`);
+  if (duty > 0) transfer(w, ca(actor), 'treasury', duty, 'Stamp duty on shares');
+  l.unsold -= fresh;
+  l.mm -= k - fresh;
+  h[sym] = { n: have + k, cost: (h[sym]?.cost || 0) + cost };
+  x.volume += k;
+  bump(w, actor, 'trades');
+  logTrade(w, actor, sym, 'buy', k);
+}
+function sellListed(w: W, actor: Id, sym: string, n: unknown) {
+  const x = exchange(w);
+  const l = x.listed[sym];
+  if (halted(w)) fail('Trading is halted. It resumes when the halt ends.');
+  const h = x.holdings[actor]?.[sym];
+  const k = int(n, 1, MAX_HOLD, 'number of shares');
+  if (!h || h.n < k) fail(`You hold ${h?.n || 0} ${sym}.`);
+  if (l.status !== 'listed') fail(`${l.name} has gone bust. Its shares are worth nothing.`);
+  // the Exchange buys back at the market price, but never above what the company is worth
+  const p = Math.min(price(w, sym), Math.max(0.5, fairPrice(w, l)));
+  const got = Math.floor(k * p);
+  h.cost -= Math.round((h.cost * k) / h.n);
+  h.n -= k;
+  if (!h.n) delete x.holdings[actor][sym];
+  l.mm += k;
+  x.volume += k;
+  if (got > 0) payOut(w, ca(actor), got, `Sold ${k} ${sym} at ${p}`);
+  bump(w, actor, 'trades');
+  logTrade(w, actor, sym, 'sell', k);
+}
+// the owner puts more of their own money in (companies only; a bank takes deposits)
+export function invest(w: W, actor: Id, sym: unknown, amount: unknown) {
+  const l = typeof sym === 'string' ? listed(w, sym) : null;
+  if (!l || l.owner !== actor) fail('Only the owner puts money into the company.');
+  if (l.kind !== 'company') fail('A bank raises money through deposits, not investment.');
+  if (l.status !== 'listed') fail(`${l.name} has gone bust.`);
+  const amt = int(amount, 1, 1000, 'amount');
+  transfer(w, ca(actor), acct(l), amt, `Invested in ${l.name}`);
+}
+// a dividend: the owner pays out of the company's funds, the same for every share in hands (unsold shares get nothing)
+export function payDividend(w: W, actor: Id, sym: unknown, amount: unknown) {
+  const l = typeof sym === 'string' ? listed(w, sym) : null;
+  if (!l || l.owner !== actor) fail('Only the owner declares a dividend.');
+  if (l.status !== 'listed') fail(`${l.name} has gone bust.`);
+  const amt = int(amount, 1, 1000, 'dividend');
+  if (bal(w, acct(l)) < amt) fail(`${l.name} has ${bal(w, acct(l))} crowns.`);
+  if (l.kind === 'bank' && worth(w, l) < amt) fail(`${l.name} cannot pay that and still cover its savers.`);
+  const x = exchange(w);
+  const inHands = l.shares - l.unsold;
+  if (inHands <= 0) fail('Nobody holds any shares yet.');
+  const per = amt / inHands;
+  let paid = 0;
+  Object.entries(x.holdings).forEach(([id, hh]: [string, any]) => {
+    const k = hh[l.sym]?.n || 0;
+    const d = Math.floor(k * per);
+    if (d > 0 && w.citizens[id]?.active) (transfer(w, acct(l), ca(id), d, `Dividend from ${l.name}`), (paid += d));
+  });
+  const toEx = Math.floor(l.mm * per);
+  if (toEx > 0) (transfer(w, acct(l), 'exchange', toEx, `Dividend from ${l.name}`), (paid += toEx));
+  gazette(w, 'money', `${l.name} pays its shareholders a dividend of ${paid} crowns.`, '#/exchange');
+}
+// shareholders vote the owner out: carried, the biggest holder who voted for it takes over
+export function oustMotion(w: W, actor: Id, sym: unknown) {
+  mustBeFree(w, actor);
+  const l = typeof sym === 'string' ? listed(w, sym) : null;
+  if (!l || l.status !== 'listed') fail('Pick a company floated by a citizen.');
+  if (l.owner === actor) fail('You own it already.');
+  if (!canMove(w, actor, l.sym)) fail(`You need at least 5 ${l.sym} shares and a tenth of all held to call a vote.`);
+  const x = exchange(w);
+  x.motions ??= [];
+  if (x.motions.some((m: any) => m.status === 'open' && m.sym === l.sym)) fail(`${l.name} already has a shareholder vote open.`);
+  x.motions.unshift({ id: newId(w, 'sm'), sym: l.sym, by: actor, prop: null, side: null, oust: true, votes: { [actor]: { yes: true, n: held(w, actor, l.sym) } }, at: w.now, closesAt: w.now + MOTION_HOURS * HOUR, status: 'open' });
+  gazette(w, 'money', `Boardroom revolt: ${nm(w, actor)} calls on ${l.name}'s shareholders to remove ${nm(w, l.owner)} as owner. They vote for a day.`, '#/exchange');
+}
+function settleOust(w: W, m: any, c: any) {
+  const l = listed(w, m.sym);
+  // the owner's shares count against, whether or not they voted
+  const ownerN = held(w, l.owner, m.sym);
+  const no = Math.max(m.no, ownerN);
+  if (!l || l.status !== 'listed' || m.yes <= no) return gazette(w, 'money', `${c.name}'s owner survives the vote, ${m.yes} shares to ${no}.`, '#/exchange');
+  const heir = Object.entries(m.votes).filter(([id, v]: any) => v.yes && id !== l.owner && w.citizens[id]?.active).sort((a: any, b: any) => held(w, b[0], m.sym) - held(w, a[0], m.sym))[0]?.[0] as Id | undefined;
+  if (!heir) return;
+  const was = l.owner;
+  l.owner = heir;
+  if (l.kind === 'bank' && w.banks[l.bank]) w.banks[l.bank].owner = heir;
+  stamp(w, was, 'Ousted', `From ${l.name}`, 'bad');
+  gazette(w, 'money', `${nm(w, was)} is voted out of ${l.name}, ${m.yes} shares to ${no}. ${nm(w, heir)} takes over.`, '#/exchange');
+}
+// every three hours: listed prices drift towards what the company is worth, with the market's mood and some noise
+export function tickListed(w: W, shock: number) {
+  listings(w).forEach((l) => {
+    const q = w.exchange.prices[l.sym];
+    if (!q) return;
+    if (l.kind === 'bank' && (!w.banks[l.bank] || w.banks[l.bank].status === 'failed') && l.status === 'listed') bust(w, l, 'the bank failed');
+    if (l.status !== 'listed') return void ((q.p = 0), q.hist.push(0), q.hist.length > 56 && q.hist.shift());
+    const fair = Math.max(0.2, fairPrice(w, l));
+    const pull = (fair / Math.max(0.2, q.p) - 1) * 12;
+    const mood = ((w.meters.prosperity - 50) / 50) * 0.4;
+    const pct = clamp(pull + mood + (rand(w) - 0.5) * 6 + shock, -25, 25);
+    q.p = clamp(Math.round(q.p * (1 + pct / 100) * 100) / 100, 0.2, 999);
+    q.hist.push(q.p);
+    if (q.hist.length > 56) q.hist.shift();
+  });
+}
+function bust(w: W, l: any, why: string) {
+  l.status = 'bust';
+  l.bustAt = w.now;
+  gazette(w, 'money', `${l.name} (${l.sym}) goes bust: ${why}. Its shares are worthless.`, '#/exchange');
+}
+// payday: a company makes or loses money with the realm's prosperity, and can go bust
+export function listedPayday(w: W) {
+  listings(w).forEach((l) => {
+    if (l.kind !== 'company' || l.status !== 'listed') return;
+    const cash = bal(w, acct(l));
+    const pct = (w.meters.prosperity - 45) / 10 + (rand(w) - 0.5) * 8; // roughly −7% to +9% a week
+    const d = Math.round((cash * pct) / 100);
+    if (d > 0) transfer(w, 'reserve', acct(l), d, `${l.name}: a profitable week`);
+    if (d < 0) transfer(w, acct(l), 'reserve', Math.min(cash, -d), `${l.name}: a losing week`);
+    l.profits = [d, ...(l.profits || [])].slice(0, 8);
+    if (bal(w, acct(l)) < 1) bust(w, l, 'it ran out of money');
+  });
 }

@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 50, text: 'Float your own company or bank on the Exchange. Sell shares to raise money, pay dividends, and watch out: shareholders can vote you out, and a company that runs out of money goes bust. Money › The Exchange.' },
   { n: 49, text: 'A government in exile: defectors can declare one, citizens at home can back it, and with enough support its leader can lead the exiles home for a coup night.' },
   { n: 48, text: 'Rival courts: defectors at the same court can steal each other’s favour or expose each other’s secrets.' },
   { n: 47, text: 'Under a coup, a regime or a jail law, you can shelter in a friendly nation’s embassy, out of reach of arrest. World › Life abroad.' },
