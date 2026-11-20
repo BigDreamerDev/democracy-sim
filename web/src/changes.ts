@@ -71,16 +71,16 @@ export const CHANGES: { n: number; text: string }[] = [
 // A bigger update, summed up once in a pop-up for everyone who has used the site before (web/src/update.tsx).
 // Give it a new id when there is a new one; keep the lines short.
 export const RELEASE = {
-  id: '2026-11-20',
-  title: 'The empire arrives',
+  id: '2026-11-20b',
+  title: 'A big update',
   items: [
-    'The Imperial Privy Council sits in place of Parliament: the Empress, the High Commissioner, the General, the Lord Chamberlain, the Lord Privy Seal and three Councillors. One person can hold several places, with a vote for each.',
-    'The great officers can force an Order through or veto it; the Lord Chamberlain summons the Council, the Lord Privy Seal sets the Seal.',
-    'The Imperial Oath: swear it for 5 Influence. Refusing costs every office you hold.',
-    'The High Commissioner commands the Army and runs the war chest: requisitions, shares, company takeovers and war production.',
-    'Military acquisitions: artillery, cavalry, ironclads, airships and forts.',
-    'Governors can issue a decree for their province every three days.',
+    'The world map: five nations, provinces that change hands in war, sea lanes and fog of war. Diplomacy, embassies, treaties, embargoes, and peace conferences that trade land and money.',
+    'War and the Army: battles every 12 hours, strategy, regiments, war bonds, volunteers, war correspondents, blockades, provincial uprisings, hostages, memorials and veterans’ pensions. A war hero can march on the capital.',
+    'The Exchange: buy and sell shares, float your own company or bank, shareholder revolts, corporate donations, the realm’s wealth fund, and a Register of Interests. Insider trading gets noticed.',
+    'Defect and live abroad: rise at a foreign court, sell secrets, marry into a royal family or take a throne, have an heir with a claim back home, shelter in an embassy, or lead a government in exile.',
+    'Spies: spy rings abroad, double agents at home, and Security Service sweeps. Pretenders can seek foreign backing for a claim to the throne.',
+    'The empire: the Imperial Privy Council replaces Parliament. The High Commissioner commands the Army and runs the war chest, governors issue decrees, and everyone is asked to swear the Imperial Oath (+5 Influence).',
     'Ceremonies: appointments, oaths, vetoes, invasions and battles play as short scenes. Watch them again, or turn them off, at You › How to play › Ceremonies.',
-    'Also: the empire has its own look, bills are laid out properly, the realm can be renamed by law, and the Realm Console does all of this too.'
+    'Also: bills are laid out properly, the realm can be renamed by law, and the Realm Console can do all of this.'
   ]
 };
