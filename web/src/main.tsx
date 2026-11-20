@@ -4,6 +4,8 @@ import './styles.css';
 import { useStore, ONLINE, toast as say } from './store';
 import { When } from './ui';
 import { nm, imperial } from '../../engine/index';
+import { RANKS, rankOf, HOMES } from '../../engine/abroad';
+import { PROFILES } from '../../engine/foreign';
 import { SignIn, ResetPassword } from './pages/signin';
 import { Icon, getTheme, themeBar, useRoute } from './ui';
 import { DemoPanel, DemoRail } from './DemoPanel';
@@ -124,11 +126,14 @@ function Game() {
   useEffect(() => markSeen(here), [here]);
   const marked = TABS.map((t) => [t.href, t.label, t.icon, t.id === here] as [string, string, string, boolean]);
   // state stock: the whole site changes colour once the realm is a dictatorship in all but name
-  const { world } = useStore();
+  const { world, me: meId } = useStore();
   const state = !!stateMode(world);
   useEffect(() => void document.documentElement.toggleAttribute('data-state', state), [state]);
   const empire = !!world && imperial(world);
   useEffect(() => void document.documentElement.toggleAttribute('data-empire', empire), [empire]);
+  // a defector sees the whole site in their new nation's colours
+  const abroad = (world && world.citizens[meId]?.defected?.nation) || '';
+  useEffect(() => void (abroad ? document.documentElement.setAttribute('data-abroad', abroad) : document.documentElement.removeAttribute('data-abroad')), [abroad]);
   useCurrency(world);
   return (
     <div class={'app' + (ONLINE ? ' online' : '')}>
@@ -166,7 +171,20 @@ function StatusBanner() {
   const ab = w.citizens[me]?.defected;
   const rf = w.citizens[me]?.refuge;
   if (rf) return <div class="status-banner abroad" role="status"><b>You are sheltering in the {w.nations[rf.nation]?.name} embassy.</b> Nobody can arrest you here, and you cannot act in politics. <a href="#/abroad">Leave, or take safe passage</a>.</div>;
-  if (ab) return <div class="status-banner abroad" role="status"><b>You live in {w.nations[ab.nation]?.name} now.</b> You can read the realm's news but not act in it. <a href="#/abroad">Go to the court</a>.</div>;
+  if (ab) {
+    const r = rankOf(w, me);
+    return (
+      <div class="visa-banner" role="status">
+        <div class="visa-stamp" aria-hidden="true"><small>Residence</small><b>{w.nations[ab.nation]?.name}</b><small>{new Date(ab.at).toUTCString().slice(5, 16)}</small></div>
+        <div class="visa-body">
+          <b class="serif">You have defected. You live in {w.nations[ab.nation]?.name} now.</b>
+          <span class="small">{r === 4 ? w.nations[ab.nation].ruler.title : RANKS[Math.max(0, r)].name} at the court in {PROFILES[ab.nation]?.capital} · {ab.favour} favour · {HOMES[ab.home || 0].name.toLowerCase()}{ab.naturalised ? ` · citizen of ${w.nations[ab.nation]?.name}` : ''}{ab.plant ? ' · secretly working for the Security Service' : ''}. You can read the realm's news, but not act in it.</span>
+          {ab.amnesty && <span class="small"><b>The Prime Minister offers you an amnesty.</b></span>}
+        </div>
+        <a class="btn small" href="#/abroad">Go to the court</a>
+      </div>
+    );
+  }
   const p = w.clock?.pausedAt;
   const m = w.martial;
   const k = w.coup, r = w.regime, t = w.transition;

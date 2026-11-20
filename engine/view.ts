@@ -185,13 +185,16 @@ export function viewFor(full: W, me: Id): W {
   // life abroad: secrets carried and cooldowns are the defector's own; moles, approaches and foreign rings are secret
   Object.values(w.citizens).forEach((c: any) => {
     if (c.id !== me) {
-      if (c.defected) c.defected = { ...c.defected, secrets: (c.defected.secrets || []).map(() => '•'), last: {} };
+      if (c.defected) c.defected = { ...c.defected, secrets: (c.defected.secrets || []).map(() => '•'), last: {}, deeds: (c.defected.deeds || []).filter((x: any) => !x.secret), plant: canSeeIntel(full, me) ? c.defected.plant ?? null : null };
       delete c.agentOf; delete c.agentSince; delete c.handler; delete c.formerAgentOf; delete c.formerUntil;
     }
   });
   Object.values(w.nations).forEach((n: any) => delete n.mole);
   if (w.approaches) Object.keys(w.approaches).forEach((id) => { const a = w.approaches[id]; if (a.to !== me && a.by !== me) delete w.approaches[id]; });
   w.sweeps = (w.sweeps || []).filter((s: any) => s.by === me);
+  // plants: the offer is between the Service and the citizen asked; the operations log is the PM's and the Director's
+  if (w.plants) Object.keys(w.plants).forEach((id) => { const p = w.plants[id]; if (p.to !== me && !canSeeIntel(full, me)) delete w.plants[id]; });
+  if (!canSeeIntel(full, me)) w.ops = [];
   // shareholder votes: your own, and the running totals
   (w.exchange?.motions || []).forEach((m: any) => { m.tally = { yes: Object.values(m.votes).filter((v: any) => v.yes).reduce((s: number, v: any) => s + v.n, 0), no: Object.values(m.votes).filter((v: any) => !v.yes).reduce((s: number, v: any) => s + v.n, 0) }; m.votes = m.votes[me] ? { [me]: m.votes[me] } : {}; });
   // ships at sea to each nation are public; whose ventures they are is not (ventures are stripped above)

@@ -19,6 +19,7 @@ import * as Cr from './crown';
 import * as Wr from './war';
 import * as Ex from './exchange';
 import * as Ab from './abroad';
+import * as Hl from './homeland';
 import * as Em from './empire';
 import * as Wm from './warmachine';
 import * as Pv from './privy';
@@ -171,6 +172,18 @@ export const COMMANDS: Record<string, Cmd> = {
   'agent.answer': (w, me, a) => Ab.answerApproach(w, me, a.approach, a.yes, a.report),
   'agent.leak': (w, me, a) => Ab.agentLeak(w, me, a.card),
   'agent.quit': (w, me) => Ab.agentQuit(w, me),
+  'abroad.settle': (w, me, a) => Ab.settle(w, me, a.level),
+  'abroad.naturalise': (w, me) => Ab.naturalise(w, me),
+  'abroad.audience': (w, me, a) => Ab.audience(w, me, a.choice),
+  'abroad.report': (w, me) => Ab.plantReport(w, me),
+  'abroad.sabotage': (w, me) => Ab.sabotage(w, me),
+  'defector.extradite': (w, me, a) => Hl.extradite(w, me, a.target),
+  'defector.seize': (w, me, a) => Hl.seize(w, me, a.target),
+  'defector.amnesty': (w, me, a) => Hl.amnesty(w, me, a.target, a.on),
+  'intel.discredit': (w, me, a) => Hl.discredit(w, me, a.target),
+  'intel.snatch': (w, me, a) => Hl.snatch(w, me, a.target),
+  'intel.plant': (w, me, a) => Hl.offerPlant(w, me, a.target, a.nation),
+  'plant.answer': (w, me, a) => Hl.answerPlant(w, me, a.plant, a.yes),
   'intel.sweep': (w, me, a) => Ab.sweep(w, me, a.nation),
   'hostage.ransom': (w, me, a) => Ab.ransom(w, me, a.hostage),
   'exchange.donate': (w, me, a) => Ex.donate(w, me, a.prop, a.sym, a.party),

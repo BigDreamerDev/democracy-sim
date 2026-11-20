@@ -80,6 +80,9 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   drafts.ts    draft proposals (private: author + invited co-sponsors), takeDraft() for prop.new; amendments are in proposals.ts
   limits.ts    LIMITS — every cap in the rules (default, min, max, area); lim(w, key) reads w.config.limits[key] ?? default.
                A bill's 'set' clause changes any of them (or a SETTABLE number); Laws › Limits lists them
+  homeland.ts  the realm against its defectors: extradition, smear, snatch, seizure, amnesty; Security Service plants
+               (w.plants offers, c.defected.plant, w.ops log: all private to the plant/PM/Director). Life abroad is in abroad.ts
+               (homes, naturalisation, the court's daily business, plant reports and sabotage, bringHome/unmaskPlant)
   catalog.ts   CATALOG — public description of every player command and its args (served by /api/v1/commands)
   index.ts     COMMANDS table; run(world, actor, cmd, args) applies one to a structuredClone
   bots.ts      bot turns: botsAct (demo, smoke) and actBots(w, isBot) — the clock runs practice bots during induction

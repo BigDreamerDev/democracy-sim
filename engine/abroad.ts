@@ -8,7 +8,7 @@
 // The Security Service sweeps for both. Public: who defected, where, rank and favour. Secret: secrets carried,
 // approaches, who is a mole, foreign rings.
 import { lim } from './limits';
-import { W, Id, DAY, HOUR, fail, own, cit, nm, gazette, earn, transfer, bal, ca, chance, pick, rand, clamp, approve, stamp, bump, meter, mustBeFree, text, int, isPM, isHOS, isMP, hasPower, holderOf, newId, canSeeCard, allCitizens, exiled, ratifyText } from './core';
+import { W, Id, DAY, HOUR, fail, own, cit, nm, gazette, earn, transfer, bal, ca, chance, pick, rand, clamp, approve, stamp, bump, meter, mustBeFree, text, int, isPM, isHOS, isMP, hasPower, holderOf, newId, canSeeCard, allCitizens, exiled, ratifyText, addCard } from './core';
 import { PROFILES, moodShift, ultimatum, sanction, atWar, TREATIES as TREATY_KINDS } from './foreign';
 import { startWar, endWar } from './war';
 import { vacateSeat } from './politics';
@@ -71,7 +71,7 @@ export function defect(w: W, actor: Id, nid: unknown) {
   }
   // they carry out whatever secrets they could see (five at most); a hostile nation welcomes them warmly
   const secrets = from ? c.defected.secrets : w.cards.filter((k: any) => canSeeCard(w, k, actor)).slice(0, 5).map((k: any) => k.title);
-  c.defected = { nation: n.id, at: w.now, favour: from ? Math.max(5, Math.round(c.defected.favour / 3)) : 10 + (4 - n.mood) * 5 + secrets.length * 2, secrets, sold: from ? c.defected.sold : 0, last: {}, deeds: from ? c.defected.deeds : [] };
+  c.defected = { plant: from ? c.defected.plant ?? null : null, nation: n.id, at: w.now, favour: from ? Math.max(5, Math.round(c.defected.favour / 3)) : 10 + (4 - n.mood) * 5 + secrets.length * 2, secrets, sold: from ? c.defected.sold : 0, last: {}, deeds: from ? c.defected.deeds : [] };
   if (!from && isMP(w, actor)) vacateSeat(w, actor, 'defected');
   // the realm's friends are embarrassed to take in its defectors
   if (!from && n.mood >= 3) moodShift(n, -1, `They took in ${c.name}, a defector`);
@@ -87,7 +87,21 @@ export function comeHome(w: W, actor: Id) {
   if (n.ruler?.id === actor) n.ruler = null;
   c.defected = null;
   c.defections = [...(c.defections || []), { nation: d.nation, from: d.at, to: w.now, rank: RANKS[Math.max(0, rankOfFavour(d.favour))].name, sold: d.sold }].slice(-5);
-  approve(w, actor, -5);
+  // a plant of the Security Service comes in from the cold: the cover is blown, and the realm thanks them
+  if (d.plant) {
+    approve(w, actor, 10);
+    earn(w, actor, 5, 'Came in from the cold');
+    if (d.plant.by && w.citizens[d.plant.by]) earn(w, d.plant.by, 3, 'An agent came home safely');
+    stamp(w, actor, 'Came in from the cold', `A plant in ${n.name}, for the Security Service`, 'good');
+    bump(w, actor, 'plantHome');
+    return gazette(w, 'foreign', `${c.name} comes home from ${n.name}, and the truth comes out: they were working for the realm's Security Service all along.`, '#/abroad');
+  }
+  // the Prime Minister's amnesty: no questions at the border, no loss of face
+  if (d.amnesty) {
+    stamp(w, actor, 'Pardoned', `Came home from ${n.name} under amnesty`, 'ink');
+    return gazette(w, 'foreign', `${c.name} comes home from ${n.name} under the Prime Minister's amnesty.`, '#/abroad');
+  }
+  approve(w, actor, d.naturalised ? -8 : -5);
   stamp(w, actor, 'Came home', `From ${n.name}`, 'ink');
   if (d.sold > 0) {
     c.exiledUntil = w.now + 3 * DAY;
@@ -98,7 +112,7 @@ export function comeHome(w: W, actor: Id) {
 const rankOfFavour = (f: number) => Math.min(3, RANKS.reduce((b, x, i) => (f >= x.min ? i : b), 0));
 
 // ---------- the court abroad: each action has its own cooldown ----------
-export const COOL: Record<string, number> = { work: 12 * HOUR, counsel: DAY, train: DAY, broadcast: DAY, recruit: 2 * DAY, policy: 7 * DAY, command: 12 * HOUR };
+export const COOL: Record<string, number> = { work: 12 * HOUR, counsel: DAY, train: DAY, broadcast: DAY, recruit: 2 * DAY, policy: 7 * DAY, command: 12 * HOUR, audience: DAY, report: DAY, sabotage: 2 * DAY };
 function ready(w: W, actor: Id, act: string, minRank = 0) {
   const d = w.citizens[actor]?.defected;
   if (!d) fail('You have not defected.');
@@ -114,7 +128,8 @@ export function work(w: W, actor: Id) {
   const n = nationOf(w, actor);
   const pay = Math.min(bal(w, 'nation:' + n.id), 5 + 3 * rankOf(w, actor));
   if (pay > 0) transfer(w, 'nation:' + n.id, ca(actor), pay, `A stipend from ${court(n.id)}`);
-  fav(w, actor, 3);
+  const d = w.citizens[actor].defected;
+  fav(w, actor, 3 + (d.home || 0) + (d.naturalised ? 1 : 0));
   deed(w, actor, `Served ${court(n.id)} (+${pay} crowns)`);
 }
 // steer the nation's feelings about the realm, warmer or cooler
@@ -542,6 +557,12 @@ export function intrigue(w: W, actor: Id, target: unknown, kind: unknown) {
     }
     return;
   }
+  // expose: a plant of the realm may be found out instead
+  if (td.plant && chance(w, 0.35)) {
+    fav(w, actor, 10);
+    deed(w, actor, `Unmasked ${t.name} as a spy of the realm`);
+    return unmaskPlant(w, t, `exposed by ${nm(w, actor)}`);
+  }
   // expose: one of their carried secrets is printed, and can no longer be sold
   if (!td.secrets.length || !chance(w, 0.5)) return fav(w, actor, -2), deed(w, actor, `Tried to expose ${t.name}, and found nothing`);
   const secret = td.secrets.splice(Math.floor(rand(w) * td.secrets.length), 1)[0];
@@ -623,4 +644,171 @@ export function exileReturn(w: W, actor: Id) {
   meter(w, 'stability', -8, 'The exiles come home');
   w.exileGov = null;
   gazette(w, 'crisis', `${g.name} comes home. ${nm(w, actor)} and ${members.length - 1} other exile${members.length === 2 ? '' : 's'} land with ${w.nations[g.nation].name} behind them and ${backers.length} citizen${backers.length === 1 ? '' : 's'} already declared. Everyone has 12 hours to choose a side.`, '#/regime');
+}
+
+
+// ---------- leaving against your will: extradited, snatched, or thrown out. Held at the border for holdDays ----------
+export function bringHome(w: W, c: any, rank: string, holdDays: number) {
+  const d = c.defected;
+  if (!d) return;
+  const n = w.nations[d.nation];
+  if (n?.ruler?.id === c.id) n.ruler = null;
+  if (w.exileGov?.members?.includes(c.id)) w.exileGov.members = w.exileGov.members.filter((x: Id) => x !== c.id);
+  if (w.exileGov?.leader === c.id) w.exileGov = null;
+  c.defections = [...(c.defections || []), { nation: d.nation, from: d.at, to: w.now, rank, sold: d.sold }].slice(-5);
+  c.defected = null;
+  if (holdDays > 0) {
+    c.exiledUntil = Math.max(c.exiledUntil || 0, w.now + holdDays * DAY);
+    c.exileNoted = false;
+  }
+}
+// a plant of the Security Service is found out: thrown out of the country, a hero at home
+export function unmaskPlant(w: W, c: any, how: string) {
+  const d = c.defected;
+  if (!d?.plant) return;
+  const n = w.nations[d.nation];
+  moodShift(n, -1, 'The realm planted a spy at their court');
+  bringHome(w, c, 'Unmasked as a spy', 0);
+  approve(w, c.id, 5);
+  stamp(w, c.id, 'Spy', `Unmasked at the court of ${n.name}`, 'ink');
+  bump(w, c.id, 'plantCaught');
+  gazette(w, 'scandal', `${c.name} is unmasked at the court of ${n.name} (${how}): a spy of the realm's Security Service all along. ${n.name} throws them out.`, '#/abroad');
+}
+
+// ---------- a plant's work abroad: report home to the Security Service, and sabotage the host ----------
+export function plantReport(w: W, actor: Id) {
+  const d = w.citizens[actor]?.defected;
+  if (!d?.plant) fail('Only a plant of the Security Service reports home.');
+  ready(w, actor, 'report');
+  const n = nationOf(w, actor);
+  const others = defectorsIn(w, n.id).filter((c: any) => c.id !== actor);
+  const who = others.length ? others.map((c: any) => `${c.name} (${c.defected.favour} favour, ${c.defected.secrets.length} secret${c.defected.secrets.length === 1 ? '' : 's'})`).join(', ') : 'no other defectors';
+  n.seenAt = w.now;
+  addCard(w, { title: `From our plant ${nm(w, actor)} in ${n.name}: their army stands at ${Math.round((n.power || 0) * 10) / 10}, they are ${['hostile', 'cold', 'wary', 'friendly', 'warm'][n.mood] ?? 'unreadable'} to us, ${n.mole ? 'and they run a ring inside our government' : 'and they run no ring inside our government'}. At court: ${who}.`, about: null, from: 'Security Service', level: 'secret', viewers: ['pm', 'office:security'] });
+  deed(w, actor, 'Sent a report home');
+  w.citizens[actor].defected.deeds[0].secret = true;
+  if (chance(w, 0.08)) unmaskPlant(w, w.citizens[actor], 'a courier was caught');
+}
+export function sabotage(w: W, actor: Id) {
+  const d = w.citizens[actor]?.defected;
+  if (!d?.plant) fail('Only a plant of the Security Service sabotages the court.');
+  ready(w, actor, 'sabotage', 1);
+  const n = nationOf(w, actor);
+  n.power = clamp(Math.round(((n.power || 3) - 0.5) * 10) / 10, 1, 10);
+  deed(w, actor, `Sabotaged ${n.name}'s army`);
+  w.citizens[actor].defected.deeds[0].secret = true;
+  gazette(w, 'foreign', `A fire at the arsenal in ${PROFILES[n.id]?.capital ?? n.name}. ${n.name}'s army is weakened; nobody knows who set it.`, '#/nation/' + n.id);
+  if (chance(w, 0.2)) unmaskPlant(w, w.citizens[actor], 'caught at the arsenal');
+}
+
+// ---------- a life abroad: a home in the capital, citizenship, and the court's daily business ----------
+export const HOMES = [
+  { name: 'Lodgings', cost: 0, what: 'A rented room. It will do.' },
+  { name: 'A townhouse', cost: 30, what: '+1 favour each time you serve the court.' },
+  { name: 'A manor', cost: 80, what: '+2 favour each time you serve, and guards: harder to snatch.' },
+  { name: 'A palace apartment', cost: 150, what: '+3 favour each time you serve, and the court’s own guards. Minister and above.' }
+];
+export function settle(w: W, actor: Id, level: unknown) {
+  const d = w.citizens[actor]?.defected;
+  if (!d) fail('You have not defected.');
+  const i = int(level, 1, HOMES.length - 1, 'home');
+  if ((d.home || 0) >= i) fail('You already live somewhere at least that grand.');
+  if (i === 3 && rankOf(w, actor) < 2) fail('The palace keeps its apartments for Ministers and above.');
+  const n = nationOf(w, actor);
+  const cost = HOMES[i].cost - HOMES[d.home || 0].cost;
+  if (bal(w, ca(actor)) < cost) fail(`That costs ${cost} crowns. You have ${bal(w, ca(actor))}.`);
+  transfer(w, ca(actor), 'nation:' + n.id, cost, `${HOMES[i].name} in ${PROFILES[n.id]?.capital ?? n.name}`);
+  d.home = i;
+  fav(w, actor, 2);
+  deed(w, actor, `Moved into ${HOMES[i].name.toLowerCase()} in ${PROFILES[n.id]?.capital}`);
+  if (i >= 2) gazette(w, 'foreign', `${nm(w, actor)} moves into ${HOMES[i].name.toLowerCase()} in ${PROFILES[n.id]?.capital}. They mean to stay.`, '#/abroad');
+}
+// citizenship of the new country: the realm can no longer ask for you back, but coming home costs more face
+export const NATURALISE_DAYS = 5;
+export function naturalise(w: W, actor: Id) {
+  const c = cit(w, actor);
+  const d = c.defected;
+  if (!d) fail('You have not defected.');
+  if (d.plant) fail('Your handlers forbid it: swearing allegiance would end your usefulness at home.');
+  if (d.naturalised) fail('You are already a citizen here.');
+  if (w.now - d.at < NATURALISE_DAYS * DAY) fail(`Live here ${NATURALISE_DAYS} days first.`);
+  if (d.favour < 40) fail('The court will not make you a citizen below 40 favour.');
+  const n = nationOf(w, actor);
+  if (bal(w, ca(actor)) < 20) fail('Citizenship costs 20 crowns.');
+  transfer(w, ca(actor), 'nation:' + n.id, 20, `Citizenship of ${n.name}`);
+  d.naturalised = true;
+  d.amnesty = null;
+  fav(w, actor, 5);
+  stamp(w, actor, `Citizen of ${n.name}`, 'Sworn before the court', 'ink');
+  deed(w, actor, `Swore allegiance to ${n.name}`);
+  gazette(w, 'foreign', `${c.name} swears allegiance to ${n.name} and becomes its citizen. The realm can no longer ask for them back.`, '#/abroad');
+}
+// the court's business: one matter a day, chosen by the day and the person (no randomness used to pick it)
+type Fx = { favour?: number; crowns?: number; mood?: number; power?: number; stability?: number; approval?: number };
+export const BUSINESS: { id: string; only?: string[]; q: string; opts: { label: string; fx: Fx; say: string }[] }[] = [
+  { id: 'interview', q: 'A journalist from the realm asks for an interview.', opts: [
+    { label: 'Denounce the realm', fx: { favour: 4, stability: -1, approval: -2 }, say: 'Denounced the realm in an interview' },
+    { label: 'Speak kindly of home', fx: { favour: -2, mood: 1, approval: 1 }, say: 'Spoke kindly of home' }] },
+  { id: 'letter', q: 'A letter arrives from an old friend at home. They miss you.', opts: [
+    { label: 'Write back', fx: { favour: -1, approval: 1 }, say: 'Wrote home to an old friend' },
+    { label: 'Burn it in front of the court', fx: { favour: 3 }, say: 'Burned a letter from home, for the court to see' }] },
+  { id: 'names', q: 'The court suspects spies among the exiles and asks you to name names.', opts: [
+    { label: 'Name someone', fx: { favour: 4 }, say: 'Named names at court' },
+    { label: 'Refuse', fx: { favour: -3 }, say: 'Refused to name names' }] },
+  { id: 'feast', q: 'You are invited to a feast. The seat offered is below the salt.', opts: [
+    { label: 'Take it with good grace', fx: { favour: 2 }, say: 'Sat below the salt with good grace' },
+    { label: 'Demand a better seat', fx: { favour: -2, crowns: -5 }, say: 'Made a scene at a feast' }] },
+  { id: 'gift', q: 'A courtier hints that a gift would smooth your way.', opts: [
+    { label: 'Give 10 crowns', fx: { crowns: -10, favour: 5 }, say: 'Gave a courtier a gift' },
+    { label: 'Ignore the hint', fx: { favour: -1 }, say: 'Ignored a courtier’s hint' }] },
+  { id: 'map', q: 'The war office asks you to mark the realm’s fortresses on a map.', opts: [
+    { label: 'Mark them', fx: { favour: 5, power: 0.3, approval: -2 }, say: 'Marked the realm’s fortresses on a map' },
+    { label: 'Pretend you never knew', fx: { favour: -2 }, say: 'Pleaded ignorance of the realm’s defences' }] },
+  { id: 'parade', only: ['drakmoor'], q: 'The Marshal reviews the army and wants you on the podium.', opts: [
+    { label: 'Salute beside him', fx: { favour: 5, approval: -1 }, say: 'Saluted at the Marshal’s parade' },
+    { label: 'Plead illness', fx: { favour: -3 }, say: 'Missed the Marshal’s parade' }] },
+  { id: 'dyes', only: ['kessmark'], q: 'A merchant house offers you a share in a cargo of dyes upriver.', opts: [
+    { label: 'Take a share', fx: { crowns: 8, favour: 2 }, say: 'Did well on a cargo of dyes' },
+    { label: 'Decline', fx: {}, say: 'Declined a merchant’s offer' }] },
+  { id: 'ship', only: ['orrin'], q: 'The fleet launches a new ship. The Queen asks you to name it.', opts: [
+    { label: 'Name it for the Isles', fx: { favour: 4 }, say: 'Named a ship of the Isles' },
+    { label: 'Name it for the realm', fx: { favour: -2, mood: 1 }, say: 'Named a ship for the old homeland' }] },
+  { id: 'tables', only: ['aurel'], q: 'A banker invites you to the gaming tables of Austrava.', opts: [
+    { label: 'Sit down and play', fx: { crowns: 6, favour: 1 }, say: 'Won at the tables of Austrava' },
+    { label: 'Keep your purse shut', fx: { favour: -1 }, say: 'Kept away from the tables' }] },
+  { id: 'harvest', only: ['varnholm'], q: 'The harvest festival needs someone to cut the first sheaf.', opts: [
+    { label: 'Cut it', fx: { favour: 4 }, say: 'Cut the first sheaf at the harvest festival' },
+    { label: 'Leave it to a local', fx: { favour: 1 }, say: 'Watched the harvest festival' }] },
+  { id: 'address', only: ['tessaly'], q: 'The Commonwealth parliament asks you to address it on the realm.', opts: [
+    { label: 'Call for pressure on the realm', fx: { favour: 4, mood: -1 }, say: 'Urged the Commonwealth to pressure the realm' },
+    { label: 'Call for friendship', fx: { favour: 1, mood: 1 }, say: 'Urged friendship with the realm' }] },
+  { id: 'fish', only: ['sundmere'], q: 'Two lake villages quarrel over fishing rights. The Council asks you to judge.', opts: [
+    { label: 'Split the lake', fx: { favour: 4 }, say: 'Settled a fishing quarrel' },
+    { label: 'Refuse to take sides', fx: { favour: -1 }, say: 'Stayed out of a fishing quarrel' }] }
+];
+const hash = (s: string) => [...s].reduce((h, ch) => (Math.imul(h, 31) + ch.charCodeAt(0)) | 0, 7) >>> 0;
+export function businessFor(w: W, id: Id) {
+  const d = w.citizens[id]?.defected;
+  if (!d) return null;
+  const list = BUSINESS.filter((b) => !b.only || b.only.includes(d.nation));
+  return list[hash(id + ':' + Math.floor(w.now / DAY)) % list.length];
+}
+export function audience(w: W, actor: Id, choice: unknown) {
+  const d = w.citizens[actor]?.defected;
+  if (!d) fail('You have not defected.');
+  const b = businessFor(w, actor)!;
+  const i = Number(choice);
+  if (!Number.isInteger(i) || !b.opts[i]) fail('Pick an answer.');
+  const fx = b.opts[i].fx;
+  const n = nationOf(w, actor);
+  if ((fx.crowns || 0) < 0 && bal(w, ca(actor)) < -fx.crowns!) fail(`That needs ${-fx.crowns!} crowns.`);
+  ready(w, actor, 'audience');
+  if (fx.crowns && fx.crowns < 0) transfer(w, ca(actor), 'nation:' + n.id, -fx.crowns, `Court business in ${n.name}`);
+  if (fx.crowns && fx.crowns > 0) { const pay = Math.min(fx.crowns, bal(w, 'nation:' + n.id)); if (pay > 0) transfer(w, 'nation:' + n.id, ca(actor), pay, `Court business in ${n.name}`); }
+  if (fx.favour) fav(w, actor, fx.favour);
+  if (fx.mood) moodShift(n, fx.mood, fx.mood > 0 ? `${nm(w, actor)} spoke up for the realm` : `${nm(w, actor)} spoke against the realm`);
+  if (fx.power) n.power = clamp(Math.round(((n.power || 3) + fx.power) * 10) / 10, 1, 10);
+  if (fx.stability) meter(w, 'stability', fx.stability, `${nm(w, actor)}, from abroad`);
+  if (fx.approval) approve(w, actor, fx.approval);
+  deed(w, actor, b.opts[i].say);
 }

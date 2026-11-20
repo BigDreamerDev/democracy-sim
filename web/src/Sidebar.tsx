@@ -25,6 +25,7 @@ export function Sidebar({ tabs, current }: { tabs: [string, string, string, bool
           {meters.map(([k, v]) => <div title={{ P: 'Prosperity', S: 'Stability', W: 'Standing' }[k]} class={v <= 15 ? 'danger' : ''}><span>{{ P: 'Prosperity', S: 'Stability', W: 'Standing' }[k]}</span><i><b style={{ width: v + '%' }} /></i><em class="tnum">{v}</em></div>)}
         </div>
       )}
+      {c.defected && <a class="side-abroad" href="#/abroad"><small>Defected</small><b>{w.nations[c.defected.nation]?.name}</b></a>}
       <SearchBox compact />
       <nav class="side-main">
         {TABS.map((t, i) => {

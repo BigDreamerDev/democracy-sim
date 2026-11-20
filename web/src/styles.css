@@ -1341,3 +1341,28 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 .release-list { margin: 0 0 18px; padding-left: 20px; display: grid; gap: 8px; font-size: 15px; line-height: 1.45; }
 .release-list li::marker { color: var(--gold); }
 .release-go { width: 100%; }
+
+/* defectors: the whole site in their new nation's colours, with a residence visa on every page */
+:root[data-abroad] { --abroad: #1F5E57; --abroad-ink: #F4EEDC; }
+:root[data-abroad="varnholm"] { --abroad: #8A6A1F; }
+:root[data-abroad="kessmark"] { --abroad: #23507A; }
+:root[data-abroad="sundmere"] { --abroad: #3F6E78; }
+:root[data-abroad="orrin"] { --abroad: #1E4466; }
+:root[data-abroad="tessaly"] { --abroad: #5B3F7A; }
+:root[data-abroad="aurel"] { --abroad: #9A5B12; }
+:root[data-abroad="drakmoor"] { --abroad: #4A4A4A; }
+:root[data-abroad] body { border-top: 6px solid var(--abroad); }
+:root[data-abroad] .side { border-right: 3px solid var(--abroad); }
+:root[data-abroad] .passport-abroad, :root[data-abroad] .status-banner.abroad { background: var(--abroad); color: var(--abroad-ink); }
+:root[data-abroad] .nav a.on .mark { background: var(--abroad); }
+.visa-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin: 0 0 14px; padding: 12px 14px; border: 2px solid var(--abroad, var(--passport)); border-radius: 4px; background: var(--paper); box-shadow: 3px 3px 0 var(--abroad, var(--passport)); }
+.visa-stamp { display: grid; place-items: center; min-width: 92px; padding: 6px 8px; border: 2.5px double var(--abroad, var(--passport)); border-radius: 50% / 40%; color: var(--abroad, var(--passport)); transform: rotate(-6deg); text-align: center; line-height: 1.1; }
+.visa-stamp b { font-family: 'Gloock', serif; font-size: 16px; }
+.visa-stamp small { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; }
+.visa-body { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 2px; }
+.visa-body .serif { font-size: 18px; }
+.visa-banner .btn { background: var(--abroad, var(--passport)); color: var(--abroad-ink, var(--on-passport)); border-color: var(--abroad, var(--passport)); }
+.visa-line { margin-top: 6px; opacity: .85; }
+.side-abroad { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 10px; padding: 6px 10px; border-radius: 3px; background: var(--abroad, var(--passport)); color: var(--abroad-ink, var(--on-passport)); text-decoration: none; }
+.side-abroad small { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; }
+.side-abroad b { font-family: 'Gloock', serif; font-weight: 400; }

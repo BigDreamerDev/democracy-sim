@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 68, text: 'Defecting is a bigger deal. Defectors see the whole site in their new nation’s colours, with a residence visa on every page. Abroad there is court business every day, a home to upgrade and citizenship to swear. At home, the realm can ask for defectors back, smear them, snatch them, seize their money or offer an amnesty. And the Security Service can secretly send someone over as a plant.' },
   { n: 67, text: 'Every cap in the rules can now be changed by law: clauses in a bill, stalls and bounties each, the most the Reserve may print, regiments, bets and more. See them all at Laws › Limits, and tap Change to draft the bill.' },
   { n: 66, text: 'Fixed: the realm had two Lord Chamberlains and two Lord Privy Seals; each is now one office, and its holder sits on the Privy Council.' },
   { n: 65, text: 'The Imperial Oath: under the Imperial Prerogative Act every citizen is called to swear allegiance to the Sovereign. Swearing earns 5 Influence. Refusing costs every office you hold. Not having sworn yet costs nothing.' },

@@ -112,6 +112,8 @@ export function migrate(w: W): W {
   w.pensions ??= {};
   w.hostages ??= [];
   w.approaches ??= {};
+  w.plants ??= {};
+  w.ops ??= [];
   w.sweeps ??= [];
   w.exileGov ??= null;
   // the free city abroad was renamed so it is never mistaken for a realm named Aurel

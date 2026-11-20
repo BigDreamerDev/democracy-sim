@@ -6,7 +6,8 @@ import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Pick, Opt, Meter } from '../ui';
 import { isPM, hasPower, holderOf, bal, ca, canSeeCard, nm } from '../../../engine/index';
 import { MOODS, PROFILES } from '../../../engine/foreign';
-import { RANKS, rankOf, COOL, POLICIES, RANSOM, defectorsIn, throneOf, BID_COOL, BUY_PRICE, threatened, exileNeed } from '../../../engine/abroad';
+import { RANKS, rankOf, COOL, POLICIES, RANSOM, defectorsIn, throneOf, BID_COOL, BUY_PRICE, threatened, exileNeed, HOMES, NATURALISE_DAYS, businessFor } from '../../../engine/abroad';
+import { canSecurity, canExtradite, canSeize, extraditeOdds, snatchOdds, OP_COST, EXTRADITE_COOL, SNATCH_COOL } from '../../../engine/homeland';
 import { TREATIES } from '../../../engine/foreign';
 
 const moodColour = ['var(--red)', 'var(--amber)', 'var(--muted)', 'var(--teal)', 'var(--teal)'];
@@ -39,6 +40,7 @@ function Court() {
           <div class="kicker" style={{ margin: 0 }}>Your standing at court</div>
           <div class="serif" style={{ fontSize: 34, lineHeight: 1 }}>{r === 4 ? n.ruler.title : RANKS[r].name}{d.consort && r !== 4 ? ', royal consort' : ''}</div>
           <div class="small muted">{r === 4 ? `You rule ${n.name}. Policy every 3 days, treaties for the realm, 20 a week. Watch for palace revolts.` : RANKS[r].what}</div>
+          <div class="visa-line small">{HOMES[d.home || 0].name} in {p?.capital} · {d.naturalised ? `citizen of ${n.name}` : 'resident alien'} · day {Math.floor((w.now - d.at) / 86400000) + 1} abroad</div>
         </div>
         <div style={{ minWidth: 220, flex: 1 }}>
           <div class="row small"><span>Favour</span><b class="tnum">{d.favour}/100</b></div>
@@ -46,6 +48,9 @@ function Court() {
           <div class="ladder">{RANKS.map((x, i) => <span class={i <= r ? 'on' : ''}>{i === 4 ? 'Throne' : x.name}{i < 4 && <i>{x.min}</i>}</span>)}</div>
         </div>
       </div>
+      {d.plant && <PlantDesk />}
+      <FromHome />
+      <Business />
       {enemy && <Card kind="warn" style={{ marginTop: 14 }}><b>{n.name} is at war with the realm.</b> <span class="small">The front stands at {w.army.campaign.score > 0 ? '+' : ''}{w.army.campaign.score} (from the realm's side). Ministers and above can lead their army.</span></Card>}
       <Sec title="Your day at court" sub="Each action has its own wait. Favour lifts you up the ladder; failure costs a little.">
         <div class="court-grid">
@@ -57,6 +62,7 @@ function Court() {
           {enemy && <Card kind="warn"><b>Lead their army</b><p class="small">Take command for the next battle against the realm: +2 to {n.name}'s strength.</p><div class="small muted">{when('command', 2)}</div><Btn small kind="danger" disabled={!can('command', 2)} onClick={() => act('abroad.command', {}, 'You ride at the head of their army.')}>Take command</Btn></Card>}
         </div>
       </Sec>
+      <Life />
       <Throne />
       <Heir />
       <ExileGov />
@@ -83,10 +89,89 @@ function Court() {
       <Sec title="Leave">
         <div class="grid2">
           <Card><b>Move on</b><p class="small">Defect again, to another nation. You keep your secrets and a third of your favour.</p><MoveOn /></Card>
-          <Card><b>Come home</b><p class="small">After two days abroad. −5 approval{d.sold ? ', and three days held at the border: you sold secrets' : ''}.</p><Btn small kind="ghost" onClick={() => confirm('Go home to the realm?') && act('defect.return', {}, 'Welcome home.')}>Come home</Btn></Card>
+          <Card><b>Come home</b><p class="small">After two days abroad. {d.plant ? 'Your cover is blown and the realm learns the truth: +10 approval and 5 Influence.' : d.amnesty ? 'Under the Prime Minister’s amnesty: no approval lost, no questions at the border.' : <>−{d.naturalised ? 8 : 5} approval{d.sold ? ', and three days held at the border: you sold secrets' : ''}.</>}</p><Btn small kind="ghost" onClick={() => confirm('Go home to the realm?') && act('defect.return', {}, 'Welcome home.')}>Come home</Btn></Card>
         </div>
       </Sec>
     </Page>
+  );
+}
+// the court's business of the day: one matter, two answers
+function Business() {
+  const { world: w, me } = useStore();
+  const d = w.citizens[me].defected;
+  const b = businessFor(w, me);
+  if (!b) return null;
+  const next = (d.last?.audience || 0) + COOL.audience;
+  const done = next > w.now;
+  return (
+    <Sec title="The court's business" sub="One matter a day. What you say is remembered, at court and at home.">
+      <Card kind="tint"><div class="stack">
+        <b class="serif" style={{ fontSize: 20 }}>{done ? 'You have dealt with today’s business.' : b.q}</b>
+        {done ? <span class="small muted">More business <Left at={next} />.</span> : <div class="grid2">{b.opts.map((o, i) => <Btn kind={i ? 'plain' : undefined} onClick={() => act('abroad.audience', { choice: i }, 'The court takes note.')}>{o.label}</Btn>)}</div>}
+      </div></Card>
+    </Sec>
+  );
+}
+// a home in the capital, and citizenship of the new country
+function Life() {
+  const { world: w, me } = useStore();
+  const d = w.citizens[me].defected;
+  const n = w.nations[d.nation];
+  const p = PROFILES[d.nation];
+  const r = rankOf(w, me);
+  const h = d.home || 0;
+  const days = (w.now - d.at) / 86400000;
+  return (
+    <Sec title={`Your life in ${p?.capital ?? n.name}`} sub={`${p?.gov} · exports ${p?.exports?.toLowerCase()} · “${p?.motto}”`}>
+      <div class="grid2">
+        <Card><b>Your home</b>
+          <ul class="list small" style={{ margin: '6px 0' }}>{HOMES.map((x, i) => <li class="row"><span>{i === h ? <b>{x.name}</b> : x.name}<div class="muted">{x.what}</div></span>{i === h ? <span class="chip teal">Yours</span> : i > h ? <Btn small kind="ghost" disabled={i === 3 && r < 2} onClick={() => act('abroad.settle', { level: i }, `You move into ${x.name.toLowerCase()}.`)}>{x.cost - HOMES[h].cost} crowns</Btn> : null}</li>)}</ul>
+        </Card>
+        <Card><b>Citizenship</b>
+          {d.naturalised ? <p class="small">You are a citizen of {n.name}. The realm cannot ask for you back. Coming home would cost you more face.</p>
+            : d.plant ? <p class="small">Your handlers forbid it. A sworn citizen is no use to the Service.</p>
+            : <><p class="small">Swear allegiance to {n.name}: the realm can no longer extradite you, and the court trusts you more (+1 favour each time you serve). Needs {NATURALISE_DAYS} days here, 40 favour and 20 crowns.</p>
+              <Btn small disabled={days < NATURALISE_DAYS || d.favour < 40} onClick={() => confirm(`Swear allegiance to ${n.name}? It is public, and the realm will not forget.`) && act('abroad.naturalise', {}, `You are a citizen of ${n.name}.`)}>Swear allegiance</Btn>
+              {days < NATURALISE_DAYS && <span class="small muted">Possible <When at={d.at + NATURALISE_DAYS * 86400000} />.</span>}</>}
+        </Card>
+      </div>
+    </Sec>
+  );
+}
+// what the old homeland is doing about you
+function FromHome() {
+  const { world: w, me } = useStore();
+  const d = w.citizens[me].defected;
+  const n = w.nations[d.nation];
+  const c = w.citizens[me];
+  const home = (d.deeds || []).filter((x: any) => x.home).slice(0, 5);
+  const risk = Math.round(extraditeOdds(w, c) * 100);
+  return (
+    <Sec title="Word from home" sub="The realm has not forgotten you.">
+      {d.amnesty && <Card kind="tint" style={{ marginBottom: 10 }}><div class="row"><span><b>The Prime Minister offers you an amnesty.</b> <span class="small">Come home, and no questions will be asked.</span></span><Btn small onClick={() => confirm('Accept the amnesty and go home?') && act('defect.return', {}, 'Welcome home.')}>Go home</Btn></div></Card>}
+      <Card><div class="stack">
+        <span class="small">{d.naturalised ? `As a citizen of ${n.name}, you cannot be extradited.` : n.ruler?.id === me ? 'Nobody extradites a head of state.' : `If the realm asks ${n.name} to hand you over, there is about a ${risk}% chance they will. More favour makes them less willing.`} {(d.home || 0) >= 2 ? 'Your guards make you hard to snatch.' : 'A manor or better comes with guards.'}{d.seized ? ` The Treasury seized ${d.seized.amt} crowns of yours.` : ''}</span>
+        {home.length ? <ul class="list small">{home.map((x: any) => <li class="row"><span>{x.what}</span><span class="muted"><When at={x.at} /></span></li>)}</ul> : <span class="small muted">Nothing yet. Silence, for now.</span>}
+      </div></Card>
+    </Sec>
+  );
+}
+// a plant's real orders: only the plant sees this
+function PlantDesk() {
+  const { world: w, me } = useStore();
+  const d = w.citizens[me].defected;
+  const r = rankOf(w, me);
+  const left = (k: string) => Math.max(0, (d.last?.[k] || 0) + COOL[k] - w.now);
+  return (
+    <Sec title="Your real orders" sub="Only you, the Prime Minister and the Director of the Security Service know. To everyone else, you are a traitor.">
+      <Card kind="warn"><div class="stack">
+        <span class="small">You went over on the orders of <Who id={d.plant.by} />. Rise at court, report home and do quiet damage. Come home whenever you like: the truth comes out and the realm thanks you. Every week there is a chance the court finds you out, and more as you rise.</span>
+        <div class="grid2">
+          <div><Btn small disabled={left('report') > 0} onClick={() => act('abroad.report', {}, 'Your report is on its way home.')}>Report home</Btn><div class="small muted">{left('report') ? <>Again <Left at={w.now + left('report')} /></> : 'A secret card for the PM and the Director. Couriers are sometimes caught.'}</div></div>
+          <div><Btn small kind="danger" disabled={left('sabotage') > 0 || r < 1} onClick={() => confirm('Sabotage their army? One time in five you are caught.') && act('abroad.sabotage', {}, 'The arsenal burns.')}>Sabotage the army</Btn><div class="small muted">{r < 1 ? 'Adviser and above.' : left('sabotage') ? <>Again <Left at={w.now + left('sabotage')} /></> : '−0.5 to their army. Risky.'}</div></div>
+        </div>
+      </div></Card>
+    </Sec>
   );
 }
 // the road to the top: marry, stand, buy or seize, depending on the nation
@@ -227,6 +312,7 @@ function Home() {
   const canRansom = isPM(w, me) || hasPower(w, me, 'envoy') || holderOf(w, 'treasury') === me;
   const cards = w.cards.filter((k: any) => canSeeCard(w, k, me));
   const n = w.nations[to];
+  const plantOffers = (Object.values(w.plants || {}) as any[]).filter((p) => p.to === me && p.status === 'offered' && p.until > w.now);
   return (
     <Page back={['#/world', 'The world']} kicker="Across the border" title="Life abroad" intro="Some go over to the other side. Some are bought. Some are held hostage. Here is who, and what you can do about it.">
       {offers.map((a) => (
@@ -236,6 +322,14 @@ function Home() {
           <span class="small">{a.hostage ? 'Your captors make you an offer before you go home. ' : a.by ? <>The offer comes through <Who id={a.by} />. </> : ''}{a.crowns} crowns now and 10 a week. You would leak what you see to them, and the Security Service might find you. It lapses in <Left at={a.until} />.</span>
           <div class="grid2"><Btn kind="danger" onClick={() => confirm('Become a foreign agent?') && act('agent.answer', { approach: a.id, yes: true }, 'You are on their books now.')}>Accept</Btn><Btn kind="plain" onClick={() => act('agent.answer', { approach: a.id, yes: false }, 'Refused, quietly.')}>Refuse quietly</Btn></div>
           <Btn kind="ghost" small onClick={() => act('agent.answer', { approach: a.id, yes: false, report: true }, 'Reported. The realm thanks you.')}>Refuse and report it (+4 approval)</Btn>
+        </div></Card>
+      ))}
+      {plantOffers.map((p: any) => (
+        <Card kind="warn" style={{ marginTop: 14 }}><div class="stack">
+          <div class="kicker" style={{ margin: 0 }}>Only you can see this · the Security Service</div>
+          <b class="serif" style={{ fontSize: 20 }}>Go over to {w.nations[p.nation]?.name}, for us.</b>
+          <span class="small"><Who id={p.by} /> asks you to defect to {w.nations[p.nation]?.name} as the Service’s plant. To everyone else you will be a traitor: you lose your seat, offices and party, and 10 approval. Abroad, you report home and sabotage them. Come home whenever you like and the truth comes out: +10 approval and 5 Influence. 30 crowns of cover money. Lapses <Left at={p.until} />.</span>
+          <div class="grid2"><Btn kind="danger" onClick={() => confirm(`Defect to ${w.nations[p.nation]?.name} as a plant? It is public, and it starts now.`) && act('plant.answer', { plant: p.id, yes: true }, 'You cross the border. Good luck.')}>Go over</Btn><Btn kind="plain" onClick={() => act('plant.answer', { plant: p.id, yes: false }, 'You said no.')}>Say no</Btn></div>
         </div></Card>
       ))}
       {me_.agentOf && (
@@ -252,8 +346,9 @@ function Home() {
         {held.length ? <ul class="list">{held.map((h: any) => <li class="row"><span><Who id={h.who} /> in {PROFILES[h.nation]?.capital}, {w.nations[h.nation]?.name}<div class="small muted">Released in <Left at={h.until} /></div></span>{canRansom && <Btn small onClick={() => act('hostage.ransom', { hostage: h.id }, 'Ransom paid.')}>Pay {RANSOM}</Btn>}</li>)}</ul> : <Empty>Nobody is held abroad.</Empty>}
       </Sec>
       <Sec title="Defectors" sub="Who has gone over, and how far they have risen at their new court.">
-        {all.length ? <ul class="list">{all.map((c) => <li class="row"><span><Who id={c.id} /> in {w.nations[c.defected.nation]?.name}<div class="small muted">Since <When at={c.defected.at} />{c.defected.consort ? ' · married into the royal family' : ''}</div></span><span class="small"><b>{rankOf(w, c.id) === 4 ? w.nations[c.defected.nation].ruler.title : RANKS[Math.max(0, rankOf(w, c.id))].name}</b> · {c.defected.favour} favour</span></li>)}</ul> : <Empty>Nobody has defected.</Empty>}
+        {all.length ? <ul class="list">{all.map((c) => <DefectorRow c={c} />)}</ul> : <Empty>Nobody has defected.</Empty>}
       </Sec>
+      <SendOver />
       <Sec title="Defect" sub="Leave the realm and play from a foreign court. You give up your seat, your offices and your party, and lose 10 approval. You take whatever secrets you can see with you.">
         <Card><div class="stack">
           <Pick value={to} onChange={setTo} empty="To which nation?" options={Object.values(w.nations).map((x: any) => [x.id, `${x.name} (${MOODS[x.mood].toLowerCase()} to the realm)`])} />
@@ -263,5 +358,51 @@ function Home() {
         </div></Card>
       </Sec>
     </Page>
+  );
+}
+
+// one defector, and what the realm's officers can do about them
+function DefectorRow({ c }: { c: any }) {
+  const { world: w, me } = useStore();
+  const d = c.defected;
+  const n = w.nations[d.nation];
+  const sec = canSecurity(w, me), ext = canExtradite(w, me), tre = canSeize(w, me), pm = isPM(w, me);
+  const ours = !!d.plant;
+  const extIn = d.extraditionAt ? Math.max(0, d.extraditionAt + EXTRADITE_COOL - w.now) : 0;
+  const snIn = d.snatchAt ? Math.max(0, d.snatchAt + SNATCH_COOL - w.now) : 0;
+  const any = (sec || ext || tre || pm) && c.id !== me;
+  return (
+    <li class="stack" style={{ gap: 6 }}>
+      <div class="row"><span><Who id={c.id} /> in {n?.name}{ours && <span class="chip teal" style={{ marginLeft: 6 }}>Our plant</span>}{d.naturalised && <span class="chip" style={{ marginLeft: 6 }}>Citizen of {n?.name}</span>}{d.amnesty && <span class="chip" style={{ marginLeft: 6 }}>Amnesty offered</span>}<div class="small muted">Since <When at={d.at} />{d.consort ? ' · married into the royal family' : ''} · {HOMES[d.home || 0].name.toLowerCase()} in {PROFILES[d.nation]?.capital}</div></span><span class="small"><b>{rankOf(w, c.id) === 4 ? n.ruler.title : RANKS[Math.max(0, rankOf(w, c.id))].name}</b> · {d.favour} favour</span></div>
+      {any && (
+        <div class="row" style={{ gap: 6, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+          {ext && <Btn small kind="ghost" disabled={!!extIn || d.naturalised || n?.ruler?.id === c.id} onClick={() => confirm(`Ask ${n.name} to hand ${c.name} over? A refusal cools them towards us.`) && act('defector.extradite', { target: c.id }, 'The request is delivered.')}>{extIn ? <>Ask again <Left at={w.now + extIn} /></> : `Extradite (${Math.round(extraditeOdds(w, c) * 100)}%)`}</Btn>}
+          {sec && !ours && <Btn small kind="ghost" onClick={() => act('intel.discredit', { target: c.id }, 'The whispers begin.')}>Smear at court ({OP_COST.discredit})</Btn>}
+          {sec && <Btn small kind="danger ghost" disabled={!!snIn} onClick={() => confirm(`Send a snatch squad for ${c.name}? About ${Math.round(snatchOdds(w, c) * 100)}% chance. Failure is a public scandal.`) && act('intel.snatch', { target: c.id }, 'The squad is on its way.')}>{snIn ? <>Snatch again <Left at={w.now + snIn} /></> : `Snatch (${OP_COST.snatch}, ${Math.round(snatchOdds(w, c) * 100)}%)`}</Btn>}
+          {tre && !d.seized && !(ours && sec) && <Btn small kind="ghost" onClick={() => confirm(`Seize half of ${c.name}'s money for the Treasury?`) && act('defector.seize', { target: c.id }, 'Seized.')}>Seize their money</Btn>}
+          {pm && !d.naturalised && (d.amnesty ? <Btn small kind="plain" onClick={() => act('defector.amnesty', { target: c.id, on: false }, 'Amnesty withdrawn.')}>Withdraw amnesty</Btn> : <Btn small kind="plain" onClick={() => act('defector.amnesty', { target: c.id, on: true }, 'Amnesty offered.')}>Offer amnesty</Btn>)}
+        </div>
+      )}
+    </li>
+  );
+}
+// the Security Service sends someone over
+function SendOver() {
+  const { world: w, me } = useStore();
+  const [who, setWho] = useState('');
+  const [to, setTo] = useState('');
+  if (!canSecurity(w, me)) return null;
+  const pool = (Object.values(w.citizens) as any[]).filter((c) => c.active && !c.bot && !c.defected && c.id !== me);
+  const plants = (Object.values(w.plants || {}) as any[]).filter((p) => p.status === 'offered' || p.status === 'abroad');
+  const ops = (w.ops || []).slice(0, 8);
+  return (
+    <Sec title="Send someone over" sub={`Secret. Ask a citizen to defect on the Service's orders: they rise at a foreign court, report home and sabotage it. ${OP_COST.plant} cover money from the budget (${bal(w, 'office:security')} left); returned if they say no.`}>
+      <Card kind="warn"><div class="stack">
+        <div class="grid2"><Pick value={who} onChange={setWho} empty="Whom?" options={pool.map((c) => [c.id, c.name])} /><Pick value={to} onChange={setTo} empty="Where?" options={Object.values(w.nations).map((x: any) => [x.id, x.name])} /></div>
+        <Btn disabled={!who || !to} onClick={() => act('intel.plant', { target: who, nation: to }, 'The request goes out, in private.')}>Ask them</Btn>
+        {plants.length > 0 && <ul class="list small">{plants.map((p) => <li class="row"><span><Who id={p.to} /> → {w.nations[p.nation]?.name}</span><span class="muted">{p.status === 'offered' ? <>Waiting for an answer, lapses <Left at={p.until} /></> : w.citizens[p.to]?.defected?.plant?.id === p.id ? `In place: ${w.citizens[p.to].defected.favour} favour` : 'Home'}</span></li>)}</ul>}
+        {ops.length > 0 && <><b class="small">Operations log</b><ul class="list small">{ops.map((o: any) => <li class="row"><span>{({ discredit: 'Smear', snatch: 'Snatch', plant: 'Plant' } as any)[o.kind]}: {o.text}</span><span class="muted"><When at={o.at} /></span></li>)}</ul></>}
+      </div></Card>
+    </Sec>
   );
 }
