@@ -23,6 +23,7 @@ import * as Hl from './homeland';
 import * as Xl from './exiles';
 import * as Tr from './trials';
 import * as Im from './imperium';
+import * as Dy from './dynasty';
 import * as Em from './empire';
 import * as Wm from './warmachine';
 import * as Pv from './privy';
@@ -208,6 +209,19 @@ export const COMMANDS: Record<string, Cmd> = {
   'crown.triumph': (w, me) => Im.holdTriumph(w, me),
   'triumph.cheer': (w, me) => Im.cheerTriumph(w, me),
   'crown.lese': (w, me, a) => Im.chargeLese(w, me, a.target, a.text),
+  'crown.propose': (w, me, a) => Dy.propose(w, me, a.target),
+  'crown.wed': (w, me, a) => Dy.answerProposal(w, me, a.yes),
+  'crown.divorce': (w, me) => Dy.divorce(w, me),
+  'crown.child': (w, me, a) => Dy.haveHeir(w, me, a.name),
+  'crown.tower': (w, me, a) => Dy.sendToTower(w, me, a.target),
+  'crown.towerRelease': (w, me, a) => Dy.releaseFromTower(w, me, a.target),
+  'tower.escape': (w, me, a) => Dy.escape(w, me, a.target),
+  'durbar.attend': (w, me) => Dy.attendDurbar(w, me),
+  'crown.grant': (w, me, a) => Dy.grantEstate(w, me, a.estate, a.target),
+  'crown.resume': (w, me, a) => Dy.resumeEstate(w, me, a.estate),
+  'estate.palace': (w, me, a) => Dy.buildPalace(w, me, a.estate),
+  'abroad.stir': (w, me, a) => Xl.stir(w, me, a.province),
+  'imperial.suppress': (w, me, a) => Xl.suppress(w, me, a.province, a.how),
   'intel.sweep': (w, me, a) => Ab.sweep(w, me, a.nation),
   'hostage.ransom': (w, me, a) => Ab.ransom(w, me, a.hostage),
   'exchange.donate': (w, me, a) => Ex.donate(w, me, a.prop, a.sym, a.party),

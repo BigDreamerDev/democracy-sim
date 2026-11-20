@@ -13,6 +13,9 @@ import { PROFILES, moodShift } from './foreign';
 import { rankOf, defectorsIn, bringHome, unmaskPlant, takeHostage } from './abroad';
 import { startWar } from './war';
 import { canSecurity } from './homeland';
+import { PROVINCES } from './foreign';
+import { canGovernEmpire } from './empire';
+const PROVINCES_INFO = () => PROVINCES;
 
 const capital = (nid: string) => PROFILES[nid]?.capital ?? nid;
 const deed = (w: W, id: Id, what: string, secret = false) => { const d = w.citizens[id].defected; d.deeds = [{ at: w.now, what, ...(secret ? { secret: true } : {}) }, ...(d.deeds || [])].slice(0, 20); };
@@ -227,3 +230,73 @@ export function launchInvasion(w: W, actor: Id) {
   gazette(w, 'crisis', `INVASION. ${v.name} lands: ${nm(w, actor)} and ${members.length - 1} other exile${members.length === 2 ? '' : 's'}, with ${n.name}'s troops behind them (+${strength}). ${n.name} declares war. Every citizen has 12 hours to choose a side.`, '#/regime');
 }
 export const invasionNeeds = (w: W) => lim(w, 'invasionDefectors');
+
+// ---------- colonial revolts: an exile stirs up a province of the realm from across the border ----------
+// Each stir adds agitation (more if the host nation claims the province, less while it is calm). At 3 the province rises:
+// the High Commissioner (or the PM with none) has 2 days to send troops or make concessions. Left alone, it breaks away
+// to the nation that claims it. Agitation fades by one each week. State: w.provinces[id].agitation, .revolt (public).
+export const STIR_EVERY = 2 * DAY;
+export function stir(w: W, actor: Id, pid: unknown) {
+  const d = w.citizens[actor]?.defected;
+  if (!d) fail('Only exiles stir up the provinces from abroad.');
+  if (rankOf(w, actor) < 1) fail('You need to be an Adviser at least.');
+  const p = own(w.provinces || {}, pid);
+  if (!p || p.owner !== 'realm') fail('That province is not the realm’s.');
+  if (p.revolt) fail('It is already in revolt.');
+  if (d.last.stir && w.now - d.last.stir < STIR_EVERY) fail('Your agents need two days between pamphlets.');
+  d.last.stir = w.now;
+  const info = PROVINCES_INFO()[pid as string];
+  const add = (p.calmUntil > w.now ? (chance(w, 0.5) ? 1 : 0) : 1) + (info?.claims.includes(d.nation) ? 1 : 0);
+  p.agitation = (p.agitation || 0) + add;
+  d.favour = clamp(d.favour + 3, 0, 100);
+  deed(w, actor, `Stirred up ${info?.name ?? pid} from abroad`);
+  if (p.agitation < 3) return gazette(w, 'government', `Pamphlets from abroad are found in ${info?.name}. Unrest is growing (${p.agitation} of 3).`, '#/atlas');
+  p.revolt = { by: actor, nation: d.nation, at: w.now, until: w.now + 2 * DAY };
+  p.agitation = 0;
+  meter(w, 'stability', -2, `${info?.name} rises`);
+  gazette(w, 'crisis', `${info?.name} rises in revolt, stirred up by ${nm(w, actor)} from ${capital(d.nation)}. The High Commission has two days to answer.`, '#/atlas', { k: 'revolt', who: actor, place: info?.name });
+}
+export function suppress(w: W, actor: Id, pid: unknown, how: unknown) {
+  const p = own(w.provinces || {}, pid);
+  if (!p?.revolt) fail('That province is not in revolt.');
+  if (!canGovernEmpire(w, actor) && !isPM(w, actor)) fail('Only the High Commissioner (or the Prime Minister) answers a revolt.');
+  if (how !== 'troops' && how !== 'concede') fail('Send troops, or make concessions.');
+  const info = PROVINCES_INFO()[pid as string];
+  const r = p.revolt;
+  p.revolt = null;
+  if (how === 'concede') {
+    p.levy = false;
+    p.calmUntil = w.now + 7 * DAY;
+    approve(w, actor, -2);
+    return gazette(w, 'government', `Concessions in ${info?.name}: the levy is lifted and the rebels go home.`, '#/atlas');
+  }
+  const odds = clamp(0.5 + (p.garrison ? 0.2 : 0) + (p.fort ? 0.15 : 0) + (p.governor ? 0.05 : 0) + ((w.army?.troops ?? 6) >= 8 ? 0.1 : 0), 0.2, 0.9);
+  meter(w, 'stability', -1, `Troops in ${info?.name}`);
+  if (chance(w, odds)) {
+    p.calmUntil = w.now + 7 * DAY;
+    approve(w, actor, 2);
+    const s = w.citizens[r.by]?.defected;
+    if (s) s.favour = clamp(s.favour - 5, 0, 100);
+    return gazette(w, 'army', `The revolt in ${info?.name} is put down.`, '#/atlas');
+  }
+  loseProvince(w, pid as string, r);
+}
+export function loseProvince(w: W, pid: string, r: any) {
+  const info = PROVINCES_INFO()[pid];
+  const p = w.provinces[pid];
+  const to = info?.claims.includes(r.nation) ? r.nation : info?.claims[0] ?? r.nation;
+  w.provinces[pid] = { owner: to, since: w.now, from: 'realm' };
+  meter(w, 'stability', -3, `${info?.name} broke away`);
+  const s = w.citizens[r.by]?.defected;
+  if (s) (s.favour = clamp(s.favour + 15, 0, 100)), stamp(w, r.by, 'Liberator', `Of ${info?.name}`, 'ink');
+  gazette(w, 'crisis', `${info?.name} breaks away from the realm and goes over to ${w.nations[to]?.name}.${p?.governor ? ` Governor ${nm(w, p.governor)} flees home.` : ''}`, '#/atlas', { k: 'lost', place: info?.name });
+}
+export function revoltDue(w: W, p: any, pid: string) {
+  if (!p.revolt || p.revolt.until > w.now) return;
+  const r = p.revolt;
+  p.revolt = null;
+  loseProvince(w, pid, r);
+}
+export function revoltsWeek(w: W) {
+  Object.values(w.provinces || {}).forEach((p: any) => p.agitation > 0 && (p.agitation -= 1));
+}

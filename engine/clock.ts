@@ -18,6 +18,8 @@ import { homelandWeek, lapsePlant } from './homeland';
 import { lapseWanted, exilePressWeek } from './exiles';
 import { settleTrial } from './trials';
 import { crownWeek, endTriumph } from './imperium';
+import { dynastyWeek, closeDurbar } from './dynasty';
+import { revoltDue, revoltsWeek } from './exiles';
 import { empireWeek } from './empire';
 import { machineWeek } from './warmachine';
 import { tickExchange, exchangePayday, closeMotion } from './exchange';
@@ -128,6 +130,8 @@ function collect(w: W): D[] {
   Object.values(w.markets || {}).forEach((m: any) => add(marketDue(m), () => staleMarket(w, m), m.id));
   Object.values(w.trials || {}).forEach((t: any) => t.status === 'open' && add(t.closesAt, () => settleTrial(w, t), t.id));
   Object.values(w.wanted || {}).forEach((x: any) => x.status === 'open' && add(x.until, () => lapseWanted(w, x), x.id));
+  if (w.durbar && !w.durbar.done) add(w.durbar.until, () => closeDurbar(w), 'durbar');
+  Object.entries(w.provinces || {}).forEach(([id, p]: [string, any]) => p.revolt && add(p.revolt.until, () => revoltDue(w, p, id), 'rv' + id));
   if (w.triumph && !w.triumph.done) add(w.triumph.until, () => endTriumph(w), 'triumph');
   Object.values(w.plants || {}).forEach((p: any) => p.status === 'offered' && add(p.until, () => lapsePlant(w, p), p.id));
   (w.ultimatums || []).forEach((u: any) => u.status === 'sent' && add(u.dueAt, () => settleUltimatum(w, u, false), u.id));
@@ -162,6 +166,8 @@ function weeklyPayday(w: W) {
   homelandWeek(w);
   exilePressWeek(w);
   crownWeek(w);
+  dynastyWeek(w);
+  revoltsWeek(w);
   empireWeek(w);
   machineWeek(w);
   if (!strikeOn(w)) payPensions(w);

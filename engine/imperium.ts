@@ -57,6 +57,9 @@ export function attaint(w: W, actor: Id, target: unknown) {
   if (!c.peerage) fail(`${c.name} holds no title.`);
   const t = PEERAGE[c.peerage.rank].title;
   c.peerage = null;
+  // an attainted peer's estates go back to the Crown (dynasty.ts)
+  const lost = Object.keys(w.holdings || {}).filter((e) => w.holdings[e].holder === c.id);
+  lost.forEach((e) => (w.holdings[e] = { ...w.holdings[e], holder: 'crown', since: w.now }));
   stamp(w, c.id, 'Attainted', `Stripped of the title of ${t}`, 'bad');
   approve(w, c.id, -3);
   gazette(w, 'hos', `${c.name} is stripped of the title of ${t} by order of the ${w.config.hosTitle}.`, '#/hos');

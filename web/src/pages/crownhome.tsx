@@ -9,6 +9,8 @@ import { PROVINCES } from '../../../engine/foreign';
 import { PEERAGE, peers, absolute, triumphDue, PROGRESS_EVERY, PROGRESS_COST, TRIUMPH_COST, LESE_EVERY } from '../../../engine/imperium';
 import { canGovernEmpire } from '../../../engine/empire';
 import { CHARGES } from '../../../engine/trials';
+import { ESTATES, estateLost, consortOf, inTower, PALACE_COST, PALACE_RENT } from '../../../engine/dynasty';
+import { canGovernEmpire as canRule } from '../../../engine/empire';
 
 // on every page: the Sovereign's proclamation of the day, and a triumph in the streets
 export function CrownBanners() {
@@ -30,6 +32,27 @@ export function CrownBanners() {
           <small>Invasion warning</small>
           <b class="serif">{w.invasion.name}: the exiles are preparing to invade from {w.nations[w.invasion.nation]?.name}, {w.invasion.members.length} under arms.</b>
           <a class="small" href="#/abroad">What we know</a>
+        </div>
+      )}
+      {Object.entries(w.provinces || {}).filter(([, p]: any) => p.revolt).map(([id, p]: any) => (
+        <div class="proclamation triumph" role="status">
+          <small>Revolt · answered by <When at={p.revolt.until} /> or lost</small>
+          <b class="serif">{PROVINCES[id]?.name} has risen, stirred up from abroad by {nm(w, p.revolt.by)}.</b>
+          {(canRule(w, me) || w.pm === me) && <span class="row" style={{ gap: 8, justifyContent: 'flex-start' }}><Btn small kind="danger" onClick={() => act('imperial.suppress', { province: id, how: 'troops' }, 'The troops march.')}>Send troops</Btn><Btn small kind="plain" onClick={() => act('imperial.suppress', { province: id, how: 'concede' }, 'Concessions made.')}>Make concessions</Btn></span>}
+        </div>
+      ))}
+      {w.durbar && !w.durbar.done && w.durbar.until > w.now && !abroad && w.hos?.holder !== me && (
+        <div class="proclamation" role="status">
+          <small>The Imperial Durbar · closes <When at={w.durbar.until} /></small>
+          <b class="serif">{w.durbar.expected.includes(me) ? 'You are summoned to pay homage. Absence is noted.' : 'The court sits to receive homage.'} {w.durbar.attended.length} have come.</b>
+          {!w.durbar.attended.includes(me) && <span><Btn small onClick={() => act('durbar.attend', {}, 'You bow before the throne.')}>Pay homage</Btn></span>}
+        </div>
+      )}
+      {w.crown?.proposal && w.crown.proposal.to === me && w.crown.proposal.until > w.now && (
+        <div class="proclamation" role="status">
+          <small>Only you can answer · by <When at={w.crown.proposal.until} /></small>
+          <b class="serif">{w.config.hosTitle} {nm(w, w.crown.proposal.by)} asks for your hand in marriage.</b>
+          <span class="row" style={{ gap: 8, justifyContent: 'flex-start' }}><Btn small onClick={() => act('crown.wed', { yes: true }, 'A royal wedding!')}>Accept</Btn><Btn small kind="plain" onClick={() => act('crown.wed', { yes: false }, 'You decline.')}>Decline</Btn></span>
         </div>
       )}
       {live && (
@@ -78,6 +101,10 @@ export function CrownDesk() {
           </div>
         </Sec>
       )}
+      <RoyalFamily />
+      <Holdings />
+      <Tower />
+      {w.durbar?.done && <Sec title="The last Durbar"><p class="small">{w.durbar.attended.length} paid homage <When at={w.durbar.at} />.{w.durbar.absent?.length ? ` Absent, and noted: ${w.durbar.absent.map((id: string) => nm(w, id)).join(', ')}.` : ' Nobody summoned stayed away.'}</p></Sec>}
       {canTriumph && <Sec title="A triumph"><Card kind="tint"><div class="row"><span class="small">Celebrate the victory over {w.nations[victory.nation]?.name}: the Army marches through the capital. {TRIUMPH_COST} crowns, stability +2, and a crowd for 12 hours.</span><Btn onClick={() => act('crown.triumph', {}, 'The triumph begins.')}>Hold a triumph</Btn></div></Card></Sec>}
     </>
   );
@@ -115,4 +142,71 @@ export function TrialPage({ id }: { id: string }) {
       </Sec>
     </Page>
   );
+}
+
+// the royal family: consort, heir, the line of succession
+function RoyalFamily() {
+  const { world: w, me } = useStore();
+  const [who, setWho] = useState('');
+  const [child, setChild] = useState('');
+  const k = w.crown || {};
+  const r = k.reign;
+  const mine = r?.id === me && !!r?.crownedAt;
+  const con = consortOf(w);
+  const home = (Object.values(w.citizens) as any[]).filter((c) => c.active && !c.bot && !c.defected && c.id !== me);
+  return (
+    <Sec title="The royal family" sub="A consort draws 5 a week. With an heir, if the throne falls empty, the consort reigns as Regent for the child (unless the monarch was removed by law).">
+      <Card><div class="stack">
+        <span class="small">{con ? <>Consort: <Who id={con.id} />, married <When at={con.at} />.</> : 'The monarch is unmarried.'} {k.heir ? <>Heir: <b>{k.heir.name}</b>, born <When at={k.heir.born} />.</> : 'There is no heir.'}{k.regency && k.regency.id === r?.id ? ` ${nm(w, r.id)} reigns as Regent for ${k.regency.heir}.` : ''}</span>
+        {mine && !con && (k.proposal && k.proposal.until > w.now ? <span class="small muted">Waiting for {nm(w, k.proposal.to)} to answer, <Left at={k.proposal.until} />.</span> : <div class="grid2"><Pick value={who} onChange={setWho} empty="Propose to…" options={home.map((c) => [c.id, c.name])} /><Btn disabled={!who} onClick={() => confirm(`Propose to ${nm(w, who)}? It is public.`) && act('crown.propose', { target: who }, 'You have asked.')}>Propose</Btn></div>)}
+        {mine && con && !k.heir && <div class="grid2"><Field label="The child's name" value={child} onInput={(v) => setChild(v.slice(0, 24))} /><Btn style={{ alignSelf: 'end' }} disabled={child.trim().length < 2 || (k.heirTriedAt && w.now - k.heirTriedAt < 2 * 86400000)} onClick={() => act('crown.child', { name: child }, 'We shall see.')}>Hope for an heir</Btn></div>}
+        {mine && con && <Btn small kind="danger ghost" style={{ alignSelf: 'flex-start' }} onClick={() => confirm('Divorce your consort? It is a scandal.') && act('crown.divorce', {}, 'Divorced.')}>Divorce</Btn>}
+      </div></Card>
+    </Sec>
+  );
+}
+// estates and palaces: the Crown's lands and the peers'
+function Holdings() {
+  const { world: w, me } = useStore();
+  const [to, setTo] = useState<Record<string, string>>({});
+  const h = w.holdings || {};
+  const mine = w.crown?.reign?.id === me && !!w.crown?.reign?.crownedAt;
+  const peerList = (Object.values(w.citizens) as any[]).filter((c) => c.peerage && c.active && !c.defected);
+  return (
+    <Sec title="Royal holdings" sub={`Estates across the realm, held by the Crown or granted to peers. Each pays its holder rent every payday (Crown rents go to the Treasury). A palace adds ${PALACE_RENT} a week and costs ${PALACE_COST}; the royal palaces cost the Treasury upkeep.`}>
+      <ul class="list">{Object.entries(ESTATES).map(([id, e]) => {
+        const x = h[id] || { holder: w.config.hos === 'monarchy' ? 'crown' : 'state', palace: !!e.royal };
+        const lost = estateLost(w, id);
+        const holder = x.holder === 'crown' ? 'The Crown' : x.holder === 'state' ? 'The State' : null;
+        return (
+          <li class="row">
+            <span><b>{e.name}</b>{x.palace && <span class="chip" style={{ marginLeft: 6 }}>{e.royal ? 'Royal palace' : 'Palace'}</span>}<div class="small muted">{e.province ? PROVINCES[e.province]?.name : 'The home counties'} · {e.royal ? 'royal residence' : `${e.rent + (x.palace ? PALACE_RENT : 0)} a week`}{lost ? ' · beyond our borders' : ''} · {holder ?? <Who id={x.holder} />}</div></span>
+            <span class="row" style={{ gap: 6 }}>
+              {mine && x.holder === 'crown' && !e.royal && !lost && peerList.length > 0 && <><Pick value={to[id] || ''} onChange={(v) => setTo({ ...to, [id]: v })} empty="Grant to…" options={peerList.map((c) => [c.id, c.name])} /><Btn small disabled={!to[id]} onClick={() => act('crown.grant', { estate: id, target: to[id] }, 'Granted.')}>Grant</Btn></>}
+              {mine && x.holder !== 'crown' && x.holder !== 'state' && <Btn small kind="danger ghost" onClick={() => confirm(`Take ${e.name} back from ${nm(w, x.holder)}?`) && act('crown.resume', { estate: id }, 'Taken back.')}>Take back</Btn>}
+              {!x.palace && !lost && ((x.holder === me) || (mine && x.holder === 'crown')) && <Btn small kind="ghost" onClick={() => confirm(`Build a palace at ${e.name} for ${PALACE_COST}?`) && act('estate.palace', { estate: id }, 'The builders arrive.')}>Build a palace</Btn>}
+            </span>
+          </li>
+        );
+      })}</ul>
+    </Sec>
+  );
+}
+// the Tower: who is held, and the chance to get them out
+export function Tower() {
+  const { world: w, me } = useStore();
+  const [who, setWho] = useState('');
+  const held = (Object.values(w.citizens) as any[]).filter((c) => inTower(w, c.id));
+  const mine = w.crown?.reign?.id === me && !!w.crown?.reign?.crownedAt;
+  const convicted = [...new Set((Object.values(w.trials || {}) as any[]).filter((t) => t.status === 'guilty' && w.now - (t.verdictAt || 0) < 14 * 86400000 && !inTower(w, t.who)).map((t) => t.who))] as string[];
+  if (!absolute(w) && !held.length) return null;
+  return (
+    <Sec title="The Tower" sub="Under an absolute monarch, a citizen convicted at trial can be held in the Tower at the Crown's pleasure, with no end date. Friends can bribe the guards (10 crowns, once a day each); every try makes the next likelier, and some helpers are caught.">
+      {held.length ? <ul class="list">{held.map((c) => <li class="row"><span><Who id={c.id} /><div class="small muted">Since <When at={c.jail.at} />{c.jail.tries?.length ? ` · ${c.jail.tries.filter((t: any) => w.now - t.at < 3 * 86400000).length} recent attempts` : ''}</div></span><span class="row" style={{ gap: 6 }}>{mine ? <Btn small kind="plain" onClick={() => act('crown.towerRelease', { target: c.id }, 'Released.')}>Release</Btn> : c.id !== me && !w.citizens[me]?.defected && <Btn small kind="danger ghost" onClick={() => confirm(`Bribe the guards to free ${c.name}? 10 crowns, and you may be caught.`) && act('tower.escape', { target: c.id }, 'The money changes hands.')}>Bribe the guards</Btn>}</span></li>)}</ul> : <Empty>The Tower is empty.</Empty>}
+      {mine && absolute(w) && convicted.length > 0 && <Card style={{ marginTop: 10 }}><div class="grid2"><Pick value={who} onChange={setWho} empty="Commit whom?" options={convicted.map((id) => [id, nm(w, id)])} /><Btn kind="danger" disabled={!who} onClick={() => confirm(`Commit ${nm(w, who)} to the Tower? Their title and estates are forfeit.`) && act('crown.tower', { target: who }, 'To the Tower.')}>To the Tower</Btn></div></Card>}
+    </Sec>
+  );
+}
+export function TowerPage() {
+  return <Page back={['#/hos', 'The Crown']} kicker="At the Crown's pleasure" title="The Tower"><Tower /></Page>;
 }

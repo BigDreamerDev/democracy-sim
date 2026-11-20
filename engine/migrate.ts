@@ -118,6 +118,8 @@ export function migrate(w: W): W {
   w.exilePress ??= {};
   w.invasion ??= null;
   w.triumph ??= null;
+  w.durbar ??= null;
+  w.holdings ??= {};
   w.ops ??= [];
   w.sweeps ??= [];
   w.exileGov ??= null;

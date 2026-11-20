@@ -8,7 +8,7 @@ import { isPM, hasPower, holderOf, bal, ca, canSeeCard, nm } from '../../../engi
 import { MOODS, PROFILES } from '../../../engine/foreign';
 import { RANKS, rankOf, COOL, POLICIES, RANSOM, defectorsIn, throneOf, BID_COOL, BUY_PRICE, threatened, exileNeed, HOMES, NATURALISE_DAYS, businessFor } from '../../../engine/abroad';
 import { canSecurity, canExtradite, canSeize, extraditeOdds, snatchOdds, OP_COST, EXTRADITE_COOL, SNATCH_COOL } from '../../../engine/homeland';
-import { TREATIES } from '../../../engine/foreign';
+import { TREATIES, PROVINCES as PROVINCES_ } from '../../../engine/foreign';
 import { canPostWanted, invasionStrength, INVASION_PREP, WANTED_DAYS } from '../../../engine/exiles';
 
 const moodColour = ['var(--red)', 'var(--amber)', 'var(--muted)', 'var(--teal)', 'var(--teal)'];
@@ -71,6 +71,7 @@ function Court() {
       <Invasion />
       <ExilePress />
       {canPostWanted(w, me) && <PostWanted />}
+      <Stir />
       <Sec title="The secrets you carried out" sub="Each one sold is printed abroad: +12 favour and 15 crowns. If you ever come home, you will be questioned at the border.">
         {d.secrets.length ? <ul class="list">{d.secrets.map((s: string, i: number) => <li class="row"><span class="small">{s}</span><Btn small kind="danger ghost" onClick={() => confirm('Sell this secret? It will be printed.') && act('abroad.sell', { secret: i }, 'Sold.')}>Sell</Btn></li>)}</ul> : <Empty>You have no secrets to sell. Agents you recruit can send you more.</Empty>}
       </Sec>
@@ -511,6 +512,24 @@ function Invasion() {
         {lead && <div class="grid2"><Btn kind="danger" disabled={!ready || v.members.length < need} onClick={() => confirm('Launch the invasion? Every member sails home tonight, and the host declares war.') && act('exile.launch', {}, 'The ships sail.')}>Launch the invasion</Btn><Btn kind="plain" onClick={() => confirm('Call it off? The chest is refunded.') && act('exile.standDown', {}, 'Called off.')}>Call it off</Btn></div>}
         {!d && canSecurity(w, me) && <Btn kind="danger ghost" onClick={() => act('intel.disrupt', {}, 'Agents are on their way.')}>Disrupt the muster (25 from the Service)</Btn>}
         {!d && !canSecurity(w, me) && <span class="small muted">The Security Service can strike at the muster. Extraditing or snatching its members weakens it too.</span>}
+      </div></Card>
+    </Sec>
+  );
+}
+
+// stir up a province of the realm from abroad
+function Stir() {
+  const { world: w, me } = useStore();
+  const d = w.citizens[me].defected;
+  const [pid, setPid] = useState('');
+  const ours = Object.keys(w.provinces || {}).filter((id) => w.provinces[id].owner === 'realm');
+  if (!ours.length) return null;
+  const next = (d.last?.stir || 0) + 2 * 86400000;
+  return (
+    <Sec title="Stir up the provinces" sub="Smuggle pamphlets and agitators into a province the realm holds. At 3 unrest it rises; if the realm does not answer in 2 days it breaks away to the nation that claims it. Claimed by your host? Twice as fast. Adviser and above, every 2 days.">
+      <Card><div class="stack">
+        <ul class="list small">{ours.map((id) => <li class="row"><span>{PROVINCES_[id]?.name}</span><span class="muted">{w.provinces[id].revolt ? 'In revolt' : `Unrest ${w.provinces[id].agitation || 0} of 3`}{PROVINCES_[id]?.claims.includes(d.nation) ? ` · claimed by ${w.nations[d.nation].name}` : ''}</span></li>)}</ul>
+        <div class="grid2"><Pick value={pid} onChange={setPid} empty="Which province?" options={ours.filter((id) => !w.provinces[id].revolt).map((id) => [id, PROVINCES_[id]?.name ?? id])} /><Btn kind="danger" disabled={!pid || rankOf(w, me) < 1 || next > w.now} onClick={() => act('abroad.stir', { province: pid }, 'The pamphlets go over the border.')}>{next > w.now ? <>Again <Left at={next} /></> : 'Stir it up'}</Btn></div>
       </div></Card>
     </Sec>
   );

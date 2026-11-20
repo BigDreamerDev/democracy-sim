@@ -19,7 +19,7 @@ export const TABS: Tab[] = [
     { id: 'house', label: 'Chamber', href: '#/house', routes: ['house', 'oath'] },
     { id: 'bills', label: 'Bills', href: '#/proposals', routes: ['proposals', 'p', 'new', 'draft'], count: openProps },
     { id: 'questions', label: 'Questions', href: '#/questions', routes: ['questions'] },
-    { id: 'government', label: 'Government', href: '#/government', routes: ['government', 'cabinet', 'offices', 'office', 'hos'] },
+    { id: 'government', label: 'Government', href: '#/government', routes: ['government', 'cabinet', 'offices', 'office', 'hos', 'tower'] },
     { id: 'laws', label: 'Laws', href: '#/laws', routes: ['laws', 'law'] },
     { id: 'powers', label: 'Powers', href: '#/powers', routes: ['powers'], show: (w) => !!(w.acts && (w.acts.jail || w.acts.decrees || w.acts.continuity || w.acts.unity || w.acts.protection || w.acts.press || w.acts.security || w.acts.crown || w.acts.prerogative || w.acts.veto || w.acts.imperial)) || w.config?.hos === 'monarchy' },
     { id: 'regime', label: 'Regime', href: '#/regime', routes: ['regime'], show: (w) => !!(w.coup || w.regime || w.transition || w.reckoning || w.regimes?.length) }

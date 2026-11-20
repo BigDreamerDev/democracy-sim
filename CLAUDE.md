@@ -89,6 +89,10 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   trials.ts    w.trials: treason (after extradition/snatch) and lèse-majesté; justices or a jury by lot; guilty = c.jail with an end date
   imperium.ts  the Crown at home: proclamations (w.crown.proclamation, a banner on every page), peers (c.peerage, weekly
                appanage, +gov on coup nights), royal progresses, triumphs (w.triumph), lèse-majesté (absolute monarchy only)
+  dynasty.ts   royal weddings (w.crown.proposal/consort), the heir (w.crown.heir; regency in politics.startHosSelection unless
+               w.crown.deposed), the Tower (c.jail.tower, until null; escapes), the Imperial Durbar (w.durbar, each payday under the
+               empire), royal holdings (ESTATES, w.holdings: Crown, peers or the State; weekly rents from the reserve; palaces)
+               Colonial revolts are in exiles.ts (abroad.stir → province.agitation → province.revolt → imperial.suppress)
   catalog.ts   CATALOG — public description of every player command and its args (served by /api/v1/commands)
   index.ts     COMMANDS table; run(world, actor, cmd, args) applies one to a structuredClone
   bots.ts      bot turns: botsAct (demo, smoke) and actBots(w, isBot) — the clock runs practice bots during induction
