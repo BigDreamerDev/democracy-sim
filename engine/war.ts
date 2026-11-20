@@ -4,6 +4,7 @@
 // Victory and defeat feed the coup system (backroom.ts): a war hero weighs more on a coup night, a beaten Army
 // leans towards the plotters, and an Army at the front cannot defend the capital.
 // State: w.army.war = the enemy's id (as before), w.army.campaign = this war, w.army.hero, w.army.defeatedAt, w.wars (history).
+import { lim } from './limits';
 import { hasArmy, W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, earn, transfer, bal, ca, hasPower, isPM, holderOf, clamp, meter, approve, stamp, bump, mustBeFree, int, legit, own, newId, pick, isMP, mps, inGov, autocrat, autocratTitle, cap } from './core';
 import { moodShift, treatyWith, PROFILES, warSpoils, PROVINCES, seedProvinces } from './foreign';
 import { fame } from './glory';
@@ -72,7 +73,7 @@ export function recruit(w: W, actor: Id, n: unknown) {
   if (!canCommand(w, actor)) fail('Only the General, the Prime Minister or an officer of state raises regiments.');
   const k = int(n, 1, 5, 'number of regiments');
   const have = w.army.troops ?? 6;
-  if (have + k > MAX_REGIMENTS) fail(`The realm can field ${MAX_REGIMENTS} regiments at most. It has ${have}.`);
+  if (have + k > lim(w, 'regiments')) fail(`The realm can field ${lim(w, 'regiments')} regiments at most. It has ${have}.`);
   transfer(w, 'treasury', 'reserve', regimentCost(w, REGIMENT_COST) * k, `Raised ${k} regiment${k === 1 ? '' : 's'}`);
   w.army.troops = have + k;
   gazette(w, 'army', `${k} new regiment${k === 1 ? ' is' : 's are'} raised. The Army now fields ${w.army.troops}.`, '#/army', { k: 'raise', n: k, by: actor, to: [actor] });
@@ -96,7 +97,7 @@ export function enlist(w: W, actor: Id) {
   if (!k) fail('We are not at war.');
   mustBeFree(w, actor);
   if (k.volunteers.includes(actor)) fail('You have already volunteered.');
-  if (k.volunteers.length >= 12) fail('The recruiting sergeants have all the volunteers they can take.');
+  if (k.volunteers.length >= lim(w, 'volunteers')) fail('The recruiting sergeants have all the volunteers they can take.');
   k.volunteers.push(actor);
   earn(w, actor, 2, 'Volunteered for the war');
   approve(w, actor, 1);
@@ -109,8 +110,9 @@ export function buyWarBond(w: W, actor: Id, amount: unknown) {
   const k = war(w);
   if (!k) fail('War bonds are sold only in wartime.');
   mustBeFree(w, actor);
-  const amt = int(amount, 5, 100, 'amount');
-  if ((k.bonds[actor] || 0) + amt > 100) fail(`You can hold 100 crowns of war bonds at most. You hold ${k.bonds[actor] || 0}.`);
+  const most = lim(w, 'warBondsEach');
+  const amt = int(amount, 5, most, 'amount');
+  if ((k.bonds[actor] || 0) + amt > most) fail(`You can hold ${most} crowns of war bonds at most. You hold ${k.bonds[actor] || 0}.`);
   transfer(w, ca(actor), 'treasury', amt, `War bonds, ${w.nations[k.nation].name} campaign`);
   k.bonds[actor] = (k.bonds[actor] || 0) + amt;
   k.bondTotal = (k.bondTotal || 0) + amt;

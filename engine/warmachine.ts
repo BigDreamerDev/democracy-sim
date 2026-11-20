@@ -8,8 +8,9 @@
 // - Military acquisitions (PROCUREMENT): artillery, cavalry, ironclads, airships, and forts in provinces. Bought by
 //   the General, the High Commissioner or the PM, from the war chest if it can pay, else the Treasury. Upkeep weekly.
 // State: w.warchest = { firms: {sym: {since, order, by}}, drawn, drawnWeek }, w.army.kit = {item: n}, province.fort.
+import { lim } from './limits';
 import { hasArmy, W, Id, DAY, fail, nm, gazette, transfer, bal, hasPower, isPM, int, own, clamp, inForce } from './core';
-import { exchange, price, company, halted, payOut, MAX_HOLD } from './exchange';
+import { exchange, price, company, halted, payOut } from './exchange';
 import { PROVINCES, seedProvinces, moodShift, atWar } from './foreign';
 
 export const CHEST = 'warchest';
@@ -51,8 +52,10 @@ export function requisition(w: W, actor: Id, crowns: unknown) {
   const c = chest(w);
   const wk = Math.floor(w.now / WEEK);
   if (c.drawnWeek !== wk) (c.drawnWeek = wk), (c.drawn = 0);
-  const n = int(crowns, 1, REQUISITION_CAP, 'crowns');
-  if (c.drawn + n > REQUISITION_CAP) fail(`The war chest can draw ${REQUISITION_CAP} a week from the Treasury. ${REQUISITION_CAP - c.drawn} left this week.`);
+  const capW = lim(w, 'requisitionWeek');
+  if (capW < 1) fail('The law allows the war chest nothing from the Treasury.');
+  const n = int(crowns, 1, capW, 'crowns');
+  if (c.drawn + n > capW) fail(`The war chest can draw ${capW} a week from the Treasury. ${Math.max(0, capW - c.drawn)} left this week.`);
   transfer(w, 'treasury', CHEST, n, 'Requisitioned for the war chest');
   c.drawn += n;
   gazette(w, 'money', `${nm(w, actor)} requisitions ${n} crowns from the Treasury for the war chest.`, '#/war');
@@ -72,13 +75,13 @@ export function trade(w: W, actor: Id, sym: unknown, n: unknown, sell: unknown) 
   if (!co) fail('Pick one of the ten companies on the Exchange.');
   if (halted(w)) fail('Trading is halted.');
   if (sell !== true && sell !== false) fail('Buy or sell.');
-  const k = int(n, 1, MAX_HOLD, 'shares');
+  const k = int(n, 1, lim(w, 'holdMax'), 'shares');
   const x = exchange(w);
   const h = (x.holdings[CHEST] ??= {});
   const p = price(w, co.sym);
   if (!sell) {
     if (co.nation && (w.nations[co.nation]?.embargo || atWar(w, co.nation))) fail(`${w.nations[co.nation].name}'s shares cannot be bought now.`);
-    if ((h[co.sym]?.n || 0) + k > MAX_HOLD) fail(`The war chest can hold ${MAX_HOLD} of a company.`);
+    if ((h[co.sym]?.n || 0) + k > lim(w, 'holdMax')) fail(`The war chest can hold ${lim(w, 'holdMax')} of a company.`);
     const cost = Math.ceil(k * p);
     if (bal(w, CHEST) < cost) fail(`That costs ${cost}. The war chest holds ${bal(w, CHEST)}.`);
     transfer(w, CHEST, 'exchange', cost, `War chest bought ${k} ${co.sym}`);

@@ -5,7 +5,8 @@ import { canMoneyMotion, describeMotion } from './economy';
 import { W, Id, nm, isHOS, isPM, isMP, intrigueOpen, hasPower, holderOf, sideOf, bal, nextAt, mps, DAY, speaksForHouse } from './core';
 import { RED_BOX } from './glory';
 import { owesOath } from './oath';
-import { canVote , contenders, commands, leaderOfSide, FORM_DAYS } from './politics';
+import { canVote , contenders, commands, leaderOfSide } from './politics';
+import { lim } from './limits';
 import { canVoteOn, KINDS, whipLine, canWhip, rebelsOn, amendmentLine } from './proposals';
 import { leaderOfOpposition } from './politics';
 
@@ -59,7 +60,7 @@ export function needs(w: W, me: Id): Alert[] {
   if (!w.pm && w.phase === 'running') {
     const who = contenders(w).find((l) => commands(w, l));
     if (isHOS(w, me) && who) out.push({ key: 'nopm:' + who, href: '#/hos', label: 'No government', title: `Invite ${nm(w, who)}, who commands a majority`, at: w.pmInviteDue, urgent: true });
-    else if (!who && contenders(w).includes(me) && leaderOfSide(w, sideOf(w, me)) === me) out.push({ key: 'hung:' + (w.formingSince || 0), href: '#/cabinet', label: 'Hung parliament', title: 'Nobody has a majority. Agree a coalition', at: (w.formingSince || w.now) + FORM_DAYS * 86400000 });
+    else if (!who && contenders(w).includes(me) && leaderOfSide(w, sideOf(w, me)) === me) out.push({ key: 'hung:' + (w.formingSince || 0), href: '#/cabinet', label: 'Hung parliament', title: 'Nobody has a majority. Agree a coalition', at: (w.formingSince || w.now) + lim(w, 'formDays') * 86400000 });
   }
   Object.values(w.crises).forEach((c: any) => {
     if (c.status !== 'open') return;

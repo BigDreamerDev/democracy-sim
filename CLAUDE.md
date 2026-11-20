@@ -78,6 +78,8 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   digest.ts    digest(w) — the state of the realm as plain text for the group chat (Copy button, /api/public/digest.txt)
                recap(w) / recapText(w) — the last 7 days (laws, rebels, loudest, PM approval) for Today's weekly card
   drafts.ts    draft proposals (private: author + invited co-sponsors), takeDraft() for prop.new; amendments are in proposals.ts
+  limits.ts    LIMITS — every cap in the rules (default, min, max, area); lim(w, key) reads w.config.limits[key] ?? default.
+               A bill's 'set' clause changes any of them (or a SETTABLE number); Laws › Limits lists them
   catalog.ts   CATALOG — public description of every player command and its args (served by /api/v1/commands)
   index.ts     COMMANDS table; run(world, actor, cmd, args) applies one to a structuredClone
   bots.ts      bot turns: botsAct (demo, smoke) and actBots(w, isBot) — the clock runs practice bots during induction
@@ -318,6 +320,9 @@ function must change state so the deadline doesn't fire again.
 in `route()` in `main.tsx`, then a `Section` in the right tab in `web/src/nav.ts` (its `routes` list every path
 segment that should light it up; old addresses stay as routes so Gazette links and players' apps keep working).
 Detail pages (`#/p/12`, `#/party/x`) keep a `back` link; section roots don't show one.
+
+**Add a cap** — never hard-code a limit: add it to `LIMITS` in `engine/limits.ts` and read it with `lim(w, key)`
+(engine and pages). Parliament can then change it by law, and it shows on Laws › Limits.
 
 **Add a world field** — default in `blank()` in `engine/world.ts`, `??=` in
 `engine/migrate.ts`, redact in `view.ts` if private.

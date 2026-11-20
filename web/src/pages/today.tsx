@@ -18,6 +18,7 @@ import { RoleChips, YourDesk, NewJob } from '../Roles';
 import { rolesOf } from '../roles';
 import { stateMode } from '../state';
 import { CONDITIONS } from '../../../engine/conditions';
+import { LIMITS, lim } from '../../../engine/limits';
 export { needs };
 
 // what crises have left behind, with the time each has left
@@ -633,13 +634,13 @@ export function Laws() {
   const laws = w.laws.filter((l: any) => !q || (l.title + l.summary + l.text.join(' ')).toLowerCase().includes(q.toLowerCase()));
   return (
     <Page kicker="The statute book" title="Laws" intro="See below the full laws and codebook of the nation, alongside reading our consitutiton">
-      <div style={{ marginTop: 16 }}><Seg value={tab} onChange={setTab} options={[['laws', 'Statute book'], ['constitution', 'Constitution']]} /></div>
+      <div style={{ marginTop: 16 }}><Seg value={tab} onChange={setTab} options={[['laws', 'Statute book'], ['constitution', 'Constitution'], ['limits', 'Limits']]} /></div>
       {tab === 'laws' ? (
         <>
           <div style={{ marginTop: 12 }}><Field label="Search" value={q} onInput={setQ} placeholder="Try “holiday”" /></div>
           <Sec><ul class="list">{laws.slice().reverse().map((l: any) => <LinkRow href={'#/law/' + l.ref} title={<>{l.ref} <span style={{ textDecoration: l.repealed ? 'line-through' : 'none' }}>{l.classified ? 'Classified Act' : l.title}</span></>} sub={l.repealed ? 'Repealed' : l.classified ? 'Its contents are secret' : l.summary} />)}</ul></Sec>
         </>
-      ) : <Constitution />}
+      ) : tab === 'limits' ? <Limits /> : <Constitution />}
     </Page>
   );
 }
@@ -658,6 +659,33 @@ function Constitution() {
     <Sec>
       <Card><ul class="list">{rows.map(([k, v]) => <li class="row"><span class="muted">{k}</span><b style={{ textAlign: 'right' }}>{v}</b></li>)}</ul></Card>
       <p class="small muted">Change any of this with a constitutional bill. <a href="#/new">Draft one</a>.</p>
+    </Sec>
+  );
+}
+// every cap in the rules (engine/limits.ts): what the law says now, and a bill to change it
+function Limits() {
+  const { world: w } = useStore();
+  const areas = [...new Set(Object.values(LIMITS).map((x) => x.area))];
+  return (
+    <Sec sub="Every cap in the rules. Parliament can change any of them with a bill, within the range shown.">
+      <div class="stack">
+        {areas.map((a) => (
+          <Card>
+            <b class="serif" style={{ fontSize: 18 }}>{a}</b>
+            <ul class="list">
+              {Object.entries(LIMITS).filter(([, x]) => x.area === a).map(([k, x]) => {
+                const v = lim(w, k);
+                return (
+                  <li class="row">
+                    <span>{x.label}<span class="small muted"> · {x.min}–{x.max}{v !== x.def ? `, normally ${x.def}` : ''}</span></span>
+                    <span class="row" style={{ gap: 8 }}><b class="tnum">{v}{x.unit}</b>{v !== x.def && <span class="chip teal">By law</span>}<a class="small" href={'#/new?set=' + k}>Change</a></span>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        ))}
+      </div>
     </Sec>
   );
 }

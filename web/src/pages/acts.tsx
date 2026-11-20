@@ -1,5 +1,6 @@
 // What the Acts in acts.ts put on screen: the Realm Jail (public), and the Prime Minister's powers under the
 // Government Powers, Continuity of Parliament and National Unity Acts.
+import { lim } from '../../../engine/limits';
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Field, Pick, Who, When, Empty, LinkRow } from '../ui';
@@ -92,7 +93,7 @@ function Decrees() {
           <Field label="Title" value={title} onInput={setTitle} placeholder="e.g. Public Holidays Decree" />
           <Field label="Summary (optional)" value={summary} onInput={setSummary} />
           {clauses.map((e, i) => <ClauseEditor e={e} n={i + 1} onChange={(x) => setClauses(clauses.map((y, j) => (j === i ? x : y)))} onRemove={clauses.length > 1 ? () => setClauses(clauses.filter((_, j) => j !== i)) : undefined} />)}
-          {clauses.length < 20 && <Btn kind="ghost" onClick={() => setClauses([...clauses, { t: 'text', text: '' }])}>Add a clause</Btn>}
+          {clauses.length < lim(w, 'billClauses') && <Btn kind="ghost" onClick={() => setClauses([...clauses, { t: 'text', text: '' }])}>Add a clause</Btn>}
           <Btn kind="danger" full onClick={() => act('gov.decree', { title, summary, clauses }, 'Decreed. It is law.')}>Issue the decree</Btn>
         </div>
       </Sec>

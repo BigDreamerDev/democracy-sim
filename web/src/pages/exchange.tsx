@@ -1,10 +1,11 @@
 // The Exchange (#/exchange): the index, every listed company with its price and what is moving it, buying and
 // selling, your portfolio, and the public Register of Interests. Prices move every three hours (engine/exchange.ts).
+import { lim } from '../../../engine/limits';
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, Empty, Field, Pick, Seg } from '../ui';
 import { bal, ca, isPM, hasPower, holderOf, nm } from '../../../engine/index';
-import { COMPANIES, drivers, indexNow, portfolio, halted, register, fund, MAX_HOLD, canMove, listings, fairPrice, worth, LIST_FEE, SECTORS } from '../../../engine/exchange';
+import { COMPANIES, drivers, indexNow, portfolio, halted, register, fund, canMove, listings, fairPrice, worth, LIST_FEE, SECTORS } from '../../../engine/exchange';
 
 function Spark({ data, w = 120, h = 32, base }: { data: number[]; w?: number; h?: number; base?: number }) {
   if (data.length < 2) return <svg width={w} height={h} aria-hidden="true" />;
@@ -137,10 +138,10 @@ function Float() {
           <Field label="Ticker (3–4 letters)" value={f.sym} onInput={(v) => set('sym', v.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4))} placeholder="e.g. MAYA" />
           {f.kind === 'company' && <Field label="Company name" value={f.name} onInput={(v) => set('name', v)} placeholder="e.g. Harbour Lights Ltd" />}
         </div>
-        {f.kind === 'company' && <div class="grid2"><Pick label="Sector" value={f.sector} onChange={(v) => set('sector', v)} options={SECTORS.map((x) => [x, x])} /><Field label="Starting capital you put in (20–500)" type="number" value={f.capital} onInput={(v) => set('capital', v)} /></div>}
+        {f.kind === 'company' && <div class="grid2"><Pick label="Sector" value={f.sector} onChange={(v) => set('sector', v)} options={SECTORS.map((x) => [x, x])} /><Field label={`Starting capital you put in (20–${lim(w, 'capitalMax')})`} type="number" value={f.capital} onInput={(v) => set('capital', v)} /></div>}
         {f.kind === 'company' && <Field label="What it does (optional)" value={f.about} onInput={(v) => set('about', v.slice(0, 160))} />}
         <div class="grid2">
-          <Field label="Shares in all (50–1000)" type="number" value={f.shares} onInput={(v) => set('shares', v)} />
+          <Field label={`Shares in all (50–${lim(w, 'listSharesMax')})`} type="number" value={f.shares} onInput={(v) => set('shares', v)} />
           <Field label="Opening price (1–50)" type="number" value={f.price} onInput={(v) => set('price', v)} />
         </div>
         <Field label="Shares you keep for yourself (a tenth at least)" type="number" value={f.keep} onInput={(v) => set('keep', v)} />
@@ -209,7 +210,7 @@ export function Exchange() {
                     <ul class="list small">{drivers(w, c).map(([why, v]) => <li class="row"><span>{why}</span><b class="tnum" style={{ color: v > 0 ? 'var(--teal)' : 'var(--red)' }}>{v > 0 ? '+' : ''}{v.toFixed(2)}%</b></li>)}</ul>
                     <Revolt sym={c.sym} />
                     <div class="grid2" style={{ marginTop: 10 }}>
-                      <Field label={`Shares (you hold ${held}, ${MAX_HOLD} at most)`} type="number" value={n} onInput={setN} />
+                      <Field label={`Shares (you hold ${held}, ${lim(w, 'holdMax')} at most)`} type="number" value={n} onInput={setN} />
                       <div class="row" style={{ alignSelf: 'end', gap: 6 }}>
                         <Btn small disabled={stop} onClick={() => act('exchange.buy', { sym: c.sym, n: Number(n) }, `Bought ${n} ${c.sym}.`)}>Buy · {Math.ceil(Number(n || 0) * q.p)}</Btn>
                         <Btn small kind="plain" disabled={stop || !held} onClick={() => act('exchange.sell', { sym: c.sym, n: Number(n) }, `Sold ${n} ${c.sym}.`)}>Sell</Btn>

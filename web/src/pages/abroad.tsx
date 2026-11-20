@@ -1,5 +1,6 @@
 // Life abroad (#/abroad): defect to another nation and play from its court, or, at home, see who has gone over,
 // answer a foreign approach, work as an agent, and ransom hostages. The rules are in engine/abroad.ts.
+import { lim } from '../../../engine/limits';
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Pick, Opt, Meter } from '../ui';
@@ -117,7 +118,7 @@ function Throne() {
           <span class="small">First, a royal marriage: 50 favour or more, and better odds with more. Every two days.</span>
           <Btn kind="ghost" disabled={d.favour < 50} onClick={() => act('abroad.marry', {}, 'You have proposed.')}>Propose marriage</Btn>
         </>}
-        {t.way === 'elect' && <Field label="Campaign spending (0–100 crowns)" type="number" value={spend} onInput={setSpend} />}
+        {t.way === 'elect' && <Field label={`Campaign spending (0–${lim(w, 'campaignMax')} crowns)`} type="number" value={spend} onInput={setSpend} />}
         <span class="small muted">Needs {need} favour (you have {d.favour}){t.way === 'marry' ? ' and a royal marriage' : ''}{t.way === 'buy' ? `, and ${BUY_PRICE} crowns (you have ${bal(w, ca(me))})` : ''}{t.way === 'seize' ? `. Each army drill you have done helps (${d.drills || 0} so far)` : ''}.{bidIn ? <> Next bid in <Left at={w.now + bidIn} />.</> : ''}</span>
         <Btn kind={t.way === 'seize' ? 'danger' : undefined} disabled={d.favour < need || !!bidIn || (t.way === 'marry' && !d.consort)} onClick={() => confirm(t.way === 'seize' ? 'Seize power? If you fail you are thrown out of the country.' : 'Make your bid?') && act('abroad.bid', { spend: Number(spend) }, 'The die is cast.')}>{t.way === 'marry' ? 'Claim the succession' : t.way === 'elect' ? 'Stand for election' : t.way === 'buy' ? `Buy the guilds (${BUY_PRICE})` : 'Seize power'}</Btn>
       </div></Card>

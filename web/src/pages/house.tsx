@@ -7,7 +7,8 @@ import { useStore, act, getState, toast as say } from '../store';
 import { go, Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Seg, Opt, Field, Pick, Stamp, BillText } from '../ui';
 import { nm, isMP, isPM, isHOS, inGovernment, mps, fmtTime, superMajority, majority, officeWithPower, hosTitle, nextAt, hasPower, HOUR } from '../../../engine/index';
 import { leaderOfOpposition, HOS_METHODS } from '../../../engine/politics';
-import { describe, KINDS, SETTABLE, canVoteOn, passCheck, PASS_RULES, whipLine, canWhip, rebelsOn, amendmentLine, HOSTILE_BACKERS, LINKABLE, canHasten, HASTE_FLOOR } from '../../../engine/proposals';
+import { describe, KINDS, SETTABLE, setNow, canVoteOn, passCheck, PASS_RULES, whipLine, canWhip, rebelsOn, amendmentLine, LINKABLE, canHasten, HASTE_FLOOR } from '../../../engine/proposals';
+import { LIMITS, lim } from '../../../engine/limits';
 import { TEMPLATES, POWERS, FILL } from '../../../engine/offices';
 import { ACT_KEYS, ACTS, describeAct } from '../../../engine/acts';
 
@@ -364,6 +365,8 @@ export function NewProposal({ query }: { query: URLSearchParams }) {
     if (query.get('act') && (ACTS as any)[query.get('act')!]) return [{ t: query.get('act') }];
     if (query.get('rename')) return [{ t: 'realmName', name: '' }];
     if (query.get('repeal')) return [{ t: 'repeal', ref: query.get('repeal') }];
+    // one tap from the Limits list: #/new?set=billClauses
+    if (query.get('set') && (SETTABLE[query.get('set')!] || LIMITS[query.get('set')!])) return [{ t: 'set', key: query.get('set'), value: setNow(w, query.get('set')!) }];
     if (query.get('treaty')) return [{ t: 'treaty', offer: query.get('treaty') }];
     if (query.get('banks')) return [{ t: 'permit', what: 'banks' }];
     if (query.get('custom')) return [{ t: 'office', office: { name: '', fill: 'pm', powers: [], secrecy: 'public', budget: 0 } }];
@@ -380,7 +383,7 @@ export function NewProposal({ query }: { query: URLSearchParams }) {
   const [kind, setKind] = useState(saved?.kind || query.get('kind') || 'bill');
   const [clauses, setClauses] = useState<any[]>(() => saved?.clauses || init());
   const tpl = query.get('office') && TEMPLATES[query.get('office')!];
-  const [title, setTitle] = useState(saved ? saved.title : tpl ? tpl.act.replace(/Act|Amendment/, 'Bill') : query.get('repeal') ? `Repeal of ${query.get('repeal')} Bill` : query.get('treaty') ? `${w.offers[query.get('treaty')!]?.title ?? 'Treaty'} Bill` : query.get('banks') ? 'Banking Bill' : query.get('act') && (ACTS as any)[query.get('act')!] ? `${(ACTS as any)[query.get('act')!].name} Bill` : query.get('rename') ? 'Realm (Name) Bill' : law ? `${law.title.replace(/ Act$/i, '')} (Amendment) Bill` : '');
+  const [title, setTitle] = useState(saved ? saved.title : tpl ? tpl.act.replace(/Act|Amendment/, 'Bill') : query.get('repeal') ? `Repeal of ${query.get('repeal')} Bill` : query.get('treaty') ? `${w.offers[query.get('treaty')!]?.title ?? 'Treaty'} Bill` : query.get('banks') ? 'Banking Bill' : query.get('act') && (ACTS as any)[query.get('act')!] ? `${(ACTS as any)[query.get('act')!].name} Bill` : query.get('rename') ? 'Realm (Name) Bill' : query.get('set') && LIMITS[query.get('set')!] ? `${LIMITS[query.get('set')!].area} (Limits) Bill` : law ? `${law.title.replace(/ Act$/i, '')} (Amendment) Bill` : '');
   const [summary, setSummary] = useState(saved ? saved.summary : law?.summary || '');
   const [target, setTarget] = useState(saved?.target || '');
   const [fast, setFast] = useState(!!saved?.fast);
@@ -523,7 +526,7 @@ function AmendmentHouse({ p, m }: { p: any; m: any }) {
   const myParty = w.citizens[me]?.party;
   return (
     <div class="stack" style={{ gap: 6, marginTop: 8 }}>
-      {(m.status === 'pending' || backers.length > 1) && <span class="small">Backed by {backers.map((x: string) => nm(w, x)).join(', ')}{m.status === 'pending' && backers.length < HOSTILE_BACKERS ? `. With ${HOSTILE_BACKERS} MPs behind it, turning it down sends it to a House vote.` : m.status === 'pending' ? '. If the author turns it down, the House votes on it.' : '.'}</span>}
+      {(m.status === 'pending' || backers.length > 1) && <span class="small">Backed by {backers.map((x: string) => nm(w, x)).join(', ')}{m.status === 'pending' && backers.length < lim(w, 'hostileBackers') ? `. With ${lim(w, 'hostileBackers')} MP${lim(w, 'hostileBackers') === 1 ? '' : 's'} behind it, turning it down sends it to a House vote.` : m.status === 'pending' ? '. If the author turns it down, the House votes on it.' : '.'}</span>}
       {lines.length > 0 && <div class="chips">{lines.map(([k, x]) => <span class="chip" style={{ color: w.parties[k].colour }}>{w.parties[k].name} {LINE[x.line]}</span>)}</div>}
       {m.status === 'pending' && open && isMP(w, me) && me !== p.by && me !== m.by && <div><Btn small kind="ghost" onClick={() => act('prop.amendBack', { prop: p.id, amendment: m.id }, m.backers?.includes(me) ? 'Backing taken back.' : 'You back it.')}>{m.backers?.includes(me) ? 'Stop backing it' : 'Back it'}</Btn></div>}
       {m.status === 'division' && (
@@ -720,14 +723,14 @@ export function ClauseEditor({ e, n, onChange, onRemove }: { e: any; n: number; 
                 <Seg value={ob.fill || 'pm'} onChange={(v) => setOb('fill', v)} options={Object.entries(FILL).filter(([k]) => k !== 'crown').map(([k]) => [k, ({ pm: 'PM', house: 'MPs', citizens: 'Everyone', lot: 'Lot' } as any)[k]])} />
                 <div class="small" style={{ fontWeight: 700 }}>Powers</div>
                 <div class="stack" style={{ gap: 6 }}>{['grant', 'question', 'files', 'fine', 'block', 'propose', 'govern'].map((k) => <Opt on={(ob.powers || []).includes(k)} onClick={() => setOb('powers', (ob.powers || []).includes(k) ? ob.powers.filter((x: string) => x !== k) : [...(ob.powers || []), k])} title={POWERS[k].label} right={POWERS[k].strong ? <span class="chip red">Strong</span> : undefined} />)}</div>
-                <div class="grid2"><Field label="Weekly budget (0–200)" type="number" value={ob.budget ?? 0} onInput={(v) => setOb('budget', whole(v, 200))} /><div><div class="small" style={{ fontWeight: 700, marginBottom: 6 }}>Visibility</div><Seg value={ob.secrecy || 'public'} onChange={(v) => setOb('secrecy', v)} options={[['public', 'Public'], ['secret', 'Secret']]} /></div></div>
+                <div class="grid2"><Field label={`Weekly budget (0–${lim(w, 'officeBudgetMax')})`} type="number" value={ob.budget ?? 0} onInput={(v) => setOb('budget', whole(v, lim(w, 'officeBudgetMax')))} /><div><div class="small" style={{ fontWeight: 700, marginBottom: 6 }}>Visibility</div><Seg value={ob.secrecy || 'public'} onChange={(v) => setOb('secrecy', v)} options={[['public', 'Public'], ['secret', 'Secret']]} /></div></div>
               </>
             )}
           </>
         )}
-        {e.t === 'set' && <div class="grid2"><Pick label="Number" value={e.key} onChange={(v) => onChange({ ...e, key: v, value: w.config[v] })} options={Object.entries(SETTABLE).map(([k, s]) => [k, s.label])} /><Field label={`New value (now ${w.config[e.key]})`} type="number" value={e.value} onInput={(v) => onChange({ ...e, value: Number(v) })} /></div>}
+        {e.t === 'set' && <div class="grid2"><Pick label="Number" value={e.key} onChange={(v) => onChange({ ...e, key: v, value: setNow(w, v) })} options={[...Object.entries(SETTABLE).map(([k, s]) => [k, s.label] as [string, string]), ...Object.entries(LIMITS).filter(([k]) => !(k in SETTABLE)).map(([k, s]) => [k, `Limit · ${s.area}: ${s.label}`] as [string, string])]} /><Field label={`New value (now ${setNow(w, e.key)}${(SETTABLE[e.key] || LIMITS[e.key]) ? `; ${(SETTABLE[e.key] || LIMITS[e.key]).min}–${(SETTABLE[e.key] || LIMITS[e.key]).max}` : ''})`} type="number" value={e.value} onInput={(v) => onChange({ ...e, value: Number(v) })} /></div>}
         {(e.t === 'budget' || e.t === 'abolish') && <Pick label="Office" value={e.office} onChange={(v) => onChange({ ...e, office: v })} options={Object.values(w.offices).map((o: any) => [o.id, o.name])} />}
-        {e.t === 'budget' && <Field label="Crowns a week (0–200)" type="number" value={e.value} onInput={(v) => onChange({ ...e, value: whole(v, 200) })} />}
+        {e.t === 'budget' && <Field label={`Crowns a week (0–${lim(w, 'officeBudgetMax')})`} type="number" value={e.value} onInput={(v) => onChange({ ...e, value: whole(v, lim(w, 'officeBudgetMax')) })} />}
         {e.t === 'permit' && <p class="small muted" style={{ margin: 0 }}>Lets any citizen open a licensed bank (25 crowns plus 25 starting capital).</p>}
         {e.t === 'treaty' && (Object.keys(w.offers).length ? <Pick value={e.offer} onChange={(v) => onChange({ ...e, offer: v })} options={Object.values(w.offers).map((o: any) => [o.id, o.title])} /> : <p class="small muted">No offers right now. The Foreign Office can ask for one.</p>)}
         {e.t === 'breakTreaty' && (Object.values(w.treaties).some((t: any) => t.status === 'active') ? <Pick value={e.treaty} onChange={(v) => onChange({ ...e, treaty: v })} options={Object.values(w.treaties).filter((t: any) => t.status === 'active').map((t: any) => [t.id, t.title])} /> : <p class="small muted">No treaties in force.</p>)}

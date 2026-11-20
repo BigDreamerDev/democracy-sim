@@ -4,6 +4,7 @@
 // Money: buying pays the 'exchange' account, plus stamp duty to the Treasury; selling and dividends are paid from
 // it. When it runs short it draws on the Reserve (new money, which feeds inflation); its surplus goes back each payday.
 // Holdings are private (view.ts), except the Register of Interests: what MPs, ministers and the head of state own.
+import { lim } from './limits';
 import { own, text, stamp, W, Id, DAY, HOUR, fail, rand, chance, nm, newId, gazette, transfer, bal, ca, hasPower, isPM, holderOf, clamp, mustBeFree, int, bump, inGov, isMP, addCard, fmtTime } from './core';
 import { atWar, conflictOf } from './foreign';
 
@@ -130,11 +131,11 @@ export function buy(w: W, actor: Id, sym: unknown, n: unknown) {
   const c = typeof sym === 'string' ? company(sym) : undefined;
   if (!c) fail('Pick a company on the Exchange.');
   if (halted(w)) fail('Trading is halted. It resumes when the halt ends.');
-  const k = int(n, 1, MAX_HOLD, 'number of shares');
+  const k = int(n, 1, lim(w, 'holdMax'), 'number of shares');
   const x = exchange(w);
   const h = (x.holdings[actor] ??= {});
   const have = h[c.sym]?.n || 0;
-  if (have + k > MAX_HOLD) fail(`You can hold ${MAX_HOLD} shares of a company at most. You hold ${have}.`);
+  if (have + k > lim(w, 'holdMax')) fail(`You can hold ${lim(w, 'holdMax')} shares of a company at most. You hold ${have}.`);
   if (c.nation && w.nations[c.nation]?.embargo) fail(`${w.nations[c.nation].name} is under our embargo: its shares cannot be bought.`);
   const cost = Math.ceil(k * price(w, c.sym));
   const duty = Math.ceil((cost * x.duty) / 100);
@@ -154,7 +155,7 @@ export function sell(w: W, actor: Id, sym: unknown, n: unknown) {
   if (halted(w)) fail('Trading is halted. It resumes when the halt ends.');
   const x = exchange(w);
   const h = x.holdings[actor]?.[c.sym];
-  const k = int(n, 1, MAX_HOLD, 'number of shares');
+  const k = int(n, 1, lim(w, 'holdMax'), 'number of shares');
   if (!h || h.n < k) fail(`You hold ${h?.n || 0} ${c.sym}.`);
   const got = Math.floor(k * price(w, c.sym));
   const basis = Math.round((h.cost * k) / h.n);
@@ -181,7 +182,7 @@ export function halt(w: W, actor: Id) {
 // stamp duty on purchases, 0–5%: the Chancellor (power grant), or the PM with no Chancellor
 export function setDuty(w: W, actor: Id, rate: unknown) {
   if (!(holderOf(w, 'treasury') === actor) && !(isPM(w, actor) && !holderOf(w, 'treasury'))) fail('Only the Chancellor sets stamp duty.');
-  const r = int(rate, 0, 5, 'stamp duty');
+  const r = int(rate, 0, lim(w, 'stampDutyMax'), 'stamp duty');
   exchange(w).duty = r;
   gazette(w, 'money', `Stamp duty on shares is now ${r}%.`, '#/exchange');
 }
@@ -243,7 +244,7 @@ export function fundTrade(w: W, sym: string, crowns: number, sell: boolean, ref:
   const p = price(w, sym);
   const h = (x.holdings[FUND] ??= {});
   if (!sell) {
-    const n = Math.min(MAX_HOLD * 5 - (h[sym]?.n || 0), Math.floor(crowns / p));
+    const n = Math.min(lim(w, 'holdMax') * 5 - (h[sym]?.n || 0), Math.floor(crowns / p));
     if (n < 1) return gazette(w, 'money', `${ref}: the wealth fund could not buy any ${sym}.`, '#/exchange');
     const cost = Math.ceil(n * p);
     transfer(w, 'treasury', 'exchange', cost, `Wealth fund bought ${n} ${sym} (${ref})`);
@@ -380,10 +381,10 @@ export function floatCompany(w: W, actor: Id, a: any) {
   const sym = text(a?.sym, 3, 4, 'ticker').toUpperCase();
   if (!/^[A-Z]{3,4}$/.test(sym)) fail('A ticker is 3 or 4 letters.');
   if (company(sym) || own(x.listed, sym)) fail(`${sym} is taken.`);
-  if (listings(w).filter((l) => l.owner === actor && l.status === 'listed').length >= 2) fail('You can run two listed companies at most.');
-  const shares = int(a?.shares, 50, 1000, 'number of shares');
+  if (listings(w).filter((l) => l.owner === actor && l.status === 'listed').length >= lim(w, 'companiesEach')) fail(lim(w, 'companiesEach') === 1 ? 'You can run one listed company at most.' : `You can run ${lim(w, 'companiesEach')} listed companies at most.`);
+  const shares = int(a?.shares, 50, lim(w, 'listSharesMax'), 'number of shares');
   const ipo = Math.round(Number(a?.price) * 100) / 100;
-  if (!(ipo >= 1 && ipo <= 50)) fail('The opening price must be from 1 to 50 crowns.');
+  if (!(ipo >= 1 && ipo <= lim(w, 'ipoMax'))) fail(`The opening price must be from 1 to ${lim(w, 'ipoMax')} crowns.`);
   // the founder keeps at least a tenth, and sells at least 10
   const keep = int(a?.keep ?? 0, Math.ceil(shares / 10), shares - 10, 'shares you keep');
   let name: string;
@@ -397,7 +398,7 @@ export function floatCompany(w: W, actor: Id, a: any) {
   } else {
     name = text(a?.name, 3, 40, 'company name');
   }
-  const capital = kind === 'company' ? int(a?.capital, 20, 500, 'starting capital') : 0;
+  const capital = kind === 'company' ? int(a?.capital, 20, lim(w, 'capitalMax'), 'starting capital') : 0;
   transfer(w, ca(actor), 'treasury', LIST_FEE, `Listing ${sym} on the Exchange`);
   const l = { sym, name, kind, bank: bankId, owner: actor, founder: actor, sector: kind === 'bank' ? 'Banking' : SECTORS.includes(a?.sector) ? a.sector : 'Trade', about: kind === 'bank' ? `${name}, a citizen's bank.` : text(a?.about, 0, 160, 'description') || `${name}, founded by ${nm(w, actor)}.`, shares, unsold: shares - keep, mm: 0, ipo, at: w.now, status: 'listed', profits: [] as number[] };
   x.listed[sym] = l;
@@ -411,10 +412,10 @@ function buyListed(w: W, actor: Id, sym: string, n: unknown) {
   const l = x.listed[sym];
   if (l.status !== 'listed') fail(`${l.name} has gone bust.`);
   if (halted(w)) fail('Trading is halted. It resumes when the halt ends.');
-  const k = int(n, 1, MAX_HOLD, 'number of shares');
+  const k = int(n, 1, lim(w, 'holdMax'), 'number of shares');
   const h = (x.holdings[actor] ??= {});
   const have = h[sym]?.n || 0;
-  if (have + k > MAX_HOLD) fail(`You can hold ${MAX_HOLD} shares of a company at most. You hold ${have}.`);
+  if (have + k > lim(w, 'holdMax')) fail(`You can hold ${lim(w, 'holdMax')} shares of a company at most. You hold ${have}.`);
   if (k > l.unsold + l.mm) fail(`Only ${l.unsold + l.mm} ${sym} shares are for sale.`);
   const p = price(w, sym);
   const cost = Math.ceil(k * p);
@@ -438,7 +439,7 @@ function sellListed(w: W, actor: Id, sym: string, n: unknown) {
   const l = x.listed[sym];
   if (halted(w)) fail('Trading is halted. It resumes when the halt ends.');
   const h = x.holdings[actor]?.[sym];
-  const k = int(n, 1, MAX_HOLD, 'number of shares');
+  const k = int(n, 1, lim(w, 'holdMax'), 'number of shares');
   if (!h || h.n < k) fail(`You hold ${h?.n || 0} ${sym}.`);
   if (l.status !== 'listed') fail(`${l.name} has gone bust. Its shares are worth nothing.`);
   // the Exchange buys back at the market price, but never above what the company is worth

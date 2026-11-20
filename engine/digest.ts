@@ -5,7 +5,7 @@ import { CONDITIONS } from './conditions';
 import { W, Id, DAY, currencyText, nm, fmtTime, fmtDay, ordinal, hosTitle, majority } from './core';
 import { crisisById } from './crises';
 import { KINDS } from './proposals';
-import { SETTABLE } from './proposals';
+import { setSpec } from './proposals';
 
 export function digest(w: W): string {
   const L: string[] = [];
@@ -50,7 +50,7 @@ export function digest(w: W): string {
     L.push('');
     L.push('*Before the House*');
     live.forEach((p) => {
-      const sets = (p.clauses || []).filter((c: any) => c.t === 'set' && SETTABLE[c.key]).map((c: any) => `${SETTABLE[c.key].label.toLowerCase()} ${typeof c.from === 'number' ? `${c.from}→` : '→'}${c.value}`);
+      const sets = (p.clauses || []).filter((c: any) => c.t === 'set' && setSpec(c.key)).map((c: any) => `${setSpec(c.key)!.label.toLowerCase()} ${typeof c.from === 'number' ? `${c.from}→` : '→'}${c.value}`);
       const stage = p.stage === 'debate' ? `debate, vote opens ${fmtTime(w, p.debateEndsAt)}` : p.stage === 'vote' ? `voting, closes ${fmtTime(w, p.voteEndsAt)}` : p.stage === 'assent' ? 'awaiting assent' : p.stage === 'override' ? 'veto override vote' : 'with the head of state';
       L.push(`• ${p.kind === 'bill' ? `Bill ${p.n}: ` : `${KINDS[p.kind]?.name}: `}${p.title} (${stage})${sets.length ? ` [${sets.join('; ')}]` : ''}`);
     });

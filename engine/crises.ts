@@ -6,6 +6,7 @@
 // - `chainOnly` crises never appear at random; `weight` makes a crisis rarer (default 1); `needs` limits where it fits.
 // `effects` is what players see before choosing, so keep it honest and in step with `run`.
 // Money only moves through transfer(), so the ledger balances.
+import { lim } from './limits';
 import { W, Id, DAY, HOUR, shuffle, bump, stamp, int, clamp, fail, newId, transfer, meter, approve, earn, addCard, allCitizens, holderOf, chance, rand, ca, bal, gazette, legit, detained, exiled, isMP, isPM, mps, nm, mustBeFree, weekNo, tick, own } from './core';
 import { armyLoyalty } from './foreign';
 import { openMarket, settleMarket } from './markets';
@@ -1242,7 +1243,7 @@ export function speakCrisis(w: W, actor: Id, id: Id, choice: number, text: strin
   if (said.length < 8) fail('Say a little more.');
   if (said.length > 280) fail('Keep it under 280 characters. It goes in the Gazette.');
   c.speeches = c.speeches || [];
-  if (c.speeches.filter((s: any) => s.by === actor).length >= 2) fail('You have made your two speeches on this one.');
+  if (c.speeches.filter((s: any) => s.by === actor).length >= lim(w, 'crisisSpeeches')) fail(`You have made your ${lim(w, 'crisisSpeeches') === 1 ? 'speech' : lim(w, 'crisisSpeeches') + ' speeches'} on this one.`);
   if (!c.speeches.some((s: any) => s.by === actor)) (earn(w, actor, 1, 'Spoke on a crisis'), tick(w, actor, 'crisis'));
   c.speeches.push({ id: newId(w, 'cs'), by: actor, choice, text: said, at: w.now });
   w.citizens[actor].stats.crisisSpeeches = (w.citizens[actor].stats.crisisSpeeches || 0) + 1;
@@ -1387,9 +1388,10 @@ export function help(w: W, actor: Id, id: unknown, amount: unknown) {
   const c = own(w.crises, id);
   if (!c || c.status !== 'open') fail('That crisis is over.');
   mustBeFree(w, actor);
-  const n = int(amount, 1, 25, 'gift (1–25 crowns)');
+  const most = lim(w, 'crisisGift');
+  const n = int(amount, 1, most, `gift (1–${most} crowns)`);
   if (bal(w, ca(actor)) < n) fail('You do not have that many crowns.');
-  if ((c.helpers[actor] || 0) + n > 25) fail('You can give up to 25 to each crisis.');
+  if ((c.helpers[actor] || 0) + n > most) fail(`You can give up to ${most} to each crisis.`);
   transfer(w, ca(actor), 'treasury', n, 'Crisis relief fund');
   const before = Math.floor((c.helpers[actor] || 0) / 5);
   c.helpers[actor] = (c.helpers[actor] || 0) + n;
@@ -1476,7 +1478,7 @@ export function bribe(w: W, actor: Id, id: unknown, choice: unknown, amount: unk
   const t = crisisById(c.type)!;
   const i = Number(choice);
   if (!(Number.isInteger(i) && t.options[i])) fail('Pick a response.');
-  const n = int(amount, 5, 50, 'offer (5–50 crowns)');
+  const n = int(amount, 5, lim(w, 'crisisBribeMax'), `offer (5–${lim(w, 'crisisBribeMax')} crowns)`);
   if (bal(w, ca(actor)) < n) fail('You do not have that many crowns.');
   c.bribes ??= {};
   c.bribes[actor] = { choice: i, amount: n, at: w.now };

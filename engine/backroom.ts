@@ -1,4 +1,5 @@
 // The backroom: private deals, secret cards (leak, use or burn), coups, exile and pardons. Opens in week 3.
+import { lim } from './limits';
 import { heroOf, beaten, atFront } from './war';
 import { W, Id, DAY, HOUR, fail, newId, chance, cit, nm, own, text as txt, int, clamp, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, meter, needIntrigue, canSeeCard, addCard, isHOS, isMP, isPM, inDanger, holderOf, hasPower, transfer, ca, hosTitle, bump, inForce, inGov, isMinister } from './core';
 import { vacateSeat, clearMinisters, callGeneralElection } from './politics';
@@ -12,7 +13,7 @@ export function offerDeal(w: W, actor: Id, to: Id, text: string) {
   cit(w, to);
   if (to === actor) fail('Pick someone else.');
   const t = txt(text, 8, 500, 'deal');
-  if (Object.values(w.deals).filter((d: any) => d.from === actor && d.status === 'offered').length >= 5) fail('You have 5 deals waiting for an answer. Wait for one first.');
+  if (Object.values(w.deals).filter((d: any) => d.from === actor && d.status === 'offered').length >= lim(w, 'dealsOpen')) fail(`You have ${lim(w, 'dealsOpen')} deal${lim(w, 'dealsOpen') === 1 ? '' : 's'} waiting for an answer. Wait for one first.`);
   const id = newId(w, 'd');
   w.deals[id] = { id, from: actor, to, text: t, status: 'offered', at: w.now };
 }
@@ -135,7 +136,7 @@ export function plotNeeds(w: W, p: any) {
   const need = inForce(w, 'security') ? Math.max(4, base + 2) : base;
   const hasGeneral = !!w.offices.army && !!general && p.members.includes(general);
   const chest = p.chest || 0;
-  const preps = [hasGeneral, !!p.backer, chest >= CHEST_FULL].filter(Boolean).length;
+  const preps = [hasGeneral, !!p.backer, chest >= lim(w, 'warChestFull')].filter(Boolean).length;
   return { need, enough: p.members.length >= need, armyOk: true, hasGeneral, chest, preps, swift: preps >= 2 && !inForce(w, 'security'), pretext: pretext(w), risk: Math.min(90, 10 + 5 * p.members.length + 5 * preps + (p.heat || 0)) };
 }
 export function startPlot(w: W, actor: Id, name: string) {
@@ -197,8 +198,8 @@ export function investigate(w: W, actor: Id, target: Id) {
   cit(w, target);
   if (target === actor) fail('Pick someone else.');
   // State Security Act: the PM may make two a day while there is no Director
-  const per = inForce(w, 'security') && isPM(w, actor) ? 2 : 1;
-  if (w.probes.filter((x: any) => x.by === actor && w.now - x.at < DAY).length >= per) fail(per === 1 ? 'One investigation a day.' : 'Two investigations a day.');
+  const per = lim(w, 'probesPerDay') + (inForce(w, 'security') && isPM(w, actor) ? 1 : 0);
+  if (w.probes.filter((x: any) => x.by === actor && w.now - x.at < DAY).length >= per) fail(per === 1 ? 'One investigation a day.' : `${per} investigations a day.`);
   w.probeAt = w.now;
   const yes = Object.values(w.plots).some((p: any) => p.status === 'planning' && p.members.includes(target));
   w.probes.unshift({ id: newId(w, 'pb'), by: actor, target, at: w.now, yes });
@@ -208,8 +209,9 @@ export function investigate(w: W, actor: Id, target: Id) {
 export function payChest(w: W, actor: Id, pid: Id, amount: number) {
   const p = own(w.plots, pid);
   if (!p || p.status !== 'planning' || !p.members.includes(actor)) fail('You are not in that plot.');
-  const amt = int(amount, 1, CHEST_FULL, 'amount');
-  if ((p.chest || 0) + amt > CHEST_FULL) fail(`The chest is full at ${CHEST_FULL} crowns. It has ${p.chest || 0}.`);
+  const full = lim(w, 'warChestFull');
+  const amt = int(amount, 1, full, 'amount');
+  if ((p.chest || 0) + amt > full) fail(`The chest is full at ${full} crowns. It has ${p.chest || 0}.`);
   transfer(w, ca(actor), 'escrow', amt, 'A private subscription');
   p.chest = (p.chest || 0) + amt;
   p.paid[actor] = (p.paid[actor] || 0) + amt;
@@ -352,7 +354,7 @@ export function coupTally(w: W) {
   add('coup', k.march ? 3 : 0, 'The Army marches with its General');
   add('coup', k.backer ? 1 : 0, `Backed by ${w.nations[k.backer]?.name}`);
   add('coup', k.pretext ? 1 : 0, 'A realm already in trouble');
-  add('coup', k.chest >= CHEST_FULL ? 2 : k.chest >= CHEST_FULL / 2 ? 1 : 0, 'A war chest');
+  add('coup', k.chest >= lim(w, 'warChestFull') ? 2 : k.chest >= lim(w, 'warChestFull') / 2 ? 1 : 0, 'A war chest');
   add('gov', w.meters.stability >= 60 ? 1 : 0, 'A settled realm');
   const general = holderOf(w, 'army');
   const silent = !general || (!k.plotters.includes(general) && !k.declared[general]);

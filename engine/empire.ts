@@ -4,6 +4,7 @@
 // the realm: it can levy tribute from provinces (more money, more unrest), name a governor for each (a citizen, paid
 // 5 a week, who halves the chance of an uprising), garrison them, and, while the Act is law, take friendly nations as
 // protectorates: they pay 10 a week and fight beside us, but chafe, and break away if they stop liking us.
+import { lim } from './limits';
 import { theName, W, Id, DAY, fail, own, cit, nm, gazette, transfer, bal, ca, chance, stamp, approve, meter, mustBeFree, isPM, hasPower, newId, realmPlace, inForce, allCitizens, earn, bump } from './core';
 import { createOffice, TEMPLATES } from './offices';
 import { imperialPurse } from './warmachine';
@@ -213,7 +214,7 @@ export function governorDecree(w: W, actor: Id, pid: unknown, kind: unknown) {
   if (kind === 'tribute') (transfer(w, 'reserve', imperialPurse(w), 12, `Extra tribute from ${name}`), (p.strainUntil = week));
   if (kind === 'militia') {
     if (p.militiaAt && w.now - p.militiaAt < 7 * DAY) fail('The province raised a militia this week already.');
-    if ((w.army.troops ?? 6) >= 20) fail('The Army has all the regiments it can field.');
+    if ((w.army.troops ?? 6) >= lim(w, 'regiments')) fail('The Army has all the regiments it can field.');
     w.army.troops = (w.army.troops ?? 6) + 1;
     p.militiaAt = w.now;
     p.strainUntil = week;

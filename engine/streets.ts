@@ -1,6 +1,7 @@
 // The Streets: the parts of the game played in real life. Everything here is opt-in, and nobody who hasn't
 // joined can be targeted or can target anyone. Contracts (Assassins), check-ins, bounties, market stalls and
 // civic jobs. Crowns never turn into real money and real money never turns into crowns.
+import { lim } from './limits';
 import { W, Id, DAY, HOUR, fail, newId, rand, own, text, chance, shuffle, cit, nm, gazette, earn, spend, stamp, approve, transfer, ca, addCard, needIntrigue, mustBeFree, ghost, hasPower, holderOf, isPM, bump, weekNo, adminDid } from './core';
 
 export const SAFE_ZONES = [
@@ -116,7 +117,7 @@ export function takeContract(w: W, actor: Id, target: Id, crowns: number) {
   if (!inStreets(w, target)) fail(`${t.name} hasn’t joined the Streets, so they can’t be targeted.`);
   if (ghost(w, target)) fail(`${t.name} is already a ghost. Wait until they are back.`);
   const amt = Math.round(Number(crowns));
-  if (!(amt >= 10 && amt <= 100)) fail('Stake between 10 and 100 crowns.');
+  if (!(amt >= 10 && amt <= lim(w, 'contractStakeMax'))) fail(`Stake between 10 and ${lim(w, 'contractStakeMax')} crowns.`);
   const s = streetsOf(w);
   if (Object.values(s.contracts).some((k: any) => k.by === actor && ['live', 'claimed'].includes(k.status))) fail('You already have a live contract. Finish it or let it run out.');
   spend(w, actor, 10, 'Took out a contract');
@@ -280,8 +281,8 @@ export function postBounty(w: W, actor: Id, text: string, reward: number) {
   mustBeIn(w, actor);
   const t = clean(text, 8, 200, 'task');
   const r = Math.round(Number(reward));
-  if (!(r >= 5 && r <= 200)) fail('Offer between 5 and 200 crowns.');
-  if (Object.values(w.bounties).filter((b: any) => b.by === actor && ['open', 'taken', 'done'].includes(b.status)).length >= 3) fail('You have 3 bounties going. Settle one first.');
+  if (!(r >= 5 && r <= lim(w, 'bountyMax'))) fail(`Offer between 5 and ${lim(w, 'bountyMax')} crowns.`);
+  if (Object.values(w.bounties).filter((b: any) => b.by === actor && ['open', 'taken', 'done'].includes(b.status)).length >= lim(w, 'bountiesEach')) fail(`You have ${lim(w, 'bountiesEach')} bount${lim(w, 'bountiesEach') === 1 ? 'y' : 'ies'} going. Settle one first.`);
   transfer(w, ca(actor), 'escrow', r, 'Bounty posted');
   const id = newId(w, 'b');
   w.bounties[id] = { id, by: actor, text: t, reward: r, status: 'open', at: w.now, dueAt: w.now + 7 * DAY, taker: null, note: '' };
@@ -355,8 +356,8 @@ export function openStall(w: W, actor: Id, title: string, price: number) {
   mustBeIn(w, actor);
   const t = clean(title, 4, 120, 'listing');
   const p = Math.round(Number(price));
-  if (!(p >= 1 && p <= 200)) fail('Price it between 1 and 200 crowns.');
-  if (Object.values(w.stalls).filter((s: any) => s.by === actor && s.status === 'open').length >= 3) fail('You have 3 stalls open. Close one first.');
+  if (!(p >= 1 && p <= lim(w, 'stallPriceMax'))) fail(`Price it between 1 and ${lim(w, 'stallPriceMax')} crowns.`);
+  if (Object.values(w.stalls).filter((s: any) => s.by === actor && s.status === 'open').length >= lim(w, 'stallsEach')) fail(`You have ${lim(w, 'stallsEach')} stall${lim(w, 'stallsEach') === 1 ? '' : 's'} open. Close one first.`);
   // closed stalls don't pile up: past 10, the oldest closed one with nothing outstanding goes
   const mine = (Object.values(w.stalls) as any[]).filter((s) => s.by === actor).sort((a, b) => a.at - b.at);
   const gone = mine.length >= 10 && mine.find((s) => s.status === 'closed' && !Object.values(w.orders).some((o: any) => o.stall === s.id && ['paid', 'delivered'].includes(o.status)));

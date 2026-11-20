@@ -2,7 +2,8 @@ import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, Empty, LinkRow, Seg, Opt, Field, Pick, Icon, ThemeSwitch, Locked , When } from '../ui';
 import { nm, isMP, isPM, isHOS, mps, sideOf, sideName, majority, allCitizens, exiled, intrigueOpen, bal, ca, hosTitle, holderOf, officesOf } from '../../../engine/index';
-import { leaderOfOpposition, leaderOfSide, sideSeats, supportFor, members, HOS_METHODS , commands, FORM_DAYS, challengeNeed, BREAKAWAY_MPS } from '../../../engine/politics';
+import { leaderOfOpposition, leaderOfSide, sideSeats, supportFor, members, HOS_METHODS , commands, challengeNeed } from '../../../engine/politics';
+import { lim } from '../../../engine/limits';
 import { POWERS, TEMPLATES, FILL, canAppoint } from '../../../engine/offices';
 import { RoleChips } from '../Roles';
 import { EmpirePanel } from './empire';
@@ -162,7 +163,7 @@ export function HOS() {
     <Page back={['#/realm', 'The realm']} kicker={mon ? 'The Crown' : 'The Presidency'} title={sovereign(w) ? stateMode(w)!.name : <>{hosTitle(w)} <Who id={w.hos.holder} /></>} intro={sovereign(w) ? `The Sovereign. Reigns and rules: Head of State and Prime Minister under the Crown Act. ${nm(w, w.hos.holder)} on the throne.` : `${HOS_METHODS[w.config.hos].find((m) => m.id === w.config.hosMethod)?.label}. ${mon ? 'Reigns, does not rule: grants assent, invites the PM, honours, pardons.' : 'Signs or vetoes bills, invites the PM, honours, pardons.'}`}>
       {!mine && <Card kind="dashed" style={{ marginTop: 14 }}>Switch to {nm(w, w.hos.holder)} in the demo controls to act as head of state.</Card>}
       {!w.pm && w.phase === 'running' && (
-        <Sec title="Invite a Prime Minister" sub={<>A government needs {majority(w)} of {w.config.seats} seats. Only the leader of a party or signed coalition with that many can be invited.{w.pmInviteDue ? <> If you haven't acted within <Left at={w.pmInviteDue} />, whoever commands a majority is invited for you.</> : null} {w.formingSince ? <>With no majority, Parliament is dissolved <When at={w.formingSince + FORM_DAYS * 86400000} />.</> : null}</>}>
+        <Sec title="Invite a Prime Minister" sub={<>A government needs {majority(w)} of {w.config.seats} seats. Only the leader of a party or signed coalition with that many can be invited.{w.pmInviteDue ? <> If you haven't acted within <Left at={w.pmInviteDue} />, whoever commands a majority is invited for you.</> : null} {w.formingSince ? <>With no majority, Parliament is dissolved <When at={w.formingSince + lim(w, 'formDays') * 86400000} />.</> : null}</>}>
           <ul class="list">{leaders.sort((a, b) => supportFor(w, b) - supportFor(w, a)).map((l) => { const ok = commands(w, l); return <li class="row"><span><Who id={l} /><div class="small muted">{supportFor(w, l)} of {w.config.seats} seats{ok ? ', a majority' : `, ${majority(w) - supportFor(w, l) > 0 ? `${majority(w) - supportFor(w, l)} short` : 'not the coalition leader'}`}</div></span>{mine && <Btn small disabled={!ok} onClick={() => act('gov.invite', { target: l }, 'Invited.')}>Invite</Btn>}</li>; })}</ul>
           {!leaders.some((l) => commands(w, l)) && <p class="small" style={{ margin: '8px 0 0', fontWeight: 700 }}>Hung parliament: nobody commands a majority yet. Party leaders must agree a coalition in <a href="#/cabinet">Cabinet and coalition</a>.</p>}
         </Sec>
@@ -445,13 +446,13 @@ function Breakaways({ p }: { p: any }) {
   const others = members(w, p.id).filter((x) => x !== me);
   const mpCount = (b: any) => b.signed.filter((x: string) => isMP(w, x) && w.citizens[x]?.party === p.id).length;
   return (
-    <Sec title="Break away" sub={`In private, ask members to leave with you and found a new party. Once ${BREAKAWAY_MPS} MPs have signed, you can launch it: everyone who signed goes, seats and all. Unlaunched after 2 days, it’s off.`}>
+    <Sec title="Break away" sub={`In private, ask members to leave with you and found a new party. Once ${lim(w, 'breakawayMPs')} MP${lim(w, 'breakawayMPs') === 1 ? ' has' : 's have'} signed, you can launch it: everyone who signed goes, seats and all. Unlaunched after 2 days, it’s off.`}>
       <div class="stack">
         {mine.map((b) => (
           <Card kind="tint">
             <div class="row"><b><i class="dot" style={{ background: b.colour, marginRight: 6 }} />{b.name}</b><span class="chip red">Private</span></div>
-            <p class="small" style={{ margin: '4px 0' }}>Planned by {nm(w, b.by)}. Signed: {b.signed.map((x: string) => nm(w, x)).join(', ')}{b.declined.length ? `. Said no: ${b.declined.map((x: string) => nm(w, x)).join(', ')}` : ''}. {mpCount(b)} of {BREAKAWAY_MPS} MPs. Off <When at={b.dueAt} />.</p>
-            {b.by === me ? <Btn small kind="danger" disabled={mpCount(b) < BREAKAWAY_MPS} onClick={() => confirm(`Launch the ${b.name}? Everyone who signed leaves the ${p.name} with you. Costs 10 crowns.`) && act('party.breakawayLaunch', { breakaway: b.id }, 'You’ve split the party.')}>Launch it (10 crowns)</Btn>
+            <p class="small" style={{ margin: '4px 0' }}>Planned by {nm(w, b.by)}. Signed: {b.signed.map((x: string) => nm(w, x)).join(', ')}{b.declined.length ? `. Said no: ${b.declined.map((x: string) => nm(w, x)).join(', ')}` : ''}. {mpCount(b)} of {lim(w, 'breakawayMPs')} MPs. Off <When at={b.dueAt} />.</p>
+            {b.by === me ? <Btn small kind="danger" disabled={mpCount(b) < lim(w, 'breakawayMPs')} onClick={() => confirm(`Launch the ${b.name}? Everyone who signed leaves the ${p.name} with you. Costs 10 crowns.`) && act('party.breakawayLaunch', { breakaway: b.id }, 'You’ve split the party.')}>Launch it (10 crowns)</Btn>
               : <div class="row" style={{ justifyContent: 'flex-start', gap: 8 }}>{!b.signed.includes(me) && <Btn small onClick={() => act('party.breakawaySign', { breakaway: b.id, yes: true }, 'You’re in.')}>I’m in</Btn>}{!b.declined.includes(me) && <Btn small kind="plain" onClick={() => act('party.breakawaySign', { breakaway: b.id, yes: false }, 'You said no.')}>{b.signed.includes(me) ? 'Pull out' : 'No'}</Btn>}</div>}
           </Card>
         ))}

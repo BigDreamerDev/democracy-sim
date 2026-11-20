@@ -200,7 +200,7 @@ Accounts are `c:<citizen id>` for people, `treasury`, `reserve`, `office:<id>`, 
 | Field | What |
 |-|-|
 | `now`, `phase` | the realm's clock; `'convention'` then `'running'` |
-| `config` | realm name, seats, head of state type and title, pay, tax, timings |
+| `config` | realm name, seats, head of state type and title, pay, tax, timings; `limits` = caps changed by law (`{key: value}`; any key not there is at its default; the full list with defaults and ranges is `LIMITS` in `engine/limits.ts`). Change one with a bill clause `{t:'set', key, value}` |
 | `calendar` | weekly events: `payday`, `pmqs`, `frontpage` → `{ dow, hour }` (UTC; dow 0 = Sunday) |
 | `citizens` | everyone: `name`, `party`, `approval`, `influence`, `stamps`, `titles`, `whip`. Private fields are only filled in for you. |
 | `convention.clauses[]` | `id`, `q` (the question), `options[]` (strings), `votes`, `adopted` (option index or `null`) |

@@ -1,6 +1,7 @@
 // The prediction market: bet crowns on bills, elections and crises. Pari-mutuel: everything staked on an
 // outcome is pooled, and whoever backed the right answer splits the pool in proportion to their stake.
 // Bets are private; the pools (and so the odds) are public. Insiders betting on what they know is allowed.
+import { lim } from './limits';
 import { W, Id, DAY, fail, newId, nm, own, gazette, transfer, ca, bump, mustBeFree, addCard, allCitizens, pick } from './core';
 
 export const MAX_STAKE = 100;
@@ -28,7 +29,7 @@ export function bet(w: W, actor: Id, mid: Id, option: string, amount: number) {
   const amt = Math.round(Number(amount));
   if (!(amt >= 1)) fail('Bet at least 1 crown.');
   const mine = Object.values(m.bets[actor] || {}).reduce((s: number, v: any) => s + v, 0) as number;
-  if (mine + amt > MAX_STAKE) fail(`You can stake at most ${MAX_STAKE} crowns on one market (${MAX_STAKE - mine} left).`);
+  if (mine + amt > lim(w, 'betMax')) fail(`You can stake at most ${lim(w, 'betMax')} crowns on one market (${Math.max(0, lim(w, 'betMax') - mine)} left).`);
   transfer(w, ca(actor), 'market', amt, `Bet: ${m.question}`);
   m.bets[actor] = { ...(m.bets[actor] || {}), [key]: (m.bets[actor]?.[key] || 0) + amt };
   m.pools[key] = (m.pools[key] || 0) + amt;

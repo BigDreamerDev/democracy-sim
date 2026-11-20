@@ -1,6 +1,7 @@
 // The Crown: a new monarch's accession and coronation, homage, coronation honours, abdication to an heir,
 // jubilees and pretenders. Everything here is public. State: w.crown = { reign, offer }, and the line of
 // monarchs in w.fame.monarchs. syncCrown() runs after every command and deadline and whenever the throne changes hands.
+import { lim } from './limits';
 import { W, Id, DAY, HOUR, fail, cit, nm, own, text, int, chance, allCitizens, exiled, detained, mustBeFree, gazette, stamp, approve, meter, bump, transfer, ca, earn, holderOf } from './core';
 import { moodShift } from './foreign';
 import { titleFor } from './empire';
@@ -398,7 +399,7 @@ export function parley(w: W, actor: Id, amount: unknown) {
   if (!r || r.id !== actor || !c) fail('Only a monarch facing a claim can offer terms.');
   if (c.parley) fail('You have already made an offer. Wait for the answer.');
   if (c.parleyRefused) fail('The pretender has already refused your terms.');
-  const amt = int(amount, 0, 100, 'purse');
+  const amt = int(amount, 0, lim(w, 'purseMax'), 'purse');
   if (amt > 0) transfer(w, ca(actor), 'escrow', amt, 'A purse for the pretender');
   c.parley = { crowns: amt, at: w.now };
   gazette(w, 'hos', `${regnal(w, r)} offers ${nm(w, c.by)} a dukedom${amt ? ` and ${amt} crowns` : ''} to give up the claim.`, '#/hos');

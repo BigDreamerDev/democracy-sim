@@ -1,5 +1,6 @@
 // Offices: every role in government is one of these. A law creates an office from a template or from
 // a list of powers; whoever holds it gets those powers as buttons.
+import { lim } from './limits';
 import { notRefused } from './oath';
 import { W, Id, approve, fail, newId, pick, shuffle, allCitizens, cit, nm, gazette, stamp, earn, transfer, bal, isPM, isHOS, hasPower, exiled, barred, detained, holdsAnything, own, text, int } from './core';
 
@@ -154,7 +155,7 @@ export function useGrant(w: W, actor: Id, officeId: string, target: Id, amount: 
   const o = own(w.offices, officeId);
   if (!o || o.holder !== actor || !o.powers.includes('grant')) fail('You cannot pay out from that office.');
   const why = text(reason, 4, 200, 'reason');
-  amount = int(amount, 1, 100, 'grant');
+  amount = int(amount, 1, lim(w, 'grantMax'), 'grant');
   if (!cit(w, target).active) fail('They are no longer a citizen.');
   if (target === actor) fail('Grants go to someone else.');
   const from = o.id === 'treasury' ? 'treasury' : 'office:' + o.id;
@@ -167,7 +168,7 @@ export function useGrant(w: W, actor: Id, officeId: string, target: Id, amount: 
 export function useFine(w: W, actor: Id, officeId: string, target: Id, amount: number, reason: string) {
   const o = own(w.offices, officeId);
   if (!o || (o.holder !== actor && !o.members.includes(actor)) || !o.powers.includes('fine')) fail('That office cannot fine anyone.');
-  amount = int(amount, 1, 10, 'fine');
+  amount = int(amount, 1, lim(w, 'fineMax'), 'fine');
   const why = text(reason, 4, 200, 'reason');
   if (!cit(w, target).active) fail('They are no longer a citizen.');
   transfer(w, 'c:' + target, 'treasury', amount, `Fined by the ${o.name}: ${why}`);

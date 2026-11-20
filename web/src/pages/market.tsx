@@ -4,7 +4,8 @@ import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Left, Empty, Field, Pick, Seg, Who, Photo, PhotoPick } from '../ui';
 import { nm, holderOf, isPM, fmtTime, bal, ca } from '../../../engine/index';
 import { rating, inStreets } from '../../../engine/streets';
-import { odds, MAX_STAKE } from '../../../engine/markets';
+import { odds } from '../../../engine/markets';
+import { lim } from '../../../engine/limits';
 
 const STATUS: Record<string, string> = { open: 'Open', taken: 'Taken', done: 'Waiting for sign-off', paid: 'Paid', cancelled: 'Cancelled', expired: 'Expired', removed: 'Taken down' };
 
@@ -61,7 +62,7 @@ export function Market() {
             <Sec title="Post a bounty" sub="Something safe and fun someone can do in real life. The Returning Officer takes down anything unsafe or humiliating.">
               <Card><div class="stack">
                 <Field label="The task" value={nb.text} onInput={(v) => setNb({ ...nb, text: v })} placeholder="Bring the Chancellor a sausage roll before Friday" />
-                <Field label="Reward (5–200 crowns)" type="number" value={nb.reward} onInput={(v) => setNb({ ...nb, reward: v })} />
+                <Field label={`Reward (5–${lim(w, 'bountyMax')} crowns)`} type="number" value={nb.reward} onInput={(v) => setNb({ ...nb, reward: v })} />
                 <Btn onClick={() => act('bounty.post', { text: nb.text, reward: Number(nb.reward) }, 'Posted. The crowns are in escrow.') && setNb({ text: '', reward: '20' })}>Post it ({bal(w, ca(me))} crowns in your wallet)</Btn>
               </div></Card>
             </Sec>
@@ -106,7 +107,7 @@ export function Market() {
             <Sec title="Open a stall">
               <Card><div class="stack">
                 <Field label="What you’re selling" value={ns.title} onInput={(v) => setNs({ ...ns, title: v })} placeholder="I’ll make your flashcards for one subject" />
-                <Field label="Price (1–200 crowns)" type="number" value={ns.price} onInput={(v) => setNs({ ...ns, price: v })} />
+                <Field label={`Price (1–${lim(w, 'stallPriceMax')} crowns)`} type="number" value={ns.price} onInput={(v) => setNs({ ...ns, price: v })} />
                 <Btn onClick={() => act('stall.open', { title: ns.title, price: Number(ns.price) }, 'Your stall is open.') && setNs({ title: '', price: '10' })}>Open it</Btn>
               </div></Card>
             </Sec>
@@ -152,7 +153,7 @@ export function Bets() {
   const optsOf = (m: any) => (m.kind === 'election' ? Object.keys(w.elections[m.ref]?.candidates || {}).map((id) => ({ key: id, label: nm(w, id) })) : m.options);
   const link = (m: any) => (m.kind === 'prop' ? '#/p/' + m.ref : m.kind === 'election' ? '#/election/' + m.ref : '#/crisis/' + m.ref);
   return (
-    <Page back={['#/realm', 'The realm']} kicker="The betting pools" title="Bets" intro={`Back an outcome with crowns, up to ${MAX_STAKE} on each. Everyone who called it right splits the whole pool in proportion to what they put in. Nobody backed the winner? Everyone is refunded. Bets are private; the pools are public.`}>
+    <Page back={['#/realm', 'The realm']} kicker="The betting pools" title="Bets" intro={`Back an outcome with crowns, up to ${lim(w, 'betMax')} on each. Everyone who called it right splits the whole pool in proportion to what they put in. Nobody backed the winner? Everyone is refunded. Bets are private; the pools are public.`}>
       <Sec title="Open">
         <div class="stack">
           {open.map((m) => {

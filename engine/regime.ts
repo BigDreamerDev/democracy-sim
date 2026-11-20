@@ -8,6 +8,7 @@
 // - fallRegime() ends it: an orderly hand-back goes straight to a Restoration election; anything else gets a
 //   provisional government (w.transition) with its own troubles, then the election. Parliament then holds the
 //   reckoning (w.reckoning) on the people who ran it.
+import { lim } from './limits';
 import { endWar } from './war';
 import { W, Id, DAY, HOUR, fail, newId, chance, pick, cit, nm, own, text as txt, int, clamp, allCitizens, exiled, detained, held, jailed, inForce, isPM, mustBeFree, gazette, earn, spend, stamp, approve, meter, legit, isHOS, isMP, mps, holderOf, transfer, bal, ca, bump, DAYNO, hosTitle, sheltered } from './core';
 import { syncCrown } from './crown';
@@ -282,7 +283,7 @@ function enact(w: W, r: any, kind: string, a: any) {
       if (inRegime(r, c.id)) fail('You cannot arrest the regime.');
       if (!free(w, c.id)) fail('They are already out of reach.');
       if (sheltered(w, c.id)) fail(`${c.name} is sheltering in the ${w.nations[c.refuge.nation]?.name} embassy. Arresting them there would be an act of war.`);
-      if (detainees(w).length >= 3) fail('The cells are full: three are held already. Free someone first.');
+      if (detainees(w).length >= lim(w, 'cells')) fail(`The cells are full: ${lim(w, 'cells')} held already. Free someone first.`);
       const days = int(a.n ?? 2, 1, 2, 'number of days');
       c.detainedUntil = w.now + days * DAY;
       c.detainedNoted = false;
@@ -579,7 +580,7 @@ export function underground(w: W, actor: Id, headline: unknown, body: unknown) {
   if (body !== undefined && body !== null && typeof body !== 'string') fail('The story must be text.');
   const b = String(body ?? '').trim();
   if (b.length > 2000) fail('Keep the story under 2000 characters.');
-  if (w.stories.filter((x: any) => x.underground && x.by === actor && x.at > w.now - DAY).length >= 2) fail('Two pamphlets a day is risk enough.');
+  if (w.stories.filter((x: any) => x.underground && x.by === actor && x.at > w.now - DAY).length >= lim(w, 'pamphletsPerDay')) fail(lim(w, 'pamphletsPerDay') === 1 ? 'One pamphlet a day is risk enough.' : `${lim(w, 'pamphletsPerDay')} pamphlets a day is risk enough.`);
   const named = chance(w, 0.3);
   w.stories.unshift({ id: newId(w, 'st'), paper: null, by: actor, headline: h, body: b, photo: null, status: 'published', at: w.now, cheers: [], underground: true, named });
   bump(w, actor, 'underground');

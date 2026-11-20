@@ -1,12 +1,13 @@
 // The world map (#/atlas) and the war room (#/war). The map is drawn here from fixed geography: a continent split
 // between the realm and its neighbours, the Orrin Isles to the west and the Free City of Austrava on its lagoon to the
 // south. Colours follow each nation's mood; lines show treaties, wars and wars abroad. Every country links to its page.
+import { lim } from '../../../engine/limits';
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Seg, Opt } from '../ui';
 import { hasArmy, isPM, hasPower, holderOf, standing, bal, ca, isMP, autocrat, autocratTitle, speaksForHouse, cap } from '../../../engine/index';
 import { MOODS, PROFILES, TREATIES, PROVINCES, known, shipping, laneClosed } from '../../../engine/foreign';
-import { power, STRATEGIES, REGIMENT_COST, MAX_REGIMENTS, BOND_PAYS, allies, EMBED_COST, termsText, garrisoned } from '../../../engine/war';
+import { power, STRATEGIES, REGIMENT_COST, BOND_PAYS, allies, EMBED_COST, termsText, garrisoned } from '../../../engine/war';
 import { canMarch } from '../../../engine/backroom';
 import { EmpirePanel, WarMachine } from './empire';
 import { regimentCost } from '../../../engine/warmachine';
@@ -416,8 +417,8 @@ export function War() {
 function Regiments({ cmd, n, setN, troops, war }: { cmd: boolean; n: string; setN: (v: string) => void; troops: number; war?: boolean }) {
   const { world: w } = useStore();
   return (
-    <Sec title="Regiments" sub={`${troops} of ${MAX_REGIMENTS}. Each new one costs ${regimentCost(w, REGIMENT_COST)} from the Treasury, and every one over six adds 3 a week to upkeep.`}>
-      <div class="regiments" aria-hidden="true">{Array.from({ length: MAX_REGIMENTS }, (_, i) => <i class={i < troops ? 'on' : ''} />)}</div>
+    <Sec title="Regiments" sub={`${troops} of ${lim(w, 'regiments')}. Each new one costs ${regimentCost(w, REGIMENT_COST)} from the Treasury, and every one over six adds 3 a week to upkeep.`}>
+      <div class="regiments" aria-hidden="true">{Array.from({ length: Math.max(troops, lim(w, 'regiments')) }, (_, i) => <i class={i < troops ? 'on' : ''} />)}</div>
       {cmd && <div class="grid2" style={{ marginTop: 10 }}><Field label="Regiments (1–5)" type="number" value={n} onInput={setN} /><div class="row" style={{ alignSelf: 'end', gap: 6 }}><Btn small onClick={() => act('army.recruit', { n: Number(n) }, 'Raised.')}>Raise</Btn>{!war && <Btn small kind="plain" onClick={() => confirm('Disband regiments? The Army will not like it.') && act('army.disband', { n: Number(n) }, 'Disbanded.')}>Disband</Btn>}</div></div>}
     </Sec>
   );

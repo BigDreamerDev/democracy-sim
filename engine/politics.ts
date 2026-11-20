@@ -1,4 +1,5 @@
 // The Founding Convention, national elections (top N win, countback fills gaps), the head of state,
+import { lim } from './limits';
 import { syncCrown } from './crown';
 // parties, forming a government, coalitions, the shadow cabinet, seasons, ambitions and weekly objectives.
 import {
@@ -544,7 +545,7 @@ export function anchor(w: W, actor: Id, eid: Id, line: unknown) {
   if (!poll) fail('There is no exit poll to comment on yet.');
   poll.comments ??= [];
   if (poll.comments.some((c: any) => c.by === actor)) fail('You have already had your say on this poll.');
-  if (poll.comments.length >= 5) fail('The panel is full for this poll. Wait for the next one.');
+  if (poll.comments.length >= lim(w, 'pollPanel')) fail('The panel is full for this poll. Wait for the next one.');
   poll.comments.push({ by: actor, paper: paper.name, text: text(line, 3, 200, 'comment'), at: w.now });
 }
 // every method returns the same shape: a score per candidate for display, the full order (winners first, then
@@ -791,7 +792,7 @@ export function partyMotion(w: W, actor: Id, motion: string) {
   const c = cit(w, actor);
   if (!c.party) fail('Join a party first.');
   const t = text(motion, 6, 300, 'motion');
-  if (w.parties[c.party].motions.filter((m: any) => m.by === actor && m.status === 'open').length >= 3) fail('You have 3 motions open already.');
+  if (w.parties[c.party].motions.filter((m: any) => m.by === actor && m.status === 'open').length >= lim(w, 'partyMotions')) fail(`You have ${lim(w, 'partyMotions')} motion${lim(w, 'partyMotions') === 1 ? '' : 's'} open already.`);
   w.parties[c.party].motions.unshift({ id: newId(w, 'pm'), by: actor, text: t, votes: {}, status: 'open', at: w.now });
 }
 export function partyMotionVote(w: W, actor: Id, mid: Id, v: 'for' | 'against') {
@@ -868,7 +869,7 @@ export function standDown(w: W, actor: Id) {
 
 // Breakaways: members plot in private to split from their party. When at least 2 MPs have signed, the founder launches
 // it: a new party with everyone who signed, seats and all. Costs the founder 10 crowns. Unlaunched after 2 days, it's off.
-export const BREAKAWAY_MPS = 2;
+export const BREAKAWAY_MPS = 2; // the default: the law's value is lim(w, 'breakawayMPs')
 export function planBreakaway(w: W, actor: Id, a: any) {
   mustBeFree(w, actor);
   const c = cit(w, actor);
@@ -879,7 +880,7 @@ export function planBreakaway(w: W, actor: Id, a: any) {
   if (typeof a?.colour !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(a.colour)) fail('Pick a colour.');
   if (Object.values(w.parties).some((p: any) => p.name.toLowerCase() === name.toLowerCase() && p.status !== 'lapsed')) fail('That name is taken.');
   const invite = a?.invite ?? [];
-  if (!Array.isArray(invite) || invite.length > 15) fail('Invite up to 15 members.');
+  if (!Array.isArray(invite) || invite.length > lim(w, 'breakawayInvite')) fail(`Invite up to ${lim(w, 'breakawayInvite')} members.`);
   const invited = [...new Set(invite)].filter((x: any) => typeof x === 'string' && x !== actor) as Id[];
   if (invited.some((x) => w.citizens[x]?.party !== from.id)) fail(`Only members of the ${from.name} can be asked.`);
   if (Object.values(w.breakaways || {}).filter((b: any) => b.by === actor && b.status === 'plotting').length) fail('You’re already planning one.');
@@ -903,7 +904,7 @@ export function launchBreakaway(w: W, actor: Id, bid: unknown) {
   const from = w.parties[b.from];
   const going = b.signed.filter((x: Id) => w.citizens[x]?.party === b.from && w.citizens[x].active);
   const mpsGoing = going.filter((x: Id) => isMP(w, x));
-  if (mpsGoing.length < BREAKAWAY_MPS) fail(`A breakaway needs at least ${BREAKAWAY_MPS} MPs. ${mpsGoing.length} ha${mpsGoing.length === 1 ? 's' : 've'} signed.`);
+  if (mpsGoing.length < lim(w, 'breakawayMPs')) fail(`A breakaway needs at least ${lim(w, 'breakawayMPs')} MP${lim(w, 'breakawayMPs') === 1 ? '' : 's'}. ${mpsGoing.length} ha${mpsGoing.length === 1 ? 's' : 've'} signed.`);
   if (Object.values(w.parties).some((p: any) => p.name.toLowerCase() === b.name.toLowerCase() && p.status !== 'lapsed')) fail('That name has been taken since. Plan it again under another.');
   transfer(w, ca(actor), 'treasury', 10, `Registered ${b.name}`);
   const id = newId(w, 'p');
@@ -937,7 +938,7 @@ export function supportFor(w: W, id: Id) {
 export const leaderOfSide = (w: W, side: string): Id | null => (side.startsWith('p:') ? w.parties[side.slice(2)]?.leader : side.slice(2));
 // who can be Prime Minister: the leader of a party with a majority on its own, or of the side that leads a signed
 // coalition (or confidence-and-supply deal) with one. Nobody else, so a hung parliament has to do a deal first.
-export const FORM_DAYS = 5;
+export const FORM_DAYS = 5; // the default: the law's value is lim(w, 'formDays')
 export function commands(w: W, id: Id) {
   const side = sideOf(w, id);
   if (leaderOfSide(w, side) !== id || supportFor(w, id) < majority(w)) return false;
@@ -996,8 +997,8 @@ export function autoInvite(w: W) {
   const best = contenders(w).filter((l) => commands(w, l)).sort((a, b) => supportFor(w, b) - supportFor(w, a))[0];
   if (best) return invitePM(w, null, best);
   const electing = Object.values(w.elections).some((e: any) => e.kind === 'general' && e.status === 'open');
-  if (!electing && !inForce(w, 'continuity') && w.now - w.formingSince >= FORM_DAYS * DAY) {
-    gazette(w, 'hos', `No party or coalition could command a majority in ${FORM_DAYS} days. The ${hosTitle(w)} dissolves Parliament: a fresh general election closes in 2 days.`, '#/elections');
+  if (!electing && !inForce(w, 'continuity') && w.now - w.formingSince >= lim(w, 'formDays') * DAY) {
+    gazette(w, 'hos', `No party or coalition could command a majority in ${lim(w, 'formDays')} days. The ${hosTitle(w)} dissolves Parliament: a fresh general election closes in 2 days.`, '#/elections');
     meter(w, 'stability', -3, 'A hung parliament');
     w.formingSince = null;
     w.pmInviteDue = null;

@@ -1,4 +1,5 @@
 // The Streets: the real-life part of the game. Opt-in, with rules and safe zones up front.
+import { lim } from '../../../engine/limits';
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Left, When, Empty, Field, Pick, Opt, QR, siteLink, canScan, Scanner, go } from '../ui';
@@ -117,7 +118,7 @@ export function Streets() {
         ) : !intrigueOpen(w) ? <Empty>Contracts open with the backroom, two weeks into the first Parliament.</Empty> : (
           <Card><div class="stack">
             <Pick label="Target" value={hit.target} onChange={(v) => setHit({ ...hit, target: v })} empty="Pick someone in the Streets" options={others} />
-            <Field label="Stake (10–100 crowns)" type="number" value={hit.crowns} onInput={(v) => setHit({ ...hit, crowns: v })} />
+            <Field label={`Stake (10–${lim(w, 'contractStakeMax')} crowns)`} type="number" value={hit.crowns} onInput={(v) => setHit({ ...hit, crowns: v })} />
             <p class="small muted" style={{ margin: 0 }}>Costs 10 Influence. You get a secret weapon and 72 hours. Nobody else knows, unless they sweep.</p>
             <Btn kind="danger" onClick={() => act('streets.contract', { target: hit.target, crowns: Number(hit.crowns) }, 'Contract taken. Your weapon is waiting.')}>Take out the contract</Btn>
           </div></Card>

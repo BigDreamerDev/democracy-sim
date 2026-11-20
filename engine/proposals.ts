@@ -13,6 +13,7 @@ import { startHosSelection, callGeneralElection, governmentFalls, vacateSeat, HO
 import { addJob, addZone } from './streets';
 import { openMarket, settleMarket, voidMarket } from './markets';
 import { takeDraft } from './drafts';
+import { LIMITS, lim, isLimit } from './limits';
 
 export const KINDS: Record<string, { name: string; who: string; blurb: string }> = {
   bill: { name: 'Bill', who: 'MPs', blurb: 'Changes the law. Each clause is a rule in words or something the game carries out.' },
@@ -36,6 +37,9 @@ export const SETTABLE: Record<string, { label: string; unit: string; min: number
   debateHours: { label: 'Debate length', unit: ' hours', min: 12, max: 48 },
   voteHours: { label: 'Voting length', unit: ' hours', min: 12, max: 48 }
 };
+// a 'set' clause changes one of the SETTABLE numbers (w.config[key]) or any cap in LIMITS (w.config.limits[key])
+export const setSpec = (key: unknown) => (own(SETTABLE, key) as (typeof SETTABLE)[string] | undefined) ?? (isLimit(key) ? LIMITS[key] : undefined);
+export const setNow = (w: W, key: string) => (isLimit(key) && !own(SETTABLE, key) ? lim(w, key) : w.config[key]);
 export const CONSTITUTIONAL = ['constitution', 'removeHos'];
 export const CLAUSE_TYPES = ['text', 'office', 'abolish', 'budget', 'set', 'permit', 'fund', 'pension', 'treaty', 'breakTreaty', 'repeal', 'constitution', 'removeHos', 'war', 'peace', 'job', 'zone', 'currency', 'realmName', 'jail', 'decrees', 'continuity', 'unity', 'protection', 'press', 'security', 'crown', 'prerogative', 'veto', 'imperial'];
 
@@ -57,9 +61,12 @@ export function describe(w: W, e: any): string {
     case 'budget':
       return `Sets the ${w.offices[e.office]?.name ?? 'office'} budget to ${e.value} crowns a week.`;
     case 'set':
+    {
+      const s = setSpec(e.key);
       return typeof e.from === 'number' && e.from !== e.value
-        ? `Changes ${own(SETTABLE, e.key)?.label.toLowerCase() ?? 'a number'} from ${e.from}${own(SETTABLE, e.key)?.unit ?? ''} to ${e.value}${own(SETTABLE, e.key)?.unit ?? ''}.`
-        : `Sets ${own(SETTABLE, e.key)?.label.toLowerCase() ?? 'a number'} to ${e.value}${own(SETTABLE, e.key)?.unit ?? ''}.`;
+        ? `Changes ${s?.label.toLowerCase() ?? 'a number'} from ${e.from}${s?.unit ?? ''} to ${e.value}${s?.unit ?? ''}.`
+        : `Sets ${s?.label.toLowerCase() ?? 'a number'} to ${e.value}${s?.unit ?? ''}.`;
+    }
     case 'permit':
       return 'Allows any citizen to open a licensed bank, take savings and make loans.';
     case 'treaty':
@@ -123,13 +130,16 @@ function checkClause(w: W, e: any, byDecree = false) {
       e.text = clauseText(e.text);
       break;
     case 'set':
-      if (!own(SETTABLE, e.key)) fail('Pick a number to change.');
-      e.value = int(e.value, SETTABLE[e.key].min, SETTABLE[e.key].max, SETTABLE[e.key].label.toLowerCase());
-      e.from = w.config[e.key]; // what it was when tabled, so the bill and the law can say "from … to …"
+    {
+      const s = setSpec(e.key);
+      if (!s) fail('Pick a number to change.');
+      e.value = int(e.value, s.min, s.max, s.label.toLowerCase());
+      e.from = setNow(w, e.key); // what it was when tabled, so the bill and the law can say "from … to …"
       break;
+    }
     case 'budget':
       if (!own(w.offices, e.office)) fail('Pick an office.');
-      e.value = int(e.value, 0, 200, 'weekly budget');
+      e.value = int(e.value, 0, lim(w, 'officeBudgetMax'), 'weekly budget');
       break;
     case 'abolish':
       if (!own(w.offices, e.office)) fail('Pick an office.');
@@ -147,22 +157,22 @@ function checkClause(w: W, e: any, byDecree = false) {
         powers: Array.isArray(e.office.powers) ? [...new Set(e.office.powers.filter((p: unknown) => own(POWERS, p) && p !== 'detain' && p !== 'release'))] : fail('Pick the office’s powers.'),
         fill: choose(e.office.fill ?? 'pm', Object.keys(FILL).filter((k) => k !== 'crown'), 'Pick how the office is filled.'),
         secrecy: choose(e.office.secrecy ?? 'public', ['public', 'restricted', 'secret'], 'Pick public, restricted or secret.'),
-        budget: int(e.office.budget ?? 0, 0, 200, 'weekly budget')
+        budget: int(e.office.budget ?? 0, 0, lim(w, 'officeBudgetMax'), 'weekly budget')
       };
       break;
     case 'job':
       e.title = text(e.title, 6, 120, 'civic job');
-      e.pay = int(e.pay, 1, 30, 'wage');
+      e.pay = int(e.pay, 1, lim(w, 'jobPayMax'), 'wage');
       break;
     case 'zone':
       e.text = text(e.text, 4, 120, 'safe zone');
       break;
     case 'pension':
-      e.amount = int(e.amount, 0, 10, 'pension');
+      e.amount = int(e.amount, 0, lim(w, 'pensionMax'), 'pension');
       break;
     case 'fund':
       if (typeof e.sym !== 'string' || !company(e.sym)) fail('Pick a company on the Exchange.');
-      e.crowns = int(e.crowns, 10, 500, 'amount for the wealth fund');
+      e.crowns = int(e.crowns, 10, lim(w, 'fundMax'), 'amount for the wealth fund');
       e.sell = e.sell === true;
       break;
     case 'currency': {
@@ -218,7 +228,7 @@ function checkClause(w: W, e: any, byDecree = false) {
       e.cede = e.cede || null;
       if (e.gain && (!own(PROVINCES, e.gain) || owner(e.gain) !== e.nation)) fail(`${w.nations[e.nation].name} does not hold that province.`);
       if (e.cede && (!own(PROVINCES, e.cede) || owner(e.cede) !== 'realm')) fail('The realm does not hold that province.');
-      e.crowns = e.crowns ? int(e.crowns, -200, 200, 'crowns in the peace') : 0;
+      e.crowns = e.crowns ? int(e.crowns, -lim(w, 'peaceCrownsMax'), lim(w, 'peaceCrownsMax'), 'crowns in the peace') : 0;
       break;
     }
     case 'constitution': {
@@ -237,7 +247,7 @@ function checkClause(w: W, e: any, byDecree = false) {
 export function checkClauses(w: W, kind: string, clauses: any, byDecree = false) {
   if (!Array.isArray(clauses)) fail('Clauses must be a list.');
   if (kind === 'bill' && !clauses.length) fail('Add at least one clause.');
-  if (clauses.length > 20) fail('A bill can have 20 clauses at most.');
+  if (clauses.length > lim(w, 'billClauses')) fail(`A bill can have ${lim(w, 'billClauses')} clauses at most.`);
   for (const e of clauses) {
     if (!CLAUSE_TYPES.includes(e?.t)) fail('Unknown kind of clause.');
     checkClause(w, e, byDecree);
@@ -355,7 +365,7 @@ export function proposeAmendment(w: W, actor: Id, pid: unknown, a: any) {
   const op = a?.op;
   if (!AMEND_OPS.includes(op)) fail('Change, add or remove a clause.');
   p.amendments ??= [];
-  if (p.amendments.filter((m: any) => m.by === actor && (m.status === 'pending' || m.status === 'consent')).length >= 3) fail('You have 3 amendments waiting on this already.');
+  if (p.amendments.filter((m: any) => m.by === actor && (m.status === 'pending' || m.status === 'consent')).length >= lim(w, 'amendmentsEach')) fail(`You have ${lim(w, 'amendmentsEach')} amendment${lim(w, 'amendmentsEach') === 1 ? '' : 's'} waiting on this already.`);
   const why = text(a.why, 0, 300, 'reason');
   const index = op === 'add' ? p.clauses.length : int(a.index, 0, p.clauses.length - 1, 'clause number');
   let clause = null;
@@ -363,7 +373,7 @@ export function proposeAmendment(w: W, actor: Id, pid: unknown, a: any) {
     clause = structuredClone(a.clause);
     checkClauses(w, p.kind, [clause]);
   } else if (p.kind === 'bill' && p.clauses.length < 2) fail('A bill needs at least one clause.');
-  if (op === 'add' && p.clauses.length >= 20) fail('A bill can have 20 clauses at most.');
+  if (op === 'add' && p.clauses.length >= lim(w, 'billClauses')) fail(`A bill can have ${lim(w, 'billClauses')} clauses at most.`);
   // to a government proposal, under the Protection of the State Act: only with the Prime Minister's consent
   const needsConsent = inForce(w, 'protection') && inGov(w, p.by) && !isPM(w, actor);
   const m = { id: newId(w, 'am'), by: actor, op, index, clause, was: op === 'add' ? null : JSON.stringify(p.clauses[index]), why, status: needsConsent ? 'consent' : 'pending', at: w.now, backers: [], whips: {} };
@@ -381,7 +391,7 @@ export function answerAmendment(w: W, actor: Id, pid: unknown, mid: unknown, acc
   if (!accept) {
     m.answeredAt = w.now;
     // turned down, but enough MPs back it: the House decides instead
-    if (backing(w, m).length >= HOSTILE_BACKERS) return openDivision(w, p, m);
+    if (backing(w, m).length >= lim(w, 'hostileBackers')) return openDivision(w, p, m);
     m.status = 'rejected';
     gazette(w, 'proposal', `${nm(w, actor)} turns down ${nm(w, m.by)}’s amendment to ${p.title}.`, '#/p/' + p.id);
     return judgePledges(w);
@@ -397,7 +407,7 @@ export function answerAmendment(w: W, actor: Id, pid: unknown, mid: unknown, acc
 // Hostile amendments: MPs back one (the proposer counts). If the author turns it down with HOSTILE_BACKERS behind it,
 // MPs vote on it before the main vote opens (the debate runs at least DIVISION_HOURS more so there's time).
 // More ayes than noes and it goes in anyway. Party leaders and the Chief Whip can whip amendments like bills.
-export const HOSTILE_BACKERS = 3;
+export const HOSTILE_BACKERS = 3; // the default: the law's value is lim(w, 'hostileBackers')
 const DIVISION_HOURS = 6;
 const backing = (w: W, m: any) => [m.by, ...(m.backers || [])].filter((id: Id, i: number, a: Id[]) => a.indexOf(id) === i && isMP(w, id));
 const fits = (p: any, m: any) => m.op === 'add' || JSON.stringify(p.clauses[m.index]) === m.was;
@@ -602,7 +612,7 @@ export function speak(w: W, actor: Id, pid: Id, side: string, speech: string) {
   if (!p || !['debate', 'vote', 'override'].includes(p.stage)) fail('This is not being debated.');
   const said = text(speech, 3, 1000, 'speech');
   if (!['for', 'against', 'undecided', 'order'].includes(side)) fail('Speak for, against or undecided.');
-  if (p.speeches.filter((s: any) => s.by === actor).length >= 5) fail('You have made 5 speeches on this already.');
+  if (p.speeches.filter((s: any) => s.by === actor).length >= lim(w, 'billSpeeches')) fail(`You have made ${lim(w, 'billSpeeches')} speech${lim(w, 'billSpeeches') === 1 ? '' : 'es'} on this already.`);
   if (side === 'order' && w.speaker !== actor) fail('Only the Speaker can call order.');
   p.speeches.push({ id: newId(w, 's'), by: actor, side, text: said, at: w.now });
   const c = cit(w, actor);
@@ -875,7 +885,7 @@ export function closeOverride(w: W, p: any) {
 export function block(w: W, actor: Id, pid: Id) {
   const o = officeWithPower(w, actor, 'block');
   if (!o) fail('You hold no office that can block bills.');
-  if (o.blocksUsed >= 1) fail('That power has been used this term.');
+  if (o.blocksUsed >= lim(w, 'blocksPerTerm')) fail(lim(w, 'blocksPerTerm') === 0 ? 'The law allows no bills to be sent back.' : 'That power has been used as often as the law allows this term.');
   const p = own(w.proposals, pid);
   if (!p || p.stage !== 'assent') fail('Only a passed bill waiting for assent can be sent back.');
   o.blocksUsed++;
@@ -917,6 +927,7 @@ export function applyClause(w: W, e: any, ref: string) {
       break;
     case 'set':
       if (own(SETTABLE, e.key)) w.config[e.key] = e.value;
+      else if (isLimit(e.key) && typeof e.value === 'number') (w.config.limits ??= {})[e.key] = e.value;
       break;
     case 'job':
       addJob(w, { title: String(e.title), pay: e.pay }, ref);
@@ -1093,7 +1104,7 @@ export function linkAct(w: W, actor: Id, pid: unknown, key: unknown) {
   if (typeof key !== 'string' || !ACT_KEYS.includes(key as any)) fail('Pick an Act.');
   if (p.clauses.some((e: any) => e.t === key)) fail('That bill already carries that Act.');
   if (inForce(w, key as any)) fail(`The ${ACTS[key as 'jail'].name} Act is already law.`);
-  if (p.clauses.length >= 20) fail('That bill already has 20 clauses.');
+  if (p.clauses.length >= lim(w, 'billClauses')) fail(`That bill already has ${lim(w, 'billClauses')} clauses.`);
   p.clauses.push({ t: key });
   p.linked = [...(p.linked || []), { act: key, by: actor, at: w.now }];
   history(w, p, actor, `Linked to the ${ACTS[key as 'jail'].name} Act by the Returning Officer`);
@@ -1119,7 +1130,7 @@ export function lobby(w: W, actor: Id, pid: Id, mp: Id, amount: number) {
   if (!p || !['debate', 'vote'].includes(p.stage)) fail('You can only lobby on a proposal still in the House.');
   if (!isMP(w, mp)) fail('You can only lobby MPs.');
   if (mp === actor) fail('You cannot lobby yourself.');
-  amount = int(amount, 1, 100, 'amount');
+  amount = int(amount, 1, lim(w, 'lobbyMax'), 'amount');
   transfer(w, ca(actor), ca(mp), amount, `Lobbying on ${p.title}`);
   p.lobby += Math.round(amount);
   w.lobbying.unshift({ at: w.now, from: actor, to: mp, prop: pid, amt: Math.round(amount) });

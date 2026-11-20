@@ -1,5 +1,6 @@
 // Glory: what keeps people coming back. Achievements, the daily Red Box (and its streak), the weekly opinion
 // poll, season awards and the Hall of Fame, which survives every reset.
+import { lim } from './limits';
 import { W, Id, DAY, fail, nm, gazette, earn, spend, stamp, bal, ca, allCitizens, DAYNO, rand, ordinal } from './core';
 
 // ---------- achievements ----------
@@ -141,7 +142,7 @@ export function buyFreeze(w: W, actor: Id) {
   const c = w.citizens[actor];
   if (!c) fail('No such citizen.');
   const s = c.streak || { n: 0, last: -9, best: 0, freezes: 0 };
-  if ((s.freezes || 0) >= MAX_FREEZES) fail(`You can hold ${MAX_FREEZES} streak freezes at most.`);
+  if ((s.freezes || 0) >= lim(w, 'streakFreezes')) fail(lim(w, 'streakFreezes') === 0 ? 'The law allows no streak freezes.' : `You can hold ${lim(w, 'streakFreezes')} streak freeze${lim(w, 'streakFreezes') === 1 ? '' : 's'} at most.`);
   spend(w, actor, FREEZE_COST, 'Bought a Red Box streak freeze');
   s.freezes = (s.freezes || 0) + 1;
   c.streak = s;

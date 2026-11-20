@@ -7,6 +7,7 @@
 // defector, by the nation itself, or turned while a hostage); nations also run rings of their own in our government.
 // The Security Service sweeps for both. Public: who defected, where, rank and favour. Secret: secrets carried,
 // approaches, who is a mole, foreign rings.
+import { lim } from './limits';
 import { W, Id, DAY, HOUR, fail, own, cit, nm, gazette, earn, transfer, bal, ca, chance, pick, rand, clamp, approve, stamp, bump, meter, mustBeFree, text, int, isPM, isHOS, isMP, hasPower, holderOf, newId, canSeeCard, allCitizens, exiled, ratifyText } from './core';
 import { PROFILES, moodShift, ultimatum, sanction, atWar, TREATIES as TREATY_KINDS } from './foreign';
 import { startWar, endWar } from './war';
@@ -397,7 +398,7 @@ export function bid(w: W, actor: Id, spend: unknown) {
     cost = BUY_PRICE;
     ok = true;
   } else if (t.way === 'elect') {
-    cost = int(spend ?? 0, 0, 100, 'campaign spending');
+    cost = int(spend ?? 0, 0, lim(w, 'campaignMax'), 'campaign spending');
     ok = chance(w, clamp(d.favour / 150 + cost / 200 - (rival ? 0.15 : 0), 0.1, 0.9));
   } else if (t.way === 'marry') ok = chance(w, clamp(0.35 + (d.favour - 60) / 80 - (rival ? 0.15 : 0), 0.15, 0.9));
   else ok = chance(w, clamp(0.3 + (d.drills || 0) / 20 + (d.favour - 70) / 100 - (rival ? 0.1 : 0), 0.1, 0.8));

@@ -69,6 +69,7 @@ export function migrate(w: W): W {
   w.config.edictsPerDay ??= 1;
   w.config.honoursPerWeek ??= 1;
   w.config.emeritusPay ??= 10;
+  w.config.limits ??= {}; // caps a law has changed (limits.ts); missing keys use the default
   Object.values(w.offices || {}).forEach((o: any) => { if (o.template !== 'emeritus') return; o.styles ??= o.holder && o.style ? { [o.holder]: o.style } : {}; if (o.holder && !(o.members || []).includes(o.holder)) o.members = [o.holder, ...(o.members || [])]; });
   w.conditions ??= [];
   Object.values(w.crises || {}).forEach((c: any) => ((c.cast ??= []), (c.responses ??= {}), (c.helpers ??= {}), (c.bribes ??= {})));

@@ -1,4 +1,5 @@
 // Money: wallets, the weekly payday, the Treasury, the Federal Reserve and prices, citizen banks and trade ventures.
+import { lim } from './limits';
 import { W, Id, DAY, HOUR, fail, newId, rand, cit, nm, own, text, int, allCitizens, exiled, mustBeFree, gazette, earn, transfer, bal, ca, tick, meter, inDanger, hasPower, isPM, clamp, standing, holderOf, bump } from './core';
 import { fundOffices, officePay } from './offices';
 import { hasCond, weekly as conditionsWeekly } from './conditions';
@@ -17,7 +18,7 @@ export function send(w: W, actor: Id, to: Id, amount: number, note: string) {
 export function setRate(w: W, actor: Id, rate: number) {
   if (!hasPower(w, actor, 'rate') && !(isPM(w, actor) && w.offices.reserve && !w.offices.reserve.holder)) fail('Only the Chair of the Reserve sets the rate.');
   rate = Math.round(Number(rate));
-  if (!(rate >= 0 && rate <= 15)) fail('The rate must be between 0% and 15%.');
+  if (!(rate >= 0 && rate <= lim(w, 'reserveRateMax'))) fail(`The rate must be between 0% and ${lim(w, 'reserveRateMax')}%.`);
   w.economy.rate = rate;
   gazette(w, 'money', `The Federal Reserve sets the interest rate at ${rate}%.`, '#/economy');
 }
@@ -150,7 +151,7 @@ export function openBank(w: W, actor: Id, name: string, saveRate: number, loanRa
   mustBeFree(w, actor);
   name = text(name, 3, 40, 'bank name');
   if (Object.values(w.banks).some((b: any) => b.owner === actor && b.status === 'open')) fail('You already run a bank.');
-  if (typeof saveRate !== 'number' || typeof loanRate !== 'number' || !(saveRate >= 0 && saveRate <= 10) || !(loanRate >= 0 && loanRate <= 20)) fail('Savings 0–10%, loans 0–20%.');
+  if (typeof saveRate !== 'number' || typeof loanRate !== 'number' || !(saveRate >= 0 && saveRate <= lim(w, 'bankSaveMax')) || !(loanRate >= 0 && loanRate <= lim(w, 'bankLoanMax'))) fail(`Savings 0–${lim(w, 'bankSaveMax')}%, loans 0–${lim(w, 'bankLoanMax')}%.`);
   transfer(w, ca(actor), 'treasury', 25, 'Bank licence');
   const id = newId(w, 'b');
   w.banks[id] = { id, owner: actor, name: name.trim(), saveRate, loanRate, deposits: {}, loans: [], status: 'open', at: w.now };
@@ -179,8 +180,8 @@ export function withdraw(w: W, actor: Id, bid: Id, amount: number) {
 export function borrowFrom(w: W, actor: Id, bid: Id, amount: number, weeks: number) {
   const b = own(w.banks, bid);
   if (!b || b.status !== 'open') fail('That bank is closed.');
-  amount = int(amount, 1, 100, 'loan (the most you can borrow is 100 crowns)');
-  weeks = int(weeks, 1, 10, 'number of weeks');
+  amount = int(amount, 1, lim(w, 'loanMax'), `loan (the most you can borrow is ${lim(w, 'loanMax')} crowns)`);
+  weeks = int(weeks, 1, lim(w, 'loanWeeks'), 'number of weeks');
   if (b.loans.some((l: any) => l.who === actor && l.left > 0)) fail('Pay off your current loan first.');
   if (bal(w, 'bank:' + bid) < amount) fail(`${b.name} does not have that much to lend.`);
   const total = Math.round(amount * (1 + (b.loanRate / 100) * weeks));
@@ -234,7 +235,7 @@ export function startVenture(w: W, actor: Id, nid: Id, amount: number) {
   if (n.embargo) fail(`We have ${n.name} under embargo. Lift it first.`);
   if (n.mood < 1) fail(`${n.name} refuses to trade with us.`);
   amount = Math.round(Number(amount));
-  if (!(amount >= 5 && amount <= 100)) fail('Put in between 5 and 100 crowns.');
+  if (!(amount >= 5 && amount <= lim(w, 'ventureMax'))) fail(`Put in between 5 and ${lim(w, 'ventureMax')} crowns.`);
   if (w.ventures.some((v: any) => v.by === actor && v.status === 'out')) fail('You already have a venture at sea.');
   const free = Object.values(w.treaties).some((t: any) => t.status === 'active' && t.nation === nid && t.effect?.tariffFree);
   const tariff = free ? 0 : Math.round((amount * w.config.tariff) / 100);
@@ -282,18 +283,18 @@ const sovereignName = (w: W) => {
 function motionTerms(w: W, a: any) {
   const kind = a?.kind;
   if (kind === 'print') {
-    const amount = int(a.amount, 1, MINT_MAX, `amount (1–${MINT_MAX} crowns)`);
+    const amount = int(a.amount, 1, lim(w, 'mintMax'), `amount (1–${lim(w, 'mintMax')} crowns)`);
     if (a.use !== 'treasury' && a.use !== 'debt') fail('Choose where the new money goes: the Treasury, or paying down the debt.');
-    if ((w.economy.printedThisWeek || 0) + amount > MINT_WEEK) fail(`At most ${MINT_WEEK} crowns can be printed in a week. ${MINT_WEEK - (w.economy.printedThisWeek || 0)} left this week.`);
+    if ((w.economy.printedThisWeek || 0) + amount > lim(w, 'mintWeek')) fail(`At most ${lim(w, 'mintWeek')} crowns can be printed in a week. ${Math.max(0, lim(w, 'mintWeek') - (w.economy.printedThisWeek || 0))} left this week.`);
     return { kind, amount, use: a.use };
   }
   if (kind === 'bonds') {
     if (w.bonds.issue && w.bonds.issue.closesAt > w.now) fail('A bond issue is already open.');
     if (hasCond(w, 'controls')) fail('No bonds can be issued under capital controls.');
-    return { kind, rate: int(a.rate, 1, 10, 'interest (1–10% a week)'), weeks: int(a.weeks, 1, 8, 'term (1–8 weeks)'), cap: int(a.cap, 10, 1000, 'size of the issue (10–1000 crowns)') };
+    return { kind, rate: int(a.rate, 1, lim(w, 'bondRateMax'), `interest (1–${lim(w, 'bondRateMax')}% a week)`), weeks: int(a.weeks, 1, lim(w, 'bondWeeksMax'), `term (1–${lim(w, 'bondWeeksMax')} weeks)`), cap: int(a.cap, 10, lim(w, 'bondIssueMax'), `size of the issue (10–${lim(w, 'bondIssueMax')} crowns)`) };
   }
   if (kind === 'gold') {
-    const amount = int(a.amount, 10, 200, 'gold to buy (10–200 crowns)');
+    const amount = int(a.amount, 10, lim(w, 'goldMax'), `gold to buy (10–${lim(w, 'goldMax')} crowns)`);
     if (bal(w, 'treasury') < amount) fail(`The Treasury has only ${bal(w, 'treasury')} crowns.`);
     return { kind, amount };
   }
@@ -360,7 +361,7 @@ export function buyBond(w: W, actor: Id, amount: unknown) {
   const s = w.bonds.issue;
   if (!s || s.closesAt <= w.now) fail('No bonds are on sale.');
   if (hasCond(w, 'controls')) fail('No bonds can be sold under capital controls.');
-  const amt = int(amount, 1, 1000, 'amount');
+  const amt = int(amount, 1, Math.max(1, s.cap - s.sold), 'amount');
   if (s.sold + amt > s.cap) fail(`Only ${s.cap - s.sold} crowns of this issue are left.`);
   if (bal(w, ca(actor)) < amt) fail('You do not have that many crowns.');
   transfer(w, ca(actor), 'treasury', amt, `Bought Treasury bonds (${s.rate}% a week, ${s.weeks} weeks)`);

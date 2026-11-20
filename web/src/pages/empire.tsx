@@ -1,11 +1,12 @@
 // The empire: the Imperial Prerogative Act (draft it in one tap, or proclaim it by decree), and the Imperial High
 // Commission's desk: tribute and governors for the provinces, and protectorates abroad. Rules in engine/empire.ts.
+import { lim } from '../../../engine/limits';
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Sec, Card, Btn, Who, Pick, Field, When } from '../ui';
 import { hasArmy, isPM, inForce, allCitizens, hasPower, imperial, bal } from '../../../engine/index';
 import { COMPANIES } from '../../../engine/exchange';
-import { CHEST, CONTROL, REQUISITION_CAP, WAR_USE, ORDERS, PROCUREMENT, canDirect, canProcure } from '../../../engine/warmachine';
+import { CHEST, CONTROL, WAR_USE, ORDERS, PROCUREMENT, canDirect, canProcure } from '../../../engine/warmachine';
 import { PROVINCES, MOODS } from '../../../engine/foreign';
 import { ACTS } from '../../../engine/acts';
 import { highCommission, canGovernEmpire, LEVY, GOVERNOR_PAY, PROTECTORATE_TRIBUTE, GOVERNOR_DECREES, DECREE_EVERY } from '../../../engine/empire';
@@ -91,14 +92,14 @@ export function WarMachine() {
   const firms = w.warchest?.firms || {};
   const k = w.army?.kit || {};
   const ours = Object.entries(w.provinces || {}).filter(([, p]: any) => p.owner === 'realm') as [string, any][];
-  const left = REQUISITION_CAP - (w.warchest?.drawnWeek === Math.floor(w.now / (7 * 86400000)) ? w.warchest.drawn || 0 : 0);
+  const left = lim(w, 'requisitionWeek') - (w.warchest?.drawnWeek === Math.floor(w.now / (7 * 86400000)) ? w.warchest.drawn || 0 : 0);
   return (
     <>
       <Sec title="The war chest" sub={<>{inForce(w, 'imperial') ? 'The empire’s levies and tribute are paid into it.' : 'Money set aside for the Army.'} Equipment is paid from it first, then from the Treasury.</>}>
         <div class="grid2">
           <Card><div class="kicker" style={{ margin: 0 }}>In the chest</div><div class="serif tnum" style={{ fontSize: 34 }}>{chest}</div>
             <div class="small muted">Shares worth {Object.entries(holds).reduce((s: number, [sym, h]: any) => s + Math.floor(h.n * (w.exchange?.prices?.[sym]?.p || 0)), 0)}. {Object.keys(firms).length} compan{Object.keys(firms).length === 1 ? 'y' : 'ies'} under its control.</div></Card>
-          {direct ? <Card><b>Requisition</b><p class="small" style={{ margin: '4px 0 8px' }}>Draw on the Treasury: {left} of {REQUISITION_CAP} left this week.</p>
+          {direct ? <Card><b>Requisition</b><p class="small" style={{ margin: '4px 0 8px' }}>Draw on the Treasury: {Math.max(0, left)} of {lim(w, 'requisitionWeek')} left this week.</p>
             <div class="stack" style={{ gap: 6 }}><Field label="Crowns" type="number" value={req} onInput={setReq} /><span class="row" style={{ gap: 6, justifyContent: 'flex-start' }}><Btn small onClick={() => act('imperial.requisition', { crowns: Number(req) }, 'Requisitioned.')}>Draw</Btn><Btn small kind="ghost" onClick={() => act('imperial.repay', { crowns: Number(req) }, 'Returned to the Treasury.')}>Give back</Btn></span></div></Card>
             : <Card kind="dashed"><span class="small">The {highCommission(w)?.title || 'Imperial High Commissioner'} runs the war chest{highCommission(w)?.holder ? '' : ' (the Prime Minister, while the post is empty)'}.</span></Card>}
         </div>

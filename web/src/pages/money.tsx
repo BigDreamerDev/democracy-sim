@@ -2,7 +2,8 @@ import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Pick, Locked, Meter, Banknote, noteBreakdown } from '../ui';
 import { nm, bal, ca, acctLabel, allCitizens, fmtTime, isPM, hasPower, inDanger, holderOf } from '../../../engine/index';
-import { budget, bankHealth, ventureOdds, priceIndex, fx, savingsRate, savingsTaxDue, canMoneyMotion, describeMotion, MINT_MAX, MINT_WEEK } from '../../../engine/economy';
+import { budget, bankHealth, ventureOdds, priceIndex, fx, savingsRate, savingsTaxDue, canMoneyMotion, describeMotion } from '../../../engine/economy';
+import { lim } from '../../../engine/limits';
 import { MOODS } from '../../../engine/foreign';
 import { Meters } from './today';
 
@@ -87,7 +88,7 @@ export function Economy() {
 function DebtClock() {
   const { world: w } = useStore();
   const e = w.economy;
-  const cells: [string, string | number][] = [['Owed to the Reserve', e.lent], ['Gold reserve', e.gold || 0], ['Bonds outstanding', w.bonds?.outstanding || 0], ['Printed this week', `${e.printedThisWeek || 0} / ${MINT_WEEK}`], ['Printed in all', e.printed || 0], ['Prices last week', `${e.lastInflation >= 0 ? '+' : ''}${Number(e.lastInflation || 0).toFixed(1)}%`], ['Price index', priceIndex(w).toFixed(2)]];
+  const cells: [string, string | number][] = [['Owed to the Reserve', e.lent], ['Gold reserve', e.gold || 0], ['Bonds outstanding', w.bonds?.outstanding || 0], ['Printed this week', `${e.printedThisWeek || 0} / ${lim(w, 'mintWeek')}`], ['Printed in all', e.printed || 0], ['Prices last week', `${e.lastInflation >= 0 ? '+' : ''}${Number(e.lastInflation || 0).toFixed(1)}%`], ['Price index', priceIndex(w).toFixed(2)]];
   return (
     <Sec title="The debt clock" sub="Printing clears debt but raises prices; borrowing costs interest every payday.">
       <div class="corner-stats">{cells.map(([k, v]) => <a href="#/economy"><b class="tnum">{v}</b><span>{k}</span></a>)}</div>
@@ -132,7 +133,7 @@ function Printing() {
           <>
             <Card>
               <b>Print new crowns</b>
-              <p class="small muted" style={{ margin: '4px 0 8px' }}>No debt. Crowns backed by the gold reserve are free; beyond that, every 25 crowns printed adds about 1% to this week’s inflation. Up to {MINT_MAX} a time, {MINT_WEEK} a week.</p>
+              <p class="small muted" style={{ margin: '4px 0 8px' }}>No debt. Crowns backed by the gold reserve are free; beyond that, every 25 crowns printed adds about 1% to this week’s inflation. Up to {lim(w, 'mintMax')} a time, {lim(w, 'mintWeek')} a week.</p>
               <div class="grid2"><Field label="Crowns" type="number" value={p.amount} onInput={(v) => setP({ ...p, amount: v })} /><Pick label="Where it goes" value={p.use} onChange={(v) => setP({ ...p, use: v })} options={[['debt', 'Pay down the debt'], ['treasury', 'Into the Treasury']]} /></div>
               <Btn small style={{ marginTop: 8 }} onClick={() => act('money.print', { amount: Number(p.amount), use: p.use }, 'Signed. The other side must agree.')}>Propose printing</Btn>
             </Card>
@@ -252,7 +253,7 @@ export function Ventures() {
       <Sec title="Send a venture">
         <Card><div class="stack">
           <Pick label="Where" value={n} onChange={setN} options={Object.values(w.nations).map((x: any) => [x.id, `${x.name} (${MOODS[x.mood]})`])} />
-          <Field label="Crowns (5–100)" type="number" value={amt} onInput={setAmt} />
+          <Field label={`Crowns (5–${lim(w, 'ventureMax')})`} type="number" value={amt} onInput={setAmt} />
           <p class="small muted" style={{ margin: 0 }}>Likely return: {o.low > 0 ? '+' : ''}{o.low}% to +{o.high}%.</p>
           <Btn full onClick={() => act('venture.start', { nation: n, amount: Number(amt) }, 'The ship sails.')}>Send it</Btn>
         </div></Card>

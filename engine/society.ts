@@ -1,4 +1,5 @@
 // The press and the Friday front page, the Supreme Court, and the weekly crisis.
+import { lim } from './limits';
 import { W, Id, DAY, WEEK, fail, newId, pick, cit, nm, own, text, allCitizens, mustBeFree, gazette, earn, stamp, transfer, ca, meter, approve, tick, isPM, weekNo, standing, fmtDay, addCard, holderOf } from './core';
 import { armyLoyalty } from './foreign';
 import { photoId } from './streets';
@@ -35,7 +36,7 @@ export function submitStory(w: W, actor: Id, pid: Id, headline: string, body: st
   if (!licensed(w, p)) fail(`${p.name} has no licence to publish. The Ministry of Public Order grants them.`);
   const h = text(headline, 5, 120, 'headline');
   const b = prose(body, 2000, 'story');
-  if (w.stories.filter((x: any) => x.by === actor && x.at > w.now - DAY).length >= 5) fail('You have filed 5 stories today. Come back tomorrow.');
+  if (w.stories.filter((x: any) => x.by === actor && x.at > w.now - DAY).length >= lim(w, 'storiesPerDay')) fail(`You have filed ${lim(w, 'storiesPerDay')} stor${lim(w, 'storiesPerDay') === 1 ? 'y' : 'ies'} today. Come back tomorrow.`);
   const mine = p.editor === actor;
   // under censorship an editor's yes only sends the story to the censor ('held')
   const held = !!w.regime?.censorship;

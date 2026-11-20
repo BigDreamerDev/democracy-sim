@@ -1,8 +1,9 @@
+import { lim } from '../../../engine/limits';
 import { useState } from 'preact/hooks';
 import { useStore, act, ONLINE, unlockIntrigue } from '../store';
 import { Page, Sec, Card, Btn, Left, When, Empty, Field, Pick } from '../ui';
 import { nm, allCitizens, canSeeCard, intrigueOpen, exiled, fmtTime, fmtDay, fmtLeft, DAY, hasPower, holderOf } from '../../../engine/index';
-import { ASKS, plotNeeds, watcher, CHEST_FULL } from '../../../engine/backroom';
+import { ASKS, plotNeeds, watcher } from '../../../engine/backroom';
 import { MOODS } from '../../../engine/foreign';
 
 // shown until the backroom opens: what's coming, and when
@@ -146,8 +147,8 @@ export function Plots() {
               <div class="small" style={{ marginTop: 6 }}><b>Preparations</b> ({r.preps} of 3; two make it swift)</div>
               <div class="small">The General: {r.hasGeneral ? 'with you' : w.offices.army ? 'not with you' : 'there is no Army'}</div>
               <div class="small">A foreign backer: {mine.backer ? w.nations[mine.backer].name : 'none'}{Object.keys(mine.asked || {}).filter((n) => mine.asked[n] === 'no').length ? ` (refused by ${Object.keys(mine.asked).filter((n) => mine.asked[n] === 'no').map((n) => w.nations[n].name).join(', ')})` : ''}</div>
-              <div class="small">The war chest: {r.chest} of {CHEST_FULL} crowns</div>
-              <div class="small" style={{ marginTop: 6 }}>{r.swift ? 'Launch now and it is over in a night: no vote, low legitimacy (5).' : `Launch now and the realm gets 12 hours to declare. You start with ${mine.members.length}${r.pretext ? ', +1 for a realm already in trouble' : ''}${mine.backer ? ', +1 for your backer' : ''}${r.chest >= CHEST_FULL / 2 ? `, +${r.chest >= CHEST_FULL ? 2 : 1} for the chest` : ''}. The more you win by, the more legitimacy you start with.`}</div>
+              <div class="small">The war chest: {r.chest} of {lim(w, 'warChestFull')} crowns</div>
+              <div class="small" style={{ marginTop: 6 }}>{r.swift ? 'Launch now and it is over in a night: no vote, low legitimacy (5).' : `Launch now and the realm gets 12 hours to declare. You start with ${mine.members.length}${r.pretext ? ', +1 for a realm already in trouble' : ''}${mine.backer ? ', +1 for your backer' : ''}${r.chest >= lim(w, 'warChestFull') / 2 ? `, +${r.chest >= lim(w, 'warChestFull') ? 2 : 1} for the chest` : ''}. The more you win by, the more legitimacy you start with.`}</div>
               <div class="small" style={{ color: 'var(--rose)', marginTop: 6 }}>Chance of discovery each day: {r.risk}%</div>
             </Card>
             <div class="stack" style={{ marginTop: 10 }}>
