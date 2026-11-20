@@ -9,6 +9,7 @@ import { PROVINCES } from '../../../engine/foreign';
 import { PEERAGE, peerTitle, peers, absolute, triumphDue, PROGRESS_EVERY, PROGRESS_COST, TRIUMPH_COST, LESE_EVERY } from '../../../engine/imperium';
 import { canGovernEmpire } from '../../../engine/empire';
 import { CHARGES } from '../../../engine/trials';
+import { GazettePoster } from '../PosterView';
 import { ESTATES, estateLost, consortOf, inTower, PALACE_COST, PALACE_RENT, EVENTS, EVENT_EVERY } from '../../../engine/dynasty';
 import { canGovernEmpire as canRule } from '../../../engine/empire';
 
@@ -21,6 +22,12 @@ export function CrownBanners() {
   const abroad = !!w.citizens[me]?.defected;
   return (
     <>
+      {w.commission && w.commission.until > w.now && (
+        <div class="proclamation" role="status" style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          <GazettePoster p={{ id: 'decree', slogan: w.commission.slogan, by: w.commission.by, font: w.commission.font, pal: w.commission.pal }} width={64} />
+          <span style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><small>On every wall · by order of {nm(w, w.commission.by)}</small><b class="serif">“{w.commission.slogan}”</b></span>
+        </div>
+      )}
       {pr && pr.until > w.now && w.config.hos === 'monarchy' && (
         <div class="proclamation" role="status">
           <small>By order of {pr.title} {nm(w, pr.by)}</small>

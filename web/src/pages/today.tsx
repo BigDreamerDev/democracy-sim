@@ -18,6 +18,7 @@ import { RoleChips, YourDesk, NewJob } from '../Roles';
 import { rolesOf } from '../roles';
 import { stateMode } from '../state';
 import { CONDITIONS } from '../../../engine/conditions';
+import { GazettePoster } from '../PosterView';
 import { LIMITS, lim } from '../../../engine/limits';
 export { needs };
 
@@ -367,6 +368,7 @@ export function GazetteList({ items }: { items: any[] }) {
         <li class={hot.includes(g.kind) ? 'hot' : bad.includes(g.kind) ? 'bad' : g.kind === 'admin' ? 'ro' : ''}>
           <div class="small muted">{fmtTime(w, g.at)}</div>
           <div style={{ fontSize: 15 }}>{g.practice && <span class="via" style={{ marginLeft: 0, marginRight: 6 }}>practice</span>}{g.link ? <a href={g.link} style={{ color: 'inherit' }}>{g.text}</a> : g.text}{g.via && <span class="via" title="Done through a player-made app">via {g.via}</span>}</div>
+          {g.poster && <GazettePoster p={g.poster} />}
         </li>
       ))}
     </ol>

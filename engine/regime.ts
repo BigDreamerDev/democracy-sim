@@ -884,6 +884,8 @@ export function fallRegime(w: W, why: string, by: Id | null | undefined) {
   const days = Math.max(0, Math.round((w.now - r.startedAt) / DAY));
   // everything is undone (except the Realm Jail, which no regime's fall empties)
   undoAll(w, r);
+  // the scrawls on the regime's posters are scrubbed off with it
+  w.defaced = {};
   w.martial = null;
   w.confidence = null;
   // the record

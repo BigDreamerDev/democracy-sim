@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 76, text: 'The war posters are redrawn: sixteen designs (the fleet, the airships, the cavalry, the double-headed eagle, the home front, three for the Kessmark war), seven typefaces and six inks to try, and the realm’s own currency on every bond poster. The High Commissioner can commission a poster with their own slogan, the enemy puts up posters that defectors sign, and under a regime the posters get scrawled on.' },
   { n: 75, text: 'War posters: six recruiting and war-bond posters in the war room, naming whoever really holds the throne, the Army and the High Commission. Enlist or buy bonds straight from them, or save one to share in the group.' },
   { n: 74, text: 'Peers carry their titles everywhere: “Duke Sam of Kingsmead” in the Gazette, the Privy Council, votes and every list. The monarch names the place when ennobling (or a free estate name is used).' },
   { n: 73, text: 'The Realm Console has caught up: life abroad, the realm against its defectors, plants, trials, the exile press, wanted posters, invasions, revolts, the peerage, estates and palaces, hunts and balls, the Tower, the Durbar, and every limit in the bill writer.' },

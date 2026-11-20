@@ -4,6 +4,7 @@
 // Victory and defeat feed the coup system (backroom.ts): a war hero weighs more on a coup night, a beaten Army
 // leans towards the plotters, and an Army at the front cannot defend the capital.
 // State: w.army.war = the enemy's id (as before), w.army.campaign = this war, w.army.hero, w.army.defeatedAt, w.wars (history).
+import { warPoster } from './propaganda';
 import { lim } from './limits';
 import { hasArmy, W, Id, DAY, HOUR, fail, rand, chance, nm, gazette, earn, transfer, bal, ca, hasPower, isPM, holderOf, clamp, meter, approve, stamp, bump, mustBeFree, int, legit, own, newId, pick, isMP, mps, inGov, autocrat, autocratTitle, cap } from './core';
 import { moodShift, treatyWith, PROFILES, warSpoils, PROVINCES, seedProvinces } from './foreign';
@@ -55,6 +56,9 @@ export function startWar(w: W, nid: Id, by: 'us' | 'them', cause?: { pretender?:
   meter(w, 'stability', by === 'them' ? -6 : -3, by === 'them' ? `${n.name} declared war` : `War with ${n.name}`);
   if (by === 'them') gazette(w, 'army', cause?.pretender ? `${n.name} declares war to put ${nm(w, cause.pretender)} on our throne. The first battle is in 12 hours.` : `${n.name} declares war on the realm. Army upkeep doubles until the war is won, lost, or Parliament makes peace. The first battle is in 12 hours.`, '#/war', { k: 'invaded', place: n.name, nation: n.id });
   else gazette(w, 'army', `The realm is at war with ${n.name}. Army upkeep doubles. The first battle is in 12 hours.`, '#/war', { k: 'invade', place: n.name, nation: n.id });
+  // the first poster of the war goes up (designs in web/src/posters.ts)
+  gazette(w, 'army', `The first posters of the war with ${n.name} go up across the realm.`, '#/war');
+  w.gazette[0].poster = { id: warPoster(nid), enemy: nid };
 }
 
 // the General, the PM or an officer of state picks how the Army fights

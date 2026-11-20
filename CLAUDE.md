@@ -96,6 +96,11 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
                the Coronation Durbar (reign.knelt/stoodApart; the Crown won't ennoble who stood apart). Disputed succession: exiles.ts
                contestSuccession puts a defector with d.child on a hos ballot; politics.closeElection brings them home (w.crown.inNameOf).
                Colonial revolts are in exiles.ts (abroad.stir → province.agitation → province.revolt → imperial.suppress)
+  propaganda.ts posters on the walls (designs in web/src/posters.ts, ids in POSTER_IDS): the war's first poster in the Gazette
+               (g.poster, from war.ts), the enemy's posters signed by defectors (campaign.enemyPosters), the High Commission's
+               commissioned slogan (w.commission, a banner for 3 days), defacing under a regime (w.defaced; who wrote it is secret).
+               web/src/posters.ts: FONTS, PALETTES, POSTERS, WAR_POSTERS (per enemy), ENEMY_POSTERS; fitPosters() fits type in the
+               browser; savePoster() embeds the fonts in the PNG. Money on posters uses config.currency
   catalog.ts   CATALOG — public description of every player command and its args (served by /api/v1/commands)
   index.ts     COMMANDS table; run(world, actor, cmd, args) applies one to a structuredClone
   bots.ts      bot turns: botsAct (demo, smoke) and actBots(w, isBot) — the clock runs practice bots during induction

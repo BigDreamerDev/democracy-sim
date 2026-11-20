@@ -3,9 +3,12 @@
 // south. Colours follow each nation's mood; lines show treaties, wars and wars abroad. Every country links to its page.
 import { lim } from '../../../engine/limits';
 import { useState } from 'preact/hooks';
-import { POSTERS, posterData, savePoster } from '../posters';
+import { POSTERS, ENEMY_POSTERS, FONTS, PALETTES, posterData, savePoster, renderPoster, renderCommission, renderEnemy, warPostersFor } from '../posters';
+import { PosterSvg } from '../PosterView';
+import { canGovernEmpire } from '../../../engine/empire';
+import { currencyText } from '../../../engine/core';
 import { useStore, act } from '../store';
-import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Seg, Opt } from '../ui';
+import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Seg, Opt, Pick } from '../ui';
 import { hasArmy, isPM, hasPower, holderOf, standing, bal, ca, isMP, autocrat, autocratTitle, speaksForHouse, cap, nm } from '../../../engine/index';
 import { MOODS, PROFILES, TREATIES, PROVINCES, known, shipping, laneClosed } from '../../../engine/foreign';
 import { power, STRATEGIES, REGIMENT_COST, BOND_PAYS, allies, EMBED_COST, termsText, garrisoned } from '../../../engine/war';
@@ -360,7 +363,7 @@ export function War() {
   const { world: w, me } = useStore();
   const [bond, setBond] = useState('10');
   const [n, setN] = useState('1');
-  if (!hasArmy(w)) return <Page back={['#/world', 'The world']} title="The war room"><Sec><Card kind="dashed">There is no Army, so the realm cannot fight. Pass the Defence Act to raise one. Without it, a hostile nation can only threaten and sanction us.</Card></Sec><Past /></Page>;
+  if (!hasArmy(w)) return <Page back={['#/world', 'The world']} title="The war room"><Sec><Card kind="dashed">There is no Army, so the realm cannot fight. Pass the Defence Act to raise one. Without it, a hostile nation can only threaten and sanction us.</Card></Sec><Posters /><Past /></Page>;
   const k = w.army.campaign;
   const cmd = hasPower(w, me, 'army') || isPM(w, me) || hasPower(w, me, 'govern');
   const troops = w.army.troops ?? 6;
@@ -558,28 +561,80 @@ export function Diplomacy({ id }: { id: string }) {
   );
 }
 
-// the posters on the walls: they name whoever holds the offices now, and do what they ask
+// the posters on the walls: they name whoever holds the offices now, and do what they ask. A reader can try other
+// typefaces and inks; the High Commission commissions its own; under a regime they get scrawled on; the enemy has its own.
 function Posters() {
   const { world: w, me } = useStore();
   const [big, setBig] = useState<string | null>(null);
+  const [font, setFont] = useState('');
+  const [pal, setPal] = useState('');
+  const [cf, setCf] = useState({ slogan: '', font: 'imperial', palette: 'porphyry' });
   const d = posterData(w);
   const k = w.army?.campaign;
-  const abroad = !!w.citizens[me]?.defected;
-  const shown = big ? POSTERS.filter((p) => p.id === big) : POSTERS;
+  const c = w.citizens[me];
+  const abroad = !!c?.defected;
+  const regime = w.regime && w.regime.type !== 'civil' && w.regime.leader !== me && !(w.regime.council || []).includes(me);
+  const canCommission = !abroad && (canGovernEmpire(w, me) || isPM(w, me));
+  const com = w.commission && w.commission.until > w.now ? w.commission : null;
+  const o = { font: font || undefined, pal: pal || undefined };
+  const scrawls = (id: string) => (w.defaced?.[id] || []).map((x: any) => ({ text: x.text }));
+  const list: { id: string; title: string; kind: string; svg: string }[] = [
+    ...(com ? [{ id: 'decree', title: 'By order', kind: 'home', svg: renderCommission(d, com.slogan, nm(w, com.by), { font: font || com.font, pal: pal || com.pal, graffiti: scrawls('decree') }) }] : []),
+    ...warPostersFor(d).map((p) => ({ id: p.id, title: p.title, kind: p.kind, svg: renderPoster(p, d, { ...o, graffiti: scrawls(p.id) }) })),
+    ...POSTERS.map((p) => ({ id: p.id, title: currencyText(w, p.title), kind: p.kind, svg: renderPoster(p, d, { ...o, graffiti: scrawls(p.id) }) }))
+  ];
+  const shown = big ? list.filter((p) => p.id === big) : list;
+  const deface = (id: string) => { const t = prompt('What do you scrawl? (2–30 characters)'); if (t) act('poster.deface', { poster: id, text: t }, 'Done. Now walk away.'); };
+  const enemyAt = k && c?.defected?.nation === w.army.war;
   return (
-    <Sec title="On the walls" sub={k ? 'The posters of this war. Tap one to see it whole; save it to share in the group.' : 'The posters are printed and ready for the next war. Save one to share.'}>
-      <div class="posters" style={{ display: 'grid', gridTemplateColumns: big ? 'minmax(0, 420px)' : 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, justifyContent: big ? 'center' : undefined }}>
+    <Sec title="On the walls" sub={k ? 'The posters of this war. Tap one to see it whole; save it to share in the group.' : 'The posters are printed and ready. Save one to share.'}>
+      <div class="grid2" style={{ marginBottom: 12 }}>
+        <Pick label="Typeface" value={font} onChange={setFont} options={[['', 'Each poster’s own'], ...Object.entries(FONTS).map(([id, x]) => [id, x.label] as [string, string])]} />
+        <Pick label="Inks" value={pal} onChange={setPal} options={[['', 'Each poster’s own'], ...Object.entries(PALETTES).map(([id, x]) => [id, x.label] as [string, string])]} />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: big ? 'minmax(0, 440px)' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14, justifyContent: big ? 'center' : undefined }}>
         {shown.map((p) => (
-          <div class="stack" style={{ gap: 6 }}>
-            <button type="button" aria-label={p.title} onClick={() => setBig(big ? null : p.id)} style={{ padding: 0, border: 0, background: 'none', cursor: 'zoom-in', boxShadow: '3px 3px 0 var(--shadow)' }} dangerouslySetInnerHTML={{ __html: p.svg(d).replace('<svg ', '<svg style="display:block;width:100%;height:auto" ') }} />
+          <div class="stack" style={{ gap: 6 }} data-poster-card={p.id}>
+            <PosterSvg svg={p.svg} label={p.title} onOpen={() => setBig(big ? null : p.id)} />
             <div class="row" style={{ gap: 6, flexWrap: 'wrap' }}>
               {k && !abroad && p.kind === 'enlist' && !k.volunteers.includes(me) && <Btn small onClick={() => act('war.enlist', {}, 'You are off to the front.')}>Enlist</Btn>}
-              {k && !abroad && p.kind === 'bonds' && <Btn small onClick={() => act('war.bond', { amount: 10 }, 'Thank you. 10 crowns lent.')}>Buy 10 in bonds</Btn>}
-              <Btn small kind="ghost" onClick={() => savePoster(p.svg(d), `${d.place.toLowerCase()}-${p.id}`)}>Save image</Btn>
+              {k && !abroad && p.kind === 'bonds' && <Btn small onClick={() => act('war.bond', { amount: 10 }, 'Thank you. 10 lent.')}>Buy 10 in bonds</Btn>}
+              <Btn small kind="ghost" onClick={() => savePoster(document.querySelector(`[data-poster-card="${p.id}"] svg`), `${d.place.toLowerCase()}-${p.id}`)}>Save image</Btn>
+              {regime && !abroad && <Btn small kind="danger ghost" onClick={() => deface(p.id)}>Deface</Btn>}
             </div>
           </div>
         ))}
       </div>
+      {canCommission && (
+        <Card style={{ marginTop: 14 }}><div class="stack">
+          <b>Commission a poster</b>
+          <span class="small">Your slogan, on every page for three days, by your order. 10 from your own purse; once a day.</span>
+          <Field label="Slogan (6–48 characters)" value={cf.slogan} onInput={(v) => setCf({ ...cf, slogan: v.slice(0, 48) })} placeholder="Every citizen a soldier of the Empire" />
+          <div class="grid2"><Pick label="Typeface" value={cf.font} onChange={(v) => setCf({ ...cf, font: v })} options={Object.entries(FONTS).map(([id, x]) => [id, x.label])} /><Pick label="Inks" value={cf.palette} onChange={(v) => setCf({ ...cf, palette: v })} options={Object.entries(PALETTES).map(([id, x]) => [id, x.label])} /></div>
+          {cf.slogan.trim().length >= 6 && <div style={{ maxWidth: 220 }}><PosterSvg svg={renderCommission(d, cf.slogan.trim(), nm(w, me), { font: cf.font, pal: cf.palette })} /></div>}
+          <Btn disabled={cf.slogan.trim().length < 6} onClick={() => act('poster.commission', cf, 'The posters go up.') && setCf({ ...cf, slogan: '' })}>Print and post it</Btn>
+        </div></Card>
+      )}
+      {k && (
+        <div style={{ marginTop: 18 }}>
+          <b>{w.nations[w.army.war]?.name}'s posters</b>
+          <p class="small muted" style={{ margin: '4px 0 10px' }}>Their propaganda, in their colours. Defectors at their court put their names to it.</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14 }}>
+            {ENEMY_POSTERS.map((p) => {
+              const signed = (k.enemyPosters?.[p.id] || []) as string[];
+              return (
+                <div class="stack" style={{ gap: 6 }} data-poster-card={p.id}>
+                  <PosterSvg svg={renderEnemy(p, d, w.army.war, signed.map((id) => nm(w, id)))} label={p.title} />
+                  <div class="row" style={{ gap: 6 }}>
+                    {enemyAt && !signed.includes(me) && <Btn small kind="danger" onClick={() => confirm('Put your name to the enemy’s poster? Everyone at home will see it.') && act('abroad.signPoster', { poster: p.id }, 'Your name is on it.')}>Sign it</Btn>}
+                    <Btn small kind="ghost" onClick={() => savePoster(document.querySelector(`[data-poster-card="${p.id}"] svg`), `${w.army.war}-${p.id}`)}>Save image</Btn>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </Sec>
   );
 }

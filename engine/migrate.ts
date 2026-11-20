@@ -122,6 +122,8 @@ export function migrate(w: W): W {
   w.durbar ??= null;
   w.holdings ??= {};
   w.events ??= {};
+  w.commission ??= null;
+  w.defaced ??= {};
   // peers made before territorial titles: give each a place and put the style in their titles
   Object.values(w.citizens || {}).forEach((c: any) => c.peerage && !c.peerage.of && setPeerTitle(c, { ...c.peerage, of: designation(w, c, null) }));
   // royal heirs at home were removed

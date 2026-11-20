@@ -24,6 +24,7 @@ import * as Xl from './exiles';
 import * as Tr from './trials';
 import * as Im from './imperium';
 import * as Dy from './dynasty';
+import * as Pg from './propaganda';
 import * as Em from './empire';
 import * as Wm from './warmachine';
 import * as Pv from './privy';
@@ -221,6 +222,9 @@ export const COMMANDS: Record<string, Cmd> = {
   'crown.resume': (w, me, a) => Dy.resumeEstate(w, me, a.estate),
   'estate.palace': (w, me, a) => Dy.buildPalace(w, me, a.estate),
   'abroad.stir': (w, me, a) => Xl.stir(w, me, a.province),
+  'poster.commission': (w, me, a) => Pg.commission(w, me, a.slogan, a.font, a.palette),
+  'poster.deface': (w, me, a) => Pg.deface(w, me, a.poster, a.text),
+  'abroad.signPoster': (w, me, a) => Pg.signEnemyPoster(w, me, a.poster),
   'abroad.succession': (w, me, a) => Xl.contestSuccession(w, me, a.election),
   'estate.host': (w, me, a) => Dy.hostEvent(w, me, a.estate, a.kind, a.guests),
   'event.attend': (w, me, a) => Dy.attendEvent(w, me, a.event),
