@@ -950,7 +950,7 @@ function viewWorld() {
   const empire = W.acts?.imperial ? `<div class="card"><h2>The Empire <span class="sub">${hc ? `${esc(hc[1].title || hc[1].name)}: ${hc[1].holder ? esc(who(hc[1].holder)) : 'vacant'}` : 'governed by the Prime Minister'}</span></h2>
     ${Object.entries(W.provinces || {}).filter(([, p]) => p.owner === 'realm').map(([id, p]) => `<div class="item"><div class="row between"><span class="t">${esc(PROVINCE_NAMES[id] || id)}</span><span class="small">${p.levy ? 'levy · ' : ''}${p.governor ? 'governor ' + esc(who(p.governor)) : 'no governor'}</span></div>
       ${p.governor === W.viewer ? `<div class="row" style="margin-top:6px"><span class="small">Your decree:</span>${[['festival', 'Festival'], ['works', 'Public works (15)'], ['crackdown', 'Crack down'], ['tribute', 'Extra tribute'], ['militia', 'Militia']].map(([k, l]) => btn('governor.decree', { province: id, kind: k }, l)).join('')}</div>` : ''}
-      ${governs ? `<div class="row" style="margin-top:6px">${btn('imperial.levy', { province: id, on: !p.levy }, p.levy ? 'Lift the levy' : 'Levy it (10 a week)')}${p.governor ? btn('imperial.governor', { province: id, target: null }, 'Recall the governor', 'no') : `<select class="sm" style="width:auto;min-height:0" data-gov="${esc(id)}">${citizensList.map(([cid, c]) => `<option value="${esc(cid)}">${esc(c.name)}</option>`).join('')}</select><button class="sm" data-govbtn="${esc(id)}">Appoint governor</button>`}</div>` : ''}</div>`).join('') || '<div class="empty">The realm holds no provinces.</div>'}
+      ${governs ? `<div class="row" style="margin-top:6px">${btn('imperial.levy', { province: id, on: !p.levy }, p.levy ? 'Lift the levy' : 'Levy it (10 a week)')}${p.governor ? btn('imperial.governor', { province: id, target: null }, 'Recall the governor', 'no') : `${pickSelect('gov' + id, citizensList.map(([cid, c]) => [cid, c.name]))}<button class="sm" data-govbtn="${esc(id)}">Appoint governor</button>`}</div>` : ''}</div>`).join('') || '<div class="empty">The realm holds no provinces.</div>'}
     <div class="small" style="margin-top:8px"><b>Protectorates:</b> ${ns.filter(([, n]) => n.protectorate).map(([id, n]) => `${esc(n.name)}${governs ? ' ' + btn('imperial.release', { nation: id }, 'Release', 'no', `Release ${n.name}?`) : ''}`).join(', ') || 'none'}</div>
     ${governs ? `<div class="row" style="margin-top:8px">${ns.filter(([id, n]) => !n.protectorate && !n.ruler && n.mood >= 3 && W.army?.war !== id).map(([id, n]) => btn('imperial.protectorate', { nation: id }, `Offer protection to ${n.name}`)).join('')}</div>` : ''}</div>` : '';
   const kit = W.army?.kit || {}, firms = W.warchest?.firms || {}, wh = W.exchange?.holdings?.warchest || {};
@@ -1075,9 +1075,10 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('click', async e => {
   const g = e.target.closest('[data-govbtn]'); if (!g) return;
-  const citizen = document.querySelector(`[data-gov="${g.dataset.govbtn}"]`)?.value;
+  const citizen = PICKS['gov' + g.dataset.govbtn];
   if (!citizen) return toast('Choose who first.', true);
   const r = await act('imperial.governor', { province: g.dataset.govbtn, target: citizen });
+  if (r.ok) delete PICKS['gov' + g.dataset.govbtn];
   toast(r.ok ? 'Governor appointed.' : r.error, !r.ok);
 });
 document.addEventListener('click', async e => {
@@ -1223,23 +1224,48 @@ function oathCard() {
     ${owe ? `<div class="row">${btn('oath.swear', {}, 'I swear it', 'aye')}${o.refused?.[W.viewer] ? '' : btn('oath.refuse', {}, 'I refuse', 'no', 'Refuse the Imperial Oath? You lose every office you hold, and cannot be appointed until you swear.')}</div><p class="small mut">Not having sworn yet costs nothing.</p>` : W.viewer === sov ? '<p class="small mut">The oath is sworn to you.</p>' : '<p class="small">You have sworn it.</p>'}
     <div class="small"><b>Sworn (${sworn.length}):</b> ${names(sworn)}</div><div class="small"><b>Yet to swear (${waiting.length}):</b> ${names(waiting)}</div><div class="small"><b>Refused (${refused.length}):</b> ${names(refused)}</div></div>`;
 }
+/* Pickers that survive a live redraw: the choice is kept in PICKS, so an update arriving between choosing and
+   clicking cannot reset it (it used to fall back to the first option). */
+const PICKS = {};
+const pickSelect = (key, rows, empty = 'Choose…') => `<select class="sm" style="width:auto;min-height:0" data-pick="${esc(key)}"><option value="">${esc(empty)}</option>${rows.map(([v, l]) => `<option value="${esc(v)}" ${PICKS[key] === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+document.addEventListener('change', e => { const s = e.target.closest?.('[data-pick]'); if (s) PICKS[s.dataset.pick] = s.value; });
 function privyCard() {
   if (!W.privy) return '';
   const sov = W.hos?.holder === W.viewer;
   const people = coll(W.citizens).filter(([, c]) => c.active !== false && !c.bot && !c.defected);
   return `<div class="card" style="border-color:var(--acc)"><h2>The Imperial Privy Council <span class="sub">sits in place of Parliament · an Order needs 5 of 8</span></h2>
     ${(W.seats || []).map((id, i) => `<div class="item"><div class="row between"><span><span class="m">${['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][i]} · ${esc(PRIVY_SEATS[i])}${id && W.seats.filter(x => x === id).length > 1 ? ` · ${W.seats.filter(x => x === id).length} votes` : ''}</span> <span class="t">${id ? esc(who(id)) : 'Vacant'}</span></span>
-      ${sov && i >= 5 ? `<span class="row"><select class="sm" style="width:auto;min-height:0" data-pc="${i - 5}"><option value="">${id ? 'Dismiss' : 'Choose…'}</option>${people.map(([cid, c]) => `<option value="${esc(cid)}">${esc(c.name)}</option>`).join('')}</select><button class="sm" data-pcbtn="${i - 5}">Do it</button></span>` : ''}</div></div>`).join('')}
+      ${sov && i >= 5 ? `<span class="row">${pickSelect('pc' + (i - 5), people.map(([cid, c]) => [cid, c.name]), id ? 'Replace with…' : 'Choose…')}<button class="sm" data-pcbtn="${i - 5}">Swear in</button>${id ? `<button class="sm no" data-pcout="${i - 5}">Dismiss</button>` : ''}</span>`
+        : sov && i >= 2 && i <= 4 && seatOffice(i) ? `<span class="row">${pickSelect('po' + i, people.map(([cid, c]) => [cid, c.name]), id ? 'Replace with…' : 'Choose…')}<button class="sm" data-pobtn="${i}">Appoint</button></span>` : ''}</div></div>`).join('')}
     ${(() => { const mine = coll(W.offices).filter(([, o]) => o.holder === W.viewer).flatMap(([, o]) => o.powers || []);
       const force = sov || mine.includes('imperial'), veto = force || mine.includes('chamberlain') || mine.includes('seal'), summon = mine.includes('chamberlain'), seal = mine.includes('seal');
       const pending = coll(W.proposals).filter(([, p]) => p.kind === 'bill' && ['consent', 'debate', 'vote', 'assent', 'override', 'withheld'].includes(p.stage));
       return (force || veto || summon || seal) && pending.length ? `<div class="small" style="margin-top:8px"><b>Your prerogatives:</b>${pending.map(([id, p]) => `<div class="row between" style="margin-top:4px"><span>${esc(p.title)} <span class="m">${esc(STAGE[p.stage]?.[0] || p.stage)}</span></span><span>${summon && p.stage === 'debate' ? btn('privy.summon', { prop: id }, 'Summon the Council') : ''}${seal && p.stage === 'assent' && !p.sealed ? btn('privy.seal', { prop: id }, 'Set the Seal') : ''}${force ? btn('privy.force', { prop: id }, 'Force it through', 'aye', `Force “${p.title}” through? It becomes law at once.`) : ''}${veto ? btn('privy.veto', { prop: id }, 'Veto', 'no', `Veto “${p.title}”?`) : ''}</span></div>`).join('')}</div>` : ''; })()}</div>`;
 }
+// the offices behind seats III–V: the General, the Lord Chamberlain, the Lord Privy Seal
+const seatOffice = i => i === 2 ? (W.offices?.army ? ['army', W.offices.army] : null) : coll(W.offices).find(([, o]) => o.template === (i === 3 ? 'chamberlain' : 'privyseal')) || null;
 document.addEventListener('click', async e => {
-  const b = e.target.closest('[data-pcbtn]'); if (!b) return;
-  const target = document.querySelector(`[data-pc="${b.dataset.pcbtn}"]`)?.value || null;
-  const r = await act('privy.appoint', { seat: Number(b.dataset.pcbtn), target });
-  toast(r.ok ? (target ? 'Sworn of the Council.' : 'Dismissed.') : r.error, !r.ok);
+  const b = e.target.closest('[data-pcbtn],[data-pcout],[data-pobtn]'); if (!b) return;
+  if (b.dataset.pcbtn != null) {
+    const seat = Number(b.dataset.pcbtn), target = PICKS['pc' + seat];
+    if (!target) return toast('Choose who to swear in first.', true);
+    b.disabled = true;
+    const r = await act('privy.appoint', { seat, target });
+    if (r.ok) delete PICKS['pc' + seat];
+    return toast(r.ok ? `${who(target)} is sworn of the Council.` : r.error, !r.ok);
+  }
+  if (b.dataset.pcout != null) {
+    const seat = Number(b.dataset.pcout), id = W.privy?.councillors?.[seat];
+    if (!confirm(`Dismiss ${who(id)} from the Privy Council?`)) return;
+    const r = await act('privy.appoint', { seat, target: null });
+    return toast(r.ok ? 'Dismissed.' : r.error, !r.ok);
+  }
+  const i = Number(b.dataset.pobtn), o = seatOffice(i), target = PICKS['po' + i];
+  if (!o) return;
+  if (!target) return toast('Choose who to appoint first.', true);
+  const r = await act('gov.appoint', { office: o[0], target });
+  if (r.ok) delete PICKS['po' + i];
+  toast(r.ok ? `${who(target)} is appointed ${o[1].title}.` : r.error, !r.ok);
 });
 function viewHouse() {
   const all = coll(W.proposals).map(([, p]) => p).sort((a, b) => (b.n || 0) - (a.n || 0));

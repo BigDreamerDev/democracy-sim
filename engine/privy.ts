@@ -5,7 +5,7 @@
 // unchanged. The old Parliament is kept in w.privy.parliament and comes back, with a general election, on repeal.
 // No general or Speaker elections while it sits (callGeneralElection and countback check w.privy).
 import { W, Id, DAY, HOUR, fail, nm, gazette, stamp, cit, isHOS, hasPower, exiled, detained, own, inForce, mps } from './core';
-import { createOffice } from './offices';
+import { createOffice, TEMPLATES } from './offices';
 import { checkClauses, enactDecree, history } from './proposals';
 import { voidMarket } from './markets';
 import { notRefused } from './oath';
@@ -33,6 +33,25 @@ export function syncPrivy(w: W) {
   w.speaker = null;
 }
 
+// one Lord Chamberlain and one Lord Privy Seal: an office made by hand or by decree with the same name is folded into
+// the Council's own (its holder kept if the Council's is empty, its powers added), so the Council seat follows it
+export function adoptCourtOffices(w: W) {
+  ([['chamberlain', /lord\s+chamberlain/i], ['privyseal', /privy\s+seal/i]] as [string, RegExp][]).forEach(([tpl, re]) => {
+    const all = (Object.values(w.offices) as any[]).filter((o) => o.template === tpl || (!o.template && (re.test(o.name || '') || re.test(o.title || ''))));
+    if (all.length < 2 && !(all[0] && all[0].template !== tpl)) return;
+    const keep = all.find((o) => o.template === tpl) || all[0];
+    const t = TEMPLATES[tpl];
+    keep.template = tpl;
+    keep.name = t.name;
+    keep.title = t.title;
+    keep.fill = t.fill;
+    keep.blurb = t.blurb;
+    keep.powers = [...new Set([...(keep.powers || []), ...t.powers, ...all.flatMap((o) => o.powers || [])])];
+    keep.holder = keep.holder || all.find((o) => o.holder)?.holder || null;
+    all.filter((o) => o !== keep).forEach((o) => delete w.offices[o.id]);
+  });
+}
+
 // the Act: Parliament dissolved, the Council in its place
 export function establishPrivy(w: W, ref: string) {
   if (w.privy) return;
@@ -41,6 +60,7 @@ export function establishPrivy(w: W, ref: string) {
   // open general and Speaker elections end
   Object.values(w.elections).forEach((e: any) => e.status === 'open' && ['general', 'speaker'].includes(e.kind) && ((e.status = 'cancelled'), (e.closedAt = w.now)));
   w.nextGeneralAt = null;
+  adoptCourtOffices(w);
   ['chamberlain', 'privyseal'].forEach((t) => !Object.values(w.offices).some((o: any) => o.template === t) && createOffice(w, { template: t }, ref));
   // the first Council: the Sovereign and the High Commissioner sit by right; the old Parliament's members fill the rest, in order
   const taken = new Set([w.hos?.holder, hcHolder(w)].filter(Boolean));

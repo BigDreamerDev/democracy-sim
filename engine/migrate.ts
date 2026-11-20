@@ -1,6 +1,7 @@
 // Upgrades a saved world to the current shape. The live world persists across deploys, so any change to the
 // world's shape (a new field, a renamed key) needs a step here. Steps must be idempotent: they run on every boot.
 import { callOath } from './oath';
+import { adoptCourtOffices } from './privy';
 import { W } from './core';
 import { SAFE_ZONES } from './streets';
 import { freshDaily } from './glory';
@@ -122,6 +123,7 @@ export function migrate(w: W): W {
   w.config && (w.config.formerNames ??= []);
   w.privy ??= null;
   w.oath ??= null;
+  if (w.privy) adoptCourtOffices(w);
   if (w.acts?.imperial && !w.oath) callOath(w);
   if (w.oath) (delete w.oath.dueAt, delete w.oath.settled);
   w.warchest ??= { firms: {}, drawn: 0, drawnWeek: 0 };
