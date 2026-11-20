@@ -67,3 +67,20 @@ export const CHANGES: { n: number; text: string }[] = [
   { n: 2, text: 'Draft proposals save on your device as you type. Keep several on the go and pick them up under Your drafts. While a bill is being debated, you can now rewrite or add clauses, not just remove them.' },
   { n: 1, text: 'The site now updates itself. Leave a tab open and it moves to the newest version on its own.' }
 ];
+
+// A bigger update, summed up once in a pop-up for everyone who has used the site before (web/src/update.tsx).
+// Give it a new id when there is a new one; keep the lines short.
+export const RELEASE = {
+  id: '2026-11-20',
+  title: 'The empire arrives',
+  items: [
+    'The Imperial Privy Council sits in place of Parliament: the Empress, the High Commissioner, the General, the Lord Chamberlain, the Lord Privy Seal and three Councillors. One person can hold several places, with a vote for each.',
+    'The great officers can force an Order through or veto it; the Lord Chamberlain summons the Council, the Lord Privy Seal sets the Seal.',
+    'The Imperial Oath: swear it for 5 Influence. Refusing costs every office you hold.',
+    'The High Commissioner commands the Army and runs the war chest: requisitions, shares, company takeovers and war production.',
+    'Military acquisitions: artillery, cavalry, ironclads, airships and forts.',
+    'Governors can issue a decree for their province every three days.',
+    'Ceremonies: appointments, oaths, vetoes, invasions and battles play as short scenes. Watch them again, or turn them off, at You › How to play › Ceremonies.',
+    'Also: the empire has its own look, bills are laid out properly, the realm can be renamed by law, and the Realm Console does all of this too.'
+  ]
+};

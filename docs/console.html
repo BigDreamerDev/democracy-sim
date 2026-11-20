@@ -378,6 +378,8 @@ function parseArg(name, type) {
   if (name === 'ranking' || name === 'approve') return { name, kind: 'multi', src: 'standing', ordered: name === 'ranking', type: t, optional: true, note: name === 'ranking' ? 'For ranked or points elections. Tick your favourite first, then your second, and so on.' : 'For approval elections. Tick everyone you would accept; the order does not matter.' };
   if (name === 'candidate' && /single vote/.test(t)) return { name, kind: 'pick', src: 'standing', type: t, optional: true };
   if (/^bool/.test(t)) return { name, kind: 'bool', type: t, optional };
+  // a choice of numbers ("0 | 1 | 2"): a picker whose answer is sent as a number, not text
+  if (/^\d+(\s*\|\s*\d+)+$/.test(t.trim())) return { name, kind: 'numpick', opts: t.split('|').map(x => x.trim()), type: t, optional };
   if (/clause object|list of clause|^list \(optional\)$/.test(t) || (name === 'clauses')) return { name, kind: 'clauses', type: t, optional };
   if (/^list of text/.test(t)) return { name, kind: 'lines', type: t, optional };
   if (/^list|ids/.test(t)) return { name, kind: 'multi', src: /option index/.test(t) ? 'optindex' : (sourceFor(name, t) || (/side/.test(t) ? 'side' : /citizen|candidate/.test(t) ? 'citizen' : null)), type: t, optional };
@@ -395,6 +397,7 @@ function argField(a, cmd) {
     case 'bool': return `<label>${label}<select ${n}><option value="">—</option><option value="true">Yes</option><option value="false">No</option></select></label>`;
     case 'enum': return `<label>${label}<select ${n}>${a.optional ? `<option value="">${a.labels ? 'Choose…' : '—'}</option>` : ''}${a.opts.map(o => `<option value="${esc(o)}">${esc(a.labels?.[o] || human(o))}</option>`).join('')}</select>${hint}</label>`;
     case 'num': return `<label>${label}<input type="number" step="any" ${n}>${hint}</label>`;
+    case 'numpick': return `<label>${label}<select ${n}><option value="">Choose…</option>${a.opts.map(o => `<option value="${esc(o)}">${cmd === 'privy.appoint' ? `Councillor ${['VI', 'VII', 'VIII'][Number(o)] || o}${W?.privy?.councillors?.[Number(o)] ? ' — ' + esc(who(W.privy.councillors[Number(o)])) : ' — vacant'}` : esc(o)}</option>`).join('')}</select></label>`;
     case 'index': return `<label>${label}<select ${n} data-index><option value="">Pick the other field first</option></select>${hint}</label>`;
     case 'pick': {
       const rows = SOURCES[a.src]();
@@ -454,7 +457,7 @@ function readArgs(form) {
     const v = el.value;
     if (v === '' || v == null) { if (el.closest('label')?.textContent.includes('Nobody') && kind === 'pick') out[k] = null; return; }
     if (kind === 'lines') out[k] = v.split('\n').map(s => s.trim()).filter(Boolean);
-    else if (kind === 'num' || kind === 'index') out[k] = Number(v);
+    else if (kind === 'num' || kind === 'index' || kind === 'numpick') out[k] = Number(v);
     else if (kind === 'bool') out[k] = v === 'true';
     else out[k] = v;
   });

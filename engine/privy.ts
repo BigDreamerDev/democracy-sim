@@ -91,7 +91,9 @@ export function dissolvePrivy(w: W) {
 export function appointCouncillor(w: W, actor: Id, seat: unknown, target: unknown) {
   if (!w.privy) fail('There is no Privy Council.');
   if (!isHOS(w, actor)) fail('Only the Sovereign appoints Privy Councillors.');
-  if (seat !== 0 && seat !== 1 && seat !== 2) fail('Pick one of the three Councillors’ seats.');
+  // apps may send the seat as text ("1"); 0, 1 or 2 either way
+  if (typeof seat === 'string' && /^[012]$/.test(seat)) seat = Number(seat);
+  if (seat !== 0 && seat !== 1 && seat !== 2) fail('Pick one of the three Councillors’ seats: 0, 1 or 2.');
   const was = w.privy.councillors[seat];
   if (target === null || target === '' || target === undefined) {
     if (!was) fail('That seat is already empty.');

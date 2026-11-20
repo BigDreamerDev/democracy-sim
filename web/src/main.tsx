@@ -29,7 +29,7 @@ import { Market } from './pages/market';
 import { Polls } from './pages/glory';
 import { CopyDesk } from './pages/copydesk';
 import { CopyOverlay } from './copyEdit';
-import { watchForUpdates, UpdateBar } from './update';
+import { watchForUpdates, UpdateBar, ReleaseNotes } from './update';
 import { Regime } from './pages/regime';
 import { Jail, Powers } from './pages/acts';
 import { stateMode, slogans } from './state';
@@ -144,6 +144,7 @@ function Game() {
       <Coronation />
       <Ceremony />
       <OathPrompt />
+      <ReleaseNotes />
       <UpdateBar />
       <Tour />
       {!ONLINE && <DemoPanel />}

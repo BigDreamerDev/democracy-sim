@@ -4,7 +4,7 @@
 // After an update, what changed (web/src/changes.ts) is shown once.
 import { useEffect, useState } from 'preact/hooks';
 import { ONLINE } from './store';
-import { CHANGES } from './changes';
+import { CHANGES, RELEASE } from './changes';
 
 const EVERY = 3 * 60 * 1000;
 const running = (() => {
@@ -50,6 +50,36 @@ export function watchForUpdates() {
   setInterval(check, EVERY);
 }
 
+// the release pop-up: once per browser, only for someone who has been here before (a first visit sees nothing)
+const RKEY = 'realm-release-seen';
+function releaseDue() {
+  try {
+    const due = ONLINE && localStorage.getItem(RKEY) !== RELEASE.id && !!localStorage.getItem('realm-changes-seen');
+    if (!due) localStorage.setItem(RKEY, RELEASE.id);
+    return due;
+  } catch {
+    return false;
+  }
+}
+export function ReleaseNotes() {
+  const [open, setOpen] = useState(releaseDue);
+  if (!open) return null;
+  const close = () => {
+    try { localStorage.setItem(RKEY, RELEASE.id); } catch {}
+    setOpen(false);
+  };
+  return (
+    <div class="release" role="dialog" aria-label="What’s new" onClick={(e) => e.target === e.currentTarget && close()}>
+      <div class="release-sheet">
+        <div class="release-kicker">What’s new</div>
+        <h2 class="release-title">{RELEASE.title}</h2>
+        <ul class="release-list">{RELEASE.items.map((t) => <li>{t}</li>)}</ul>
+        <button type="button" class="btn release-go" onClick={close}>Got it</button>
+      </div>
+    </div>
+  );
+}
+
 // the changes this browser hasn't been shown yet; a first visit sees none
 function unseen() {
   const top = CHANGES[0]?.n || 0;
@@ -64,7 +94,8 @@ function unseen() {
 
 export function UpdateBar() {
   const [on, setOn] = useState(ready);
-  const [news, setNews] = useState<{ n: number; text: string }[]>(() => (ONLINE ? unseen() : []));
+  // when the release pop-up is showing, the short list would only repeat it
+  const [news, setNews] = useState<{ n: number; text: string }[]>(() => { const n = ONLINE ? unseen() : []; return localStorage.getItem(RKEY) === RELEASE.id ? n : []; });
   useEffect(() => {
     const f = () => setOn(true);
     listeners.add(f);
