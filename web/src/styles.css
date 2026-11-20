@@ -1375,3 +1375,11 @@ code.key { display: block; padding: 10px; word-break: break-all; font-size: 14px
 :root[data-empire] .proclamation { background: #2A0E1C; color: #E3C16F; border-color: #E3C16F; }
 :root[data-empire] .proclamation small { color: #E3C16F; opacity: .8; }
 .wanted-poster { border: 2px dashed var(--red); background: var(--red-tint); }
+
+/* posters on the walls of other pages (PosterView.tsx WallPoster) */
+.wall-poster { transition: transform .15s ease; }
+.wall-poster:hover { transform: rotate(-1deg) scale(1.02); }
+.today-poster { margin: 16px 0 4px; }
+.side-poster { display: flex; justify-content: center; margin: 14px 0 6px; }
+@media (max-height: 820px) { .side-poster { display: none; } }
+@media (max-width: 560px) { .wall-poster { float: none !important; margin: 8px auto 14px !important; width: 150px !important; } }

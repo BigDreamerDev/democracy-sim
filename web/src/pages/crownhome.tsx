@@ -9,7 +9,7 @@ import { PROVINCES } from '../../../engine/foreign';
 import { PEERAGE, peerTitle, peers, absolute, triumphDue, PROGRESS_EVERY, PROGRESS_COST, TRIUMPH_COST, LESE_EVERY } from '../../../engine/imperium';
 import { canGovernEmpire } from '../../../engine/empire';
 import { CHARGES } from '../../../engine/trials';
-import { GazettePoster } from '../PosterView';
+import { GazettePoster, WallPoster } from '../PosterView';
 import { ESTATES, estateLost, consortOf, inTower, PALACE_COST, PALACE_RENT, EVENTS, EVENT_EVERY } from '../../../engine/dynasty';
 import { canGovernEmpire as canRule } from '../../../engine/empire';
 
@@ -108,6 +108,7 @@ export function CrownDesk() {
           </div>
         </Sec>
       )}
+      <Sec title="On the walls"><WallPoster ids={['calls', 'eagle', 'lend']} width={170} caption="The posters name the sovereign of the day." /></Sec>
       <RoyalFamily />
       <Holdings />
       <Entertainments />

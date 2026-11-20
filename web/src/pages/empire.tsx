@@ -1,5 +1,6 @@
 // The empire: the Imperial Prerogative Act (draft it in one tap, or proclaim it by decree), and the Imperial High
 // Commission's desk: tribute and governors for the provinces, and protectorates abroad. Rules in engine/empire.ts.
+import { WallPoster } from '../PosterView';
 import { lim } from '../../../engine/limits';
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
@@ -26,6 +27,7 @@ export function EmpirePanel({ compact }: { compact?: boolean }) {
   const people = allCitizens(w).filter((c: any) => !c.bot && !c.defected).map((c: any) => [c.id, c.name] as [string, string]);
   return (
     <Sec title={law ? `The ${w.config.realmName}` : 'The Imperial Prerogative'} sub={law ? <>Under {law}. {hc ? <>The {hc.title}: <Who id={hc.holder} />.</> : 'No High Commission yet.'}</> : ACTS.imperial.text}>
+      {law && <WallPoster ids={['eagle', 'calls']} width={150} float="right" />}
       {!law && (
         <Card kind="tint"><div class="stack">
           {!monarchy ? <span class="small">An empire needs a monarch: the head of state must be a monarch first.</span> : (

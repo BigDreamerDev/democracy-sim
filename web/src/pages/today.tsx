@@ -1,3 +1,4 @@
+import { WallPoster, GazettePoster } from '../PosterView';
 import { useEffect, useState } from 'preact/hooks';
 import { shareText } from '../store';
 import { digest, recap, recapText, realmPlace, imperial } from '../../../engine/index';
@@ -18,7 +19,6 @@ import { RoleChips, YourDesk, NewJob } from '../Roles';
 import { rolesOf } from '../roles';
 import { stateMode } from '../state';
 import { CONDITIONS } from '../../../engine/conditions';
-import { GazettePoster } from '../PosterView';
 import { LIMITS, lim } from '../../../engine/limits';
 export { needs };
 
@@ -198,6 +198,7 @@ export function Today() {
         <p class="intro">{w.phase === 'convention' ? <>Write the constitution together. The Convention closes in <Left at={w.convention.closesAt} />.</> : stateMode(w) ? (stateMode(w)!.crown ? `All authority is vested in the Crown. Your duties to ${stateMode(w)!.maj} are listed below.` : 'Order is kept. Your duties to the State are listed below.') : 'Democracy won\'t halt for anything, make sure to cast your vote and propose your bills before they close'}</p>
       </div>
       <Leader />
+      <div class="today-poster"><WallPoster ids={['calls', 'eagle', 'march', 'lend', 'fields', 'silence', 'forge', 'waves', 'skies', 'horse', 'cannon', 'firm', 'fallen']} width={180} caption="On the walls today" /></div>
       <InductionBanner />
       <NewJob />
       {exiled(w, me) && <Card kind="warn" style={{ marginTop: 16, gridColumn: '1 / -1' }}><b>You are in exile</b> until <When at={c.exiledUntil} />. <a href="#/exile">What you can still do</a></Card>}
@@ -405,6 +406,7 @@ export function FrontPage({ id }: { id: string }) {
           <div class="fp-name">The {realmPlace(w).replace(/^the /, '')} Gazette</div>
           <div class="fp-meta"><span>{fmtDay(f.at)}</span><span>Week {f.week + 1}</span><span>Free to every citizen</span></div>
         </header>
+        <WallPoster ids={['calls', 'lend', 'march', 'eagle', 'fields', 'forge']} width={150} float="right" salt={f.week} caption="Poster of the week" />
         {f.crisisLeads ? (
           <>
             {f.crisis.extreme && <div class="fp-flash">Emergency</div>}

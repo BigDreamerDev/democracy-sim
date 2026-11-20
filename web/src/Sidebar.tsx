@@ -7,6 +7,7 @@ import { TABS, where, visible } from './nav';
 import { SearchBox } from './search';
 import { RoleChips } from './Roles';
 import { stateMode } from './state';
+import { WallPoster } from './PosterView';
 
 export function Sidebar({ tabs, current }: { tabs: [string, string, string, boolean][]; current: string }) {
   const { world: w, me } = useStore();
@@ -42,6 +43,7 @@ export function Sidebar({ tabs, current }: { tabs: [string, string, string, bool
           );
         })}
       </nav>
+      <div class="side-poster"><WallPoster ids={['calls', 'march', 'lend', 'eagle', 'waves', 'skies', 'horse', 'fields', 'forge']} width={120} salt={5} /></div>
       <div class="side-foot">
         <div class="small muted">Playing as <b style={{ color: 'var(--ink)' }}>{nm(w, me)}</b> · {c.influence} Influence</div>
         <RoleChips max={3} />

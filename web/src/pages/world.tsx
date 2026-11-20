@@ -1,3 +1,4 @@
+import { WallPoster } from '../PosterView';
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Field, Pick, Locked, Seg, Opt, Photo, PhotoPick } from '../ui';
@@ -85,6 +86,7 @@ export function Security() {
   const cleared = hasPower(w, me, 'intel') || isPM(w, me);
   return (
     <Page dark back={['#/realm', 'The realm']} kicker="Restricted" title="Security Service" intro={<>Director <Who id={holderOf(w, 'security')} />. {bal(w, 'office:security')} crowns left this week; each request costs 20, and 1 in 10 agents gets caught.</>}>
+      <WallPoster ids={['silence']} width={160} float="right" />
       {!cleared ? <Card style={{ marginTop: 16 }}>You are not cleared to read the Service's reports.</Card> : (
         <>
           <Sec title="New request"><Card><div class="stack">
@@ -110,6 +112,7 @@ export function Army() {
   if (!w.offices.army) return <Page back={['#/realm', 'The realm']} title="The Army"><Sec><Locked act="Defence Act" href="#/new?office=army">An Army costs upkeep. Its loyalty decides whether a coup can succeed.</Locked></Sec></Page>;
   return (
     <Page back={['#/realm', 'The realm']} kicker={<>General <Who id={holderOf(w, 'army')} /></>} title="The Army" intro={`${w.army.troops ?? 6} regiments, ${w.army.readiness}, costing ${armyCost(w)} crowns a week.${w.army.war ? ` At war with ${w.nations[w.army.war].name}.` : ''}`}>
+      <WallPoster ids={['march', 'horse', 'waves', 'firm', 'fallen']} width={170} float="right" />
       <Sec title="Loyalty to the government">
         <div class="pips5 big" aria-hidden="true">{[1, 2, 3, 4, 5].map((i) => <i class={i <= w.army.loyalty ? 'on' : ''} style={{ background: i <= w.army.loyalty ? (w.army.loyalty <= 2 ? 'var(--red)' : 'var(--teal)') : undefined }} />)}</div>
         <p class="small">{w.army.loyalty}/5. At 2 or below the Army will not stop a coup; at 4 or more it defends the capital, unless it is away at the front.</p>

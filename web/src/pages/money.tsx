@@ -1,3 +1,4 @@
+import { WallPoster } from '../PosterView';
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Pick, Locked, Meter, Banknote, noteBreakdown } from '../ui';
@@ -173,6 +174,7 @@ function Bonds() {
   if (!s && !mine.length && !market.length) return null;
   return (
     <Sec title="Treasury bonds">
+      <WallPoster ids={['lend', 'cannon', 'skies', 'forge']} width={150} float="right" />
       <div class="stack">
         {s && (
           <Card>

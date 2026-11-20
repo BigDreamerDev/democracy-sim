@@ -1,6 +1,7 @@
 // The world map (#/atlas) and the war room (#/war). The map is drawn here from fixed geography: a continent split
 // between the realm and its neighbours, the Orrin Isles to the west and the Free City of Austrava on its lagoon to the
 // south. Colours follow each nation's mood; lines show treaties, wars and wars abroad. Every country links to its page.
+import { WallPoster } from '../PosterView';
 import { lim } from '../../../engine/limits';
 import { useState } from 'preact/hooks';
 import { POSTERS, ENEMY_POSTERS, FONTS, PALETTES, posterData, savePoster, renderPoster, renderCommission, renderEnemy, warPostersFor } from '../posters';
@@ -487,6 +488,7 @@ function Memorials() {
   if (!open.length) return null;
   return (
     <Sec title="The war memorial" sub={autocrat(w) ? `Whose names are carved? ${cap(autocratTitle(w))} chooses. Each gets a stamp, a pension and a place in the Hall of Fame.` : 'Whose names are carved? A name backed by a majority of MPs voting goes on it, with a stamp, a pension and a place in the Hall of Fame.'}>
+      <WallPoster ids={['fallen']} width={150} float="right" />
       {open.map((m) => {
         const chosen = pick[m.id] ?? m.votes[me] ?? m.names;
         return (
