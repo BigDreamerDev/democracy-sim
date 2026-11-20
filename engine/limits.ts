@@ -75,6 +75,10 @@ export const LIMITS: Record<string, Limit> = {
   dealsOpen: L('Backroom', 'Deals each citizen may have waiting for an answer', 5, 1, 20),
   probesPerDay: L('Backroom', 'Investigations the Security Service may make a day', 1, 1, 5),
   warChestFull: L('Backroom', 'A plot’s war chest is full at', 150, 50, 1000, CR),
+  wantedMax: L('Backroom', 'Largest price a nation abroad may put on an official’s head', 100, 10, 1000, CR),
+  exileStoriesPerDay: L('Backroom', 'Stories each exile may write a day', 2, 1, 10),
+  invasionDefectors: L('Backroom', 'Defectors at one court needed to prepare an invasion', 3, 2, 12),
+  peers: L('Crown', 'Peers of the realm the monarch may create', 5, 0, 20),
   // Regimes
   cells: L('Regimes', 'Citizens a regime may hold at once', 3, 1, 10),
   pamphletsPerDay: L('Regimes', 'Underground pamphlets each citizen may print a day', 2, 1, 10)

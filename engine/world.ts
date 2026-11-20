@@ -32,7 +32,7 @@ function blank(seed: number, now: number): W {
     bonds: { issue: null, holdings: [], outstanding: 0, market: [] },
     conditions: [],
     banks: {}, ventures: [], nations: {}, offers: {}, treaties: {}, asks: [], intel: [],
-    army: { readiness: 'ready', loyalty: 3, reasons: [], war: null, troops: 6, campaign: null, hero: null, defeatedAt: null }, conflicts: [], wars: [], memorials: [], pensions: {}, hostages: [], approaches: {}, plants: {}, ops: [], sweeps: [], exileGov: null,
+    army: { readiness: 'ready', loyalty: 3, reasons: [], war: null, troops: 6, campaign: null, hero: null, defeatedAt: null }, conflicts: [], wars: [], memorials: [], pensions: {}, hostages: [], approaches: {}, plants: {}, ops: [], trials: {}, wanted: {}, exilePress: {}, invasion: null, triumph: null, sweeps: [], exileGov: null,
     deals: {}, cards: [], demands: {}, plots: {}, martial: null,
     acts: { jail: null, decrees: null, continuity: null, unity: null, national: null }, privy: null, oath: null, warchest: { firms: {}, drawn: 0, drawnWeek: 0 }, bannedParties: [], seasonDueAt: null, deputy: null, lastPM: null,
     coup: null, regime: null, transition: null, reckoning: null, reckoningDue: null, regimes: [], probes: [], probeAt: 0, scars: null,

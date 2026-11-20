@@ -1,6 +1,6 @@
 // The backroom: private deals, secret cards (leak, use or burn), coups, exile and pardons. Opens in week 3.
 import { lim } from './limits';
-import { heroOf, beaten, atFront } from './war';
+import { heroOf, beaten, atFront, endWar } from './war';
 import { W, Id, DAY, HOUR, fail, newId, chance, cit, nm, own, text as txt, int, clamp, allCitizens, exiled, mustBeFree, gazette, earn, spend, stamp, approve, meter, needIntrigue, canSeeCard, addCard, isHOS, isMP, isPM, inDanger, holderOf, hasPower, transfer, ca, hosTitle, bump, inForce, inGov, isMinister } from './core';
 import { vacateSeat, clearMinisters, callGeneralElection } from './politics';
 import { takePower, fallRegime } from './regime';
@@ -353,6 +353,9 @@ export function coupTally(w: W) {
   }
   add('coup', k.march ? 3 : 0, 'The Army marches with its General');
   add('coup', k.backer ? 1 : 0, `Backed by ${w.nations[k.backer]?.name}`);
+  add('coup', k.invasion || 0, `${w.nations[k.backer]?.name ?? 'Foreign'} troops with the exiles`);
+  // the peers of the realm stand by the Crown (one for every two who have not joined the other side)
+  add('gov', Math.floor(allCitizens(w).filter((c: any) => c.peerage && !k.plotters.includes(c.id) && k.declared[c.id] !== 'coup' && !c.defected).length / 2), 'The peers of the realm');
   add('coup', k.pretext ? 1 : 0, 'A realm already in trouble');
   add('coup', k.chest >= lim(w, 'warChestFull') ? 2 : k.chest >= lim(w, 'warChestFull') / 2 ? 1 : 0, 'A war chest');
   add('gov', w.meters.stability >= 60 ? 1 : 0, 'A settled realm');
@@ -413,6 +416,11 @@ export function resolveCoup(w: W) {
   if (!p) return;
   if (won) seize(w, p, { swift: false, margin: t.coup - t.gov, declared: k.declared });
   else failPlot(w, p, 'it collapsed overnight');
+  // an invasion: if the exiles won, their host's war is over (it was fought for them); if they lost, it fights on
+  if (k.invasion && won && w.army?.war === k.backer) {
+    endWar(w, 'peace');
+    gazette(w, 'foreign', `With the exiles in power, ${w.nations[k.backer]?.name} withdraws its troops and makes peace.`, '#/war');
+  }
 }
 function seize(w: W, p: any, o: { swift: boolean; margin: number; declared: Record<Id, string> }) {
   p.status = 'succeeded';

@@ -36,7 +36,7 @@ export function submitStory(w: W, actor: Id, pid: Id, headline: string, body: st
   if (!licensed(w, p)) fail(`${p.name} has no licence to publish. The Ministry of Public Order grants them.`);
   const h = text(headline, 5, 120, 'headline');
   const b = prose(body, 2000, 'story');
-  if (w.stories.filter((x: any) => x.by === actor && x.at > w.now - DAY).length >= lim(w, 'storiesPerDay')) fail(`You have filed ${lim(w, 'storiesPerDay')} stor${lim(w, 'storiesPerDay') === 1 ? 'y' : 'ies'} today. Come back tomorrow.`);
+  if (w.stories.filter((x: any) => x.by === actor && !x.exile && x.at > w.now - DAY).length >= lim(w, 'storiesPerDay')) fail(`You have filed ${lim(w, 'storiesPerDay')} stor${lim(w, 'storiesPerDay') === 1 ? 'y' : 'ies'} today. Come back tomorrow.`);
   const mine = p.editor === actor;
   // under censorship an editor's yes only sends the story to the censor ('held')
   const held = !!w.regime?.censorship;
@@ -69,7 +69,7 @@ export function cheer(w: W, actor: Id, sid: Id) {
 // ---------- the Friday front page ----------
 export function makeFrontPage(w: W) {
   const since = w.now - WEEK;
-  const stories = w.stories.filter((s: any) => s.status === 'published' && s.at > since);
+  const stories = w.stories.filter((s: any) => s.status === 'published' && s.at > since && !s.exile);
   // a dispatch from a war correspondent counts double
   const score = (s: any) => (s.cheers.length * 2 + (w.papers[s.paper]?.followers.length || 0) / 4 + (s.leak ? 3 : 0)) * (s.war ? 2 : 1);
   const lead = stories.sort((a: any, b: any) => score(b) - score(a))[0] || null;

@@ -1,3 +1,4 @@
+import { CrownDesk } from './crownhome';
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, Empty, LinkRow, Seg, Opt, Field, Pick, Icon, ThemeSwitch, Locked , When } from '../ui';
@@ -174,6 +175,7 @@ export function HOS() {
         {mine ? <Card><div class="stack"><Pick value={hon.target} onChange={(v) => setHon({ ...hon, target: v })} empty="Honour whom?" options={allCitizens(w).map((c: any) => [c.id, c.name])} /><Field label="Honour" value={hon.title} onInput={(v) => setHon({ ...hon, title: v })} /><Btn onClick={() => act('hos.honour', hon, 'Honoured.')}>Award</Btn></div></Card> : <Empty>The head of state awards these.</Empty>}
       </Sec>
       <Sec title="Pardons"><ul class="list">{exiles.map((c: any) => <li class="row"><span><b>{c.name}</b><div class="small muted">{c.pardonAsked ? 'Has asked for a pardon' : 'In exile'}</div></span>{mine && <Btn small onClick={() => act('hos.pardon', { target: c.id }, 'Pardoned.')}>Pardon</Btn>}</li>)}</ul>{!exiles.length && <Empty>Nobody is in exile.</Empty>}</Sec>
+      <CrownDesk />
       {mon && mine && !!w.crown?.reign?.crownedAt && <Sec title="Your title"><Seg value={w.config.hosTitle} onChange={(v) => act('hos.title', { title: v })} options={w.acts?.imperial ? [['Empress', 'Empress'], ['Emperor', 'Emperor']] : [['Queen', 'Queen'], ['King', 'King']]} /></Sec>}
     </Page>
   );

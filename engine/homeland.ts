@@ -8,6 +8,7 @@
 import { W, Id, DAY, fail, own, cit, nm, gazette, transfer, bal, ca, chance, rand, clamp, approve, stamp, earn, meter, isPM, isHOS, hasPower, holderOf, newId, addCard, mustBeFree, bump } from './core';
 import { moodShift, PROFILES } from './foreign';
 import { rankOf, bringHome, unmaskPlant, defect } from './abroad';
+import { openTrial } from './trials';
 
 export const canSecurity = (w: W, id: Id) => !!w.offices.security && (hasPower(w, id, 'intel') || (isPM(w, id) && !holderOf(w, 'security')));
 export const canExtradite = (w: W, id: Id) => isPM(w, id) || hasPower(w, id, 'envoy');
@@ -55,7 +56,9 @@ export function extradite(w: W, actor: Id, tid: unknown) {
     stamp(w, c.id, 'Extradited', `Handed back by ${n.name}`, 'bad');
     approve(w, c.id, -3);
     bump(w, actor, 'extradited');
-    return gazette(w, 'foreign', `${n.name} hands ${c.name} back to the realm at the request of ${nm(w, actor)}. They are held at the border for three days.`, '#/abroad');
+    gazette(w, 'foreign', `${n.name} hands ${c.name} back to the realm at the request of ${nm(w, actor)}. They are held at the border for three days.`, '#/abroad');
+    if (!d.plant) openTrial(w, c.id, 'treason', actor, `extradited from ${n.name}`);
+    return;
   }
   moodShift(n, -1, `We demanded they hand over ${c.name}`);
   d.favour = clamp(d.favour + 4, 0, 100);
@@ -103,7 +106,9 @@ export function snatch(w: W, actor: Id, tid: unknown) {
     stamp(w, c.id, 'Brought home', `Seized by the Security Service in ${cap}`, 'bad');
     log(w, { kind: 'snatch', by: actor, target: c.id, nation: n.id, ok: true, text: `Brought ${c.name} home.` });
     earn(w, actor, 3, 'A defector brought home');
-    return gazette(w, 'foreign', `Agents of the realm seize ${c.name} in ${cap} and bring them home${d.plant ? '' : ', to be held at the border for five days'}. ${n.name} protests.`, '#/abroad');
+    gazette(w, 'foreign', `Agents of the realm seize ${c.name} in ${cap} and bring them home${d.plant ? '' : ', to be held at the border until their trial'}. ${n.name} protests.`, '#/abroad');
+    if (!d.plant) openTrial(w, c.id, 'treason', actor, `seized in ${cap}`);
+    return;
   }
   moodShift(n, -2, `They caught our agents trying to seize ${c.name}`);
   meter(w, 'stability', -1, 'A botched operation abroad');
@@ -187,7 +192,19 @@ export function lapsePlant(w: W, p: any) {
 // once a week: each plant risks discovery (more as they rise, since more eyes are on them)
 export function homelandWeek(w: W) {
   Object.values(w.citizens).forEach((c: any) => {
-    if (c.active && c.defected?.plant && chance(w, 0.06 + 0.02 * Math.max(0, rankOf(w, c.id)))) unmaskPlant(w, c, 'the court’s own spies found them out');
+    const d = c.defected;
+    if (!c.active || !d?.plant || c.agentOf === d.nation) return;
+    if (d.turnOffer && d.turnOffer.until <= w.now) {
+      // they ignored the court's offer: it takes that as a no, and watches them harder
+      d.turnOffer = null;
+      d.suspected = true;
+    }
+    if (d.turnOffer) return;
+    const risk = 0.06 + 0.02 * Math.max(0, rankOf(w, c.id)) + (d.suspected ? 0.1 : 0);
+    if (!chance(w, risk)) return;
+    // found out: a hostile court would rather turn a spy than expel one
+    if (w.nations[d.nation].mood <= 2 && !d.suspected && chance(w, 0.6)) d.turnOffer = { at: w.now, until: w.now + 2 * DAY };
+    else unmaskPlant(w, c, 'the court’s own spies found them out');
   });
   // a plant who is home again is done; closed offers older than a fortnight are forgotten
   Object.values(w.plants || {}).forEach((p: any) => p.status === 'abroad' && w.citizens[p.to]?.defected?.plant?.id !== p.id && (p.status = 'home'));

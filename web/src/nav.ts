@@ -34,7 +34,7 @@ export const TABS: Tab[] = [
   { id: 'realm', label: 'Realm', icon: 'realm', href: '#/money', sections: [
     { id: 'money', label: 'Money', href: '#/money', routes: ['money', 'realm', 'wallet', 'economy', 'exchange', 'banks', 'ventures', 'bets'], count: (w, me) => bal(w, ca(me)) },
     { id: 'world', label: 'World', href: '#/world', routes: ['world', 'atlas', 'abroad', 'foreign', 'nation', 'security', 'army', 'war'], count: (w) => (w.army?.war ? 'War' : null) },
-    { id: 'society', label: 'Society', href: '#/society', routes: ['society', 'press', 'court', 'case', 'crises', 'crisis'] },
+    { id: 'society', label: 'Society', href: '#/society', routes: ['society', 'press', 'court', 'case', 'trial', 'crises', 'crisis'] },
     { id: 'backroom', label: 'Backroom', href: '#/backroom', routes: ['backroom', 'plots', 'exile'], count: (w, me) => (intrigueOpen(w) ? w.cards.filter((k: any) => canSeeCard(w, k, me)).length || null : null) },
     { id: 'jail', label: 'Realm Jail', href: '#/jail', routes: ['jail'], show: (w) => !!w.acts?.jail || Object.values(w.citizens).some((c: any) => c.jail), count: (w) => Object.values(w.citizens).filter((c: any) => c.jail && (c.jail.until == null || c.jail.until > w.now)).length || null },
     { id: 'streets', label: 'Streets', href: '#/streets', routes: ['streets', 'hunt', 'market', 'tag', 'meet'] }
@@ -92,7 +92,7 @@ const PARTS: [string, string, string, string][] = [
   ['#/security', 'Security Service', 'world', 'intel intelligence spies'],
   ['#/crises', 'Crises', 'society', 'emergency disaster decide'],
   ['#/press', 'The press', 'society', 'newspapers front page story leak scandal'],
-  ['#/court', 'Supreme Court', 'society', 'case judge lawsuit sue justice'],
+  ['#/court', 'Supreme Court', 'society', 'case judge lawsuit sue justice trial jury treason verdict'],
   ['#/plots', 'Plots', 'backroom', 'coup conspiracy overthrow'],
   ['#/jail', 'The Realm Jail', 'jail', 'detained detention prison prisoners'],
   ['#/powers', 'Government powers', 'powers', 'decree continuity national party unity acts'],

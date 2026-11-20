@@ -681,24 +681,29 @@ export function plantReport(w: W, actor: Id) {
   if (!d?.plant) fail('Only a plant of the Security Service reports home.');
   ready(w, actor, 'report');
   const n = nationOf(w, actor);
-  const others = defectorsIn(w, n.id).filter((c: any) => c.id !== actor);
+  // a turned plant writes what the court dictates: the army weaker than it is, the mood warmer, no ring, no rivals
+  const lie = w.citizens[actor].agentOf === n.id;
+  const others = lie ? [] : defectorsIn(w, n.id).filter((c: any) => c.id !== actor);
   const who = others.length ? others.map((c: any) => `${c.name} (${c.defected.favour} favour, ${c.defected.secrets.length} secret${c.defected.secrets.length === 1 ? '' : 's'})`).join(', ') : 'no other defectors';
-  n.seenAt = w.now;
-  addCard(w, { title: `From our plant ${nm(w, actor)} in ${n.name}: their army stands at ${Math.round((n.power || 0) * 10) / 10}, they are ${['hostile', 'cold', 'wary', 'friendly', 'warm'][n.mood] ?? 'unreadable'} to us, ${n.mole ? 'and they run a ring inside our government' : 'and they run no ring inside our government'}. At court: ${who}.`, about: null, from: 'Security Service', level: 'secret', viewers: ['pm', 'office:security'] });
+  if (!lie) n.seenAt = w.now;
+  const power = lie ? Math.max(1, Math.round(((n.power || 3) - 2) * 10) / 10) : Math.round((n.power || 0) * 10) / 10;
+  const mood = lie ? Math.min(4, n.mood + 2) : n.mood;
+  addCard(w, { title: `From our plant ${nm(w, actor)} in ${n.name}: their army stands at ${power}, they are ${['hostile', 'cold', 'wary', 'friendly', 'warm'][mood] ?? 'unreadable'} to us, ${n.mole && !lie ? 'and they run a ring inside our government' : 'and they run no ring inside our government'}. At court: ${who}.`, about: null, from: 'Security Service', level: 'secret', viewers: ['pm', 'office:security'] });
   deed(w, actor, 'Sent a report home');
   w.citizens[actor].defected.deeds[0].secret = true;
-  if (chance(w, 0.08)) unmaskPlant(w, w.citizens[actor], 'a courier was caught');
+  if (!lie && chance(w, 0.08)) unmaskPlant(w, w.citizens[actor], 'a courier was caught');
 }
 export function sabotage(w: W, actor: Id) {
   const d = w.citizens[actor]?.defected;
   if (!d?.plant) fail('Only a plant of the Security Service sabotages the court.');
   ready(w, actor, 'sabotage', 1);
   const n = nationOf(w, actor);
-  n.power = clamp(Math.round(((n.power || 3) - 0.5) * 10) / 10, 1, 10);
-  deed(w, actor, `Sabotaged ${n.name}'s army`);
+  const staged = w.citizens[actor].agentOf === n.id;
+  if (!staged) n.power = clamp(Math.round(((n.power || 3) - 0.5) * 10) / 10, 1, 10);
+  deed(w, actor, staged ? `Staged a fire at ${n.name}'s arsenal, for the court` : `Sabotaged ${n.name}'s army`);
   w.citizens[actor].defected.deeds[0].secret = true;
   gazette(w, 'foreign', `A fire at the arsenal in ${PROFILES[n.id]?.capital ?? n.name}. ${n.name}'s army is weakened; nobody knows who set it.`, '#/nation/' + n.id);
-  if (chance(w, 0.2)) unmaskPlant(w, w.citizens[actor], 'caught at the arsenal');
+  if (!staged && chance(w, 0.2)) unmaskPlant(w, w.citizens[actor], 'caught at the arsenal');
 }
 
 // ---------- a life abroad: a home in the capital, citizenship, and the court's daily business ----------

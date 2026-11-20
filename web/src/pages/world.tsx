@@ -7,6 +7,7 @@ import { Diplomacy, WorldMap } from './atlas';
 import { armyCost } from '../../../engine/economy';
 import { CRISES, MOVES, grudgeAgainst } from '../../../engine/society';
 import { SeasonExtras } from './glory';
+import { TrialsList } from './crownhome';
 
 const moodColour = ['var(--red)', 'var(--amber)', 'var(--muted)', 'var(--teal)', 'var(--teal)'];
 
@@ -135,7 +136,7 @@ export function Press() {
         <div class="stack">
           {stories.map((s: any) => (
             <Card kind={s.leak ? 'warn' : undefined}>
-              <div class="kicker" style={{ margin: 0 }}>{s.underground ? 'The underground press' : w.papers[s.paper]?.name}{s.leak ? ' · leaked' : ''}</div>
+              <div class="kicker" style={{ margin: 0 }}>{s.underground ? 'The underground press' : s.exile ? `${w.exilePress?.[s.exile]?.name ?? 'The exile press'}, from abroad` : w.papers[s.paper]?.name}{s.leak ? ' · leaked' : ''}</div>
               <div class="serif" style={{ fontSize: 21, lineHeight: 1.15 }}>{s.headline}</div>
               <Photo id={s.photo} alt={s.headline} />
               <p style={{ margin: '4px 0' }}>{s.body}</p>
@@ -161,10 +162,11 @@ export function Press() {
 export function Court() {
   const { world: w } = useStore();
   const [f, setF] = useState({ question: '', against: 'the government', lawRef: '', argument: '' });
-  if (!w.offices.court) return <Page back={['#/realm', 'The realm']} title="Supreme Court"><Sec><Locked act="Supreme Court Amendment" href="#/new?office=court">Three justices drawn by lot rule on whether laws and actions break the constitution.</Locked></Sec></Page>;
+  if (!w.offices.court) return <Page back={['#/realm', 'The realm']} title="Supreme Court"><Sec><Locked act="Supreme Court Amendment" href="#/new?office=court">Three justices drawn by lot rule on whether laws and actions break the constitution.</Locked></Sec><TrialsList /></Page>;
   return (
     <Page back={['#/realm', 'The realm']} title="Supreme Court" intro={`Justices: ${w.offices.court.members.map((j: string) => nm(w, j)).join(', ')}. Two of three decide.`}>
       <Sec title="Cases"><ul class="list">{Object.values(w.cases).map((k: any) => <LinkRow href={'#/case/' + k.id} title={k.question} sub={`${nm(w, k.plaintiff)} v ${k.against}. ${k.status === 'open' ? 'Open' : 'Ruled for ' + (k.ruling === 'plaintiff' ? nm(w, k.plaintiff) : k.against)}`} />)}</ul>{!Object.keys(w.cases).length && <Empty>No cases.</Empty>}</Sec>
+      <TrialsList />
       <Sec title="Bring a case (5 crowns)"><Card><div class="stack">
         <Field label="Question for the Court" value={f.question} onInput={(v) => setF({ ...f, question: v })} placeholder="Did the PM break L001 by...?" />
         <Field label="Against" value={f.against} onInput={(v) => setF({ ...f, against: v })} />

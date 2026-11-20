@@ -15,6 +15,9 @@ import { nationsTurn, settleUltimatum } from './foreign';
 import { battle, warWeek, settleTerms, closeMemorial, payPensions } from './war';
 import { abroadWeek } from './abroad';
 import { homelandWeek, lapsePlant } from './homeland';
+import { lapseWanted, exilePressWeek } from './exiles';
+import { settleTrial } from './trials';
+import { crownWeek, endTriumph } from './imperium';
 import { empireWeek } from './empire';
 import { machineWeek } from './warmachine';
 import { tickExchange, exchangePayday, closeMotion } from './exchange';
@@ -123,6 +126,9 @@ function collect(w: W): D[] {
   Object.values(w.orders || {}).forEach((o: any) => ['paid', 'delivered'].includes(o.status) && add(o.dueAt, () => orderDeadline(w, o), o.id));
   (w.jobClaims || []).forEach((c: any) => c.status === 'pending' && add(c.dueAt, () => (c.status = 'lapsed'), c.id));
   Object.values(w.markets || {}).forEach((m: any) => add(marketDue(m), () => staleMarket(w, m), m.id));
+  Object.values(w.trials || {}).forEach((t: any) => t.status === 'open' && add(t.closesAt, () => settleTrial(w, t), t.id));
+  Object.values(w.wanted || {}).forEach((x: any) => x.status === 'open' && add(x.until, () => lapseWanted(w, x), x.id));
+  if (w.triumph && !w.triumph.done) add(w.triumph.until, () => endTriumph(w), 'triumph');
   Object.values(w.plants || {}).forEach((p: any) => p.status === 'offered' && add(p.until, () => lapsePlant(w, p), p.id));
   (w.ultimatums || []).forEach((u: any) => u.status === 'sent' && add(u.dueAt, () => settleUltimatum(w, u, false), u.id));
   // the war: a battle every 12 hours. The Exchange: prices move every 3 hours once the realm is running
@@ -154,6 +160,8 @@ function weeklyPayday(w: W) {
   warWeek(w);
   abroadWeek(w);
   homelandWeek(w);
+  exilePressWeek(w);
+  crownWeek(w);
   empireWeek(w);
   machineWeek(w);
   if (!strikeOn(w)) payPensions(w);

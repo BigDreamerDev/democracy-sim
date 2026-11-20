@@ -9,6 +9,7 @@ import { MOODS, PROFILES } from '../../../engine/foreign';
 import { RANKS, rankOf, COOL, POLICIES, RANSOM, defectorsIn, throneOf, BID_COOL, BUY_PRICE, threatened, exileNeed, HOMES, NATURALISE_DAYS, businessFor } from '../../../engine/abroad';
 import { canSecurity, canExtradite, canSeize, extraditeOdds, snatchOdds, OP_COST, EXTRADITE_COOL, SNATCH_COOL } from '../../../engine/homeland';
 import { TREATIES } from '../../../engine/foreign';
+import { canPostWanted, invasionStrength, INVASION_PREP, WANTED_DAYS } from '../../../engine/exiles';
 
 const moodColour = ['var(--red)', 'var(--amber)', 'var(--muted)', 'var(--teal)', 'var(--teal)'];
 
@@ -48,6 +49,7 @@ function Court() {
           <div class="ladder">{RANKS.map((x, i) => <span class={i <= r ? 'on' : ''}>{i === 4 ? 'Throne' : x.name}{i < 4 && <i>{x.min}</i>}</span>)}</div>
         </div>
       </div>
+      {d.turnOffer && d.turnOffer.until > w.now && <TurnOffer />}
       {d.plant && <PlantDesk />}
       <FromHome />
       <Business />
@@ -66,6 +68,9 @@ function Court() {
       <Throne />
       <Heir />
       <ExileGov />
+      <Invasion />
+      <ExilePress />
+      {canPostWanted(w, me) && <PostWanted />}
       <Sec title="The secrets you carried out" sub="Each one sold is printed abroad: +12 favour and 15 crowns. If you ever come home, you will be questioned at the border.">
         {d.secrets.length ? <ul class="list">{d.secrets.map((s: string, i: number) => <li class="row"><span class="small">{s}</span><Btn small kind="danger ghost" onClick={() => confirm('Sell this secret? It will be printed.') && act('abroad.sell', { secret: i }, 'Sold.')}>Sell</Btn></li>)}</ul> : <Empty>You have no secrets to sell. Agents you recruit can send you more.</Empty>}
       </Sec>
@@ -341,7 +346,10 @@ function Home() {
         </Sec>
       )}
       <Refuge />
+      <Wanted />
+      <Invasion />
       <ExileGov />
+      <ExilePress />
       <Sec title="Hostages" sub={`Held abroad for a week under terms of peace. The PM, the Chancellor or the Foreign Minister can pay ${RANSOM} from the Treasury to bring them home early.`}>
         {held.length ? <ul class="list">{held.map((h: any) => <li class="row"><span><Who id={h.who} /> in {PROFILES[h.nation]?.capital}, {w.nations[h.nation]?.name}<div class="small muted">Released in <Left at={h.until} /></div></span>{canRansom && <Btn small onClick={() => act('hostage.ransom', { hostage: h.id }, 'Ransom paid.')}>Pay {RANSOM}</Btn>}</li>)}</ul> : <Empty>Nobody is held abroad.</Empty>}
       </Sec>
@@ -402,6 +410,107 @@ function SendOver() {
         <Btn disabled={!who || !to} onClick={() => act('intel.plant', { target: who, nation: to }, 'The request goes out, in private.')}>Ask them</Btn>
         {plants.length > 0 && <ul class="list small">{plants.map((p) => <li class="row"><span><Who id={p.to} /> → {w.nations[p.nation]?.name}</span><span class="muted">{p.status === 'offered' ? <>Waiting for an answer, lapses <Left at={p.until} /></> : w.citizens[p.to]?.defected?.plant?.id === p.id ? `In place: ${w.citizens[p.to].defected.favour} favour` : 'Home'}</span></li>)}</ul>}
         {ops.length > 0 && <><b class="small">Operations log</b><ul class="list small">{ops.map((o: any) => <li class="row"><span>{({ discredit: 'Smear', snatch: 'Snatch', plant: 'Plant' } as any)[o.kind]}: {o.text}</span><span class="muted"><When at={o.at} /></span></li>)}</ul></>}
+      </div></Card>
+    </Sec>
+  );
+}
+
+// a plant found out: the court's offer, only they see it
+function TurnOffer() {
+  const { world: w, me } = useStore();
+  const d = w.citizens[me].defected;
+  const n = w.nations[d.nation];
+  return (
+    <Card kind="warn" style={{ marginTop: 14 }}><div class="stack">
+      <div class="kicker" style={{ margin: 0 }}>Only you can see this</div>
+      <b class="serif" style={{ fontSize: 20 }}>The court of {n.name} knows what you are.</b>
+      <span class="small">They will not throw you out, if you work for them now. Your reports home will say what they tell you to, your sabotage will be staged, and the Service will never know. 20 crowns and +15 favour. Refuse, and you are expelled as a spy. Decide by <When at={d.turnOffer.until} />.</span>
+      <div class="grid2"><Btn kind="danger" onClick={() => confirm('Betray the Security Service?') && act('abroad.turn', { yes: true }, 'You work for them now.')}>Work for them</Btn><Btn kind="plain" onClick={() => confirm('Refuse? They will throw you out.') && act('abroad.turn', { yes: false }, 'You are thrown out.')}>Refuse</Btn></div>
+    </div></Card>
+  );
+}
+// wanted posters: public, and at home anyone may try their luck
+function Wanted() {
+  const { world: w, me } = useStore();
+  const open = (Object.values(w.wanted || {}) as any[]).filter((x) => x.status === 'open' && x.until > w.now);
+  if (!open.length) return null;
+  return (
+    <Sec title="Wanted" sub="Prices put on the heads of the realm's officials by nations abroad. Seize one and carry them over the border, and the reward is yours. Fail, and you are held for three days.">
+      <div class="court-grid">{open.map((x) => (
+        <div class="card wanted-poster"><div class="kicker" style={{ margin: 0 }}>Wanted by {w.nations[x.nation]?.name}</div><b class="serif" style={{ fontSize: 24 }}><Who id={x.target} /></b><span class="small">{x.reward} crowns, delivered to {PROFILES[x.nation]?.capital}. Posted by {nm(w, x.by)}. Comes down <Left at={x.until} />.</span>
+          {x.target !== me && !w.citizens[me]?.defected && !x.tried.includes(me) && <Btn small kind="danger" onClick={() => confirm(`Try to seize ${nm(w, x.target)}? It is public either way.`) && act('wanted.claim', { wanted: x.id }, 'Done.')}>Try to seize them</Btn>}
+          {x.tried.includes(me) && <span class="small muted">You tried.</span>}
+        </div>
+      ))}</div>
+    </Sec>
+  );
+}
+function PostWanted() {
+  const { world: w, me } = useStore();
+  const d = w.citizens[me].defected;
+  const [f, setF] = useState({ target: '', reward: '40' });
+  const officials = (Object.values(w.citizens) as any[]).filter((c) => c.active && !c.bot && !c.defected && (c.id === w.pm || c.id === w.hos?.holder || (w.seats || []).includes(c.id) || Object.values(w.offices).some((o: any) => o.holder === c.id)));
+  return (
+    <Sec title="Put a price on a head" sub={`From ${w.nations[d.nation].name}'s treasury (${bal(w, 'nation:' + d.nation)} crowns). Anyone at home may try to seize them and carry them over the border, to be held here as a hostage. The poster stays up ${WANTED_DAYS} days; unclaimed, the money comes back.`}>
+      <Card><div class="grid2"><Pick value={f.target} onChange={(v) => setF({ ...f, target: v })} empty="Which official?" options={officials.map((c) => [c.id, c.name])} /><Field label={`Reward (10–${lim(w, 'wantedMax')})`} type="number" value={f.reward} onInput={(v) => setF({ ...f, reward: v })} /></div><Btn small kind="danger" style={{ marginTop: 8 }} disabled={!f.target} onClick={() => act('abroad.wanted', { target: f.target, reward: Number(f.reward) }, 'The posters go up.')}>Post it</Btn></Card>
+    </Sec>
+  );
+}
+// the exile press: one paper per court, written by every defector there
+function ExilePress() {
+  const { world: w, me } = useStore();
+  const d = w.citizens[me]?.defected;
+  const [name, setName] = useState('');
+  const [st, setSt] = useState({ headline: '', body: '' });
+  const papers = Object.values(w.exilePress || {}) as any[];
+  const mine = d && w.exilePress?.[d.nation];
+  if (!papers.length && !d) return null;
+  const stories = w.stories.filter((x: any) => x.exile).slice(0, 8);
+  return (
+    <Sec title="The exile press" sub="Papers written by the defectors at each court. Each week the most-cheered story is printed in the Gazette at home.">
+      {d && !mine && <Card><b>Found a paper for the exiles in {w.nations[d.nation].name}</b><div class="grid2" style={{ marginTop: 6 }}><Field label="Its name" value={name} onInput={(v) => setName(v.slice(0, 40))} placeholder="The Free Voice" /><Btn style={{ alignSelf: 'end' }} disabled={name.trim().length < 4} onClick={() => act('exile.paper', { name }, 'The presses roll.')}>Found it</Btn></div></Card>}
+      {mine && <Card><b>Write for {mine.name}</b><Field label="Headline" value={st.headline} onInput={(v) => setSt({ ...st, headline: v.slice(0, 120) })} /><Field label="Story" area value={st.body} onInput={(v) => setSt({ ...st, body: v.slice(0, 2000) })} /><Btn small disabled={st.headline.trim().length < 5} onClick={() => act('exile.write', st, 'Printed.') && setSt({ headline: '', body: '' })}>Print it</Btn></Card>}
+      {papers.length > 0 && <p class="small muted">{papers.map((p) => `${p.name} (${PROFILES[p.nation]?.capital})`).join(' · ')}</p>}
+      {stories.length ? <ul class="list">{stories.map((x: any) => <li class="stack" style={{ gap: 2 }}><b>{x.headline}</b><span class="small muted">{w.exilePress?.[x.exile]?.name ?? 'The exile press'} · <Who id={x.by} /> · <When at={x.at} /></span>{x.body && <span class="small">{x.body.slice(0, 280)}{x.body.length > 280 ? '…' : ''}</span>}<span><Btn small kind="ghost" disabled={x.by === me} onClick={() => act('press.cheer', { story: x.id })}>{x.cheers.includes(me) ? 'Cheered' : 'Cheer'} ({x.cheers.length})</Btn></span></li>)}</ul> : <Empty>Nothing printed yet.</Empty>}
+    </Sec>
+  );
+}
+// the invasion: prepared in public, abroad; at home, a warning (and the Service's chance to strike first)
+function Invasion() {
+  const { world: w, me } = useStore();
+  const v = w.invasion;
+  const d = w.citizens[me]?.defected;
+  const [name, setName] = useState('');
+  const [amt, setAmt] = useState('20');
+  const need = lim(w, 'invasionDefectors');
+  if (!v) {
+    if (!d) return null;
+    const here = defectorsIn(w, d.nation).length;
+    const n = w.nations[d.nation];
+    const hostile = n.mood <= 1 || !!n.ruler;
+    return (
+      <Sec title="Invade the homeland" sub={`With ${need} defectors at a court that hates the realm (or that one of you rules), a Minister or higher can raise an invasion. ${INVASION_PREP / 86400000} days to prepare; then the exiles land with foreign troops, the host declares war, and the realm has 12 hours to choose a side.`}>
+        <Card kind="dashed"><div class="stack">
+          <span class="small">{here} of {need} defectors here. {n.name} is {hostile ? 'ready to lend its army' : `${MOODS[n.mood].toLowerCase()} to the realm, and will not lend its army`}.</span>
+          {here >= need && hostile && rankOf(w, me) >= 2 && <><Field label="Name the force" value={name} onInput={(x) => setName(x.slice(0, 60))} placeholder="The Army of Return" /><Btn kind="danger" disabled={name.trim().length < 4} onClick={() => confirm('Begin preparing an invasion? It is public at once.') && act('exile.invade', { name }, 'The muster begins.')}>Raise the invasion</Btn></>}
+        </div></Card>
+      </Sec>
+    );
+  }
+  const n = w.nations[v.nation];
+  const inIt = v.members.includes(me);
+  const here = d?.nation === v.nation;
+  const lead = v.leader === me;
+  const ready = w.now >= v.readyAt;
+  return (
+    <Sec title={v.name} sub={`An invasion of the homeland, mustering in ${PROFILES[v.nation]?.capital}, ${n.name}. Led by ${nm(w, v.leader)}.`}>
+      <Card kind="warn"><div class="stack">
+        <span class="small">{v.members.length} exiles under arms ({need} needed): {v.members.map((x: string) => nm(w, x)).join(', ')}. War chest {v.chest} crowns, {v.drills} drills. Strength +{invasionStrength(w, v)} on the night. {ready ? 'Ready to sail.' : <>Ready <Left at={v.readyAt} />.</>}</span>
+        {here && !inIt && <Btn kind="danger" onClick={() => act('exile.muster', {}, 'You take up arms.')}>Join the invasion</Btn>}
+        {inIt && <div class="grid2"><Btn kind="ghost" onClick={() => act('exile.drill', {}, 'Drilled.')}>Drill (once a day)</Btn><div class="row" style={{ gap: 6 }}><Field label="Crowns" type="number" value={amt} onInput={setAmt} /><Btn small onClick={() => act('exile.fund', { amount: Number(amt) }, 'Into the chest.')}>Fund</Btn></div></div>}
+        {lead && <div class="grid2"><Btn kind="danger" disabled={!ready || v.members.length < need} onClick={() => confirm('Launch the invasion? Every member sails home tonight, and the host declares war.') && act('exile.launch', {}, 'The ships sail.')}>Launch the invasion</Btn><Btn kind="plain" onClick={() => confirm('Call it off? The chest is refunded.') && act('exile.standDown', {}, 'Called off.')}>Call it off</Btn></div>}
+        {!d && canSecurity(w, me) && <Btn kind="danger ghost" onClick={() => act('intel.disrupt', {}, 'Agents are on their way.')}>Disrupt the muster (25 from the Service)</Btn>}
+        {!d && !canSecurity(w, me) && <span class="small muted">The Security Service can strike at the muster. Extraditing or snatching its members weakens it too.</span>}
       </div></Card>
     </Sec>
   );

@@ -20,6 +20,9 @@ import * as Wr from './war';
 import * as Ex from './exchange';
 import * as Ab from './abroad';
 import * as Hl from './homeland';
+import * as Xl from './exiles';
+import * as Tr from './trials';
+import * as Im from './imperium';
 import * as Em from './empire';
 import * as Wm from './warmachine';
 import * as Pv from './privy';
@@ -184,6 +187,27 @@ export const COMMANDS: Record<string, Cmd> = {
   'intel.snatch': (w, me, a) => Hl.snatch(w, me, a.target),
   'intel.plant': (w, me, a) => Hl.offerPlant(w, me, a.target, a.nation),
   'plant.answer': (w, me, a) => Hl.answerPlant(w, me, a.plant, a.yes),
+  'abroad.turn': (w, me, a) => Xl.answerTurn(w, me, a.yes),
+  'abroad.wanted': (w, me, a) => Xl.postWanted(w, me, a.target, a.reward),
+  'wanted.claim': (w, me, a) => Xl.claimWanted(w, me, a.wanted),
+  'exile.paper': (w, me, a) => Xl.foundExilePaper(w, me, a.name),
+  'exile.write': (w, me, a) => Xl.writeExile(w, me, a.headline, a.body),
+  'exile.invade': (w, me, a) => Xl.planInvasion(w, me, a.name),
+  'exile.muster': (w, me) => Xl.joinInvasion(w, me),
+  'exile.fund': (w, me, a) => Xl.fundInvasion(w, me, a.amount),
+  'exile.drill': (w, me) => Xl.drillInvasion(w, me),
+  'exile.standDown': (w, me) => Xl.abandonInvasion(w, me),
+  'exile.launch': (w, me) => Xl.launchInvasion(w, me),
+  'intel.disrupt': (w, me) => Xl.disruptInvasion(w, me),
+  'trial.vote': (w, me, a) => Tr.vote(w, me, a.trial, a.verdict),
+  'trial.defend': (w, me, a) => Tr.defend(w, me, a.trial, a.text),
+  'crown.proclaim': (w, me, a) => Im.proclaim(w, me, a.text),
+  'crown.ennoble': (w, me, a) => Im.ennoble(w, me, a.target, a.rank),
+  'crown.attaint': (w, me, a) => Im.attaint(w, me, a.target),
+  'crown.progress': (w, me, a) => Im.progress(w, me, a.province),
+  'crown.triumph': (w, me) => Im.holdTriumph(w, me),
+  'triumph.cheer': (w, me) => Im.cheerTriumph(w, me),
+  'crown.lese': (w, me, a) => Im.chargeLese(w, me, a.target, a.text),
   'intel.sweep': (w, me, a) => Ab.sweep(w, me, a.nation),
   'hostage.ransom': (w, me, a) => Ab.ransom(w, me, a.hostage),
   'exchange.donate': (w, me, a) => Ex.donate(w, me, a.prop, a.sym, a.party),

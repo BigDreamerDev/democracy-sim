@@ -14,6 +14,7 @@ import { Coronation } from './Coronation';
 import { Ceremony } from './Ceremony';
 import { OathPrompt, OathPage } from './pages/oath';
 import { Ceremonies } from './pages/ceremonies';
+import { CrownBanners, TrialPage } from './pages/crownhome';
 import { TABS, where, relabel } from './nav';
 import { Search } from './search';
 import { markSeen } from './pages/today';
@@ -93,7 +94,7 @@ function route(hash: string) {
     world: () => <World />, atlas: () => <World focus="atlas" />, abroad: () => <World focus="abroad" />, war: () => <World focus="war" />, exchange: () => <Money focus="exchange" />, foreign: () => <World focus="foreign" />, security: () => <World focus="security" />, army: () => <World focus="army" />,
     society: () => <Society />, press: () => <Society focus="press" />, court: () => <Society focus="court" />, crises: () => <Society focus="crises" />,
     honours: () => <Honours />, season: () => <Honours focus="season" />, fame: () => <Honours focus="fame" />,
-    nation: () => <Nation id={b} />, case: () => <Case id={b} />, crisis: () => <Crisis id={b} />,
+    nation: () => <Nation id={b} />, case: () => <Case id={b} />, trial: () => <TrialPage id={b} />, crisis: () => <Crisis id={b} />,
     regime: () => <Regime />, jail: () => <Jail />, powers: () => <Powers />, backroom: () => <BackroomAll />, plots: () => <BackroomAll focus="plots" />, exile: () => <BackroomAll focus="exile" />, admin: () => <Admin />, learn: () => <Learn />, rolog: () => <RoLog />, developers: () => <Developers />, apps: () => <Apps />, app: () => <AppPage id={b} />, authorize: () => <Authorize query={q} />,
     // an invitation link opened while already signed in: nothing to do but say so
     reset: () => <ResetPassword code={b || ''} />,
@@ -138,7 +139,7 @@ function Game() {
   return (
     <div class={'app' + (ONLINE ? ' online' : '')}>
       <Sidebar tabs={marked} current={'#/' + hash.replace(/^#\/?/, '').split('?')[0]} />
-      <main key={r.key}>{state && <Ticker />}<StatusBanner />{r.view}</main>
+      <main key={r.key}>{state && <Ticker />}<StatusBanner /><CrownBanners />{r.view}</main>
       <nav class="nav" aria-label="Main"><div class="in">
         {marked.map(([href, label, icon, on]) => (
           <a href={href} class={on ? 'on' : ''} aria-current={on ? 'page' : undefined}>{on && <span class="mark" aria-hidden="true" />}<Icon name={icon} /><span>{label}</span></a>

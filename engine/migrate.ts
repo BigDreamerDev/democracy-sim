@@ -113,6 +113,11 @@ export function migrate(w: W): W {
   w.hostages ??= [];
   w.approaches ??= {};
   w.plants ??= {};
+  w.trials ??= {};
+  w.wanted ??= {};
+  w.exilePress ??= {};
+  w.invasion ??= null;
+  w.triumph ??= null;
   w.ops ??= [];
   w.sweeps ??= [];
   w.exileGov ??= null;

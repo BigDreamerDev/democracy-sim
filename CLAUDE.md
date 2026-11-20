@@ -83,6 +83,12 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
   homeland.ts  the realm against its defectors: extradition, smear, snatch, seizure, amnesty; Security Service plants
                (w.plants offers, c.defected.plant, w.ops log: all private to the plant/PM/Director). Life abroad is in abroad.ts
                (homes, naturalisation, the court's daily business, plant reports and sabotage, bringHome/unmaskPlant)
+  exiles.ts    defectors together: double agents (abroad.turn; a turned plant has c.agentOf = host, so its reports lie), wanted
+               posters (w.wanted, escrowed by the nation), the exile press (w.exilePress, stories with s.exile), and the invasion
+               (w.invasion → a coup night with w.coup.invasion strength; the host's war ends if the exiles win)
+  trials.ts    w.trials: treason (after extradition/snatch) and lèse-majesté; justices or a jury by lot; guilty = c.jail with an end date
+  imperium.ts  the Crown at home: proclamations (w.crown.proclamation, a banner on every page), peers (c.peerage, weekly
+               appanage, +gov on coup nights), royal progresses, triumphs (w.triumph), lèse-majesté (absolute monarchy only)
   catalog.ts   CATALOG — public description of every player command and its args (served by /api/v1/commands)
   index.ts     COMMANDS table; run(world, actor, cmd, args) applies one to a structuredClone
   bots.ts      bot turns: botsAct (demo, smoke) and actBots(w, isBot) — the clock runs practice bots during induction

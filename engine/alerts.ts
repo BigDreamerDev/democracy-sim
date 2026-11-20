@@ -191,6 +191,15 @@ export function needs(w: W, me: Id): Alert[] {
   Object.values(w.plants || {}).forEach((p: any) => p.to === me && p.status === 'offered' && p.until > w.now && out.push({ key: 'plant:' + p.id, href: '#/abroad', label: 'Private', title: `The Security Service wants you to go over to ${w.nations[p.nation]?.name}`, at: p.until, urgent: true }));
   if (dd && (!dd.last?.audience || w.now - dd.last.audience >= 24 * 3600_000)) out.push({ key: 'audience:' + Math.floor(w.now / (24 * 3600_000)), href: '#/abroad', label: 'Abroad', title: 'The court has business for you today' });
   if (dd?.amnesty) out.push({ key: 'amnesty:' + dd.amnesty.at, href: '#/abroad', label: 'From home', title: 'The Prime Minister offers you an amnesty. Come home, no questions asked' });
+  if (dd?.turnOffer && dd.turnOffer.until > w.now) out.push({ key: 'turn:' + dd.turnOffer.at, href: '#/abroad', label: 'Private', title: 'The court knows what you are. Work for them, or be thrown out', at: dd.turnOffer.until, urgent: true });
+  Object.values(w.trials || {}).forEach((t: any) => {
+    if (t.status !== 'open') return;
+    if (t.judges.includes(me) && !t.votes[me]) out.push({ key: 'trial:' + t.id, href: '#/trial/' + t.id, label: 'Trial', title: `You sit in judgement on ${nm(w, t.who)}`, at: t.closesAt, urgent: true });
+    if (t.who === me && !t.defence) out.push({ key: 'dock:' + t.id, href: '#/trial/' + t.id, label: 'Trial', title: 'You are on trial. Speak in your defence', at: t.closesAt, urgent: true });
+  });
+  Object.values(w.wanted || {}).forEach((x: any) => x.status === 'open' && x.target === me && out.push({ key: 'wanted:' + x.id, href: '#/abroad', label: 'Danger', title: `${w.nations[x.nation]?.name} has put a price on your head`, at: x.until }));
+  if (w.triumph && !w.triumph.done && w.triumph.until > w.now && !w.triumph.crowd.includes(me) && !w.citizens[me]?.defected) out.push({ key: 'triumph:' + w.triumph.at, href: '#/hos', label: 'Triumph', title: 'A triumph in the capital. Line the streets', at: w.triumph.until });
+  if (w.invasion && !w.citizens[me]?.defected) out.push({ key: 'invasion:' + w.invasion.id, href: '#/abroad', label: 'Invasion', title: `The exiles are preparing to invade from ${w.nations[w.invasion.nation]?.name}` });
   if (w.exileGov && !w.citizens[me]?.defected && !w.exileGov.backers.includes(me)) out.push({ key: 'exilegov:' + w.exileGov.at, href: '#/abroad', label: 'Government in exile', title: `${w.exileGov.name} claims to be the realm's rightful government` });
   (w.hostages || []).forEach((h: any) => h.status === 'held' && h.until > w.now && (isPM(w, me) || hasPower(w, me, 'envoy') || holderOf(w, 'treasury') === me) && out.push({ key: 'hostage:' + h.id, href: '#/abroad', label: 'Hostage', title: `${nm(w, h.who)} is held in ${w.nations[h.nation]?.name}. Pay the ransom?`, at: h.until }));
   if (w.crown?.offer?.heir === me) out.push({ key: 'heir:' + w.crown.offer.until, href: '#/hos', label: 'The throne is offered', title: 'Accept the crown, or decline', at: w.crown.offer.until, urgent: true });
