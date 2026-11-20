@@ -79,7 +79,7 @@ export function Election({ id }: { id: string }) {
             const opts = cands.map((x) => ({
               key: x.id,
               label: <>{x.party && <span class="party-dot" style={{ background: w.parties[x.party]?.colour }} aria-hidden="true" />}{nm(w, x.id)}{x.id === me ? ' (you)' : ''}{x.incumbent && <span class="chip ink" style={{ marginLeft: 8 }}>Sitting</span>}</>,
-              sub: <>{x.party ? w.parties[x.party]?.name : 'Independent'} · approval {w.citizens[x.id].approval}%</>
+              sub: <>{x.claim ? <>Claims the throne from {w.nations[x.claim.nation]?.name}, in the name of {x.claim.child}</> : x.party ? w.parties[x.party]?.name : 'Independent'} · approval {w.citizens[x.id].approval}%</>
             }));
             const done = mine && Array.isArray(mine) ? <>Your ballot: {mine.map((id: string, i: number) => <>{i ? ', ' : ''}{method === 'approval' ? '' : `${i + 1}. `}<b>{nm(w, id)}</b></>)}. Only you can see it.</> : mine ? <>You voted for <b>{nm(w, mine)}</b>. Only you can see that.</> : undefined;
             if (method === 'single')

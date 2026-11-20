@@ -8,7 +8,7 @@
 // - Royal holdings: estates across the realm and its provinces (ESTATES), held by the Crown or granted to peers. Each pays its
 //   holder a weekly rent; a palace built on one adds to it. Attainder, defection or the Tower forfeits them to the Crown;
 //   the end of the monarchy takes them all into the State. Royal palaces stay with the Crown and cost the Treasury upkeep.
-import { W, Id, DAY, fail, own, cit, nm, gazette, transfer, bal, ca, chance, stamp, approve, meter, earn, bump, mustBeFree, text, isHOS, isPM, allCitizens, exiled, detained, inForce, clamp } from './core';
+import { W, Id, DAY, fail, own, cit, nm, gazette, newId, rand, transfer, bal, ca, chance, stamp, approve, meter, earn, bump, mustBeFree, text, isHOS, isPM, allCitizens, exiled, detained, inForce, clamp } from './core';
 import { PROVINCES, seedProvinces } from './foreign';
 import { absolute, peers, PEERAGE } from './imperium';
 import { council } from './privy';
@@ -147,8 +147,12 @@ export function openDurbar(w: W) {
     if (t > 0) transfer(w, 'nation:' + n.id, 'treasury', t, `Homage from ${n.name} at the Durbar`);
     tribute.push(n.name);
   });
-  w.durbar = { at: w.now, until: w.now + DAY, expected: expectedAtDurbar(w), attended: [], tribute, done: false };
-  gazette(w, 'hos', `The Imperial Durbar opens: governors, peers and councillors are summoned to pay homage to ${w.config.hosTitle} ${nm(w, reign(w).id)}${tribute.length ? `. Envoys of ${tribute.join(', ')} bring tribute` : ''}. It closes in 24 hours.`, '#/hos', { k: 'durbar', who: reign(w).id });
+  const r = reign(w);
+  const coronation = !r.durbarHeld;
+  r.durbarHeld = true;
+  w.durbar = { at: w.now, until: w.now + DAY, expected: expectedAtDurbar(w), attended: [], tribute, done: false, coronation, reign: r.at };
+  if (coronation) gazette(w, 'hos', `The Coronation Durbar of ${w.config.hosTitle} ${nm(w, r.id)}: the first of the reign. Who kneels, and who stands apart, goes on the record for as long as it lasts.`, '#/hos', { k: 'durbar', who: r.id });
+  else gazette(w, 'hos', `The Imperial Durbar opens: governors, peers and councillors are summoned to pay homage to ${w.config.hosTitle} ${nm(w, reign(w).id)}${tribute.length ? `. Envoys of ${tribute.join(', ')} bring tribute` : ''}. It closes in 24 hours.`, '#/hos', { k: 'durbar', who: reign(w).id });
 }
 export function attendDurbar(w: W, actor: Id) {
   const d = w.durbar;
@@ -169,6 +173,14 @@ export function closeDurbar(w: W) {
   absent.forEach((id: Id) => approve(w, id, -2));
   d.absent = absent;
   if (d.attended.length >= 5) meter(w, 'stability', 1, 'A full Durbar');
+  // the Coronation Durbar: a record that follows everyone through the reign
+  const r = reign(w);
+  if (d.coronation && r && r.at === d.reign) {
+    r.knelt = d.attended.slice();
+    r.stoodApart = absent.slice();
+    r.knelt.forEach((id: Id) => stamp(w, id, 'Knelt at the Coronation Durbar', `Of ${w.config.hosTitle} ${nm(w, r.id)}`, 'good'));
+    r.stoodApart.forEach((id: Id) => stamp(w, id, 'Stood apart', `From the Coronation Durbar of ${w.config.hosTitle} ${nm(w, r.id)}`, 'bad'));
+  }
   gazette(w, 'hos', `The Durbar closes. ${d.attended.length} paid homage.${absent.length ? ` Absent, and noted: ${absent.map((id: Id) => nm(w, id)).join(', ')}.` : ' Nobody summoned stayed away.'}`, '#/hos');
 }
 
@@ -223,6 +235,7 @@ export function resumeEstate(w: W, actor: Id, estate: unknown) {
   const was = h[estate as string].holder;
   h[estate as string] = { ...h[estate as string], holder: 'crown', since: w.now };
   approve(w, was, -2);
+  aggrieve(w, was, estate as string);
   gazette(w, 'hos', `The Crown takes back ${e.name} from ${nm(w, was)}.`, '#/hos');
 }
 // a palace: the holder pays (the monarch builds on Crown land from the Treasury)
@@ -246,7 +259,7 @@ export function buildPalace(w: W, actor: Id, estate: unknown) {
 }
 function forfeitAll(w: W, id: Id, why: string) {
   const lost = estatesOf(w, id);
-  lost.forEach((e) => (w.holdings[e] = { ...w.holdings[e], holder: 'crown', since: w.now }));
+  lost.forEach((e) => ((w.holdings[e] = { ...w.holdings[e], holder: 'crown', since: w.now }), aggrieve(w, id, e)));
   if (lost.length) gazette(w, 'hos', `${nm(w, id)} forfeits ${lost.map((e) => ESTATES[e].name).join(', ')} to the Crown: ${why}.`, '#/hos');
 }
 export { forfeitAll };
@@ -285,4 +298,80 @@ export function dynastyWeek(w: W) {
   const con = consortOf(w);
   if (con && w.citizens[con.id]?.active) transfer(w, 'treasury', ca(con.id), 5, "The consort's allowance");
   openDurbar(w);
+  Object.values(w.events || {}).forEach((v: any) => v.done && w.now - v.at > 14 * DAY && delete w.events[v.id]);
 }
+
+// ---------- hunts and balls: a palace's holder entertains (guests come for Influence; the invited who stay away are named) ----------
+export const EVENTS: Record<string, { name: string; cost: number; prize: string }> = {
+  hunt: { name: 'a hunt', cost: 15, prize: 'Bagged the stag' },
+  ball: { name: 'a ball', cost: 20, prize: 'Belle of the ball' }
+};
+export const EVENT_EVERY = 3 * DAY;
+export function hostEvent(w: W, actor: Id, estate: unknown, kind: unknown, guests: unknown) {
+  const h = holdings(w);
+  const e = own(ESTATES, estate);
+  const ev = own(EVENTS, kind);
+  if (!e || !ev) fail('Pick a palace and a hunt or a ball.');
+  const x = h[estate as string];
+  const royal = x.holder === 'crown';
+  if (royal) mustReign(w, actor);
+  else if (x.holder !== actor) fail('You do not hold that estate.');
+  if (!x.palace) fail(`There is no palace at ${e.name} to entertain in.`);
+  if (estateLost(w, estate as string)) fail(`${e.name} is out of the realm's reach.`);
+  mustBeFree(w, actor);
+  w.events ??= {};
+  if (Object.values(w.events).some((v: any) => v.host === actor && w.now - v.at < EVENT_EVERY)) fail('One entertainment every three days.');
+  if (!Array.isArray(guests) || !guests.length || guests.length > 10) fail('Invite between 1 and 10 guests.');
+  const list = [...new Set(guests)].filter((g) => typeof g === 'string' && g !== actor && atHome(w, g as Id)) as Id[];
+  if (!list.length) fail('Invite citizens at home.');
+  if (bal(w, ca(actor)) < ev.cost) fail(`${ev.name[0].toUpperCase() + ev.name.slice(1)} costs ${ev.cost} crowns.`);
+  transfer(w, ca(actor), 'reserve', ev.cost, `${ev.name[0].toUpperCase() + ev.name.slice(1)} at ${e.name}`);
+  const id = newId(w, 'ev');
+  w.events[id] = { id, host: actor, estate, kind, guests: list, came: [], at: w.now, until: w.now + DAY, done: false };
+  gazette(w, 'hos', `${nm(w, actor)} holds ${ev.name} at ${e.name}. Invited: ${list.map((g) => nm(w, g)).join(', ')}.`, '#/hos', { k: kind as string, who: actor, place: e.name });
+}
+export function attendEvent(w: W, actor: Id, eid: unknown) {
+  const v = own(w.events || {}, eid);
+  if (!v || v.done || v.until <= w.now) fail('That party is over.');
+  if (!v.guests.includes(actor)) fail('You were not invited.');
+  if (v.came.includes(actor)) fail('You are already there.');
+  mustBeFree(w, actor);
+  v.came.push(actor);
+  earn(w, actor, 2, `A guest at ${ESTATES[v.estate].name}`);
+  approve(w, actor, 1);
+  approve(w, v.host, 1);
+}
+export function closeEvent(w: W, v: any) {
+  if (v.done) return;
+  v.done = true;
+  const snubs = v.guests.filter((g: Id) => !v.came.includes(g) && w.citizens[g]);
+  v.snubs = snubs;
+  snubs.forEach((g: Id) => approve(w, g, v.host === reign(w)?.id ? -2 : -1));
+  const star = v.came.length ? v.came[Math.floor(rand(w) * v.came.length)] : null;
+  if (star) stamp(w, star, EVENTS[v.kind].prize, `At ${ESTATES[v.estate].name}`, 'good');
+  v.star = star;
+  gazette(w, 'hos', `${EVENTS[v.kind].name[0].toUpperCase() + EVENTS[v.kind].name.slice(1)} at ${ESTATES[v.estate].name}: ${v.came.length} came.${star ? ` ${nm(w, star)}: ${EVENTS[v.kind].prize.toLowerCase()}.` : ''}${snubs.length ? ` Snubbed by ${snubs.map((g: Id) => nm(w, g)).join(', ')}.` : ''}`, '#/hos');
+}
+
+// ---------- estate rebellions: a peer whose lands the Crown took back may raise their tenants for a coup night ----------
+export const RETINUE_DAYS = 7;
+export function aggrieve(w: W, id: Id, estate: string) {
+  const c = w.citizens[id];
+  if (!c) return;
+  const g = c.grievance && c.grievance.until > w.now ? c.grievance : { estates: [], at: w.now, until: 0 };
+  c.grievance = { estates: [...new Set([...g.estates, ESTATES[estate]?.name ?? estate])], at: w.now, until: w.now + 14 * DAY };
+}
+export function raiseTenants(w: W, actor: Id) {
+  const c = cit(w, actor);
+  const g = c.grievance;
+  if (!g || g.until <= w.now) fail('You have no lands taken from you to rally tenants over.');
+  if (c.retinue && c.retinue.until > w.now) fail('Your tenants are already under arms.');
+  mustBeFree(w, actor);
+  if (bal(w, ca(actor)) < 10) fail('Arming your tenants costs 10 crowns.');
+  transfer(w, ca(actor), 'reserve', 10, 'Arming the tenants');
+  const strength = Math.min(3, g.estates.length);
+  c.retinue = { strength, at: w.now, until: w.now + RETINUE_DAYS * DAY, from: g.estates };
+  meter(w, 'stability', -1, `${c.name}'s tenants take up arms`);
+  gazette(w, 'crisis', `${c.name} raises the tenants of ${g.estates.join(', ')} under arms: a private regiment (+${strength} on any coup night this week).`, '#/hos');
+}
+export const retinue = (w: W, id: Id) => { const r = w.citizens[id]?.retinue; return r && r.until > w.now ? r.strength : 0; };

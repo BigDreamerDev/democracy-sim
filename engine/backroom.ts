@@ -354,6 +354,12 @@ export function coupTally(w: W) {
   add('coup', k.march ? 3 : 0, 'The Army marches with its General');
   add('coup', k.backer ? 1 : 0, `Backed by ${w.nations[k.backer]?.name}`);
   add('coup', k.invasion || 0, `${w.nations[k.backer]?.name ?? 'Foreign'} troops with the exiles`);
+  // a peer's tenants under arms (dynasty.ts) fight for whichever side their lord is on
+  allCitizens(w).forEach((c: any) => {
+    const n = c.retinue && c.retinue.until > w.now ? c.retinue.strength : 0;
+    const side = k.plotters.includes(c.id) ? 'coup' : k.declared[c.id];
+    if (n && side) add(side, n, `${nm(w, c.id)}'s tenants`);
+  });
   // the peers of the realm stand by the Crown (one for every two who have not joined the other side)
   add('gov', Math.floor(allCitizens(w).filter((c: any) => c.peerage && !k.plotters.includes(c.id) && k.declared[c.id] !== 'coup' && !c.defected).length / 2), 'The peers of the realm');
   add('coup', k.pretext ? 1 : 0, 'A realm already in trouble');

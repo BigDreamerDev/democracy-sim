@@ -14,6 +14,7 @@ import { PROVINCES, seedProvinces } from './foreign';
 import { imperialPurse } from './warmachine';
 import { canGovernEmpire } from './empire';
 import { openTrial } from './trials';
+import { ESTATES } from './dynasty';
 
 const reigning = (w: W, id: Id) => w.config.hos === 'monarchy' && isHOS(w, id) && !!w.crown?.reign?.crownedAt;
 function mustReign(w: W, actor: Id) {
@@ -43,6 +44,8 @@ export function ennoble(w: W, actor: Id, target: unknown, rank: unknown) {
   if (c.id === actor) fail('The Crown is above the peerage.');
   if (!c.active || c.bot || c.defected) fail('Pick a citizen at home.');
   if (c.peerage?.rank === rank) fail(`${c.name} is already a ${r.title}.`);
+  // the Coronation Durbar's record: the Crown remembers who stood apart
+  if ((w.crown?.reign?.stoodApart || []).includes(c.id)) fail(`${c.name} stood apart at your Coronation Durbar. The Crown remembers.`);
   if (!c.peerage && peers(w).length >= lim(w, 'peers')) fail(`The peerage is full at ${lim(w, 'peers')}. Strip a title first, or ask Parliament for more.`);
   const was = c.peerage?.rank;
   c.peerage = { rank, by: actor, at: w.now };
@@ -60,6 +63,7 @@ export function attaint(w: W, actor: Id, target: unknown) {
   // an attainted peer's estates go back to the Crown (dynasty.ts)
   const lost = Object.keys(w.holdings || {}).filter((e) => w.holdings[e].holder === c.id);
   lost.forEach((e) => (w.holdings[e] = { ...w.holdings[e], holder: 'crown', since: w.now }));
+  if (lost.length) c.grievance = { estates: lost.map((e) => ESTATES[e]?.name ?? e), at: w.now, until: w.now + 14 * DAY };
   stamp(w, c.id, 'Attainted', `Stripped of the title of ${t}`, 'bad');
   approve(w, c.id, -3);
   gazette(w, 'hos', `${c.name} is stripped of the title of ${t} by order of the ${w.config.hosTitle}.`, '#/hos');

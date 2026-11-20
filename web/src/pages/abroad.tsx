@@ -72,6 +72,7 @@ function Court() {
       <ExilePress />
       {canPostWanted(w, me) && <PostWanted />}
       <Stir />
+      <Succession />
       <Sec title="The secrets you carried out" sub="Each one sold is printed abroad: +12 favour and 15 crowns. If you ever come home, you will be questioned at the border.">
         {d.secrets.length ? <ul class="list">{d.secrets.map((s: string, i: number) => <li class="row"><span class="small">{s}</span><Btn small kind="danger ghost" onClick={() => confirm('Sell this secret? It will be printed.') && act('abroad.sell', { secret: i }, 'Sold.')}>Sell</Btn></li>)}</ul> : <Empty>You have no secrets to sell. Agents you recruit can send you more.</Empty>}
       </Sec>
@@ -531,6 +532,20 @@ function Stir() {
         <ul class="list small">{ours.map((id) => <li class="row"><span>{PROVINCES_[id]?.name}</span><span class="muted">{w.provinces[id].revolt ? 'In revolt' : `Unrest ${w.provinces[id].agitation || 0} of 3`}{PROVINCES_[id]?.claims.includes(d.nation) ? ` · claimed by ${w.nations[d.nation].name}` : ''}</span></li>)}</ul>
         <div class="grid2"><Pick value={pid} onChange={setPid} empty="Which province?" options={ours.filter((id) => !w.provinces[id].revolt).map((id) => [id, PROVINCES_[id]?.name ?? id])} /><Btn kind="danger" disabled={!pid || rankOf(w, me) < 1 || next > w.now} onClick={() => act('abroad.stir', { province: pid }, 'The pamphlets go over the border.')}>{next > w.now ? <>Again <Left at={next} /></> : 'Stir it up'}</Btn></div>
       </div></Card>
+    </Sec>
+  );
+}
+
+// a royal child abroad, and an empty throne at home
+function Succession() {
+  const { world: w, me } = useStore();
+  const d = w.citizens[me].defected;
+  const e = (Object.values(w.elections) as any[]).find((x) => x.kind === 'hos' && x.status === 'open');
+  if (!d.child || w.config.hos !== 'monarchy' || !e) return null;
+  const on = !!e.candidates[me];
+  return (
+    <Sec title="The throne is empty" sub={`The realm is choosing a new monarch. ${d.child.name}, your child and heir of two houses, has a claim.`}>
+      <Card kind="warn"><div class="row"><span class="small">{on ? <>Your claim is on the ballot. The polls close <When at={e.closesAt} />. Win, and you come home to take the throne.</> : `Put ${d.child.name}'s claim before the realm. You stand in the child's name; if the realm chooses you, you come home to reign.`}</span>{!on && <Btn kind="danger" onClick={() => confirm(`Claim the throne in the name of ${d.child.name}?`) && act('abroad.succession', { election: e.id }, 'Your claim is before the realm.')}>Claim the throne</Btn>}</div></Card>
     </Sec>
   );
 }

@@ -651,6 +651,19 @@ export function closeElection(w: W, e: any) {
     }
     gazette(w, 'election', `${nm(w, s)} is elected Speaker.`);
   } else if (e.kind === 'hos') {
+    // a claimant from abroad who wins comes home to take the throne (exiles.ts, contestSuccession)
+    const wc = winners[0] && w.citizens[winners[0]];
+    if (wc?.defected) {
+      const d = wc.defected;
+      const n = w.nations[d.nation];
+      if (n?.ruler?.id === wc.id) n.ruler = null;
+      if (n) n.mood = Math.min(4, n.mood + 2);
+      wc.defections = [...(wc.defections || []), { nation: d.nation, from: d.at, to: w.now, rank: 'Came home to the throne', sold: d.sold }].slice(-5);
+      w.crown ??= { reign: null, offer: null };
+      w.crown.inNameOf = { id: wc.id, child: e.candidates[wc.id]?.claim?.child ?? d.child?.name ?? null, nation: d.nation };
+      wc.defected = null;
+      gazette(w, 'hos', `The disputed succession is settled: ${wc.name} comes home from ${n?.name} to take the throne${w.crown.inNameOf.child ? `, in the name of ${w.crown.inNameOf.child}` : ''}.`, '#/hos');
+    }
     if (winners[0]) setHos(w, winners[0], w.config.hos === 'monarchy' ? null : w.now + w.config.termDays * DAY);
   } else if (e.kind === 'leadership') {
     const p = w.parties[e.party];

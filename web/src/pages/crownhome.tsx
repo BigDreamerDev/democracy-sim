@@ -9,7 +9,7 @@ import { PROVINCES } from '../../../engine/foreign';
 import { PEERAGE, peers, absolute, triumphDue, PROGRESS_EVERY, PROGRESS_COST, TRIUMPH_COST, LESE_EVERY } from '../../../engine/imperium';
 import { canGovernEmpire } from '../../../engine/empire';
 import { CHARGES } from '../../../engine/trials';
-import { ESTATES, estateLost, consortOf, inTower, PALACE_COST, PALACE_RENT } from '../../../engine/dynasty';
+import { ESTATES, estateLost, consortOf, inTower, PALACE_COST, PALACE_RENT, EVENTS, EVENT_EVERY } from '../../../engine/dynasty';
 import { canGovernEmpire as canRule } from '../../../engine/empire';
 
 // on every page: the Sovereign's proclamation of the day, and a triumph in the streets
@@ -103,6 +103,9 @@ export function CrownDesk() {
       )}
       <RoyalFamily />
       <Holdings />
+      <Entertainments />
+      <Tenants />
+      <CoronationRecord />
       <Tower />
       {w.durbar?.done && <Sec title="The last Durbar"><p class="small">{w.durbar.attended.length} paid homage <When at={w.durbar.at} />.{w.durbar.absent?.length ? ` Absent, and noted: ${w.durbar.absent.map((id: string) => nm(w, id)).join(', ')}.` : ' Nobody summoned stayed away.'}</p></Sec>}
       {canTriumph && <Sec title="A triumph"><Card kind="tint"><div class="row"><span class="small">Celebrate the victory over {w.nations[victory.nation]?.name}: the Army marches through the capital. {TRIUMPH_COST} crowns, stability +2, and a crowd for 12 hours.</span><Btn onClick={() => act('crown.triumph', {}, 'The triumph begins.')}>Hold a triumph</Btn></div></Card></Sec>}
@@ -156,7 +159,7 @@ function RoyalFamily() {
   return (
     <Sec title="The royal family" sub="The monarch may marry a citizen: a royal wedding is a national holiday, and the consort draws 5 a week.">
       <Card><div class="stack">
-        <span class="small">{con ? <>Consort: <Who id={con.id} />, married <When at={con.at} />.</> : 'The monarch is unmarried.'}</span>
+        <span class="small">{con ? <>Consort: <Who id={con.id} />, married <When at={con.at} />.</> : 'The monarch is unmarried.'}{k.inNameOf && r?.id === k.inNameOf.id && k.inNameOf.child ? ` Reigns in the name of ${k.inNameOf.child}, heir of two houses.` : ''}</span>
         {mine && !con && (k.proposal && k.proposal.until > w.now ? <span class="small muted">Waiting for {nm(w, k.proposal.to)} to answer, <Left at={k.proposal.until} />.</span> : <div class="grid2"><Pick value={who} onChange={setWho} empty="Propose to…" options={home.map((c) => [c.id, c.name])} /><Btn disabled={!who} onClick={() => confirm(`Propose to ${nm(w, who)}? It is public.`) && act('crown.propose', { target: who }, 'You have asked.')}>Propose</Btn></div>)}
         {mine && con && <Btn small kind="danger ghost" style={{ alignSelf: 'flex-start' }} onClick={() => confirm('Divorce your consort? It is a scandal.') && act('crown.divorce', {}, 'Divorced.')}>Divorce</Btn>}
       </div></Card>
@@ -207,4 +210,61 @@ export function Tower() {
 }
 export function TowerPage() {
   return <Page back={['#/hos', 'The Crown']} kicker="At the Crown's pleasure" title="The Tower"><Tower /></Page>;
+}
+
+// hunts and balls at the palaces
+function Entertainments() {
+  const { world: w, me } = useStore();
+  const [f, setF] = useState<{ estate: string; kind: string; guests: string[] }>({ estate: '', kind: 'hunt', guests: [] });
+  const h = w.holdings || {};
+  const monarch = w.crown?.reign?.id === me && !!w.crown?.reign?.crownedAt;
+  const mine = Object.keys(h).filter((id) => h[id].palace && !estateLost(w, id) && (h[id].holder === me || (monarch && h[id].holder === 'crown')));
+  const home = (Object.values(w.citizens) as any[]).filter((c) => c.active && !c.bot && !c.defected && c.id !== me);
+  const evs = (Object.values(w.events || {}) as any[]).sort((a, b) => b.at - a.at).slice(0, 6);
+  const last = evs.find((v) => v.host === me);
+  const wait = last ? Math.max(0, last.at + EVENT_EVERY - w.now) : 0;
+  if (!mine.length && !evs.length) return null;
+  const toggle = (id: string) => setF({ ...f, guests: f.guests.includes(id) ? f.guests.filter((x) => x !== id) : f.guests.length >= 10 ? f.guests : [...f.guests, id] });
+  return (
+    <Sec title="Hunts and balls" sub="A palace's holder entertains: 2 Influence for each guest who comes, approval for host and guest. The invited who stay away are named in the Gazette.">
+      {evs.length > 0 && <ul class="list">{evs.map((v) => (
+        <li class="row"><span><b>{EVENTS[v.kind].name[0].toUpperCase() + EVENTS[v.kind].name.slice(1)} at {ESTATES[v.estate]?.name}</b><div class="small muted">Hosted by {nm(w, v.host)} · {v.came.length} of {v.guests.length} came{v.done ? (v.snubs?.length ? ` · snubbed by ${v.snubs.map((g: string) => nm(w, g)).join(', ')}` : '') : <> · until <When at={v.until} /></>}{v.star ? ` · ${EVENTS[v.kind].prize.toLowerCase()}: ${nm(w, v.star)}` : ''}</div></span>
+          {!v.done && v.until > w.now && v.guests.includes(me) && !v.came.includes(me) && <Btn small onClick={() => act('event.attend', { event: v.id }, 'You arrive in style.')}>Go</Btn>}</li>
+      ))}</ul>}
+      {mine.length > 0 && <Card style={{ marginTop: 10 }}><div class="stack">
+        <div class="grid2"><Pick value={f.estate} onChange={(v) => setF({ ...f, estate: v })} empty="Which palace?" options={mine.map((id) => [id, ESTATES[id].name])} /><Pick value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={Object.entries(EVENTS).map(([k, x]) => [k, `${x.name[0].toUpperCase() + x.name.slice(1)} (${x.cost} crowns)`])} /></div>
+        <div class="small">Invite up to 10 ({f.guests.length} chosen):</div>
+        <div class="row" style={{ flexWrap: 'wrap', gap: 6, justifyContent: 'flex-start' }}>{home.map((c) => <Btn small kind={f.guests.includes(c.id) ? undefined : 'ghost'} onClick={() => toggle(c.id)}>{c.name}</Btn>)}</div>
+        <Btn disabled={!f.estate || !f.guests.length || !!wait} onClick={() => act('estate.host', f, 'The invitations go out.') && setF({ ...f, guests: [] })}>{wait ? <>Next <Left at={w.now + wait} /></> : 'Send the invitations'}</Btn>
+      </div></Card>}
+    </Sec>
+  );
+}
+// estate rebellions: lords with a grievance, and the tenants under arms
+function Tenants() {
+  const { world: w, me } = useStore();
+  const c = w.citizens[me];
+  const armed = (Object.values(w.citizens) as any[]).filter((x) => x.retinue && x.retinue.until > w.now);
+  const sore = c?.grievance && c.grievance.until > w.now && !(c.retinue && c.retinue.until > w.now);
+  if (!armed.length && !sore) return null;
+  return (
+    <Sec title="Tenants under arms" sub="A lord whose lands the Crown took back can arm their tenants for a week: they fight for their lord's side on any coup night.">
+      {armed.length > 0 && <ul class="list">{armed.map((x) => <li class="row"><span><Who id={x.id} /><div class="small muted">Tenants of {x.retinue.from.join(', ')} · until <When at={x.retinue.until} /></div></span><b>+{x.retinue.strength}</b></li>)}</ul>}
+      {sore && <Card kind="warn" style={{ marginTop: 10 }}><div class="row"><span class="small">The Crown took {c.grievance.estates.join(', ')} from you. Your tenants are angry too. Arm them for 10 crowns: +{Math.min(3, c.grievance.estates.length)} for your side on a coup night, for a week.</span><Btn kind="danger" onClick={() => confirm('Arm your tenants? It is public.') && act('estate.raise', {}, 'Your tenants take up arms.')}>Raise the tenants</Btn></div></Card>}
+    </Sec>
+  );
+}
+// the Coronation Durbar's record: who knelt and who stood apart, for the length of the reign
+function CoronationRecord() {
+  const { world: w } = useStore();
+  const r = w.crown?.reign;
+  if (!r?.knelt) return null;
+  return (
+    <Sec title="The Coronation Durbar" sub="On the record for as long as the reign lasts. The Crown will not ennoble anyone who stood apart.">
+      <Card><div class="stack small">
+        <span><b>Knelt:</b> {r.knelt.length ? r.knelt.map((id: string) => nm(w, id)).join(', ') : 'nobody'}</span>
+        <span><b>Stood apart:</b> {r.stoodApart?.length ? r.stoodApart.map((id: string) => nm(w, id)).join(', ') : 'nobody'}</span>
+      </div></Card>
+    </Sec>
+  );
 }

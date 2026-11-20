@@ -300,3 +300,21 @@ export function revoltDue(w: W, p: any, pid: string) {
 export function revoltsWeek(w: W) {
   Object.values(w.provinces || {}).forEach((p: any) => p.agitation > 0 && (p.agitation -= 1));
 }
+
+// ---------- disputed succession: when the throne falls empty, a royal child abroad has a claim ----------
+// A defector who married into a foreign royal house and has a child (abroad.ts) may put the child's claim on the ballot
+// of an open election for the monarch. They stand in the child's name; if they win, they come home to take the throne
+// (politics.ts, closeElection), with the house abroad behind them.
+export function contestSuccession(w: W, actor: Id, eid: unknown) {
+  const d = w.citizens[actor]?.defected;
+  if (!d?.child) fail('Only a defector with a royal child abroad can claim the succession.');
+  if (w.config.hos !== 'monarchy') fail('The realm has no throne to claim.');
+  const e = own(w.elections, eid);
+  if (!e || e.kind !== 'hos' || e.status !== 'open') fail('There is no open election for the throne.');
+  if (e.candidates[actor]) fail('Your claim is already before the realm.');
+  if ((e.withdrawn || []).includes(actor)) fail('You withdrew from this election.');
+  e.candidates[actor] = { id: actor, party: null, at: w.now, claim: { child: d.child.name, nation: d.nation } };
+  d.favour = clamp(d.favour + 5, 0, 100);
+  deed(w, actor, `Claimed the realm's throne in the name of ${d.child.name}`);
+  gazette(w, 'hos', `A disputed succession: from ${capital(d.nation)}, ${nm(w, actor)} claims the empty throne in the name of ${d.child.name}, heir of two houses, with ${w.nations[d.nation].name} behind them.`, '#/election/' + e.id);
+}

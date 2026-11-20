@@ -18,7 +18,7 @@ import { homelandWeek, lapsePlant } from './homeland';
 import { lapseWanted, exilePressWeek } from './exiles';
 import { settleTrial } from './trials';
 import { crownWeek, endTriumph } from './imperium';
-import { dynastyWeek, closeDurbar } from './dynasty';
+import { dynastyWeek, closeDurbar, closeEvent } from './dynasty';
 import { revoltDue, revoltsWeek } from './exiles';
 import { empireWeek } from './empire';
 import { machineWeek } from './warmachine';
@@ -130,6 +130,7 @@ function collect(w: W): D[] {
   Object.values(w.markets || {}).forEach((m: any) => add(marketDue(m), () => staleMarket(w, m), m.id));
   Object.values(w.trials || {}).forEach((t: any) => t.status === 'open' && add(t.closesAt, () => settleTrial(w, t), t.id));
   Object.values(w.wanted || {}).forEach((x: any) => x.status === 'open' && add(x.until, () => lapseWanted(w, x), x.id));
+  Object.values(w.events || {}).forEach((v: any) => !v.done && add(v.until, () => closeEvent(w, v), v.id));
   if (w.durbar && !w.durbar.done) add(w.durbar.until, () => closeDurbar(w), 'durbar');
   Object.entries(w.provinces || {}).forEach(([id, p]: [string, any]) => p.revolt && add(p.revolt.until, () => revoltDue(w, p, id), 'rv' + id));
   if (w.triumph && !w.triumph.done) add(w.triumph.until, () => endTriumph(w), 'triumph');
