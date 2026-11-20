@@ -1,6 +1,7 @@
 // Coups in the open: the contested night, life under a regime (decrees, resistance), the provisional government
 // that follows a fall, and the reckoning. Planning a coup is private and lives in the backroom (Plots).
 import { useState } from 'preact/hooks';
+import { StoryText, plainHeadline } from '../StoryText';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Field, Pick, Seg, Opt, Meter, When, Left, Who, Empty } from '../ui';
 import { nm, allCitizens, exiled, detained, held as isHeld, isMP, holderOf, hosTitle, fmtDay, fmtTime, DAY } from '../../../engine/index';
@@ -164,7 +165,7 @@ function Desk() {
       <Sec title="Issue a decree" sub={civil ? 'One a day, under the Government Powers Act. No legitimacy to lose.' : 'One a day. The cost is in legitimacy.'}>
         <DecreeForm type={r.type} cmd={civil ? 'gov.edict' : 'regime.decree'} council={r.type === 'junta' && r.council.length >= 3} />
       </Sec>
-      {heldStories.length > 0 && <Sec title="The censor’s desk">{heldStories.map((s: any) => <Card><div class="kicker" style={{ margin: 0 }}>{w.papers[s.paper]?.name}</div><b>{s.headline}</b><p class="small">{s.body}</p><div class="small muted">By {nm(w, s.by)}</div><div class="grid2" style={{ marginTop: 8 }}><Btn small onClick={() => act('regime.censor', { story: s.id, allow: true }, 'Printed.')}>Let it run</Btn><Btn small kind="danger" onClick={() => act('regime.censor', { story: s.id, allow: false }, 'Struck out.')}>Strike it out</Btn></div></Card>)}</Sec>}
+      {heldStories.length > 0 && <Sec title="The censor’s desk">{heldStories.map((s: any) => <Card><div class="kicker" style={{ margin: 0 }}>{w.papers[s.paper]?.name}</div><b>{plainHeadline(s.headline)}</b><StoryText small text={s.body} /><div class="small muted">By {nm(w, s.by)}</div><div class="grid2" style={{ marginTop: 8 }}><Btn small onClick={() => act('regime.censor', { story: s.id, allow: true }, 'Printed.')}>Let it run</Btn><Btn small kind="danger" onClick={() => act('regime.censor', { story: s.id, allow: false }, 'Struck out.')}>Strike it out</Btn></div></Card>)}</Sec>}
       {r.applicants.length > 0 && <Sec title="Applications for a Party card"><ul class="list">{r.applicants.map((id: string) => <li class="row"><Who id={id} /><span class="row" style={{ gap: 6 }}><Btn small onClick={() => act('regime.admit', { target: id, yes: true }, 'Admitted.')}>Admit</Btn><Btn small kind="plain" onClick={() => act('regime.admit', { target: id, yes: false }, 'Refused.')}>Refuse</Btn></span></li>)}</ul></Sec>}
       {!civil && (
         <Sec title="The way out" sub={`Offer to hand back power in return for amnesty. ${arbiter(w) ? `The ${hosTitle(w)} can refuse, which costs you 1.` : 'There is nobody to refuse: it takes effect after a day.'}`}>

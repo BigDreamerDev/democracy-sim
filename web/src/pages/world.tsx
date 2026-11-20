@@ -1,4 +1,6 @@
-import { WallPoster } from '../PosterView';
+import { WallPoster, GazettePoster, posterChoices } from '../PosterView';
+import { StoryText, plainHeadline } from '../StoryText';
+import { lim } from '../../../engine/limits';
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, LinkRow, Field, Pick, Locked, Seg, Opt, Photo, PhotoPick } from '../ui';
@@ -133,16 +135,18 @@ export function Press() {
   return (
     <Page back={['#/realm', 'The realm']} title="The press" intro="You and your friends can make a newspaper and publish stories, the most popular of the week makes the Gazette's front page">
       <Sec title="Papers"><ul class="list">{Object.values(w.papers).map((p: any) => <li class="row"><span><b>{p.name}</b><div class="small muted">Editor {nm(w, p.editor)} · {p.followers.length} readers{w.acts?.press ? (p.licence === 'granted' ? ' · Licensed' : p.licence === 'pending' ? ' · Licence pending' : ' · No licence') : ''}</div></span><Btn small kind={p.followers.includes(me) ? 'plain' : 'ghost'} onClick={() => act('press.follow', { paper: p.id })}>{p.followers.includes(me) ? 'Following' : 'Follow'}</Btn></li>)}</ul></Sec>
-      {waiting.length > 0 && <Sec title="Waiting for your decision">{waiting.map((s: any) => <Card><b>{s.headline}</b><Photo id={s.photo} alt={s.headline} /><p class="small">{s.body}</p><div class="small muted">By {nm(w, s.by)}</div><div class="grid2" style={{ marginTop: 8 }}><Btn small onClick={() => act('press.edit', { story: s.id, yes: true }, 'Published.')}>Publish</Btn><Btn small kind="plain" onClick={() => act('press.edit', { story: s.id, yes: false })}>Spike</Btn></div></Card>)}</Sec>}
+      {waiting.length > 0 && <Sec title="Waiting for your decision">{waiting.map((s: any) => <Card><b>{plainHeadline(s.headline)}</b><Photo id={s.photo} alt={s.headline} />{s.poster && <GazettePoster p={s.poster} width={110} float="right" />}<StoryText small text={s.body} /><div class="small muted" style={{ clear: 'both' }}>By {nm(w, s.by)}</div><div class="grid2" style={{ marginTop: 8 }}><Btn small onClick={() => act('press.edit', { story: s.id, yes: true }, 'Published.')}>Publish</Btn><Btn small kind="plain" onClick={() => act('press.edit', { story: s.id, yes: false })}>Spike</Btn></div></Card>)}</Sec>}
       {w.regime?.censorship && <Sec><Card kind="warn"><b>Censorship is in force.</b> Every story goes to the regime before it is printed.{w.stories.some((s: any) => s.status === 'held' && s.by === me) ? ' Yours is with the censor.' : ''} The <a href="#/regime">underground press</a> prints without asking.</Card></Sec>}
       <Sec title="Latest">
         <div class="stack">
           {stories.map((s: any) => (
             <Card kind={s.leak ? 'warn' : undefined}>
               <div class="kicker" style={{ margin: 0 }}>{s.underground ? 'The underground press' : s.exile ? `${w.exilePress?.[s.exile]?.name ?? 'The exile press'}, from abroad` : w.papers[s.paper]?.name}{s.leak ? ' · leaked' : ''}</div>
-              <div class="serif" style={{ fontSize: 21, lineHeight: 1.15 }}>{s.headline}</div>
+              <div class="serif" style={{ fontSize: 21, lineHeight: 1.15 }}>{plainHeadline(s.headline)}</div>
               <Photo id={s.photo} alt={s.headline} />
-              <p style={{ margin: '4px 0' }}>{s.body}</p>
+              {s.poster && <GazettePoster p={s.poster} width={140} float="right" />}
+              <StoryText text={s.body} />
+              <div style={{ clear: 'both' }} />
               {w.acts?.press && (isPM(w, me) || hasPower(w, me, 'detain')) && <button type="button" class="btn plain small" style={{ marginBottom: 6 }} onClick={() => act('press.remove', { story: s.id }, 'Removed.')}>Remove</button>}
               <div class="row"><span class="small muted">{s.by ? nm(w, s.by) : 'Unsigned'}, {fmtDay(s.at)}</span><button type="button" class={'cheer' + (s.cheers.includes(me) ? ' on' : '')} aria-pressed={s.cheers.includes(me) ? 'true' : 'false'} onClick={() => act('press.cheer', { story: s.id })}>Cheer <b class="tnum">{s.cheers.length}</b></button></div>
             </Card>
@@ -153,9 +157,13 @@ export function Press() {
       <Sec title="Write a story"><Card><div class="stack">
         <Pick label="Paper" value={f.paper} onChange={(v) => setF({ ...f, paper: v })} options={Object.values(w.papers).map((p: any) => [p.id, p.name])} />
         <Field label="Headline" value={f.headline} onInput={(v) => setF({ ...f, headline: v })} />
-        <Field label="Story" area value={f.body} onInput={(v) => setF({ ...f, body: v })} />
+        <Field label={`Story (${f.body.length} of ${lim(w, 'storyLength')})`} area value={f.body} onInput={(v) => setF({ ...f, body: v.slice(0, lim(w, 'storyLength')) })} />
+        <span class="small muted">Formatting as in WhatsApp: *bold*, _italic_, ~strike~. Leave a blank line between paragraphs; a line that is all *bold* becomes a subheading.</span>
         <PhotoPick value={f.photo} onChange={(photo) => setF({ ...f, photo })} />
-        <Btn onClick={() => { act('press.submit', f, 'Submitted.'); setF({ ...f, headline: '', body: '', photo: null }); }}>Submit</Btn>
+        <Pick label="Print a poster with it" value={f.poster || ''} onChange={(v) => setF({ ...f, poster: v })} options={posterChoices(w)} />
+        {f.poster && <GazettePoster p={{ id: f.poster, enemy: w.army?.war, ...(f.poster === 'decree' && w.commission ? { slogan: w.commission.slogan, by: w.commission.by, font: w.commission.font, pal: w.commission.pal } : {}) }} width={120} />}
+        {f.body.trim() && <details><summary class="small">Preview</summary><Card><div class="serif" style={{ fontSize: 21, lineHeight: 1.15 }}>{plainHeadline(f.headline)}</div><StoryText text={f.body} /></Card></details>}
+        <Btn onClick={() => { act('press.submit', { ...f, poster: f.poster || null }, 'Submitted.'); setF({ ...f, headline: '', body: '', photo: null, poster: '' }); }}>Submit</Btn>
       </div></Card></Sec>
       <Sec title="Start a paper (10 crowns)"><div class="grid2"><Field label="Name" value={name} onInput={setName} /><Btn style={{ alignSelf: 'end' }} onClick={() => act('press.found', { name }, 'Paper founded.')}>Start it</Btn></div></Sec>
     </Page>

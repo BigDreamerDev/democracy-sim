@@ -579,7 +579,7 @@ export function underground(w: W, actor: Id, headline: unknown, body: unknown) {
   const h = txt(headline, 5, 120, 'headline');
   if (body !== undefined && body !== null && typeof body !== 'string') fail('The story must be text.');
   const b = String(body ?? '').trim();
-  if (b.length > 2000) fail('Keep the story under 2000 characters.');
+  if (b.length > lim(w, 'storyLength')) fail(`Keep the story under ${lim(w, 'storyLength')} characters.`);
   if (w.stories.filter((x: any) => x.underground && x.by === actor && x.at > w.now - DAY).length >= lim(w, 'pamphletsPerDay')) fail(lim(w, 'pamphletsPerDay') === 1 ? 'One pamphlet a day is risk enough.' : `${lim(w, 'pamphletsPerDay')} pamphlets a day is risk enough.`);
   const named = chance(w, 0.3);
   w.stories.unshift({ id: newId(w, 'st'), paper: null, by: actor, headline: h, body: b, photo: null, status: 'published', at: w.now, cheers: [], underground: true, named });

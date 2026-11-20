@@ -101,6 +101,8 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
                commissioned slogan (w.commission, a banner for 3 days), defacing under a regime (w.defaced; who wrote it is secret).
                web/src/posters.ts: FONTS, PALETTES, POSTERS, WAR_POSTERS (per enemy), ENEMY_POSTERS; fitPosters() fits type in the
                browser; savePoster() embeds the fonts in the PNG. Money on posters uses config.currency
+               Stories (press, underground, exile) carry s.poster (propaganda.posterRef) and render with web/src/StoryText.tsx
+               (WhatsApp-style *bold* _italic_ ~strike~, paragraphs, subheadings; builds elements, never HTML)
   catalog.ts   CATALOG — public description of every player command and its args (served by /api/v1/commands)
   index.ts     COMMANDS table; run(world, actor, cmd, args) applies one to a structuredClone
   bots.ts      bot turns: botsAct (demo, smoke) and actBots(w, isBot) — the clock runs practice bots during induction

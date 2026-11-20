@@ -1,6 +1,7 @@
 // One poster on the page: renders the SVG, loads the poster fonts, and fits every line to its width once they are in.
 import { useEffect, useRef } from 'preact/hooks';
-import { fitPosters, loadPosterFonts, warmPosterFonts, posterById, posterData, renderPoster, renderCommission, warPostersFor } from './posters';
+import { fitPosters, loadPosterFonts, warmPosterFonts, posterById, posterData, renderPoster, renderCommission, renderEnemy, warPostersFor, POSTERS, ENEMY_POSTERS } from './posters';
+import { currencyText } from '../../engine/core';
 import { useStore } from './store';
 import { nm } from '../../engine/index';
 
@@ -24,12 +25,13 @@ export function PosterSvg({ svg, onOpen, label, width }: { svg: string; onOpen?:
 }
 
 // a poster that went up in the Gazette (g.poster): the war's first poster, or a commissioned one
-export function GazettePoster({ p, width = 140 }: { p: { id: string; slogan?: string; by?: string; font?: string; pal?: string }; width?: number }) {
+export function GazettePoster({ p, width = 140, float }: { p: { id: string; slogan?: string; by?: string; font?: string; pal?: string; enemy?: string }; width?: number; float?: 'right' | 'left' }) {
   const { world: w } = useStore();
   const d = posterData(w);
-  const svg = p.id === 'decree' && p.slogan ? renderCommission(d, p.slogan, nm(w, p.by), { font: p.font, pal: p.pal }) : posterById(p.id) ? renderPoster(posterById(p.id)!, d) : null;
+  const def = posterById(p.id);
+  const svg = p.id === 'decree' && p.slogan ? renderCommission(d, p.slogan, nm(w, p.by), { font: p.font, pal: p.pal }) : def?.enemy ? renderEnemy(def, d, p.enemy || null, []) : def ? renderPoster(def, d) : null;
   if (!svg) return null;
-  return <a href="#/war" style={{ display: 'block', width, marginTop: 8 }}><PosterSvg svg={svg} /></a>;
+  return <a href="#/war" class="wall-poster" style={{ display: 'block', width, marginTop: 8, ...(float ? { float, margin: float === 'right' ? '4px 0 10px 16px' : '4px 16px 10px 0' } : {}) }}><PosterSvg svg={svg} /></a>;
 }
 
 // a poster on the wall of some other page: picks one of `ids` for the day (the current war's own posters first, then a
@@ -53,4 +55,15 @@ export function WallPoster({ ids, width = 160, caption, float, salt = 0 }: { ids
       {caption && <span class="small muted" style={{ display: 'block', marginTop: 6 }}>{caption}</span>}
     </a>
   );
+}
+
+// the posters a story can carry: the war's own, every realm poster, the commissioned one while up, the enemy's in wartime
+export function posterChoices(w: any): [string, string][] {
+  const d = posterData(w);
+  const out: [string, string][] = [['', 'No poster']];
+  if (w.commission && w.commission.until > w.now) out.push(['decree', `By order: “${w.commission.slogan}”`]);
+  warPostersFor(d).forEach((p) => out.push([p.id, p.title]));
+  POSTERS.forEach((p) => out.push([p.id, currencyText(w, p.title)]));
+  if (w.army?.war) ENEMY_POSTERS.forEach((p) => out.push([p.id, `${w.nations[w.army.war]?.name}: ${p.title}`]));
+  return out;
 }

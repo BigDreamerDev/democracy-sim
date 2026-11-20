@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 79, text: 'Newspapers take WhatsApp formatting: *bold*, _italic_, ~strike~, paragraphs, subheadings, bullets and quotes, so you can paste a story straight from the group. Stories can be up to 4000 characters, and you can print any war poster with your story.' },
   { n: 78, text: 'Saving a poster works on phones: tap Save image, then Share it to your photos or WhatsApp, Download it, or press and hold the picture.' },
   { n: 77, text: 'Posters are on the walls everywhere now: a poster of the day on Today, the poster of the week on the front page, and the right one on the Army, the Security Service, bonds, the war memorial, the empire and the Crown, plus a small one in the sidebar. Tap any to open the war room.' },
   { n: 76, text: 'The war posters are redrawn: sixteen designs (the fleet, the airships, the cavalry, the double-headed eagle, the home front, three for the Kessmark war), seven typefaces and six inks to try, and the realm’s own currency on every bond poster. The High Commissioner can commission a poster with their own slogan, the enemy puts up posters that defectors sign, and under a regime the posters get scrawled on.' },

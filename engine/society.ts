@@ -1,4 +1,5 @@
 // The press and the Friday front page, the Supreme Court, and the weekly crisis.
+import { posterRef } from './propaganda';
 import { lim } from './limits';
 import { W, Id, DAY, WEEK, fail, newId, pick, cit, nm, own, text, allCitizens, mustBeFree, gazette, earn, stamp, transfer, ca, meter, approve, tick, isPM, weekNo, standing, fmtDay, addCard, holderOf } from './core';
 import { armyLoyalty } from './foreign';
@@ -29,18 +30,19 @@ export function follow(w: W, actor: Id, pid: Id) {
   const i = p.followers.indexOf(actor);
   i >= 0 ? p.followers.splice(i, 1) : p.followers.push(actor);
 }
-export function submitStory(w: W, actor: Id, pid: Id, headline: string, body: string, photo?: string | null) {
+export function submitStory(w: W, actor: Id, pid: Id, headline: string, body: string, photo?: string | null, poster?: unknown) {
   mustBeFree(w, actor);
   const p = own(w.papers, pid);
   if (!p) fail('Pick a paper.');
   if (!licensed(w, p)) fail(`${p.name} has no licence to publish. The Ministry of Public Order grants them.`);
   const h = text(headline, 5, 120, 'headline');
-  const b = prose(body, 2000, 'story');
+  const b = prose(body, lim(w, 'storyLength'), 'story');
+  const pin = posterRef(w, poster);
   if (w.stories.filter((x: any) => x.by === actor && !x.exile && x.at > w.now - DAY).length >= lim(w, 'storiesPerDay')) fail(`You have filed ${lim(w, 'storiesPerDay')} stor${lim(w, 'storiesPerDay') === 1 ? 'y' : 'ies'} today. Come back tomorrow.`);
   const mine = p.editor === actor;
   // under censorship an editor's yes only sends the story to the censor ('held')
   const held = !!w.regime?.censorship;
-  w.stories.unshift({ id: newId(w, 'st'), paper: pid, by: actor, headline: h, body: b, photo: photoId(photo), status: mine ? (held ? 'held' : 'published') : 'submitted', at: w.now, cheers: [] });
+  w.stories.unshift({ id: newId(w, 'st'), paper: pid, by: actor, headline: h, body: b, photo: photoId(photo), ...(pin ? { poster: pin } : {}), status: mine ? (held ? 'held' : 'published') : 'submitted', at: w.now, cheers: [] });
   tick(w, actor, 'stories');
   if (mine && !held) earn(w, actor, 1, 'Published a story');
 }
@@ -90,7 +92,7 @@ export function makeFrontPage(w: W) {
   const crisisLeads = !!crisis && (crisis.extreme || !lead);
   const fp = {
     id: newId(w, 'fp'), at: w.now, week: weekNo(w), crisis, crisisLeads,
-    lead: lead ? { headline: lead.headline, body: lead.body, by: lead.underground && !lead.named ? null : lead.by, paper: lead.underground ? 'The underground press' : w.papers[lead.paper]?.name, photo: lead.photo || null } : null,
+    lead: lead ? { headline: lead.headline, body: lead.body, by: lead.underground && !lead.named ? null : lead.by, paper: lead.underground ? 'The underground press' : w.papers[lead.paper]?.name, photo: lead.photo || null, poster: lead.poster || null } : null,
     snapshot: snapshotOfWeek(w, since),
     laws: w.laws.filter((l: any) => l.at > since && !l.classified).map((l: any) => ({ ref: l.ref, title: l.title })),
     meters: { prosperity: w.meters.prosperity, stability: w.meters.stability, standing: standing(w) },

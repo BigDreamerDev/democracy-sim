@@ -13,6 +13,7 @@ import { PROFILES, moodShift } from './foreign';
 import { rankOf, defectorsIn, bringHome, unmaskPlant, takeHostage } from './abroad';
 import { startWar } from './war';
 import { canSecurity } from './homeland';
+import { posterRef } from './propaganda';
 import { PROVINCES } from './foreign';
 import { canGovernEmpire } from './empire';
 const PROVINCES_INFO = () => PROVINCES;
@@ -109,16 +110,17 @@ export function foundExilePaper(w: W, actor: Id, name: unknown) {
   deed(w, actor, `Founded ${t}`);
   gazette(w, 'press', `From ${capital(d.nation)}, the exiles start a newspaper: ${t}.`, '#/abroad');
 }
-export function writeExile(w: W, actor: Id, headline: unknown, body: unknown) {
+export function writeExile(w: W, actor: Id, headline: unknown, body: unknown, poster?: unknown) {
   const d = w.citizens[actor]?.defected;
   const p = d && w.exilePress?.[d.nation];
   if (!p) fail('There is no exile paper at your court. Found one first.');
   const h = text(headline, 5, 120, 'headline');
   if (body !== undefined && body !== null && typeof body !== 'string') fail('The story must be text.');
   const b = String(body ?? '').trim();
-  if (b.length > 2000) fail('Keep the story under 2000 characters.');
+  if (b.length > lim(w, 'storyLength')) fail(`Keep the story under ${lim(w, 'storyLength')} characters.`);
+  const pin = posterRef(w, poster);
   if (w.stories.filter((s: any) => s.exile && s.by === actor && s.at > w.now - DAY).length >= lim(w, 'exileStoriesPerDay')) fail('That is enough copy for one day.');
-  w.stories.unshift({ id: newId(w, 'st'), paper: null, exile: d.nation, by: actor, headline: h, body: b, photo: null, status: 'published', at: w.now, cheers: [] });
+  w.stories.unshift({ id: newId(w, 'st'), paper: null, exile: d.nation, by: actor, headline: h, body: b, photo: null, ...(pin ? { poster: pin } : {}), status: 'published', at: w.now, cheers: [] });
   w.stories = w.stories.slice(0, 200);
   d.favour = clamp(d.favour + 1, 0, 100);
 }

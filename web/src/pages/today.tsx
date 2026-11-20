@@ -1,4 +1,5 @@
 import { WallPoster, GazettePoster } from '../PosterView';
+import { StoryText, plainHeadline } from '../StoryText';
 import { useEffect, useState } from 'preact/hooks';
 import { shareText } from '../store';
 import { digest, recap, recapText, realmPlace, imperial } from '../../../engine/index';
@@ -413,13 +414,13 @@ export function FrontPage({ id }: { id: string }) {
             <h2 class="fp-head">{f.crisis.title}</h2>
             <p class="fp-dek">{f.crisis.text} {f.crisis.how === 'house' ? 'The House voted to' : f.crisis.how === 'pm' ? 'The Prime Minister chose to' : 'Nobody decided, so the realm was left to'} <b>{f.crisis.choice.charAt(0).toLowerCase() + f.crisis.choice.slice(1)}</b>. {f.crisis.what}{f.crisis.consequence ? ' It was the price of an earlier decision.' : ''}</p>
             {f.crisis.quote && <blockquote class="fp-quote">“{f.crisis.quote.text}” <span class="small">{nm(w, f.crisis.quote.by)}</span></blockquote>}
-            {f.lead && <p class="fp-dek" style={{ borderTop: '1px solid #C3B9A0', paddingTop: 8 }}><b>Also: {f.lead.headline}.</b> {f.lead.body} <span class="small">By {f.lead.by ? nm(w, f.lead.by) : 'an unsigned hand'}, {f.lead.paper}.</span></p>}
+            {f.lead && <div class="fp-dek" style={{ borderTop: '1px solid #C3B9A0', paddingTop: 8 }}><b>Also: {plainHeadline(f.lead.headline)}.</b>{f.lead.poster && <GazettePoster p={f.lead.poster} width={110} float="right" />}<StoryText small text={f.lead.body} /><span class="small">By {f.lead.by ? nm(w, f.lead.by) : 'an unsigned hand'}, {f.lead.paper}.</span></div>}
           </>
         ) : (
           <>
             <h2 class="fp-head">{f.lead ? f.lead.headline : 'A quiet week in the realm'}</h2>
             {f.lead?.photo && <div class="fp-photo"><Photo id={f.lead.photo} alt={f.lead.headline} /></div>}
-            {f.lead && <p class="fp-dek">{f.lead.body} <span class="small">By {f.lead.by ? nm(w, f.lead.by) : 'an unsigned hand'}, {f.lead.paper}.</span></p>}
+            {f.lead && <div class="fp-dek">{f.lead.poster && <GazettePoster p={f.lead.poster} width={150} float="right" />}<StoryText text={f.lead.body} /><span class="small">By {f.lead.by ? nm(w, f.lead.by) : 'an unsigned hand'}, {f.lead.paper}.</span></div>}
             {f.crisis && <p class="fp-dek" style={{ borderTop: '1px solid #C3B9A0', paddingTop: 8 }}><b>Crisis of the week: {f.crisis.title}.</b> {f.crisis.how === 'house' ? 'The House chose' : f.crisis.how === 'pm' ? 'The PM chose' : 'Nobody chose, so:'} “{f.crisis.choice}”.</p>}
           </>
         )}

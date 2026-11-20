@@ -1,6 +1,8 @@
 // Life abroad (#/abroad): defect to another nation and play from its court, or, at home, see who has gone over,
 // answer a foreign approach, work as an agent, and ransom hostages. The rules are in engine/abroad.ts.
 import { lim } from '../../../engine/limits';
+import { StoryText, plainHeadline } from '../StoryText';
+import { GazettePoster, posterChoices } from '../PosterView';
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Pick, Opt, Meter } from '../ui';
@@ -463,7 +465,7 @@ function ExilePress() {
   const { world: w, me } = useStore();
   const d = w.citizens[me]?.defected;
   const [name, setName] = useState('');
-  const [st, setSt] = useState({ headline: '', body: '' });
+  const [st, setSt] = useState<any>({ headline: '', body: '', poster: '' });
   const papers = Object.values(w.exilePress || {}) as any[];
   const mine = d && w.exilePress?.[d.nation];
   if (!papers.length && !d) return null;
@@ -471,9 +473,9 @@ function ExilePress() {
   return (
     <Sec title="The exile press" sub="Papers written by the defectors at each court. Each week the most-cheered story is printed in the Gazette at home.">
       {d && !mine && <Card><b>Found a paper for the exiles in {w.nations[d.nation].name}</b><div class="grid2" style={{ marginTop: 6 }}><Field label="Its name" value={name} onInput={(v) => setName(v.slice(0, 40))} placeholder="The Free Voice" /><Btn style={{ alignSelf: 'end' }} disabled={name.trim().length < 4} onClick={() => act('exile.paper', { name }, 'The presses roll.')}>Found it</Btn></div></Card>}
-      {mine && <Card><b>Write for {mine.name}</b><Field label="Headline" value={st.headline} onInput={(v) => setSt({ ...st, headline: v.slice(0, 120) })} /><Field label="Story" area value={st.body} onInput={(v) => setSt({ ...st, body: v.slice(0, 2000) })} /><Btn small disabled={st.headline.trim().length < 5} onClick={() => act('exile.write', st, 'Printed.') && setSt({ headline: '', body: '' })}>Print it</Btn></Card>}
+      {mine && <Card><b>Write for {mine.name}</b><Field label="Headline" value={st.headline} onInput={(v) => setSt({ ...st, headline: v.slice(0, 120) })} /><Field label={`Story (${st.body.length} of ${lim(w, 'storyLength')})`} area value={st.body} onInput={(v) => setSt({ ...st, body: v.slice(0, lim(w, 'storyLength')) })} /><span class="small muted">*bold*, _italic_, ~strike~; a blank line between paragraphs.</span><Pick label="Print a poster with it" value={st.poster || ''} onChange={(v) => setSt({ ...st, poster: v })} options={posterChoices(w)} /><Btn small disabled={st.headline.trim().length < 5} onClick={() => act('exile.write', { ...st, poster: st.poster || null }, 'Printed.') && setSt({ headline: '', body: '', poster: '' })}>Print it</Btn></Card>}
       {papers.length > 0 && <p class="small muted">{papers.map((p) => `${p.name} (${PROFILES[p.nation]?.capital})`).join(' · ')}</p>}
-      {stories.length ? <ul class="list">{stories.map((x: any) => <li class="stack" style={{ gap: 2 }}><b>{x.headline}</b><span class="small muted">{w.exilePress?.[x.exile]?.name ?? 'The exile press'} · <Who id={x.by} /> · <When at={x.at} /></span>{x.body && <span class="small">{x.body.slice(0, 280)}{x.body.length > 280 ? '…' : ''}</span>}<span><Btn small kind="ghost" disabled={x.by === me} onClick={() => act('press.cheer', { story: x.id })}>{x.cheers.includes(me) ? 'Cheered' : 'Cheer'} ({x.cheers.length})</Btn></span></li>)}</ul> : <Empty>Nothing printed yet.</Empty>}
+      {stories.length ? <ul class="list">{stories.map((x: any) => <li class="stack" style={{ gap: 2 }}><b>{plainHeadline(x.headline)}</b>{x.poster && <GazettePoster p={x.poster} width={100} float="right" />}<span class="small muted">{w.exilePress?.[x.exile]?.name ?? 'The exile press'} · <Who id={x.by} /> · <When at={x.at} /></span>{x.body && <StoryText small text={x.body.length > 600 ? x.body.slice(0, 600) + '…' : x.body} />}<span><Btn small kind="ghost" disabled={x.by === me} onClick={() => act('press.cheer', { story: x.id })}>{x.cheers.includes(me) ? 'Cheered' : 'Cheer'} ({x.cheers.length})</Btn></span></li>)}</ul> : <Empty>Nothing printed yet.</Empty>}
     </Sec>
   );
 }

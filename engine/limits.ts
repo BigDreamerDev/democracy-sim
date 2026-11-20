@@ -51,6 +51,7 @@ export const LIMITS: Record<string, Limit> = {
   grantMax: L('Offices', 'Largest single grant from an office', 100, 10, 1000, CR),
   fineMax: L('Offices', 'Largest fine', 10, 1, 100, CR),
   // Society
+  storyLength: L('Society', 'Longest a story or pamphlet may be', 4000, 500, 4000, ' characters'),
   storiesPerDay: L('Society', 'Stories each journalist may file a day', 5, 1, 20),
   pollPanel: L('Society', 'Newsnight comments on one exit poll', 5, 1, 20),
   crisisSpeeches: L('Society', 'Speeches each citizen may make on a crisis', 2, 1, 10),

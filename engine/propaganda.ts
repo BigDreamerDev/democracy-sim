@@ -14,6 +14,19 @@ export const POSTER_FONTS = ['imperial', 'propaganda', 'condensed', 'gothic', 'f
 export const POSTER_PALETTES = ['porphyry', 'khaki', 'navy', 'blood', 'realm', 'steel'];
 // the first poster of a war: the realm's own for that enemy if it has one
 export const warPoster = (nid: string) => (nid === 'kessmark' ? 'kess-cross' : 'march');
+// a poster pinned to a story (press.submit, exile.write, press.underground): any of the realm's, the enemy's in wartime,
+// or the High Commission's while it is up (its slogan is copied, so the story keeps it after the poster comes down)
+export function posterRef(w: W, v: unknown) {
+  if (v === undefined || v === null || v === '') return null;
+  if (typeof v !== 'string') fail('Pick a poster.');
+  if (v === 'decree') {
+    const c = w.commission;
+    if (!c || c.until <= w.now) fail('The commissioned poster is not up any more.');
+    return { id: 'decree', slogan: c.slogan, by: c.by, font: c.font, pal: c.pal };
+  }
+  if (ENEMY_POSTER_IDS.includes(v)) return w.army?.war ? { id: v, enemy: w.army.war } : fail('There is no enemy putting up posters.');
+  return POSTER_IDS.includes(v) ? { id: v } : fail('Pick a poster.');
+}
 export const COMMISSION_COST = 10;
 export const COMMISSION_DAYS = 3;
 
