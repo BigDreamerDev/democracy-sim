@@ -591,8 +591,8 @@ function Posters() {
   return (
     <Sec title="On the walls" sub={k ? 'The posters of this war. Tap one to see it whole; save it to share in the group.' : 'The posters are printed and ready. Save one to share.'}>
       <div class="grid2" style={{ marginBottom: 12 }}>
-        <Pick label="Typeface" value={font} onChange={setFont} options={[['', 'Each poster’s own'], ...Object.entries(FONTS).map(([id, x]) => [id, x.label] as [string, string])]} />
-        <Pick label="Inks" value={pal} onChange={setPal} options={[['', 'Each poster’s own'], ...Object.entries(PALETTES).map(([id, x]) => [id, x.label] as [string, string])]} />
+        <Pick label="Typeface" value={font} onChange={setFont} options={[['', 'Its own'], ...Object.entries(FONTS).map(([id, x]) => [id, x.label] as [string, string])]} />
+        <Pick label="Inks" value={pal} onChange={setPal} options={[['', 'Its own'], ...Object.entries(PALETTES).map(([id, x]) => [id, x.label] as [string, string])]} />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: big ? 'minmax(0, 440px)' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14, justifyContent: big ? 'center' : undefined }}>
         {shown.map((p) => (

@@ -1,6 +1,6 @@
 // One poster on the page: renders the SVG, loads the poster fonts, and fits every line to its width once they are in.
 import { useEffect, useRef } from 'preact/hooks';
-import { fitPosters, loadPosterFonts, posterById, posterData, renderPoster, renderCommission, warPostersFor } from './posters';
+import { fitPosters, loadPosterFonts, warmPosterFonts, posterById, posterData, renderPoster, renderCommission, warPostersFor } from './posters';
 import { useStore } from './store';
 import { nm } from '../../engine/index';
 
@@ -12,6 +12,9 @@ export function PosterSvg({ svg, onOpen, label, width }: { svg: string; onOpen?:
     fitPosters(el);
     let live = true;
     loadPosterFonts().then(() => live && ref.current && fitPosters(ref.current));
+    // fetch the fonts for saving now, so a tap on Save does not have to wait
+    const idle = (window as any).requestIdleCallback || ((f: () => void) => setTimeout(f, 1500));
+    idle(() => warmPosterFonts());
     return () => void (live = false);
   }, [svg]);
   const html = svg.replace('<svg ', '<svg style="display:block;width:100%;height:auto" ');

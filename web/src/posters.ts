@@ -577,36 +577,85 @@ export function loadPosterFonts(): Promise<unknown> {
   const fams = ['Cinzel', 'Bebas Neue', 'Oswald', 'UnifrakturMaguntia', 'Abril Fatface', 'Alfa Slab One', 'Permanent Marker'];
   return Promise.all(fams.map((f) => (document as any).fonts?.load?.(`40px "${f}"`).catch(() => null)));
 }
-// a saved PNG carries its fonts: fetch the font files and put them inside the SVG before drawing it
+// a saved PNG carries its fonts: fetch the font files (Latin only, to keep it light on a phone) and put them inside the
+// SVG before drawing it. Started as soon as a poster is on screen, so a tap on Save does not wait for the network.
 let fontFaces: Promise<string> | null = null;
-async function embeddedFonts() {
+export function warmPosterFonts() {
   fontFaces ??= (async () => {
     const css = await (await fetch(FONT_CSS)).text();
-    const urls = [...new Set([...css.matchAll(/url\((https:[^)]+)\)/g)].map((m) => m[1]))];
+    // Google's CSS is one @font-face per script, each headed by a comment: keep the Latin ones
+    const blocks = css.split(/(?=\/\*\s*[\w-]+\s*\*\/)/).filter((b) => /^\/\*\s*latin\s*\*\//.test(b));
+    const kept = blocks.length ? blocks.join('\n') : css;
+    const urls = [...new Set([...kept.matchAll(/url\((https:[^)]+)\)/g)].map((m) => m[1]))];
     const data = await Promise.all(urls.map(async (u) => { const b = await (await fetch(u)).blob(); return await new Promise<string>((ok) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.readAsDataURL(b); }); }));
-    let out = css;
+    let out = kept;
     urls.forEach((u, i) => (out = out.split(u).join(data[i])));
     return out;
   })().catch(() => '');
   return fontFaces;
 }
-export async function savePoster(svgEl: SVGSVGElement | null, name: string) {
-  if (!svgEl) return;
-  const faces = await embeddedFonts();
+async function drawPng(svgEl: SVGSVGElement, faces: string): Promise<Blob> {
   const copy = svgEl.cloneNode(true) as SVGSVGElement;
   copy.removeAttribute('style');
   copy.setAttribute('width', '600'); copy.setAttribute('height', '900');
   if (faces) copy.insertAdjacentHTML('afterbegin', `<style>${faces}</style>`);
-  const img = new Image();
-  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], { type: 'image/svg+xml' }));
-  await new Promise((ok, bad) => { img.onload = ok; img.onerror = bad; img.src = url; });
-  await new Promise((r) => setTimeout(r, 150));
-  const c = document.createElement('canvas');
-  c.width = 1200; c.height = 1800;
-  c.getContext('2d')!.drawImage(img, 0, 0, 1200, 1800);
-  URL.revokeObjectURL(url);
-  const a = document.createElement('a');
-  a.download = name + '.png';
-  a.href = c.toDataURL('image/png');
-  a.click();
+  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], { type: 'image/svg+xml;charset=utf-8' }));
+  try {
+    const img = new Image();
+    await new Promise((ok, bad) => { img.onload = ok; img.onerror = bad; img.src = url; });
+    await new Promise((r) => setTimeout(r, 150));
+    const c = document.createElement('canvas');
+    c.width = 1200; c.height = 1800;
+    c.getContext('2d')!.drawImage(img, 0, 0, 1200, 1800);
+    return await new Promise<Blob>((ok, bad) => c.toBlob((b) => (b ? ok(b) : bad(new Error('no image'))), 'image/png'));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+// the poster as a PNG: with its fonts if the browser allows it, plain if not
+export async function posterPng(svgEl: SVGSVGElement): Promise<Blob> {
+  const faces = await warmPosterFonts();
+  try { return await drawPng(svgEl, faces); } catch { return await drawPng(svgEl, ''); }
+}
+// Save: on a computer, download it; on a phone, show the picture with Share (to Photos or WhatsApp) and Download, since
+// phones ignore a download link on a picture made on the page, and press-and-hold always works
+export async function savePoster(svgEl: SVGSVGElement | null, name: string) {
+  if (!svgEl) return;
+  const phone = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+  let blob: Blob;
+  try { blob = await posterPng(svgEl); } catch { return alert('Sorry, this browser could not make the picture. Try a screenshot instead.'); }
+  const file = name + '.png';
+  const url = URL.createObjectURL(blob);
+  if (!phone) {
+    const a = document.createElement('a');
+    a.download = file; a.href = url;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return;
+  }
+  document.getElementById('poster-save')?.remove();
+  const box = document.createElement('div');
+  box.id = 'poster-save';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-label', 'Save the poster');
+  box.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(10,8,8,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:18px;';
+  const shareable = typeof navigator !== 'undefined' && !!(navigator as any).canShare?.({ files: [new File([blob], file, { type: 'image/png' })] });
+  box.innerHTML = `<img src="${url}" alt="The poster" style="max-width:min(88vw,420px);max-height:66vh;box-shadow:0 6px 24px rgba(0,0,0,.5)">
+    <div style="color:#F6EBDC;font:15px 'Atkinson Hyperlegible',sans-serif;text-align:center">Press and hold the picture to save it${shareable ? ', or share it' : ''}.</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
+      ${shareable ? '<button type="button" data-act="share" style="min-height:44px;padding:0 18px;font:700 15px \'Atkinson Hyperlegible\',sans-serif;background:#C9A13B;color:#22080F;border:0;border-radius:3px">Share</button>' : ''}
+      <a data-act="download" href="${url}" download="${file}" style="display:inline-flex;align-items:center;min-height:44px;padding:0 18px;font:700 15px 'Atkinson Hyperlegible',sans-serif;background:#F6EBDC;color:#22080F;border-radius:3px;text-decoration:none">Download</a>
+      <button type="button" data-act="close" style="min-height:44px;padding:0 18px;font:700 15px 'Atkinson Hyperlegible',sans-serif;background:none;color:#F6EBDC;border:1.5px solid #F6EBDC;border-radius:3px">Close</button>
+    </div>`;
+  const close = () => { box.remove(); URL.revokeObjectURL(url); };
+  box.addEventListener('click', async (e) => {
+    const t = (e.target as HTMLElement).closest('[data-act]') as HTMLElement | null;
+    if (e.target === box) return close();
+    if (!t) return;
+    if (t.dataset.act === 'close') return close();
+    if (t.dataset.act === 'share') {
+      try { await (navigator as any).share({ files: [new File([blob], file, { type: 'image/png' })], title: 'A poster from the realm' }); } catch { /* cancelled */ }
+    }
+  });
+  document.body.appendChild(box);
 }
