@@ -3,6 +3,7 @@
 // south. Colours follow each nation's mood; lines show treaties, wars and wars abroad. Every country links to its page.
 import { lim } from '../../../engine/limits';
 import { useState } from 'preact/hooks';
+import { POSTERS, posterData, savePoster } from '../posters';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Seg, Opt } from '../ui';
 import { hasArmy, isPM, hasPower, holderOf, standing, bal, ca, isMP, autocrat, autocratTitle, speaksForHouse, cap, nm } from '../../../engine/index';
@@ -372,6 +373,7 @@ export function War() {
         <WarMachine />
         <March />
         <Memorials />
+        <Posters />
         <Past />
       </Page>
     );
@@ -395,6 +397,7 @@ export function War() {
         {k.strategy === 'advance' && <p class="small" style={{ color: 'var(--red)' }}>On the advance the Army is away from the capital: a coup would find the city undefended.</p>}
       </Sec>
       <WarMachine />
+      <Posters />
       <Sec title="Do your bit">
         <div class="grid2">
           <Card><b>Volunteer</b><p class="small" style={{ margin: '4px 0 8px' }}>Each volunteer adds half a regiment. +2 Influence, and a Veteran stamp if we win. {k.volunteers.length} so far.</p>{k.volunteers.includes(me) ? <span class="chip teal">You volunteered</span> : <Btn small onClick={() => act('war.enlist', {}, 'You are off to the front.')}>Enlist</Btn>}</Card>
@@ -552,5 +555,31 @@ export function Diplomacy({ id }: { id: string }) {
         </div>
       </Sec>
     </>
+  );
+}
+
+// the posters on the walls: they name whoever holds the offices now, and do what they ask
+function Posters() {
+  const { world: w, me } = useStore();
+  const [big, setBig] = useState<string | null>(null);
+  const d = posterData(w);
+  const k = w.army?.campaign;
+  const abroad = !!w.citizens[me]?.defected;
+  const shown = big ? POSTERS.filter((p) => p.id === big) : POSTERS;
+  return (
+    <Sec title="On the walls" sub={k ? 'The posters of this war. Tap one to see it whole; save it to share in the group.' : 'The posters are printed and ready for the next war. Save one to share.'}>
+      <div class="posters" style={{ display: 'grid', gridTemplateColumns: big ? 'minmax(0, 420px)' : 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, justifyContent: big ? 'center' : undefined }}>
+        {shown.map((p) => (
+          <div class="stack" style={{ gap: 6 }}>
+            <button type="button" aria-label={p.title} onClick={() => setBig(big ? null : p.id)} style={{ padding: 0, border: 0, background: 'none', cursor: 'zoom-in', boxShadow: '3px 3px 0 var(--shadow)' }} dangerouslySetInnerHTML={{ __html: p.svg(d).replace('<svg ', '<svg style="display:block;width:100%;height:auto" ') }} />
+            <div class="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+              {k && !abroad && p.kind === 'enlist' && !k.volunteers.includes(me) && <Btn small onClick={() => act('war.enlist', {}, 'You are off to the front.')}>Enlist</Btn>}
+              {k && !abroad && p.kind === 'bonds' && <Btn small onClick={() => act('war.bond', { amount: 10 }, 'Thank you. 10 crowns lent.')}>Buy 10 in bonds</Btn>}
+              <Btn small kind="ghost" onClick={() => savePoster(p.svg(d), `${d.place.toLowerCase()}-${p.id}`)}>Save image</Btn>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Sec>
   );
 }
