@@ -87,7 +87,8 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
                posters (w.wanted, escrowed by the nation), the exile press (w.exilePress, stories with s.exile), and the invasion
                (w.invasion → a coup night with w.coup.invasion strength; the host's war ends if the exiles win)
   trials.ts    w.trials: treason (after extradition/snatch) and lèse-majesté; justices or a jury by lot; guilty = c.jail with an end date
-  imperium.ts  the Crown at home: proclamations (w.crown.proclamation, a banner on every page), peers (c.peerage, weekly
+  imperium.ts  the Crown at home: proclamations (w.crown.proclamation, a banner on every page), peers (c.peerage {rank, of}; nm() styles
+               them "Duke Sam of Kingsmead" everywhere (core.styled); plainName() for the bare name), weekly
                appanage, +gov on coup nights), royal progresses, triumphs (w.triumph), lèse-majesté (absolute monarchy only)
   dynasty.ts   royal weddings (w.crown.proposal/consort; no heirs at home: crown.child is kept for the API and refuses), the Tower (c.jail.tower, until null; escapes), the Imperial Durbar (w.durbar, each payday under the
                empire), royal holdings (ESTATES, w.holdings: Crown, peers or the State; weekly rents from the reserve; palaces)

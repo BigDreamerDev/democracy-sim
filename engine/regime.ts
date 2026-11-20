@@ -197,12 +197,12 @@ export function fleeOrStand(w: W, actor: Id, flee: unknown) {
     c.exiledUntil = w.now + 90 * DAY;
     c.exileNoted = true;
     r.exiles.push(actor);
-    gazette(w, 'crisis', `${c.name}, the ousted Prime Minister, flees the realm.`, '#/regime');
+    gazette(w, 'crisis', `${nm(w, c.id)}, the ousted Prime Minister, flees the realm.`, '#/regime');
   } else {
     r.stood = true;
     approve(w, actor, 5);
     legit(w, -3, `${c.name} stayed to face them`);
-    gazette(w, 'crisis', `${c.name}, the ousted Prime Minister, refuses to leave. “I was elected. They were not.”`, '#/regime');
+    gazette(w, 'crisis', `${nm(w, c.id)}, the ousted Prime Minister, refuses to leave. “I was elected. They were not.”`, '#/regime');
   }
 }
 
@@ -597,7 +597,7 @@ export function prisonLetter(w: W, actor: Id, text: unknown) {
   const t = txt(text, 8, 500, 'letter');
   c.letterDay = DAYNO(w.now);
   bump(w, actor, 'letters');
-  gazette(w, 'letter', `Smuggled out of prison, from ${c.name}: “${t}”`, '#/regime');
+  gazette(w, 'letter', `Smuggled out of prison, from ${nm(w, c.id)}: “${t}”`, '#/regime');
 }
 // two free citizens can spring a detainee, unless the secret police were watching either of them
 export function jailbreak(w: W, actor: Id, target: Id) {
@@ -660,14 +660,14 @@ export function swear(w: W, actor: Id, yes: unknown) {
     r.collab[actor] = r.collab[actor] || 'Swore the loyalty oath';
     transfer(w, 'treasury', ca(actor), 3, 'For swearing the oath');
     stamp(w, actor, 'Swore the oath', `To ${nm(w, r.leader)}`, 'ink');
-    gazette(w, 'quiet', `${c.name} swears loyalty to the regime.`, '#/regime');
+    gazette(w, 'quiet', `${nm(w, c.id)} swears loyalty to the regime.`, '#/regime');
     const sworn = Object.values(r.oath).filter((v) => v === 'sworn').length;
     if (!r.oathWon && sworn > allCitizens(w).length / 2) (r.oathWon = true), legit(w, 2, 'Most of the realm has sworn');
   } else {
     r.oath[actor] = 'refused';
     r.marked[actor] = 'Refused the oath';
     approve(w, actor, 2);
-    gazette(w, 'crisis', `${c.name} refuses the loyalty oath.`, '#/regime');
+    gazette(w, 'crisis', `${nm(w, c.id)} refuses the loyalty oath.`, '#/regime');
   }
 }
 // the Party: apply, and the Chairman admits or refuses
@@ -689,7 +689,7 @@ export function admitParty(w: W, actor: Id, target: Id, yes: unknown) {
   c.party = r.party;
   r.collab[target] = r.collab[target] || 'Held a Party card';
   bump(w, target, 'partyCard');
-  gazette(w, 'party', `${c.name} is admitted to the ${w.parties[r.party].name}.`, '#/regime');
+  gazette(w, 'party', `${nm(w, c.id)} is admitted to the ${w.parties[r.party].name}.`, '#/regime');
 }
 // removing the leader from inside: the council of a junta (or martial law), the members of the Party, or, against
 // a dictator, the General alone

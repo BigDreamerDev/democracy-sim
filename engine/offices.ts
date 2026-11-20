@@ -142,7 +142,7 @@ export function appoint(w: W, actor: Id, officeId: string, target: Id | null) {
     o.holder = target;
     t.stats.heldOffice = true;
     stamp(w, target, o.title, 'Appointed by ' + nm(w, actor), 'ink');
-    gazette(w, 'government', `${t.name} is appointed ${o.title}.`, '#/offices', { k: 'appoint', who: t.id, by: actor, title: o.title, office: o.template || o.id });
+    gazette(w, 'government', `${nm(w, t.id)} is appointed ${o.title}.`, '#/offices', { k: 'appoint', who: t.id, by: actor, title: o.title, office: o.template || o.id });
     if (promised && promised !== target) gazette(w, 'government', `The PM broke a coalition promise: the ${o.title} post was promised to ${nm(w, promised as string)}.`, '#/cabinet');
   } else {
     o.holder = null;
@@ -219,7 +219,7 @@ export function emeritus(w: W, actor: Id, target: unknown, grant: unknown) {
   stamp(w, id, 'Monarch Emeritus', `Granted by ${nm(w, actor)}`, 'good');
   earn(w, id, 5, 'Made Monarch Emeritus');
   approve(w, id, 3);
-  gazette(w, 'hos', `${t.name} is made Monarch Emeritus, to be styled ${style}, with a royal pension of ${w.config.emeritusPay ?? 10} crowns each payday.`, '#/office/' + o.id);
+  gazette(w, 'hos', `${nm(w, t.id)} is made Monarch Emeritus, to be styled ${style}, with a royal pension of ${w.config.emeritusPay ?? 10} crowns each payday.`, '#/office/' + o.id);
 }
 // losing the office loses the style (the honour and the stamp stay)
 export function revokeEmeritus(w: W, o: any, id: Id, actor: Id) {

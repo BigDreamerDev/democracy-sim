@@ -1,5 +1,6 @@
 // Upgrades a saved world to the current shape. The live world persists across deploys, so any change to the
 // world's shape (a new field, a renamed key) needs a step here. Steps must be idempotent: they run on every boot.
+import { setPeerTitle, designation } from './imperium';
 import { callOath } from './oath';
 import { adoptCourtOffices } from './privy';
 import { W } from './core';
@@ -121,6 +122,8 @@ export function migrate(w: W): W {
   w.durbar ??= null;
   w.holdings ??= {};
   w.events ??= {};
+  // peers made before territorial titles: give each a place and put the style in their titles
+  Object.values(w.citizens || {}).forEach((c: any) => c.peerage && !c.peerage.of && setPeerTitle(c, { ...c.peerage, of: designation(w, c, null) }));
   // royal heirs at home were removed
   if (w.crown) ['heir', 'regency', 'heirTriedAt', 'deposed'].forEach((k) => delete w.crown[k]);
   w.ops ??= [];

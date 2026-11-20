@@ -183,7 +183,7 @@ export function detain(w: W, actor: Id, target: Id, days: unknown) {
   stripPosts(w, target);
   bump(w, target, 'jailed');
   stamp(w, target, 'Detained', 'The Realm Jail', 'bad');
-  gazette(w, 'crisis', `${c.name} is detained in the Realm Jail by order of the government.`, '#/jail');
+  gazette(w, 'crisis', `${nm(w, c.id)} is detained in the Realm Jail by order of the government.`, '#/jail');
 }
 export function release(w: W, actor: Id, target: Id) {
   canJail(w, actor, 'release');
@@ -193,7 +193,7 @@ export function release(w: W, actor: Id, target: Id) {
 }
 export function freeFromJail(w: W, c: any) {
   c.jail = null;
-  gazette(w, 'quiet', `${c.name} is released from the Realm Jail.`, '#/jail');
+  gazette(w, 'quiet', `${nm(w, c.id)} is released from the Realm Jail.`, '#/jail');
 }
 // a detainee keeps a seat (suspended) but loses every office, the Speaker’s chair, any party leadership, shadow posts
 // and any candidacy in an open election
@@ -243,7 +243,7 @@ export function appointSpeaker(w: W, actor: Id, target: unknown) {
   if (w.speaker === c.id) fail('They are already Speaker.');
   w.speaker = c.id;
   stamp(w, c.id, 'Speaker', 'Appointed by the Prime Minister', 'ink');
-  gazette(w, 'government', `${c.name} is appointed Speaker by the Prime Minister.`, '#/house');
+  gazette(w, 'government', `${nm(w, c.id)} is appointed Speaker by the Prime Minister.`, '#/house');
 }
 export function fillSeat(w: W, actor: Id, target: Id) {
   needContinuity(w, actor);
@@ -258,7 +258,7 @@ export function fillSeat(w: W, actor: Id, target: Id) {
   if (inForce(w, 'unity') && w.acts.national && c.party !== w.acts.national) fail('Only members of the National Party may sit.');
   w.seats[i] = target;
   stamp(w, target, 'Appointed MP', 'By the Prime Minister', 'bad');
-  gazette(w, 'election', `${c.name} is appointed to an empty seat by the Prime Minister.`, '#/house');
+  gazette(w, 'election', `${nm(w, c.id)} is appointed to an empty seat by the Prime Minister.`, '#/house');
 }
 export function unseat(w: W, actor: Id, target: Id) {
   needContinuity(w, actor);
@@ -360,7 +360,7 @@ export function admitNational(w: W, actor: Id, target: Id, yes: unknown) {
   if (detained(w, target)) fail('A detainee cannot join a party.');
   c.party = nid;
   bump(w, target, 'parties');
-  gazette(w, 'party', `${c.name} is admitted to the National Party.`, '#/party/' + nid);
+  gazette(w, 'party', `${nm(w, c.id)} is admitted to the National Party.`, '#/party/' + nid);
 }
 export function expelNational(w: W, actor: Id, target: Id, auto = false) {
   const nid = national(w) || fail('There is no National Party.');
@@ -369,7 +369,7 @@ export function expelNational(w: W, actor: Id, target: Id, auto = false) {
   if (c.party !== nid) fail('They are not a member.');
   if (isPM(w, target)) fail('The Prime Minister leads the party.');
   c.party = null;
-  gazette(w, 'party', auto ? `${c.name} voted against the Prime Minister and is expelled from the National Party.` : `${c.name} is expelled from the National Party by the Prime Minister.`, '#/party/' + nid);
+  gazette(w, 'party', auto ? `${nm(w, c.id)} voted against the Prime Minister and is expelled from the National Party.` : `${nm(w, c.id)} is expelled from the National Party by the Prime Minister.`, '#/party/' + nid);
 }
 // for the bill editor and the law: the clause in words
 export const describeAct = (key: string) => (own(ACTS, key) ? `The ${ACTS[key as ActKey].name} Act. ${ACTS[key as ActKey].text}` : '');
@@ -407,7 +407,7 @@ export function jailByState(w: W, id: Id, why: string) {
   stripPosts(w, id);
   bump(w, id, 'jailed');
   stamp(w, id, 'Detained', why, 'bad');
-  gazette(w, 'crisis', `${c.name} is detained in the Realm Jail by order of the government.`, '#/jail');
+  gazette(w, 'crisis', `${nm(w, c.id)} is detained in the Realm Jail by order of the government.`, '#/jail');
   return true;
 }
 // how plotters are punished: 'auto' is the Protection Act's one-hour discovery; otherwise State Security's rule, or a week's exile
@@ -455,7 +455,7 @@ export function nameDeputy(w: W, actor: Id, target: unknown) {
   if (isHOS(w, c.id)) fail('The head of state cannot be Deputy.');
   w.deputy = c.id;
   stamp(w, c.id, 'Deputy Prime Minister', `Named by ${nm(w, actor)}`, 'ink');
-  gazette(w, 'government', `${c.name} is named Deputy Prime Minister.`, '#/powers');
+  gazette(w, 'government', `${nm(w, c.id)} is named Deputy Prime Minister.`, '#/powers');
 }
 export function appointHos(w: W, actor: Id, target: Id) {
   needProtection(w, actor);

@@ -75,7 +75,7 @@ export function defect(w: W, actor: Id, nid: unknown) {
   if (!from && isMP(w, actor)) vacateSeat(w, actor, 'defected');
   // the realm's friends are embarrassed to take in its defectors
   if (!from && n.mood >= 3) moodShift(n, -1, `They took in ${c.name}, a defector`);
-  gazette(w, 'foreign', from ? `${c.name} leaves ${w.nations[from].name} for ${n.name}.` : `${c.name} defects to ${n.name}${secrets.length ? `, carrying ${secrets.length} secret${secrets.length === 1 ? '' : 's'}` : ''}.`, '#/abroad');
+  gazette(w, 'foreign', from ? `${nm(w, c.id)} leaves ${w.nations[from].name} for ${n.name}.` : `${nm(w, c.id)} defects to ${n.name}${secrets.length ? `, carrying ${secrets.length} secret${secrets.length === 1 ? '' : 's'}` : ''}.`, '#/abroad');
 }
 // coming home: after two days abroad; questioned at the border if they sold secrets
 export function comeHome(w: W, actor: Id) {
@@ -94,20 +94,20 @@ export function comeHome(w: W, actor: Id) {
     if (d.plant.by && w.citizens[d.plant.by]) earn(w, d.plant.by, 3, 'An agent came home safely');
     stamp(w, actor, 'Came in from the cold', `A plant in ${n.name}, for the Security Service`, 'good');
     bump(w, actor, 'plantHome');
-    return gazette(w, 'foreign', `${c.name} comes home from ${n.name}, and the truth comes out: they were working for the realm's Security Service all along.`, '#/abroad');
+    return gazette(w, 'foreign', `${nm(w, c.id)} comes home from ${n.name}, and the truth comes out: they were working for the realm's Security Service all along.`, '#/abroad');
   }
   // the Prime Minister's amnesty: no questions at the border, no loss of face
   if (d.amnesty) {
     stamp(w, actor, 'Pardoned', `Came home from ${n.name} under amnesty`, 'ink');
-    return gazette(w, 'foreign', `${c.name} comes home from ${n.name} under the Prime Minister's amnesty.`, '#/abroad');
+    return gazette(w, 'foreign', `${nm(w, c.id)} comes home from ${n.name} under the Prime Minister's amnesty.`, '#/abroad');
   }
   approve(w, actor, d.naturalised ? -8 : -5);
   stamp(w, actor, 'Came home', `From ${n.name}`, 'ink');
   if (d.sold > 0) {
     c.exiledUntil = w.now + 3 * DAY;
     c.exileNoted = false;
-    gazette(w, 'foreign', `${c.name} comes home from ${n.name} and is held at the border for questioning: they sold the realm's secrets.`, '#/abroad');
-  } else gazette(w, 'foreign', `${c.name} comes home from ${n.name}.`, '#/abroad');
+    gazette(w, 'foreign', `${nm(w, c.id)} comes home from ${n.name} and is held at the border for questioning: they sold the realm's secrets.`, '#/abroad');
+  } else gazette(w, 'foreign', `${nm(w, c.id)} comes home from ${n.name}.`, '#/abroad');
 }
 const rankOfFavour = (f: number) => Math.min(3, RANKS.reduce((b, x, i) => (f >= x.min ? i : b), 0));
 
@@ -245,7 +245,7 @@ export function answerApproach(w: W, actor: Id, aid: unknown, yes: unknown, repo
     approve(w, actor, 4);
     earn(w, actor, 3, 'Reported a foreign approach');
     moodShift(n, -1, 'Their approach was exposed');
-    gazette(w, 'scandal', `${c.name} reports an attempt by ${n.name} to recruit them${a.by ? `, made through ${nm(w, a.by)}` : ''}.`, '#/abroad');
+    gazette(w, 'scandal', `${nm(w, c.id)} reports an attempt by ${n.name} to recruit them${a.by ? `, made through ${nm(w, a.by)}` : ''}.`, '#/abroad');
   }
 }
 // a mole leaks a card they can see to their nation (and their handler)
@@ -301,7 +301,7 @@ export function sweep(w: W, actor: Id, nid: unknown) {
     approve(w, c.id, -20);
     stamp(w, c.id, 'Traitor', `An agent of ${n.name}`, 'bad');
     if (isMP(w, c.id)) vacateSeat(w, c.id, 'unmasked as a foreign agent');
-    gazette(w, 'scandal', `${c.name} is unmasked as an agent of ${n.name} and exiled for a week.`, '#/security');
+    gazette(w, 'scandal', `${nm(w, c.id)} is unmasked as an agent of ${n.name} and exiled for a week.`, '#/security');
   });
   if (found.length) earn(w, actor, 5, 'Caught foreign agents');
   w.sweeps.unshift({ id: newId(w, 'sw'), by: actor, nation: n.id, at: w.now, found });
@@ -430,7 +430,7 @@ export function bid(w: W, actor: Id, spend: unknown) {
       c.defected = null;
       c.exiledUntil = w.now + 3 * DAY;
       c.exileNoted = false;
-      gazette(w, 'foreign', `${n.name} throws ${c.name} out of the country. They are held at the realm's border.`, '#/abroad');
+      gazette(w, 'foreign', `${n.name} throws ${nm(w, c.id)} out of the country. They are held at the realm's border.`, '#/abroad');
     }
     return;
   }
@@ -518,12 +518,12 @@ export function seekRefuge(w: W, actor: Id, nid: unknown) {
   if (!n || n.mood < 3) fail('Only a friendly nation will take you in.');
   if (isPM(w, actor) || isHOS(w, actor)) fail('The head of the government cannot hide in an embassy.');
   c.refuge = { nation: n.id, at: w.now };
-  gazette(w, 'foreign', `${c.name} takes refuge in the ${n.name} embassy.`, '#/abroad');
+  gazette(w, 'foreign', `${nm(w, c.id)} takes refuge in the ${n.name} embassy.`, '#/abroad');
 }
 export function leaveRefuge(w: W, actor: Id) {
   const c = cit(w, actor);
   if (!c.refuge) fail('You are not in an embassy.');
-  gazette(w, 'foreign', `${c.name} leaves the ${w.nations[c.refuge.nation]?.name} embassy.`, '#/abroad');
+  gazette(w, 'foreign', `${nm(w, c.id)} leaves the ${w.nations[c.refuge.nation]?.name} embassy.`, '#/abroad');
   c.refuge = null;
 }
 
@@ -544,7 +544,7 @@ export function intrigue(w: W, actor: Id, target: unknown, kind: unknown) {
       fav(w, actor, -5);
       deed(w, actor, `Plotted against ${t.name}, and was caught`);
       td.deeds = [{ at: w.now, what: `Saw off a plot by ${nm(w, actor)}` }, ...(td.deeds || [])].slice(0, 20);
-      return gazette(w, 'foreign', `Intrigue at the court of ${n.name}: ${nm(w, actor)} is caught plotting against ${t.name}.`, '#/abroad');
+      return gazette(w, 'foreign', `Intrigue at the court of ${n.name}: ${nm(w, actor)} is caught plotting against ${nm(w, t.id)}.`, '#/abroad');
     }
     const amt = Math.min(td.favour, 6 + Math.round(rand(w) * 6));
     fav(w, t.id, -amt);
@@ -553,7 +553,7 @@ export function intrigue(w: W, actor: Id, target: unknown, kind: unknown) {
     td.deeds = [{ at: w.now, what: `Lost ${amt} favour to whispers at court` }, ...(td.deeds || [])].slice(0, 20);
     if (n.ruler?.id === t.id && td.favour < 50) {
       n.ruler = null;
-      gazette(w, 'foreign', `${t.name} loses the throne of ${n.name}, undone by court intrigue.`, '#/abroad');
+      gazette(w, 'foreign', `${nm(w, t.id)} loses the throne of ${n.name}, undone by court intrigue.`, '#/abroad');
     }
     return;
   }
@@ -570,7 +570,7 @@ export function intrigue(w: W, actor: Id, target: unknown, kind: unknown) {
   fav(w, actor, 3);
   deed(w, actor, `Exposed a secret ${t.name} was hoarding`);
   td.deeds = [{ at: w.now, what: `${nm(w, actor)} exposed one of your secrets` }, ...(td.deeds || [])].slice(0, 20);
-  gazette(w, 'scandal', `${nm(w, actor)} exposes a secret ${t.name} carried out of the realm: “${secret}”`, '#/abroad');
+  gazette(w, 'scandal', `${nm(w, actor)} exposes a secret ${nm(w, t.id)} carried out of the realm: “${secret}”`, '#/abroad');
 }
 
 // ---------- a government in exile: defectors in one nation declare that they, not the government at home, are the
@@ -597,13 +597,13 @@ export function joinExile(w: W, actor: Id) {
     if (c.defected.nation !== g.nation) fail(`It sits in ${w.nations[g.nation].name}. Move there first.`);
     if (g.members.includes(actor)) fail('You are already a member.');
     g.members.push(actor);
-    return gazette(w, 'foreign', `${c.name} joins ${g.name}.`, '#/abroad');
+    return gazette(w, 'foreign', `${nm(w, c.id)} joins ${g.name}.`, '#/abroad');
   }
   mustBeFree(w, actor);
   if (g.backers.includes(actor)) fail('You already back it.');
   g.backers.push(actor);
   approve(w, actor, -2);
-  gazette(w, 'foreign', `${c.name} declares for ${g.name}.`, '#/abroad');
+  gazette(w, 'foreign', `${nm(w, c.id)} declares for ${g.name}.`, '#/abroad');
 }
 export function leaveExile(w: W, actor: Id) {
   const g = w.exileGov;
@@ -672,7 +672,7 @@ export function unmaskPlant(w: W, c: any, how: string) {
   approve(w, c.id, 5);
   stamp(w, c.id, 'Spy', `Unmasked at the court of ${n.name}`, 'ink');
   bump(w, c.id, 'plantCaught');
-  gazette(w, 'scandal', `${c.name} is unmasked at the court of ${n.name} (${how}): a spy of the realm's Security Service all along. ${n.name} throws them out.`, '#/abroad');
+  gazette(w, 'scandal', `${nm(w, c.id)} is unmasked at the court of ${n.name} (${how}): a spy of the realm's Security Service all along. ${n.name} throws them out.`, '#/abroad');
 }
 
 // ---------- a plant's work abroad: report home to the Security Service, and sabotage the host ----------
@@ -746,7 +746,7 @@ export function naturalise(w: W, actor: Id) {
   fav(w, actor, 5);
   stamp(w, actor, `Citizen of ${n.name}`, 'Sworn before the court', 'ink');
   deed(w, actor, `Swore allegiance to ${n.name}`);
-  gazette(w, 'foreign', `${c.name} swears allegiance to ${n.name} and becomes its citizen. The realm can no longer ask for them back.`, '#/abroad');
+  gazette(w, 'foreign', `${nm(w, c.id)} swears allegiance to ${n.name} and becomes its citizen. The realm can no longer ask for them back.`, '#/abroad');
 }
 // the court's business: one matter a day, chosen by the day and the person (no randomness used to pick it)
 type Fx = { favour?: number; crowns?: number; mood?: number; power?: number; stability?: number; approval?: number };

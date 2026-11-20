@@ -36,7 +36,30 @@ export function proclaim(w: W, actor: Id, words: unknown) {
 // ---------- the peerage ----------
 export const PEERAGE: Record<string, { title: string; pay: number }> = { baron: { title: 'Baron', pay: 2 }, earl: { title: 'Earl', pay: 3 }, duke: { title: 'Duke', pay: 5 } };
 export const peers = (w: W) => allCitizens(w).filter((c: any) => c.peerage);
-export function ennoble(w: W, actor: Id, target: unknown, rank: unknown) {
+// a peer's territorial style: "Duke of Kingsmead". Kept in c.titles too, so it shows wherever honours do
+export const peerTitle = (c: any) => (c?.peerage ? `${PEERAGE[c.peerage.rank]?.title ?? 'Peer'}${c.peerage.of ? ' of ' + c.peerage.of : ''}` : '');
+const takenOf = (w: W, except: Id) => new Set(peers(w).filter((p: any) => p.id !== except && p.peerage.of).map((p: any) => String(p.peerage.of).toLowerCase()));
+// the place a new peer is styled after: the monarch's choice, or the first estate name no living peer has taken
+export function designation(w: W, c: any, of: unknown) {
+  const taken = takenOf(w, c.id);
+  if (of !== undefined && of !== null && of !== '') {
+    const t = text(of, 3, 30, 'place in the title').replace(/^of\s+/i, '');
+    if (!/^[\p{L}][\p{L} '’-]*$/u.test(t)) fail('A title is a place name: letters only.');
+    if (taken.has(t.toLowerCase())) fail(`Someone is already styled “of ${t}”.`);
+    return t;
+  }
+  if (c.peerage?.of) return c.peerage.of;
+  const free = Object.values(ESTATES).filter((e: any) => !e.royal).map((e: any) => e.name).find((n) => !taken.has(n.toLowerCase()));
+  return free ?? c.name;
+}
+export function setPeerTitle(c: any, peerage: any) {
+  const old = peerTitle(c);
+  c.titles = (c.titles || []).filter((t: string) => t !== old);
+  c.peerage = peerage;
+  const now = peerTitle(c);
+  if (now && !c.titles.includes(now)) c.titles.push(now);
+}
+export function ennoble(w: W, actor: Id, target: unknown, rank: unknown, of?: unknown) {
   mustReign(w, actor);
   const r = own(PEERAGE, rank);
   if (!r) fail('Baron, Earl or Duke.');
@@ -47,19 +70,21 @@ export function ennoble(w: W, actor: Id, target: unknown, rank: unknown) {
   // the Coronation Durbar's record: the Crown remembers who stood apart
   if ((w.crown?.reign?.stoodApart || []).includes(c.id)) fail(`${c.name} stood apart at your Coronation Durbar. The Crown remembers.`);
   if (!c.peerage && peers(w).length >= lim(w, 'peers')) fail(`The peerage is full at ${lim(w, 'peers')}. Strip a title first, or ask Parliament for more.`);
-  const was = c.peerage?.rank;
-  c.peerage = { rank, by: actor, at: w.now };
-  stamp(w, c.id, r.title, `Raised to the peerage by ${w.config.hosTitle} ${nm(w, actor)}`, 'good');
+  const was = c.peerage ? peerTitle(c) : null;
+  const place = designation(w, c, of);
+  setPeerTitle(c, { rank, by: actor, at: w.now, of: place });
+  const style = peerTitle(c);
+  stamp(w, c.id, style, `Raised to the peerage by ${w.config.hosTitle} ${nm(w, actor)}`, 'good');
   approve(w, c.id, 2);
   bump(w, c.id, 'ennobled');
-  gazette(w, 'hos', was ? `${c.name} is raised from ${PEERAGE[was].title} to ${r.title}.` : `${c.name} is raised to the peerage as a ${r.title}.`, '#/hos');
+  gazette(w, 'hos', was ? `${c.name}, ${was}, is raised to ${style}.` : `${c.name} is raised to the peerage as ${style}.`, '#/hos');
 }
 export function attaint(w: W, actor: Id, target: unknown) {
   mustReign(w, actor);
   const c = cit(w, target as Id);
   if (!c.peerage) fail(`${c.name} holds no title.`);
-  const t = PEERAGE[c.peerage.rank].title;
-  c.peerage = null;
+  const t = peerTitle(c);
+  setPeerTitle(c, null);
   // an attainted peer's estates go back to the Crown (dynasty.ts)
   const lost = Object.keys(w.holdings || {}).filter((e) => w.holdings[e].holder === c.id);
   lost.forEach((e) => (w.holdings[e] = { ...w.holdings[e], holder: 'crown', since: w.now }));
@@ -72,10 +97,7 @@ export function attaint(w: W, actor: Id, target: unknown) {
 export function crownWeek(w: W) {
   const monarchy = w.config.hos === 'monarchy';
   peers(w).forEach((c: any) => {
-    if (!monarchy || c.defected) {
-      c.peerage = null;
-      return;
-    }
+    if (!monarchy || c.defected) return void setPeerTitle(c, null);
     transfer(w, 'treasury', ca(c.id), PEERAGE[c.peerage.rank]?.pay ?? 2, `Appanage of a ${PEERAGE[c.peerage.rank]?.title ?? 'peer'}`);
   });
   if (!monarchy && w.crown) w.crown.proclamation = null;

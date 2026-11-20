@@ -6,7 +6,7 @@ import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Pick, LinkRow } fr
 import { nm, isHOS } from '../../../engine/index';
 import { lim } from '../../../engine/limits';
 import { PROVINCES } from '../../../engine/foreign';
-import { PEERAGE, peers, absolute, triumphDue, PROGRESS_EVERY, PROGRESS_COST, TRIUMPH_COST, LESE_EVERY } from '../../../engine/imperium';
+import { PEERAGE, peerTitle, peers, absolute, triumphDue, PROGRESS_EVERY, PROGRESS_COST, TRIUMPH_COST, LESE_EVERY } from '../../../engine/imperium';
 import { canGovernEmpire } from '../../../engine/empire';
 import { CHARGES } from '../../../engine/trials';
 import { ESTATES, estateLost, consortOf, inTower, PALACE_COST, PALACE_RENT, EVENTS, EVENT_EVERY } from '../../../engine/dynasty';
@@ -73,7 +73,7 @@ export function CrownBanners() {
 export function CrownDesk() {
   const { world: w, me } = useStore();
   const [words, setWords] = useState('');
-  const [peer, setPeer] = useState({ target: '', rank: 'baron' });
+  const [peer, setPeer] = useState({ target: '', rank: 'baron', of: '' });
   const [prov, setProv] = useState('');
   const [lese, setLese] = useState({ target: '', text: '' });
   if (w.config.hos !== 'monarchy') return null;
@@ -89,8 +89,8 @@ export function CrownDesk() {
   return (
     <>
       <Sec title="The peerage" sub={`Peers of the realm, created by the Crown: up to ${lim(w, 'peers')}. Dukes draw 5 a week, Earls 3, Barons 2, and the peers stand by the Crown on a coup night.`}>
-        {roll.length ? <ul class="list">{roll.map((c: any) => <li class="row"><span><b>{PEERAGE[c.peerage.rank].title}</b> <Who id={c.id} /><div class="small muted">Since <When at={c.peerage.at} /></div></span>{mine && <Btn small kind="danger ghost" onClick={() => confirm(`Strip ${c.name} of their title?`) && act('crown.attaint', { target: c.id }, 'Attainted.')}>Strip the title</Btn>}</li>)}</ul> : <Empty>No peers yet.</Empty>}
-        {mine && <Card style={{ marginTop: 10 }}><div class="grid2"><Pick value={peer.target} onChange={(v) => setPeer({ ...peer, target: v })} empty="Whom?" options={home.map((c) => [c.id, c.name])} /><Pick value={peer.rank} onChange={(v) => setPeer({ ...peer, rank: v })} options={Object.entries(PEERAGE).map(([id, p]) => [id, p.title])} /></div><Btn small style={{ marginTop: 8 }} disabled={!peer.target} onClick={() => act('crown.ennoble', peer, 'Raised to the peerage.')}>Ennoble</Btn></Card>}
+        {roll.length ? <ul class="list">{roll.map((c: any) => <li class="row"><span><Who id={c.id} />, <b>{peerTitle(c)}</b><div class="small muted">Since <When at={c.peerage.at} /></div></span>{mine && <Btn small kind="danger ghost" onClick={() => confirm(`Strip ${c.name} of their title?`) && act('crown.attaint', { target: c.id }, 'Attainted.')}>Strip the title</Btn>}</li>)}</ul> : <Empty>No peers yet.</Empty>}
+        {mine && <Card style={{ marginTop: 10 }}><div class="grid2"><Pick value={peer.target} onChange={(v) => setPeer({ ...peer, target: v })} empty="Whom?" options={home.map((c) => [c.id, c.name])} /><Pick value={peer.rank} onChange={(v) => setPeer({ ...peer, rank: v })} options={Object.entries(PEERAGE).map(([id, p]) => [id, p.title])} /></div><Field label={`Of… (the place in the title${w.citizens[peer.target]?.peerage?.of ? `; now ${w.citizens[peer.target].peerage.of}` : ', or leave blank for a free estate name'})`} value={peer.of} onInput={(v) => setPeer({ ...peer, of: v.slice(0, 30) })} placeholder="Kingsmead" /><Btn small style={{ marginTop: 8 }} disabled={!peer.target} onClick={() => act('crown.ennoble', peer, 'Raised to the peerage.') && setPeer({ target: '', rank: 'baron', of: '' })}>Ennoble</Btn></Card>}
       </Sec>
       {mine && (
         <Sec title="The Sovereign's desk">

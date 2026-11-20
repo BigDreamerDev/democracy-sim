@@ -108,7 +108,7 @@ export function appointCouncillor(w: W, actor: Id, seat: unknown, target: unknow
   w.privy.councillors[seat] = c.id;
   syncPrivy(w);
   stamp(w, c.id, 'Privy Councillor', 'Appointed by the Sovereign', 'ink');
-  gazette(w, 'government', `${c.name} is sworn of the Privy Council${was ? `, in place of ${nm(w, was)}` : ''}.`, '#/house', { k: 'sworn', who: c.id, by: actor, title: 'Privy Councillor' });
+  gazette(w, 'government', `${nm(w, c.id)} is sworn of the Privy Council${was ? `, in place of ${nm(w, was)}` : ''}.`, '#/house', { k: 'sworn', who: c.id, by: actor, title: 'Privy Councillor' });
 }
 
 // the Lord Chamberlain summons the Council: a bill in debate goes to the vote within the hour (once a day)

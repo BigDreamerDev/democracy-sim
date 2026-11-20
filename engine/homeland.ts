@@ -56,14 +56,14 @@ export function extradite(w: W, actor: Id, tid: unknown) {
     stamp(w, c.id, 'Extradited', `Handed back by ${n.name}`, 'bad');
     approve(w, c.id, -3);
     bump(w, actor, 'extradited');
-    gazette(w, 'foreign', `${n.name} hands ${c.name} back to the realm at the request of ${nm(w, actor)}. They are held at the border for three days.`, '#/abroad');
+    gazette(w, 'foreign', `${n.name} hands ${nm(w, c.id)} back to the realm at the request of ${nm(w, actor)}. They are held at the border for three days.`, '#/abroad');
     if (!d.plant) openTrial(w, c.id, 'treason', actor, `extradited from ${n.name}`);
     return;
   }
   moodShift(n, -1, `We demanded they hand over ${c.name}`);
   d.favour = clamp(d.favour + 4, 0, 100);
   note(c, w, `The realm asked ${n.name} to hand you over. The court refused (+4 favour)`);
-  gazette(w, 'foreign', `${n.name} refuses to hand ${c.name} back to the realm.`, '#/abroad');
+  gazette(w, 'foreign', `${n.name} refuses to hand ${nm(w, c.id)} back to the realm.`, '#/abroad');
 }
 // ---------- the Security Service: a whispering campaign at their new court ----------
 export function discredit(w: W, actor: Id, tid: unknown) {
@@ -80,7 +80,7 @@ export function discredit(w: W, actor: Id, tid: unknown) {
     const n = w.nations[d.nation];
     if (n.ruler?.id === c.id && d.favour < 50) {
       n.ruler = null;
-      gazette(w, 'foreign', `${c.name} loses the rule of ${n.name}, brought down by scandal.`, '#/abroad');
+      gazette(w, 'foreign', `${nm(w, c.id)} loses the rule of ${n.name}, brought down by scandal.`, '#/abroad');
     }
     log(w, { kind: 'discredit', by: actor, target: c.id, nation: d.nation, ok: true, text: `Cost ${c.name} ${amt} favour.` });
     return;
@@ -106,7 +106,7 @@ export function snatch(w: W, actor: Id, tid: unknown) {
     stamp(w, c.id, 'Brought home', `Seized by the Security Service in ${cap}`, 'bad');
     log(w, { kind: 'snatch', by: actor, target: c.id, nation: n.id, ok: true, text: `Brought ${c.name} home.` });
     earn(w, actor, 3, 'A defector brought home');
-    gazette(w, 'foreign', `Agents of the realm seize ${c.name} in ${cap} and bring them home${d.plant ? '' : ', to be held at the border until their trial'}. ${n.name} protests.`, '#/abroad');
+    gazette(w, 'foreign', `Agents of the realm seize ${nm(w, c.id)} in ${cap} and bring them home${d.plant ? '' : ', to be held at the border until their trial'}. ${n.name} protests.`, '#/abroad');
     if (!d.plant) openTrial(w, c.id, 'treason', actor, `seized in ${cap}`);
     return;
   }
@@ -116,7 +116,7 @@ export function snatch(w: W, actor: Id, tid: unknown) {
   note(c, w, `Agents of the realm tried to seize you in ${cap}. The guards stopped them (+5 favour)`);
   log(w, { kind: 'snatch', by: actor, target: c.id, nation: n.id, ok: false, text: 'The squad was caught.' });
   addCard(w, { title: `The botched snatch of ${c.name} in ${cap} was ordered by ${nm(w, actor)}.`, about: actor, from: 'Security Service', level: 'secret', viewers: ['pm', 'office:security'] });
-  gazette(w, 'scandal', `Agents of the realm are caught trying to seize ${c.name} in ${cap}. ${n.name} is furious.`, '#/abroad');
+  gazette(w, 'scandal', `Agents of the realm are caught trying to seize ${nm(w, c.id)} in ${cap}. ${n.name} is furious.`, '#/abroad');
 }
 // ---------- the Treasury: what they left behind is forfeit (half their wallet, once a defection) ----------
 export function seize(w: W, actor: Id, tid: unknown) {
@@ -130,7 +130,7 @@ export function seize(w: W, actor: Id, tid: unknown) {
   transfer(w, ca(c.id), 'treasury', amt, `Assets of a defector, forfeit to the Treasury`);
   d.seized = { by: actor, at: w.now, amt };
   note(c, w, `The Treasury seized ${amt} crowns of yours`);
-  gazette(w, 'money', `The Treasury seizes ${amt} crowns from ${c.name}, who defected to ${w.nations[d.nation].name}.`, '#/abroad');
+  gazette(w, 'money', `The Treasury seizes ${amt} crowns from ${nm(w, c.id)}, who defected to ${w.nations[d.nation].name}.`, '#/abroad');
 }
 // ---------- the Prime Minister: an amnesty. They may come home with no questions asked ----------
 export function amnesty(w: W, actor: Id, tid: unknown, on: unknown) {
@@ -141,13 +141,13 @@ export function amnesty(w: W, actor: Id, tid: unknown, on: unknown) {
     if (!d.amnesty) fail('There is no amnesty to withdraw.');
     d.amnesty = null;
     note(c, w, 'The Prime Minister withdrew your amnesty');
-    return gazette(w, 'foreign', `The Prime Minister withdraws ${c.name}'s amnesty.`, '#/abroad');
+    return gazette(w, 'foreign', `The Prime Minister withdraws ${nm(w, c.id)}'s amnesty.`, '#/abroad');
   }
   if (d.naturalised) fail(`${c.name} has sworn allegiance to ${w.nations[d.nation].name}.`);
   if (d.amnesty) fail('They have an amnesty already.');
   d.amnesty = { by: actor, at: w.now };
   note(c, w, 'The Prime Minister offers you an amnesty: come home, no questions asked');
-  gazette(w, 'foreign', `${nm(w, actor)} offers ${c.name} an amnesty: come home from ${w.nations[d.nation].name}, and no questions will be asked.`, '#/abroad');
+  gazette(w, 'foreign', `${nm(w, actor)} offers ${nm(w, c.id)} an amnesty: come home from ${w.nations[d.nation].name}, and no questions will be asked.`, '#/abroad');
 }
 
 // ---------- plants: the Director asks a citizen, in private, to defect on the Service's orders ----------

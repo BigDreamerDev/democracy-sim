@@ -55,7 +55,7 @@ export function join(w: W, actor: Id, agree: boolean) {
   c.streets = { in: true, since: w.now };
   c.tagCode = newCode(w);
   c.meetCode ||= newCode(w);
-  gazette(w, 'streets', `${c.name} joins the Streets.`, '#/streets');
+  gazette(w, 'streets', `${nm(w, c.id)} joins the Streets.`, '#/streets');
 }
 export function leave(w: W, actor: Id) {
   const c = cit(w, actor);
@@ -77,7 +77,7 @@ export function leave(w: W, actor: Id) {
   c.streets = { in: false, leftAt: w.now };
   c.tagCode = null;
   if (s.protect?.who === actor) s.protect = null;
-  gazette(w, 'streets', `${c.name} leaves the Streets.`, '#/streets');
+  gazette(w, 'streets', `${nm(w, c.id)} leaves the Streets.`, '#/streets');
 }
 export function rotate(w: W, actor: Id, kind?: string) {
   if (kind === 'meet') return void (cit(w, actor).meetCode = newCode(w));
@@ -104,7 +104,7 @@ export function meet(w: W, actor: Id, code: string) {
     earn(w, id, 3, 'Met up in person');
     bump(w, id, 'meets');
   });
-  gazette(w, 'streets', `${c.name} and ${other.name} meet up in person.`, '#/meet');
+  gazette(w, 'streets', `${nm(w, c.id)} and ${other.name} meet up in person.`, '#/meet');
 }
 
 // ---------- contracts ----------
@@ -207,7 +207,7 @@ function complete(w: W, k: any, how: string) {
   stamp(w, k.by, 'Assassin', `Got ${t.name}`, 'bad');
   stamp(w, k.target, 'Assassinated', `By ${by.name}`, 'bad');
   const role = w.pm === k.target ? 'PRIME MINISTER' : w.hos.holder === k.target ? 'HEAD OF STATE' : w.seats.includes(k.target) ? 'MP' : Object.values(w.offices).some((o: any) => o.holder === k.target) ? 'MINISTER' : 'CITIZEN';
-  gazette(w, 'scandal', `${role} ${t.name.toUpperCase()} ASSASSINATED. ${by.name} did it. ${t.name} is a ghost for 48 hours: they can vote, and nothing else.`, '#/streets');
+  gazette(w, 'scandal', `${role} ${t.name.toUpperCase()} ASSASSINATED. ${by.name} did it. ${nm(w, t.id)} is a ghost for 48 hours: they can vote, and nothing else.`, '#/streets');
 }
 export function expireContract(w: W, k: any) {
   if (k.status === 'claimed') return complete(w, k, 'unanswered');
@@ -218,7 +218,7 @@ export function expireContract(w: W, k: any) {
 }
 export function ghostBack(w: W, c: any) {
   c.ghostNoted = true;
-  gazette(w, 'streets', `${c.name} is back from the dead.`, '#/streets');
+  gazette(w, 'streets', `${nm(w, c.id)} is back from the dead.`, '#/streets');
 }
 
 // counter-intelligence: how many live contracts are out on someone (never who)
@@ -519,7 +519,7 @@ function huntKill(w: W, hunter: Id, victim: Id) {
   h.log.unshift({ by: hunter, victim, at: w.now });
   bump(w, hunter, 'huntKills');
   earn(w, hunter, 3, `Got ${t.name} in the Hunt`);
-  gazette(w, 'streets', `The Hunt: ${nm(w, hunter)} takes out ${t.name}. ${h.alive.length} left.`, '#/hunt');
+  gazette(w, 'streets', `The Hunt: ${nm(w, hunter)} takes out ${nm(w, t.id)}. ${h.alive.length} left.`, '#/hunt');
   if (h.alive.length <= 1) finishHunt(w);
 }
 function outOfHunt(w: W, id: Id, why: string) {

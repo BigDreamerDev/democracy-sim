@@ -115,8 +115,8 @@ function collect(w: W): D[] {
   Object.values(w.plots).forEach((p: any) => p.status === 'planning' && p.foundAt && add(p.foundAt, () => autoFind(w, p), 'af' + p.id));
   Object.values(w.papers).forEach((p: any) => p.licenceDue && add(p.licenceDue, () => lapseLicence(w, p), 'lc' + p.id));
   if (w.reckoning) add(w.reckoning.closesAt, () => closeReckoning(w));
-  allCitizens(w).forEach((c: any) => c.detainedUntil && !c.detainedNoted && add(c.detainedUntil, () => ((c.detainedNoted = true), gazette(w, 'quiet', `${c.name} is released.`)), 'dt' + c.id));
-  allCitizens(w).forEach((c: any) => c.exiledUntil && !c.exileNoted && add(c.exiledUntil, () => ((c.exileNoted = true), gazette(w, 'quiet', `${c.name}'s exile is over.`)), c.id));
+  allCitizens(w).forEach((c: any) => c.detainedUntil && !c.detainedNoted && add(c.detainedUntil, () => ((c.detainedNoted = true), gazette(w, 'quiet', `${nm(w, c.id)} is released.`)), 'dt' + c.id));
+  allCitizens(w).forEach((c: any) => c.exiledUntil && !c.exileNoted && add(c.exiledUntil, () => ((c.exileNoted = true), gazette(w, 'quiet', `${nm(w, c.id)}'s exile is over.`)), c.id));
   w.ventures.forEach((v: any) => v.status === 'out' && add(v.dueAt, () => settleVenture(w, v), v.id));
   // the Streets, the market and the betting pools
   Object.values(w.streets?.contracts || {}).forEach((k: any) => {

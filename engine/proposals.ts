@@ -735,7 +735,7 @@ export function closeVote(w: W, p: any) {
     stamp(w, p.target, 'Censured', 'By the House', 'bad');
     if (t.censures >= 2) {
       Object.values(w.offices).forEach((o: any) => o.holder === p.target && o.fill === 'pm' && (o.holder = null));
-      gazette(w, 'government', `${t.name} has been censured twice and loses every ministerial post.`);
+      gazette(w, 'government', `${nm(w, t.id)} has been censured twice and loses every ministerial post.`);
     }
   }
   if (p.kind === 'referendum') {

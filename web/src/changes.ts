@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 74, text: 'Peers carry their titles everywhere: “Duke Sam of Kingsmead” in the Gazette, the Privy Council, votes and every list. The monarch names the place when ennobling (or a free estate name is used).' },
   { n: 73, text: 'The Realm Console has caught up: life abroad, the realm against its defectors, plants, trials, the exile press, wanted posters, invasions, revolts, the peerage, estates and palaces, hunts and balls, the Tower, the Durbar, and every limit in the bill writer.' },
   { n: 72, text: 'Palaces come alive: their holders host hunts and balls, and the invited who stay away are named. A peer stripped of their lands can arm their tenants for a coup night. A new emperor’s first Durbar puts on the record who knelt and who stood apart. And when the throne falls empty, a defector with a royal child abroad can claim it.' },
   { n: 71, text: 'Royal heirs at home are gone: the monarch can still marry, but there is no royal child and no regency. Royal children abroad are unchanged.' },

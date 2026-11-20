@@ -5,7 +5,7 @@ import { lim } from '../../../engine/limits';
 import { useState } from 'preact/hooks';
 import { useStore, act } from '../store';
 import { Page, Sec, Card, Btn, Who, Left, When, Empty, Field, Seg, Opt } from '../ui';
-import { hasArmy, isPM, hasPower, holderOf, standing, bal, ca, isMP, autocrat, autocratTitle, speaksForHouse, cap } from '../../../engine/index';
+import { hasArmy, isPM, hasPower, holderOf, standing, bal, ca, isMP, autocrat, autocratTitle, speaksForHouse, cap, nm } from '../../../engine/index';
 import { MOODS, PROFILES, TREATIES, PROVINCES, known, shipping, laneClosed } from '../../../engine/foreign';
 import { power, STRATEGIES, REGIMENT_COST, BOND_PAYS, allies, EMBED_COST, termsText, garrisoned } from '../../../engine/war';
 import { canMarch } from '../../../engine/backroom';
@@ -400,7 +400,7 @@ export function War() {
           <Card><b>Volunteer</b><p class="small" style={{ margin: '4px 0 8px' }}>Each volunteer adds half a regiment. +2 Influence, and a Veteran stamp if we win. {k.volunteers.length} so far.</p>{k.volunteers.includes(me) ? <span class="chip teal">You volunteered</span> : <Btn small onClick={() => act('war.enlist', {}, 'You are off to the front.')}>Enlist</Btn>}</Card>
           <Card><b>War bonds</b><p class="small" style={{ margin: '4px 0 8px' }}>Lend the Treasury 5–100. Repaid {BOND_PAYS.victory * 100}% on victory, {BOND_PAYS.peace * 100}% on peace, {BOND_PAYS.defeat * 100}% on defeat. {k.bondTotal || 0} sold.{mine ? ` You hold ${mine}.` : ''}</p><div class="grid2"><Field label="Crowns" type="number" value={bond} onInput={setBond} /><Btn small style={{ alignSelf: 'end' }} onClick={() => act('war.bond', { amount: Number(bond) }, 'Bonds bought. Thank you.')}>Buy</Btn></div><div class="small muted" style={{ marginTop: 4 }}>You have {bal(w, ca(me))}.</div></Card>
         </div>
-        {k.volunteers.length > 0 && <p class="small muted">Volunteers: {k.volunteers.map((id: string) => w.citizens[id]?.name).join(', ')}.</p>}
+        {k.volunteers.length > 0 && <p class="small muted">Volunteers: {k.volunteers.map((id: string) => nm(w, id)).join(', ')}.</p>}
       </Sec>
       <Correspondents />
       <Regiments cmd={cmd} n={n} setN={setN} troops={troops} war />

@@ -119,7 +119,7 @@ export function governor(w: W, actor: Id, pid: unknown, target: unknown) {
   mustBeFree(w, c.id);
   p.governor = c.id;
   stamp(w, c.id, 'Governor', name, 'ink');
-  gazette(w, 'government', `${c.name} is appointed Governor of ${name}.`, '#/atlas', { k: 'governor', who: c.id, by: actor, place: name });
+  gazette(w, 'government', `${nm(w, c.id)} is appointed Governor of ${name}.`, '#/atlas', { k: 'governor', who: c.id, by: actor, place: name });
 }
 // take a friendly nation under the empire's protection (the Act must be law); once a week per nation
 export function protectorate(w: W, actor: Id, nid: unknown) {

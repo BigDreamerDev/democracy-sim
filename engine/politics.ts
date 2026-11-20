@@ -2,7 +2,7 @@
 import { lim } from './limits';
 import { syncCrown } from './crown';
 // parties, forming a government, coalitions, the shadow cabinet, seasons, ambitions and weekly objectives.
-import {
+import { plainName,
   W, Id, DAY, HOUR, fail, newId, pick, rand, shuffle, cit, nm, allCitizens, exiled, mustBeFree, gazette, earn, stamp, approve,
   isMP, mps, isPM, isHOS, sideOf, sideName, govSides, majority, transfer, ca, addCard, meter, hosTitle, ordinal, tick, bal, fmtDay, bump, adminDid, own, text, barred, detained, legit, inForce, theName } from './core';
 import { national } from './acts';
@@ -401,7 +401,7 @@ export function stand(w: W, actor: Id, eid: Id) {
   if (e.candidates[actor]) fail('You are already standing.');
   if ((e.withdrawn || []).includes(actor)) fail('You withdrew from this election. You can’t stand again in it.');
   e.candidates[actor] = { id: actor, party: c.party, at: w.now };
-  gazette(w, 'election', `${c.name} stands in the ${e.title.toLowerCase()}.`, '#/election/' + e.id);
+  gazette(w, 'election', `${nm(w, c.id)} stands in the ${e.title.toLowerCase()}.`, '#/election/' + e.id);
 }
 export function withdraw(w: W, actor: Id, eid: Id) {
   const e = own(w.elections, eid);
@@ -725,7 +725,7 @@ export function startHosSelection(w: W) {
   } else if (m === 'house') newElection(w, { kind: 'hos', title: 'MPs elect the President', voters: 'mps', closesAt: w.now + DAY });
   else if (m === 'lot') setHos(w, pick(w, pool), w.now + (w.config.hos === 'monarchy' ? 28 : w.config.termDays) * DAY);
   else if (m === 'rotate') {
-    const s = pool.sort((a, b) => nm(w, a).localeCompare(nm(w, b)));
+    const s = pool.sort((a, b) => plainName(w, a).localeCompare(plainName(w, b)));
     setHos(w, s[(s.indexOf(w.hos.holder) + 1) % s.length], w.now + 7 * DAY);
   }
 }
@@ -747,7 +747,7 @@ export function honour(w: W, actor: Id, target: Id, title: string) {
   stamp(w, target, title.trim(), `From the ${hosTitle(w)}`, 'good');
   earn(w, target, 5, 'Received an honour');
   approve(w, target, 3);
-  gazette(w, 'hos', `The ${hosTitle(w)} honours ${t.name}: ${title.trim()}.`, '#/hos');
+  gazette(w, 'hos', `The ${hosTitle(w)} honours ${nm(w, t.id)}: ${title.trim()}.`, '#/hos');
 }
 
 // ================= Parties =================
@@ -799,7 +799,7 @@ export function joinParty(w: W, actor: Id, pid: Id | null) {
     if (!rest.length) old.status = 'dissolved';
   }
   if (pid) bump(w, actor, 'parties');
-  gazette(w, 'party', pid ? `${c.name} joins the ${w.parties[pid].name}.` : `${c.name} leaves the ${old ? old.name : 'party'}.`);
+  gazette(w, 'party', pid ? `${nm(w, c.id)} joins the ${w.parties[pid].name}.` : `${nm(w, c.id)} leaves the ${old ? old.name : 'party'}.`);
 }
 export function partyMotion(w: W, actor: Id, motion: string) {
   const c = cit(w, actor);
@@ -845,7 +845,7 @@ export function challengeLeader(w: W, actor: Id) {
   if (contestOpen(w, p.id)) fail('A leadership contest is already running.');
   if (p.challenge?.status === 'open') fail('A challenge is already gathering names. Sign it instead.');
   p.challenge = { by: actor, signed: [actor], status: 'open', at: w.now, dueAt: w.now + 2 * DAY };
-  gazette(w, 'party', `${c.name} launches a challenge to ${nm(w, p.leader)}’s leadership of the ${p.name}. It needs ${challengeNeed(w, p.id)} members to sign.`, '#/party/' + p.id);
+  gazette(w, 'party', `${nm(w, c.id)} launches a challenge to ${nm(w, p.leader)}’s leadership of the ${p.name}. It needs ${challengeNeed(w, p.id)} members to sign.`, '#/party/' + p.id);
   signChallenge(w, actor, p.id);
 }
 export function signChallenge(w: W, actor: Id, pid: unknown) {
@@ -877,7 +877,7 @@ export function standDown(w: W, actor: Id) {
   if (members(w, p.id).length < 2) fail('You’re its only member. Leave it instead.');
   if (p.challenge?.status === 'open') p.challenge.status = 'lapsed';
   const e = openContest(w, p, false);
-  gazette(w, 'party', `${c.name} stands down as leader of the ${p.name}. They lead until a successor is chosen.`, '#/election/' + e.id);
+  gazette(w, 'party', `${nm(w, c.id)} stands down as leader of the ${p.name}. They lead until a successor is chosen.`, '#/election/' + e.id);
 }
 
 // Breakaways: members plot in private to split from their party. When at least 2 MPs have signed, the founder launches
@@ -1001,7 +1001,7 @@ export function invitePM(w: W, actor: Id | null, target: Id) {
   t.stats.wasPM = true;
   bump(w, target, 'pmTerms');
   stamp(w, target, 'Prime Minister', actor ? `Invited by ${nm(w, actor)}` : 'Invited by convention', 'ink');
-  gazette(w, 'government', `${t.name} becomes Prime Minister with ${s} of ${w.config.seats} seats${w.minority ? ', a minority government' : ''}.`, '#/cabinet');
+  gazette(w, 'government', `${nm(w, t.id)} becomes Prime Minister with ${s} of ${w.config.seats} seats${w.minority ? ', a minority government' : ''}.`, '#/cabinet');
 }
 // the head of state hasn't acted: invite whoever commands a majority. If nobody does, wait for a deal, a day at a
 // time; after FORM_DAYS of a hung parliament, dissolve it and let the voters try again.

@@ -10,7 +10,7 @@
 //   the end of the monarchy takes them all into the State. Royal palaces stay with the Crown and cost the Treasury upkeep.
 import { W, Id, DAY, fail, own, cit, nm, gazette, newId, rand, transfer, bal, ca, chance, stamp, approve, meter, earn, bump, mustBeFree, text, isHOS, isPM, allCitizens, exiled, detained, inForce, clamp } from './core';
 import { PROVINCES, seedProvinces } from './foreign';
-import { absolute, peers, PEERAGE } from './imperium';
+import { absolute, peers, setPeerTitle, peerTitle } from './imperium';
 import { council } from './privy';
 import { highCommission } from './empire';
 
@@ -32,7 +32,7 @@ export function propose(w: W, actor: Id, target: unknown) {
   const c = cit(w, target as Id);
   if (c.id === actor || !atHome(w, c.id) || exiled(w, c.id) || detained(w, c.id)) fail('Pick a free citizen at home.');
   k.proposal = { by: actor, to: c.id, at: w.now, until: w.now + DAY };
-  gazette(w, 'hos', `${w.config.hosTitle} ${nm(w, actor)} asks for the hand of ${c.name}. The realm waits for an answer.`, '#/hos');
+  gazette(w, 'hos', `${w.config.hosTitle} ${nm(w, actor)} asks for the hand of ${nm(w, c.id)}. The realm waits for an answer.`, '#/hos');
 }
 export function answerProposal(w: W, actor: Id, yes: unknown) {
   const k = w.crown;
@@ -83,17 +83,17 @@ export function sendToTower(w: W, actor: Id, target: unknown) {
   if (inTower(w, c.id)) fail(`${c.name} is already in the Tower.`);
   c.jail = { by: actor, at: w.now, until: null, why: 'Committed to the Tower', tower: true };
   forfeitAll(w, c.id, 'committed to the Tower');
-  if (c.peerage) c.peerage = null;
+  if (c.peerage) setPeerTitle(c, null);
   stamp(w, c.id, 'The Tower', `Committed by ${w.config.hosTitle} ${nm(w, actor)}`, 'bad');
   bump(w, c.id, 'tower');
-  gazette(w, 'crisis', `${c.name} is taken to the Tower by order of the ${w.config.hosTitle}, to be held at the Crown's pleasure.`, '#/tower');
+  gazette(w, 'crisis', `${nm(w, c.id)} is taken to the Tower by order of the ${w.config.hosTitle}, to be held at the Crown's pleasure.`, '#/tower');
 }
 export function releaseFromTower(w: W, actor: Id, target: unknown) {
   mustReign(w, actor);
   const c = cit(w, target as Id);
   if (!inTower(w, c.id)) fail(`${c.name} is not in the Tower.`);
   c.jail = null;
-  gazette(w, 'hos', `${c.name} is released from the Tower by the ${w.config.hosTitle}'s mercy.`, '#/tower');
+  gazette(w, 'hos', `${nm(w, c.id)} is released from the Tower by the ${w.config.hosTitle}'s mercy.`, '#/tower');
 }
 // a friend bribes the guards: 10 crowns a try, once a day each; every recent try makes the next likelier
 export function escape(w: W, actor: Id, target: unknown) {
@@ -115,7 +115,7 @@ export function escape(w: W, actor: Id, target: unknown) {
     const helpers = [...new Set(j.tries.map((t: any) => t.by))] as Id[];
     helpers.forEach((h) => (earn(w, h, 3, 'A jailbreak'), stamp(w, h, 'Jailbreaker', `Freed ${c.name} from the Tower`, 'ink')));
     meter(w, 'stability', -1, 'An escape from the Tower');
-    return gazette(w, 'crisis', `${c.name} escapes from the Tower. ${helpers.map((h) => nm(w, h)).join(', ')} bribed the guards.`, '#/tower');
+    return gazette(w, 'crisis', `${nm(w, c.id)} escapes from the Tower. ${helpers.map((h) => nm(w, h)).join(', ')} bribed the guards.`, '#/tower');
   }
   if (chance(w, 0.3)) {
     w.citizens[actor].exiledUntil = w.now + 3 * DAY;
@@ -225,7 +225,7 @@ export function grantEstate(w: W, actor: Id, estate: unknown, target: unknown) {
   if (!c.peerage) fail('Estates go to peers of the realm. Ennoble them first.');
   h[estate as string] = { ...h[estate as string], holder: c.id, since: w.now };
   approve(w, c.id, 1);
-  gazette(w, 'hos', `The ${w.config.hosTitle} grants ${e.name}${e.province ? `, in ${PROVINCES[e.province].name},` : ''} to ${PEERAGE[c.peerage.rank].title} ${c.name}.`, '#/hos');
+  gazette(w, 'hos', `The ${w.config.hosTitle} grants ${e.name}${e.province ? `, in ${PROVINCES[e.province].name},` : ''} to ${c.name}, ${peerTitle(c)}.`, '#/hos');
 }
 export function resumeEstate(w: W, actor: Id, estate: unknown) {
   mustReign(w, actor);
@@ -274,7 +274,7 @@ export function dynastyWeek(w: W) {
       Object.keys(h).forEach((id) => (h[id] = { ...h[id], holder: 'state', since: w.now }));
       gazette(w, 'law', 'With no monarch, every royal and noble estate passes to the State.', '#/hos');
     }
-    allCitizens(w).forEach((c: any) => inTower(w, c.id) && ((c.jail = null), gazette(w, 'law', `${c.name} walks out of the Tower: there is no Crown to hold them.`, '#/tower')));
+    allCitizens(w).forEach((c: any) => inTower(w, c.id) && ((c.jail = null), gazette(w, 'law', `${nm(w, c.id)} walks out of the Tower: there is no Crown to hold them.`, '#/tower')));
     if (w.crown) w.crown.consort = null;
     return;
   }
@@ -294,7 +294,7 @@ export function dynastyWeek(w: W) {
       else if (rent > 0) transfer(w, 'reserve', 'treasury', rent, `Rents of the Crown Estate: ${e.name}`);
     } else if (rent > 0) transfer(w, 'reserve', ca(x.holder), rent, `Rents from ${e.name}`);
   });
-  if (!absolute(w)) allCitizens(w).forEach((c: any) => inTower(w, c.id) && ((c.jail = null), gazette(w, 'law', `${c.name} is released from the Tower: the Crown is no longer absolute.`, '#/tower')));
+  if (!absolute(w)) allCitizens(w).forEach((c: any) => inTower(w, c.id) && ((c.jail = null), gazette(w, 'law', `${nm(w, c.id)} is released from the Tower: the Crown is no longer absolute.`, '#/tower')));
   const con = consortOf(w);
   if (con && w.citizens[con.id]?.active) transfer(w, 'treasury', ca(con.id), 5, "The consort's allowance");
   openDurbar(w);
@@ -372,6 +372,6 @@ export function raiseTenants(w: W, actor: Id) {
   const strength = Math.min(3, g.estates.length);
   c.retinue = { strength, at: w.now, until: w.now + RETINUE_DAYS * DAY, from: g.estates };
   meter(w, 'stability', -1, `${c.name}'s tenants take up arms`);
-  gazette(w, 'crisis', `${c.name} raises the tenants of ${g.estates.join(', ')} under arms: a private regiment (+${strength} on any coup night this week).`, '#/hos');
+  gazette(w, 'crisis', `${nm(w, c.id)} raises the tenants of ${g.estates.join(', ')} under arms: a private regiment (+${strength} on any coup night this week).`, '#/hos');
 }
 export const retinue = (w: W, id: Id) => { const r = w.citizens[id]?.retinue; return r && r.until > w.now ? r.strength : 0; };

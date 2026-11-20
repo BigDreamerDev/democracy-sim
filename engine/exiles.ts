@@ -58,7 +58,7 @@ export function postWanted(w: W, actor: Id, target: unknown, reward: unknown) {
   const id = newId(w, 'wn');
   w.wanted[id] = { id, by: actor, nation: n.id, target: t.id, reward: amt, at: w.now, until: w.now + WANTED_DAYS * DAY, tried: [], status: 'open' };
   deed(w, actor, `Put a price of ${amt} crowns on ${t.name}'s head`);
-  gazette(w, 'scandal', `WANTED, by order of ${n.name}: ${t.name}. ${amt} crowns to whoever delivers them to ${capital(n.id)}.`, '#/abroad');
+  gazette(w, 'scandal', `WANTED, by order of ${n.name}: ${nm(w, t.id)}. ${amt} crowns to whoever delivers them to ${capital(n.id)}.`, '#/abroad');
 }
 export function claimWanted(w: W, actor: Id, wid: unknown) {
   const x = own(w.wanted || {}, wid);
@@ -78,7 +78,7 @@ export function claimWanted(w: W, actor: Id, wid: unknown) {
     c.exileNoted = false;
     approve(w, actor, -5);
     stamp(w, actor, 'Caught', `Trying to seize ${t.name} for ${n.name}`, 'bad');
-    return gazette(w, 'crisis', `${c.name} is caught trying to seize ${t.name} for the bounty from ${n.name}, and is held for three days.`, '#/abroad');
+    return gazette(w, 'crisis', `${nm(w, c.id)} is caught trying to seize ${nm(w, t.id)} for the bounty from ${n.name}, and is held for three days.`, '#/abroad');
   }
   x.status = 'taken';
   x.takenBy = actor;
@@ -90,7 +90,7 @@ export function claimWanted(w: W, actor: Id, wid: unknown) {
   t.exileNoted = false;
   takeHostage(w, t.id, n.id);
   meter(w, 'stability', -2, `${t.name} was carried over the border`);
-  gazette(w, 'crisis', `${t.name} is seized by ${c.name} and carried over the border to ${capital(n.id)}, where ${n.name} holds them hostage. ${c.name} collects ${x.reward} crowns.`, '#/abroad');
+  gazette(w, 'crisis', `${nm(w, t.id)} is seized by ${nm(w, c.id)} and carried over the border to ${capital(n.id)}, where ${n.name} holds them hostage. ${nm(w, c.id)} collects ${x.reward} crowns.`, '#/abroad');
 }
 export function lapseWanted(w: W, x: any) {
   if (x.status !== 'open') return;

@@ -334,7 +334,7 @@ export function dynasticClaim(w: W, actor: Id) {
   r.lastClaim[actor] = w.now;
   r.claim = { by: actor, at: w.now, until: w.now + 2 * DAY, backers: [actor], manifesto: `In the name of ${d.child.name}, heir of two houses.`, restoration: false, dynastic: d.child.name, backer: d.nation, asked: { [d.nation]: 'yes' }, rally: false, parley: null };
   meter(w, 'stability', -3, 'A dynastic claim from abroad');
-  gazette(w, 'hos', `From ${w.nations[d.nation].name}, ${c.name} claims the realm's throne in the name of ${d.child.name}, heir of two houses. ${w.nations[d.nation].name} recognises the claim. The realm has two days to choose.`, '#/hos');
+  gazette(w, 'hos', `From ${w.nations[d.nation].name}, ${nm(w, c.id)} claims the realm's throne in the name of ${d.child.name}, heir of two houses. ${w.nations[d.nation].name} recognises the claim. The realm has two days to choose.`, '#/hos');
 }
 export function back(w: W, actor: Id) {
   const r = crown(w).reign;

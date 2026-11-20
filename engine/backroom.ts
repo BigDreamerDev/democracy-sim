@@ -452,7 +452,7 @@ export function seekAsylum(w: W, actor: Id, nid: Id) {
   if (!exiled(w, actor)) fail('You are not in exile.');
   if (!own(w.nations, nid)) fail('Unknown country.');
   c.asylum = nid;
-  gazette(w, 'foreign', `${c.name} takes refuge in ${w.nations[nid].name}.`);
+  gazette(w, 'foreign', `${nm(w, c.id)} takes refuge in ${w.nations[nid].name}.`);
 }
 export function askPardon(w: W, actor: Id) {
   if (!exiled(w, actor)) fail('You are not in exile.');
@@ -464,5 +464,5 @@ export function pardon(w: W, actor: Id, target: Id) {
   if (!exiled(w, target)) fail('They are not in exile.');
   c.exiledUntil = w.now;
   c.pardonAsked = false;
-  gazette(w, 'hos', `The ${hosTitle(w)} pardons ${c.name}.`, '#/exile');
+  gazette(w, 'hos', `The ${hosTitle(w)} pardons ${nm(w, c.id)}.`, '#/exile');
 }

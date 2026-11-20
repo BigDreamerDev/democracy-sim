@@ -70,7 +70,11 @@ export function cit(w: W, id: Id) {
   if (!c) fail('No such citizen.');
   return c;
 }
-export const nm = (w: W, id: Id | null | undefined) => (id && w.citizens[id] ? w.citizens[id].name : 'nobody');
+// a peer is named with their title wherever they appear (imperium.ts): "Duke Sam of Kingsmead"
+const PEER_RANK: Record<string, string> = { baron: 'Baron', earl: 'Earl', duke: 'Duke' };
+export const styled = (w: W, c: any) => (c?.peerage?.of && w.config?.hos === 'monarchy' ? `${PEER_RANK[c.peerage.rank] ?? 'Lord'} ${c.name} of ${c.peerage.of}` : c?.name);
+export const nm = (w: W, id: Id | null | undefined) => (id && w.citizens[id] ? styled(w, w.citizens[id]) : 'nobody');
+export const plainName = (w: W, id: Id | null | undefined) => (id && w.citizens[id] ? w.citizens[id].name : 'nobody');
 export const allCitizens = (w: W): any[] => Object.values(w.citizens).filter((c: any) => c.active);
 export const exiled = (w: W, id: Id) => !!w.citizens[id]?.exiledUntil && w.citizens[id].exiledUntil > w.now;
 // held by a regime: they can read everything and write a prison letter, and nothing else, until released

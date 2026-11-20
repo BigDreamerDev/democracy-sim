@@ -267,7 +267,8 @@ async function act(cmd, args) {
 
 /* ═════════════════════════════════════════════ reading the world */
 const coll = x => !x ? [] : Array.isArray(x) ? x.map((v, i) => [v?.id ?? String(i), v]) : Object.entries(x).map(([k, v]) => [v?.id ?? k, v]);
-const who = id => id == null ? 'nobody' : (W?.citizens?.[id]?.name || id);
+const PEER_RANK = { baron: 'Baron', earl: 'Earl', duke: 'Duke' };
+const who = id => { if (id == null) return 'nobody'; const c = W?.citizens?.[id]; if (!c) return id; return c.peerage?.of && W?.config?.hos === 'monarchy' ? `${PEER_RANK[c.peerage.rank] || 'Lord'} ${c.name} of ${c.peerage.of}` : c.name; };
 const partyName = id => W?.parties?.[id]?.name || (id ? id : 'Independent');
 const hosTitle = () => W?.config?.hosTitle || (W?.config?.hos === 'monarchy' ? 'Monarch' : 'President');
 const labelOf = (o, id) => {
@@ -1744,7 +1745,7 @@ function crownHomeCards() {
     ${!mine && isHC() && fresh ? `<div class="card"><h2>A triumph</h2><div class="row">${btn('crown.triumph', {}, 'Hold a triumph (30)', 'aye')}</div></div>` : ''}
     <div class="grid">
       <div class="card"><h2>The royal family</h2><p class="small">${con ? `Consort: ${esc(who(con.id))}.` : 'The monarch is unmarried.'}${k.inNameOf && k.inNameOf.id === r?.id && k.inNameOf.child ? ` Reigns in the name of ${esc(k.inNameOf.child)}, heir of two houses.` : ''}</p></div>
-      <div class="card"><h2>The peerage <span class="sub">${peers.length} of ${W.config?.limits?.peers ?? LIMITS.peers[4]}</span></h2>${peers.map(([id, c]) => `<div class="item row between"><span><span class="t">${esc(PEERAGE[c.peerage.rank]?.title)} ${esc(c.name)}</span></span>${mine ? btn('crown.attaint', { target: id }, 'Strip the title', 'no', `Strip ${c.name}?`) : ''}</div>`).join('') || '<div class="empty">No peers yet.</div>'}</div>
+      <div class="card"><h2>The peerage <span class="sub">${peers.length} of ${W.config?.limits?.peers ?? LIMITS.peers[4]}</span></h2>${peers.map(([id, c]) => `<div class="item row between"><span><span class="t">${esc(c.name)}, ${esc(PEERAGE[c.peerage.rank]?.title)}${c.peerage.of ? ' of ' + esc(c.peerage.of) : ''}</span></span>${mine ? btn('crown.attaint', { target: id }, 'Strip the title', 'no', `Strip ${c.name}?`) : ''}</div>`).join('') || '<div class="empty">No peers yet.</div>'}</div>
     </div>
     <div class="card"><h2>Royal holdings <span class="sub">estates pay rent each payday; a palace adds 3</span></h2>
       ${Object.entries(ESTATES).map(([id, e]) => { const x = h[id] || { holder: 'crown', palace: !!e.royal }; const holder = x.holder === 'crown' ? 'the Crown' : x.holder === 'state' ? 'the State' : who(x.holder);

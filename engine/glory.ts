@@ -52,7 +52,7 @@ export function checkBadges(w: W, id: Id) {
     c.badges[b.id] = w.now;
     stamp(w, id, b.name, b.sub, b.hidden ? 'bad' : 'good');
     earn(w, id, 3, `Achievement: ${b.name}`);
-    if (b.hidden) gazette(w, 'quiet', `${c.name} unlocks a secret achievement: ${b.name}. ${b.sub}.`, '#/season');
+    if (b.hidden) gazette(w, 'quiet', `${nm(w, c.id)} unlocks a secret achievement: ${b.name}. ${b.sub}.`, '#/season');
   });
 }
 

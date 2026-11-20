@@ -56,7 +56,7 @@ export function settleTrial(w: W, t: any) {
     stamp(w, c.id, 'Convicted', `${ch.name}, ${ch.days} days in the Realm Jail`, 'bad');
     approve(w, c.id, -5);
     bump(w, c.id, 'convicted');
-    gazette(w, 'court', `Guilty. ${c.name} is convicted of ${ch.name.toLowerCase()} (${g} to ${i}) and sent to the Realm Jail for ${ch.days} days.`, '#/trial/' + t.id);
+    gazette(w, 'court', `Guilty. ${nm(w, c.id)} is convicted of ${ch.name.toLowerCase()} (${g} to ${i}) and sent to the Realm Jail for ${ch.days} days.`, '#/trial/' + t.id);
   } else {
     t.status = 'acquitted';
     if (c) {
