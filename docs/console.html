@@ -767,7 +767,7 @@ function viewHome() {
   const elections = coll(W.elections).map(([id, e]) => ({ id, ...e })).filter(e => e.status !== 'closed');
   const meters = W.meters || {};
   const party = (W.citizens?.[W.viewer] || {}).party;
-  return `
+  return `${crownBanners()}
   <div class="card"><h2>Needs you <span class="sub">${ALERTS.length ? ALERTS.length + ' thing' + (ALERTS.length > 1 ? 's' : '') : 'all clear'}</span></h2>
     ${ALERTS.length ? ALERTS.map(a => {
       const h = alertHash(a.href), inner = `<div class="row between"><span class="t">${a.urgent ? '🔴 ' : ''}${esc(a.title)}</span><span class="small mut">${until(a.at)}${h ? ' <span class="go">Open →</span>' : ''}</span></div><div class="m">${esc(a.label || '')}</div>`;
@@ -794,6 +794,7 @@ function viewHome() {
   ${crisesCard()}
   ${W.army?.campaign ? warCard() : ''}
   ${courtCard()}
+  ${trialsCard()}
   ${crownCard()}
   <div class="card"><h2>Before the House <span class="sub">${props.length} open</span></h2>${props.map(p => proposalCard(p, true)).join('') || '<div class="empty">Nothing open right now.</div>'}</div>
   ${elections.length ? `<div class="card"><h2>Elections</h2>${elections.map(e => electionCard(e)).join('')}</div>` : ''}
@@ -927,7 +928,7 @@ function abroadCard() {
         ${d.consort && !d.child ? openBtn('abroad.child', 'Hope for an heir…') : ''}${d.child && W.crown?.reign?.crownedAt && !W.crown.reign.claim ? btn('abroad.dynasty', {}, `Claim the realm's throne for ${d.child.name}`, 'no', 'Press a dynastic claim?') : ''}</div>
       ${rivals.length ? `<div class="small" style="margin-top:10px"><b>Rivals at court</b></div>${rivals.map(([id, c]) => `<div class="item"><div class="row between"><span>${esc(c.name)} · ${esc(rankName(id))} · ${c.defected.favour}</span><span class="row">${btn('abroad.intrigue', { target: id, kind: 'steal' }, 'Steal favour')}${btn('abroad.intrigue', { target: id, kind: 'expose' }, 'Expose', 'no')}</span></div></div>`).join('')}` : ''}
       <div class="row" style="margin-top:10px">${!W.exileGov && r >= 1 ? openBtn('exile.declare', 'Declare a government in exile…') : ''}${openBtn('defect.go', 'Move to another nation…')}${btn('defect.return', {}, 'Come home', '', 'Go home to the realm?')}</div>
-    </div>`;
+    </div>${abroadExtras(d)}`;
   }
   const offers = coll(W.approaches).filter(([, a]) => a.to === W.viewer && a.status === 'open');
   const threatened = (W.regime && W.regime.type !== 'civil') || W.coup || W.acts?.jail;
@@ -937,7 +938,7 @@ function abroadCard() {
       <div class="row">${btn('agent.answer', { approach: id, yes: true }, 'Accept', 'no', 'Become a foreign agent?')}${btn('agent.answer', { approach: id, yes: false }, 'Refuse quietly')}${btn('agent.answer', { approach: id, yes: false, report: true }, 'Refuse and report it', 'aye')}</div></div>`).join('')}
     ${me.agentOf ? `<div class="card"><h2>You are an agent of ${esc(W.nations?.[me.agentOf]?.name)} <span class="sub">only you can see this</span></h2><div class="row">${openBtn('agent.leak', 'Leak a card (10)…')}${btn('agent.quit', {}, 'Stop working for them', '', 'Stop? You can still be caught for two weeks.')}</div></div>` : ''}
     ${me.refuge ? `<div class="card"><h2>Sheltering in the ${esc(W.nations?.[me.refuge.nation]?.name)} embassy</h2><div class="row">${btn('asylum.leave', {}, 'Leave the embassy')}${btn('defect.go', { nation: me.refuge.nation }, 'Take safe passage abroad', 'no', 'Defect?')}</div></div>`
-      : threatened && friends.length ? `<div class="card"><h2>Take refuge</h2><p class="small">A friendly embassy will shelter you from arrest.</p><div class="row">${friends.map(([id, x]) => btn('asylum.claim', { nation: id }, `${x.name} embassy`)).join('')}</div></div>` : ''}`;
+      : threatened && friends.length ? `<div class="card"><h2>Take refuge</h2><p class="small">A friendly embassy will shelter you from arrest.</p><div class="row">${friends.map(([id, x]) => btn('asylum.claim', { nation: id }, `${x.name} embassy`)).join('')}</div></div>` : ''}${homeAbroadExtras()}`;
 }
 function viewWorld() {
   const ns = coll(W.nations);
@@ -967,7 +968,7 @@ function viewWorld() {
     <div style="margin-top:10px"><b class="small">Companies</b> <span class="small mut">25 shares gives control; a controlled company takes orders</span>${Object.keys(CO_NAMES).map(sym => { const px = W.exchange?.prices?.[sym]?.p, h = wh[sym]?.n || 0, f = firms[sym];
       return `<div class="item"><div class="row between"><span><span class="t">${esc(sym)}</span> <span class="m">${esc(coName(sym))}${px != null ? ` · ${Number(px).toFixed(2)}` : ''}${h ? ` · the chest holds ${h}` : ''}</span>${f ? ` <span class="tag ok">${f.order === 'war' ? 'war production' : esc(f.order)}</span>` : ''}</span>
         ${canDir ? `<span class="row">${btn('imperial.trade', { sym, n: 5, sell: false }, 'Buy 5')}${h ? btn('imperial.trade', { sym, n: Math.min(5, h), sell: true }, `Sell ${Math.min(5, h)}`) : ''}${f ? ['dividends', 'war', 'requisition'].filter(o => o !== f.order).map(o => btn('imperial.direct', { sym, order: o }, o === 'war' ? 'War production' : o[0].toUpperCase() + o.slice(1))).join('') : btn('imperial.acquire', { sym }, 'Acquire', 'p', `Acquire a controlling stake in ${coName(sym)}?`)}</span>` : ''}</div></div>`; }).join('')}</div></div>` : '';
-  return `${abroadCard()}${empire}${machine}${warCard()}${memorialsCard()}
+  return `${abroadCard()}${homelandCard()}${empire}${machine}${warCard()}${memorialsCard()}
   <div class="card"><h2>The nations <span class="sub">${ns.length}${W.army?.war ? ' · at war with ' + esc(W.nations[W.army.war]?.name) : ''}</span></h2>
     ${ns.map(([id, n]) => `<div class="item"><div class="row between"><span class="t">${esc(n.name)}</span><span><span class="tag ${n.mood >= 3 ? 'ok' : n.mood <= 1 ? 'bad' : ''}">${W.army?.war === id ? 'At war' : MOODS[n.mood]}</span></span></div>
       <div class="m">Army ${knownArmy(n) ? Math.round(n.power * 10) / 10 : 'unknown'}${n.embassy ? ' · our embassy' : ''}${n.embargo ? ' · under our embargo' : ''}${n.sanctionsUntil > SERVER_NOW() ? ' · sanctions on us' : ''}${n.protectorate ? ' · our protectorate' : ''}${n.ruler ? ` · ruled by ${esc(who(n.ruler.id))}, a defector` : ''}${W.shipping?.[id] ? ` · ${W.shipping[id]} ship${W.shipping[id] === 1 ? '' : 's'} at sea` : ''}</div>
@@ -1174,6 +1175,7 @@ function viewCrown() {
       ${(o.members || []).map(id => `<div class="item row between"><span><span class="t">${esc(who(id))}</span> <span class="m">${esc(o.styles?.[id] || '')}</span></span>${amHos && canAct() ? `<button class="sm no" data-do="crown.emeritus" data-a='${JSON.stringify({ target: id, grant: false })}'>Remove</button>` : ''}</div>`).join('') || '<div class="empty">Nobody holds it yet.</div>'}
       ${amHos && canAct() && past.length ? `<div class="row" style="margin-top:8px">${past.map(id => `<button class="sm aye" data-do="crown.emeritus" data-a='${JSON.stringify({ target: id })}'>Grant to ${esc(who(id))}</button>`).join('')}</div>` : ''}
     </div>`; })()}
+  ${crownHomeCards()}
   ${sworn.length ? `<div class="card"><h2>The homage roll</h2><div class="small">Sworn: ${esc(sworn.filter(([, v]) => v).map(([id]) => who(id)).join(', ') || 'nobody')}<br>Refused: ${esc(sworn.filter(([, v]) => !v).map(([id]) => who(id)).join(', ') || 'nobody')}</div></div>` : ''}`;
 }
 function electionCard(e) {
@@ -1609,6 +1611,160 @@ function wireSettings() {
     const r = await act($('#rcmd').value.trim(), a); show($('#rres'), r.ok, r.ok ? 'Done.' : r.error);
   };
 }
+
+const LIMITS = {"billClauses":["Clauses in one bill","",5,50,20,"Parliament"],"billSpeeches":["Speeches each MP may make on a bill","",1,20,5,"Parliament"],"amendmentsEach":["Amendments each MP may have waiting on a bill","",1,10,3,"Parliament"],"hostileBackers":["MPs backing an amendment to force a House vote","",1,9,3,"Parliament"],"lobbyMax":["Most one lobbying payment may be"," crowns",10,1000,100,"Parliament"],"blocksPerTerm":["Times an office may send a bill back each term","",0,5,1,"Parliament"],"formDays":["Days a hung parliament has to form a government"," days",2,14,5,"Parliament"],"draftsEach":["Drafts each citizen may keep","",5,50,20,"Parliament"],"draftSponsors":["Co-sponsors on one draft","",1,15,6,"Parliament"],"officeBudgetMax":["Highest weekly budget a law may give an office"," crowns",50,1000,200,"Parliament"],"jobPayMax":["Highest pay for a civic job"," crowns",5,100,30,"Parliament"],"pensionMax":["Highest veterans’ pension"," crowns",1,50,10,"Parliament"],"fundMax":["Most the wealth fund may trade in one law"," crowns",50,5000,500,"Parliament"],"peaceCrownsMax":["Most a peace may pay either way"," crowns",50,2000,200,"Parliament"],"partyMotions":["Party motions each member may have open","",1,10,3,"Parties"],"breakawayMPs":["MPs a breakaway needs before it can launch","",1,9,2,"Parties"],"breakawayInvite":["Members one breakaway may invite","",3,40,15,"Parties"],"reserveRateMax":["Highest Reserve interest rate","%",5,50,15,"Money"],"bankSaveMax":["Highest savings rate a bank may offer","%",1,50,10,"Money"],"bankLoanMax":["Highest loan rate a bank may charge","%",1,100,20,"Money"],"loanMax":["Largest bank loan"," crowns",10,2000,100,"Money"],"loanWeeks":["Longest bank loan"," weeks",1,52,10,"Money"],"ventureMax":["Largest trade venture"," crowns",10,1000,100,"Money"],"mintMax":["Most the Reserve may print at once"," crowns",10,2000,200,"Money"],"mintWeek":["Most the Reserve may print in a week"," crowns",10,5000,400,"Money"],"bondRateMax":["Highest interest on a bond issue","% a week",1,50,10,"Money"],"bondWeeksMax":["Longest bond term"," weeks",1,52,8,"Money"],"bondIssueMax":["Largest bond issue"," crowns",50,10000,1000,"Money"],"goldMax":["Most gold the Reserve may buy at once"," crowns",10,2000,200,"Money"],"holdMax":["Shares one holder may own of a company","",100,10000,1000,"Exchange"],"stampDutyMax":["Highest stamp duty on shares","%",0,25,5,"Exchange"],"companiesEach":["Listed companies each citizen may run","",1,10,2,"Exchange"],"ipoMax":["Highest opening price on a listing"," crowns",5,500,50,"Exchange"],"listSharesMax":["Most shares a new listing may issue","",100,10000,1000,"Exchange"],"capitalMax":["Most starting capital for a new company"," crowns",50,5000,500,"Exchange"],"grantMax":["Largest single grant from an office"," crowns",10,1000,100,"Offices"],"fineMax":["Largest fine"," crowns",1,100,10,"Offices"],"storiesPerDay":["Stories each journalist may file a day","",1,20,5,"Society"],"pollPanel":["Newsnight comments on one exit poll","",1,20,5,"Society"],"crisisSpeeches":["Speeches each citizen may make on a crisis","",1,10,2,"Society"],"crisisGift":["Most each citizen may give to one crisis"," crowns",5,500,25,"Society"],"crisisBribeMax":["Largest offer to sway a crisis"," crowns",5,500,50,"Society"],"betMax":["Most each citizen may stake on one market"," crowns",10,1000,100,"Society"],"streakFreezes":["Streak freezes one citizen may hold","",0,10,2,"Society"],"contractStakeMax":["Largest stake on a contract"," crowns",10,1000,100,"Streets"],"bountiesEach":["Bounties each citizen may have going","",1,10,3,"Streets"],"bountyMax":["Largest bounty reward"," crowns",10,2000,200,"Streets"],"stallsEach":["Stalls each citizen may have open","",1,10,3,"Streets"],"stallPriceMax":["Highest price on a stall"," crowns",10,2000,200,"Streets"],"regiments":["Regiments the realm may field","",6,60,20,"Army"],"volunteers":["Volunteers in one war","",1,50,12,"Army"],"warBondsEach":["War bonds each citizen may hold"," crowns",10,1000,100,"Army"],"requisitionWeek":["Most the war chest may draw from the Treasury a week"," crowns",0,2000,100,"Army"],"campaignMax":["Most one may spend campaigning for a foreign throne"," crowns",10,1000,100,"Army"],"purseMax":["Largest purse a monarch may offer a pretender"," crowns",10,1000,100,"Army"],"dealsOpen":["Deals each citizen may have waiting for an answer","",1,20,5,"Backroom"],"probesPerDay":["Investigations the Security Service may make a day","",1,5,1,"Backroom"],"warChestFull":["A plot’s war chest is full at"," crowns",50,1000,150,"Backroom"],"wantedMax":["Largest price a nation abroad may put on an official’s head"," crowns",10,1000,100,"Backroom"],"exileStoriesPerDay":["Stories each exile may write a day","",1,10,2,"Backroom"],"invasionDefectors":["Defectors at one court needed to prepare an invasion","",2,12,3,"Backroom"],"peers":["Peers of the realm the monarch may create","",0,20,5,"Crown"],"cells":["Citizens a regime may hold at once","",1,10,3,"Regimes"],"pamphletsPerDay":["Underground pamphlets each citizen may print a day","",1,10,2,"Regimes"]};
+const ESTATES = {"royalpalace":{"name":"The Royal Palace","province":null,"rent":0,"royal":true},"summerpalace":{"name":"The Summer Palace","province":null,"rent":0,"royal":true},"kingsmead":{"name":"Kingsmead","province":null,"rent":3},"ashcombe":{"name":"Ashcombe","province":null,"rent":2},"harrowgate":{"name":"Harrowgate","province":null,"rent":2},"stonehollow":{"name":"Stonehollow","province":null,"rent":2},"marlowe":{"name":"Marlowe Abbey","province":null,"rent":3},"fellgarth":{"name":"Fellgarth","province":"northfells","rent":2},"slatecross":{"name":"Slatecross","province":"northfells","rent":3},"oakhurst":{"name":"Oakhurst Chase","province":"westwold","rent":3},"greywood":{"name":"Greywood","province":"westwold","rent":2},"riverholm":{"name":"Riverholm","province":"kessvale","rent":4},"kessford":{"name":"Kessford Manor","province":"kessvale","rent":3}};
+const EVENTS = {"hunt":{"name":"a hunt","cost":15,"prize":"Bagged the stag"},"ball":{"name":"a ball","cost":20,"prize":"Belle of the ball"}};
+const PEERAGE = {"baron":{"title":"Baron","pay":2},"earl":{"title":"Earl","pay":3},"duke":{"title":"Duke","pay":5}};
+const HOMES = [["Lodgings",0],["A townhouse",30],["A manor",80],["A palace apartment",150]];
+const BUSINESS = [{"only":null,"q":"A journalist from the realm asks for an interview.","opts":["Denounce the realm","Speak kindly of home"]},{"only":null,"q":"A letter arrives from an old friend at home. They miss you.","opts":["Write back","Burn it in front of the court"]},{"only":null,"q":"The court suspects spies among the exiles and asks you to name names.","opts":["Name someone","Refuse"]},{"only":null,"q":"You are invited to a feast. The seat offered is below the salt.","opts":["Take it with good grace","Demand a better seat"]},{"only":null,"q":"A courtier hints that a gift would smooth your way.","opts":["Give 10 crowns","Ignore the hint"]},{"only":null,"q":"The war office asks you to mark the realm’s fortresses on a map.","opts":["Mark them","Pretend you never knew"]},{"only":["drakmoor"],"q":"The Marshal reviews the army and wants you on the podium.","opts":["Salute beside him","Plead illness"]},{"only":["kessmark"],"q":"A merchant house offers you a share in a cargo of dyes upriver.","opts":["Take a share","Decline"]},{"only":["orrin"],"q":"The fleet launches a new ship. The Queen asks you to name it.","opts":["Name it for the Isles","Name it for the realm"]},{"only":["aurel"],"q":"A banker invites you to the gaming tables of Austrava.","opts":["Sit down and play","Keep your purse shut"]},{"only":["varnholm"],"q":"The harvest festival needs someone to cut the first sheaf.","opts":["Cut it","Leave it to a local"]},{"only":["tessaly"],"q":"The Commonwealth parliament asks you to address it on the realm.","opts":["Call for pressure on the realm","Call for friendship"]},{"only":["sundmere"],"q":"Two lake villages quarrel over fishing rights. The Council asks you to judge.","opts":["Split the lake","Refuse to take sides"]}];
+
+/* ═════════════════════════════════════════════ defection, exiles, trials, the Crown at home and the dynasty */
+const NOW = () => SERVER_NOW();
+const DAYMS = 864e5;
+const isSec = () => !!W?.offices?.security && (W.offices.security.holder === W.viewer || (W.pm === W.viewer && !W.offices.security.holder)) || coll(W?.offices).some(([, o]) => o.holder === W.viewer && (o.powers || []).includes('intel'));
+const isFM = () => W?.pm === W?.viewer || coll(W?.offices).some(([, o]) => o.holder === W.viewer && (o.powers || []).includes('envoy'));
+const isTreas = () => W?.offices?.treasury?.holder === W?.viewer || (W?.pm === W?.viewer && !W?.offices?.treasury?.holder);
+const isHC = () => coll(W?.offices).some(([, o]) => o.holder === W.viewer && (o.powers || []).includes('imperial')) || (W?.pm === W?.viewer && !coll(W?.offices).some(([, o]) => (o.powers || []).includes('imperial') && o.holder));
+const reigning = () => W?.config?.hos === 'monarchy' && W.crown?.reign?.id === W.viewer && !!W.crown.reign.crownedAt;
+const absolute = () => W?.config?.hos === 'monarchy' && !!(W.acts?.prerogative || W.acts?.veto || W.acts?.imperial);
+const inTower = c => !!c?.jail?.tower && c.jail.until == null;
+const atHomeList = () => coll(W?.citizens).filter(([id, c]) => c.active !== false && !c.bot && !c.defected && id !== W.viewer);
+const hashStr = s => [...s].reduce((h, ch) => (Math.imul(h, 31) + ch.charCodeAt(0)) | 0, 7) >>> 0;
+const businessFor = (id, nation) => { const list = BUSINESS.filter(b => !b.only || b.only.includes(nation)); return list[hashStr(id + ':' + Math.floor(NOW() / DAYMS)) % list.length]; };
+const cap1 = s => s.charAt(0).toUpperCase() + s.slice(1);
+Object.assign(SOURCES, {
+  trial: () => coll(W?.trials).filter(([, t]) => t.status === 'open').map(([id, t]) => [id, `${who(t.who)} · ${t.charge === 'lese' ? 'lèse-majesté' : 'treason'}`]),
+  wanted: () => coll(W?.wanted).filter(([, x]) => x.status === 'open').map(([id, x]) => [id, `${who(x.target)} · ${x.reward} crowns from ${W.nations?.[x.nation]?.name}`]),
+  estate: () => Object.entries(ESTATES).map(([id, e]) => [id, `${e.name} · ${W?.holdings?.[id]?.holder && !['crown', 'state'].includes(W.holdings[id].holder) ? who(W.holdings[id].holder) : W?.holdings?.[id]?.holder === 'state' ? 'the State' : 'the Crown'}${W?.holdings?.[id]?.palace ? ' · palace' : ''}`]),
+  event: () => coll(W?.events).filter(([, v]) => !v.done).map(([id, v]) => [id, `${EVENTS[v.kind]?.name} at ${ESTATES[v.estate]?.name} · ${who(v.host)}`]),
+  plant: () => coll(W?.plants).filter(([, p]) => p.status === 'offered' && p.to === W.viewer).map(([id, p]) => [id, `Go over to ${W.nations?.[p.nation]?.name}`])
+});
+Object.entries(LIMITS).forEach(([k, v]) => { SETTABLE[k] ??= [`Limit · ${v[5]}: ${v[0]}`, v[1], v[2], v[3]]; });
+CLAUSE_TYPES.set = 'Change a number or a limit (tax, pay, timings, every cap)';
+Object.assign(cool, { audience: 24, report: 24, sabotage: 48, stir: 48 });
+
+// banners at the top of Home: proclamations, triumphs, revolts, the Durbar, a proposal, an invasion
+function crownBanners() {
+  const out = [], pr = W.crown?.proclamation, t = W.triumph, me = W.citizens?.[W.viewer] || {};
+  if (pr && pr.until > NOW() && W.config?.hos === 'monarchy') out.push(`<div class="card" style="border-color:var(--acc)"><h2>By order of ${esc(pr.title)} ${esc(who(pr.by))} <span class="sub">${until(pr.until)}</span></h2><p>“${esc(pr.text)}”</p></div>`);
+  if (t && !t.done && t.until > NOW()) out.push(`<div class="card" style="border-color:var(--bad)"><h2>A triumph <span class="sub">${until(t.until)} · ${t.crowd.length} in the crowd</span></h2><p class="small">The Army marches through the capital after the victory over ${esc(W.nations?.[t.nation]?.name)}${t.hero ? `, ${esc(who(t.hero))} at its head` : ''}.</p>${!me.defected && !t.crowd.includes(W.viewer) ? `<div class="row">${btn('triumph.cheer', {}, 'Line the streets')}</div>` : ''}</div>`);
+  Object.entries(W.provinces || {}).filter(([, p]) => p.revolt).forEach(([id, p]) => out.push(`<div class="card" style="border-color:var(--bad)"><h2>${esc(PROVINCE_NAMES[id] || id)} is in revolt <span class="sub">answer ${until(p.revolt.until)} or lose it</span></h2><p class="small">Stirred up from abroad by ${esc(who(p.revolt.by))}.</p>${isHC() ? `<div class="row">${btn('imperial.suppress', { province: id, how: 'troops' }, 'Send troops', 'no')}${btn('imperial.suppress', { province: id, how: 'concede' }, 'Make concessions')}</div>` : ''}</div>`));
+  const d = W.durbar;
+  if (d && !d.done && d.until > NOW() && !me.defected && W.hos?.holder !== W.viewer) out.push(`<div class="card" style="border-color:var(--acc)"><h2>${d.coronation ? 'The Coronation Durbar' : 'The Imperial Durbar'} <span class="sub">${until(d.until)} · ${d.attended.length} have come</span></h2><p class="small">${d.expected.includes(W.viewer) ? 'You are summoned. Absence is noted' + (d.coronation ? ', and the Crown will not ennoble anyone who stood apart.' : '.') : 'The court sits to receive homage.'}</p>${!d.attended.includes(W.viewer) ? `<div class="row">${btn('durbar.attend', {}, 'Pay homage')}</div>` : ''}</div>`);
+  const pp = W.crown?.proposal;
+  if (pp && pp.to === W.viewer && pp.until > NOW()) out.push(`<div class="card" style="border-color:var(--acc)"><h2>${esc(hosTitle())} ${esc(who(pp.by))} asks for your hand <span class="sub">${until(pp.until)}</span></h2><div class="row">${btn('crown.wed', { yes: true }, 'Accept', 'aye')}${btn('crown.wed', { yes: false }, 'Decline', 'no')}</div></div>`);
+  coll(W.events).filter(([, v]) => !v.done && v.until > NOW() && v.guests.includes(W.viewer) && !v.came.includes(W.viewer)).forEach(([id, v]) => out.push(`<div class="card"><h2>${esc(who(v.host))} invites you to ${esc(EVENTS[v.kind]?.name)} at ${esc(ESTATES[v.estate]?.name)} <span class="sub">${until(v.until)}</span></h2><p class="small">+2 influence if you go. Staying away is noticed.</p><div class="row">${btn('event.attend', { event: id }, 'Go')}</div></div>`));
+  if (W.invasion && !me.defected) out.push(`<div class="card" style="border-color:var(--bad)"><h2>Invasion warning <span class="sub">${esc(W.invasion.name)}</span></h2><p class="small">The exiles are preparing to invade from ${esc(W.nations?.[W.invasion.nation]?.name)}: ${W.invasion.members.length} under arms, ${W.invasion.drills} drills, a chest of ${W.invasion.chest}. Ready ${until(W.invasion.readyAt) || 'now'}.</p>${isSec() ? `<div class="row">${btn('intel.disrupt', {}, 'Disrupt the muster (25)', 'no')}</div>` : ''}</div>`);
+  return out.join('');
+}
+// trials: who is in the dock, and a vote for the judges
+function trialsCard() {
+  const all = coll(W.trials).sort((a, b) => b[1].at - a[1].at).slice(0, 6);
+  if (!all.length) return '';
+  return `<div class="card"><h2>Trials</h2>${all.map(([id, t]) => {
+    const judge = t.judges.includes(W.viewer) && t.status === 'open';
+    return `<div class="item"><div class="row between"><span class="t">${t.charge === 'lese' ? 'Lèse-majesté' : 'Treason'}: ${esc(who(t.who))}</span><span class="small mut">${t.status === 'open' ? 'verdict ' + until(t.closesAt) : t.status === 'guilty' ? 'Guilty' : 'Acquitted'}</span></div>
+      <div class="m">${t.jury ? 'A jury drawn by lot' : 'The Supreme Court'}: ${t.judges.map(who).map(esc).join(', ')}${t.how ? ' · ' + esc(t.how) : ''}${t.defence ? ` · defence: “${esc(t.defence.slice(0, 160))}”` : ''}</div>
+      ${judge ? `<div class="row" style="margin-top:6px">${btn('trial.vote', { trial: id, verdict: 'guilty' }, t.votes?.[W.viewer] === 'guilty' ? '✓ Guilty' : 'Guilty', 'no')}${btn('trial.vote', { trial: id, verdict: 'innocent' }, t.votes?.[W.viewer] === 'innocent' ? '✓ Not guilty' : 'Not guilty', 'aye')}</div>` : ''}
+      ${t.who === W.viewer && t.status === 'open' ? `<div class="row" style="margin-top:6px">${openBtn('trial.defend', 'Speak in your defence…')}</div>` : ''}</div>`;
+  }).join('')}</div>`;
+}
+// the defector's extras at court
+function abroadExtras(d) {
+  const n = W.nations?.[d.nation] || {}, r = rankOf(W.viewer), me = W.citizens[W.viewer];
+  const b = businessFor(W.viewer, d.nation), bizNext = (d.last?.audience || 0) + DAYMS;
+  const hos = coll(W.elections).find(([, e]) => e.kind === 'hos' && e.status === 'open');
+  const v = W.invasion, press = W.exilePress?.[d.nation];
+  const stories = (W.stories || []).filter(s => s.exile === d.nation).slice(0, 4);
+  const ours = Object.keys(W.provinces || {}).filter(id => W.provinces[id].owner === 'realm');
+  const days = (NOW() - d.at) / DAYMS;
+  return `
+    ${d.turnOffer && d.turnOffer.until > NOW() ? `<div class="card" style="border-color:var(--bad)"><h2>The court knows what you are <span class="sub">only you can see this · ${until(d.turnOffer.until)}</span></h2><p class="small">Work for ${esc(n.name)} and they keep you: your reports home will lie, your sabotage will be staged. Refuse, and you are expelled as a spy.</p><div class="row">${btn('abroad.turn', { yes: true }, 'Work for them', 'no', 'Betray the Security Service?')}${btn('abroad.turn', { yes: false }, 'Refuse', '', 'Refuse? They will throw you out.')}</div></div>` : ''}
+    ${d.plant ? `<div class="card" style="border-color:var(--acc)"><h2>Your real orders <span class="sub">only you, the PM and the Director know</span></h2><p class="small">You went over for the Security Service (${esc(who(d.plant.by))}). Come home whenever you like: the truth comes out and the realm thanks you.</p><div class="row">${btn('abroad.report', {}, `Report home (${readyIn(d, 'report').replace(/<[^>]+>/g, '')})`)}${r >= 1 ? btn('abroad.sabotage', {}, `Sabotage their army (${readyIn(d, 'sabotage').replace(/<[^>]+>/g, '')})`, 'no', 'One time in five you are caught. Go ahead?') : ''}</div></div>` : ''}
+    <div class="grid">
+      <div class="card"><h2>The court's business <span class="sub">${bizNext > NOW() ? 'done today · more ' + until(bizNext) : 'one matter a day'}</span></h2><p>${esc(b.q)}</p>${bizNext <= NOW() ? `<div class="row">${b.opts.map((o, i) => btn('abroad.audience', { choice: i }, o, i ? '' : 'aye')).join('')}</div>` : ''}</div>
+      <div class="card"><h2>Your life in ${esc(n.name)} <span class="sub">${esc(HOMES[d.home || 0][0])}${d.naturalised ? ' · citizen' : ' · resident alien'} · day ${Math.floor(days) + 1}</span></h2>
+        <div class="row">${HOMES.map(([name, cost], i) => i > (d.home || 0) ? btn('abroad.settle', { level: i }, `${name} (${cost - HOMES[d.home || 0][1]})`) : '').join('')}</div>
+        ${!d.naturalised && !d.plant ? `<div class="row" style="margin-top:6px">${btn('abroad.naturalise', {}, `Swear allegiance to ${n.name} (5 days, 40 favour, 20 crowns)`, '', 'Become a citizen? The realm can no longer extradite you, but coming home costs more.')}</div>` : ''}
+        ${d.amnesty ? `<p class="small" style="margin-top:8px"><b>The Prime Minister offers you an amnesty.</b> ${btn('defect.return', {}, 'Go home', 'aye', 'Accept the amnesty and go home?')}</p>` : ''}
+        ${(d.deeds || []).filter(x => x.home).slice(0, 4).map(x => `<div class="m">From home: ${esc(x.what)}</div>`).join('')}</div>
+    </div>
+    <div class="grid">
+      <div class="card"><h2>The exile press <span class="sub">${press ? esc(press.name) : 'no paper yet'}</span></h2>
+        <div class="row">${press ? openBtn('exile.write', 'Write a story…') : openBtn('exile.paper', 'Found the paper…')}</div>
+        ${stories.map(s => `<div class="item"><span class="t">${esc(s.headline)}</span> <span class="m">${esc(who(s.by))} · ${s.cheers.length} cheers</span></div>`).join('')}</div>
+      <div class="card"><h2>${v ? esc(v.name) : 'Invade the homeland'} <span class="sub">${v ? `${v.members.length} under arms · ${v.drills} drills · chest ${v.chest}` : `needs ${LIMITS.invasionDefectors ? (W.config?.limits?.invasionDefectors ?? LIMITS.invasionDefectors[4]) : 3} defectors at a hostile court`}</span></h2>
+        <div class="row">${!v ? (r >= 2 ? openBtn('exile.invade', 'Raise an invasion…', 'no') : '<span class="small mut">Minister and above can raise one.</span>') : v.nation !== d.nation ? `<span class="small mut">It musters in ${esc(W.nations?.[v.nation]?.name)}.</span>` : (!v.members.includes(W.viewer) ? btn('exile.muster', {}, 'Join it', 'no') : btn('exile.drill', {}, 'Drill (once a day)') + openBtn('exile.fund', 'Fund it…')) + (v.leader === W.viewer ? btn('exile.launch', {}, 'Launch the invasion', 'no', 'Launch? Every member sails home tonight and the host declares war.') + btn('exile.standDown', {}, 'Call it off', '', 'Call it off?') : '')}</div>
+        ${v && v.readyAt > NOW() ? `<div class="m">Ready ${until(v.readyAt)}</div>` : ''}</div>
+    </div>
+    <div class="card"><h2>Against the realm</h2><div class="row">
+      ${r >= 1 && ours.length ? openBtn('abroad.stir', 'Stir up a province…', 'no') : ''}${r >= 3 ? openBtn('abroad.wanted', 'Put a price on an official’s head…', 'no') : ''}
+      ${d.child && hos && W.config?.hos === 'monarchy' && !hos[1].candidates?.[W.viewer] ? btn('abroad.succession', { election: hos[0] }, `Claim the empty throne for ${d.child.name}`, 'no', 'Put your child’s claim on the ballot?') : ''}</div>
+      ${ours.map(id => `<div class="m">${esc(PROVINCE_NAMES[id] || id)}: ${W.provinces[id].revolt ? 'in revolt' : `unrest ${W.provinces[id].agitation || 0} of 3`}</div>`).join('')}</div>`;
+}
+// at home: the Service's offer to go over, wanted posters, the exile press, the Tower
+function homeAbroadExtras() {
+  const plants = coll(W.plants).filter(([, p]) => p.to === W.viewer && p.status === 'offered' && p.until > NOW());
+  const wanted = coll(W.wanted).filter(([, x]) => x.status === 'open' && x.until > NOW());
+  const stories = (W.stories || []).filter(s => s.exile).slice(0, 4);
+  return `${plants.map(([id, p]) => `<div class="card" style="border-color:var(--acc)"><h2>The Security Service asks you to go over to ${esc(W.nations?.[p.nation]?.name)} <span class="sub">only you can see this · ${until(p.until)}</span></h2><p class="small">To everyone else you will be a traitor. Abroad, report home and sabotage them; come home a hero (+10 approval, 5 influence). 30 crowns of cover money.</p><div class="row">${btn('plant.answer', { plant: id, yes: true }, 'Go over', 'no', 'Defect as a plant? It is public and starts now.')}${btn('plant.answer', { plant: id, yes: false }, 'Say no')}</div></div>`).join('')}
+    ${wanted.length ? `<div class="card" style="border-color:var(--bad)"><h2>Wanted</h2>${wanted.map(([id, x]) => `<div class="item"><div class="row between"><span class="t">${esc(who(x.target))} · ${x.reward} crowns from ${esc(W.nations?.[x.nation]?.name)}</span><span>${x.target !== W.viewer && !x.tried.includes(W.viewer) ? btn('wanted.claim', { wanted: id }, 'Try to seize them', 'no', 'Try? It is public either way, and failure means three days held.') : ''}</span></div><div class="m">Comes down ${until(x.until)}</div></div>`).join('')}</div>` : ''}
+    ${stories.length ? `<div class="card"><h2>The exile press</h2>${stories.map(s => `<div class="item"><div class="row between"><span class="t">${esc(s.headline)}</span>${btn('press.cheer', { story: s.id }, (s.cheers || []).includes(W.viewer) ? 'Cheered' : 'Cheer')}</div><div class="m">${esc(W.exilePress?.[s.exile]?.name || 'The exile press')} · ${esc(who(s.by))}</div></div>`).join('')}</div>` : ''}`;
+}
+// the realm against its defectors, and the Service's plants
+function homelandCard() {
+  const defs = coll(W.citizens).filter(([, c]) => c.defected);
+  const sec = isSec(), fm = isFM(), tre = isTreas(), pm = W.pm === W.viewer;
+  if (!defs.length && !sec) return '';
+  const plants = coll(W.plants).filter(([, p]) => p.status === 'offered' || p.status === 'abroad');
+  return `<div class="card"><h2>Defectors <span class="sub">and what the realm can do about them</span></h2>
+    ${defs.map(([id, c]) => { const d = c.defected; return `<div class="item"><div class="row between"><span class="t">${esc(c.name)} in ${esc(W.nations?.[d.nation]?.name)}${d.plant ? ' · our plant' : ''}${d.naturalised ? ' · naturalised' : ''}${d.amnesty ? ' · amnesty offered' : ''}</span><span class="small mut">${esc(rankName(id))} · ${d.favour} favour · ${esc(HOMES[d.home || 0][0].toLowerCase())}</span></div>
+      <div class="row" style="margin-top:6px">${fm && !d.naturalised ? btn('defector.extradite', { target: id }, 'Ask for them back', '', `Ask ${W.nations?.[d.nation]?.name} to hand ${c.name} over? A refusal cools them.`) : ''}${sec && !d.plant ? btn('intel.discredit', { target: id }, 'Smear at court (15)') : ''}${sec ? btn('intel.snatch', { target: id }, 'Snatch squad (40)', 'no', 'Send a snatch squad? Failure is a public scandal.') : ''}${tre && !d.seized ? btn('defector.seize', { target: id }, 'Seize their money', '', 'Seize half their wallet?') : ''}${pm && !d.naturalised ? btn('defector.amnesty', { target: id, on: !d.amnesty }, d.amnesty ? 'Withdraw amnesty' : 'Offer amnesty', d.amnesty ? 'no' : 'aye') : ''}</div></div>`; }).join('') || '<div class="empty">Nobody has defected.</div>'}
+    ${sec ? `<div class="small" style="margin-top:10px"><b>Send someone over</b> (secret; 30 cover money, returned if they refuse)</div><div class="row">${openBtn('intel.plant', 'Ask a citizen to go over…')}</div>
+      ${plants.map(([, p]) => `<div class="m">${esc(who(p.to))} → ${esc(W.nations?.[p.nation]?.name)}: ${p.status === 'offered' ? 'waiting for an answer' : W.citizens?.[p.to]?.defected?.plant?.id === p.id ? 'in place' : 'home'}</div>`).join('')}
+      ${(W.ops || []).slice(0, 6).map(o => `<div class="m">${esc(human(o.kind))}: ${esc(o.text)}</div>`).join('')}` : ''}</div>`;
+}
+// the Crown at home: proclamations, peers, progresses, triumphs, lèse-majesté, marriage, holdings, hunts and balls, tenants, the Tower
+function crownHomeCards() {
+  const r = W.crown?.reign, mine = reigning(), k = W.crown || {};
+  const peers = coll(W.citizens).filter(([, c]) => c.peerage);
+  const h = W.holdings || {};
+  const con = k.consort && r && k.consort.of === r.id ? k.consort : null;
+  const victory = (W.wars || [])[0];
+  const fresh = victory && victory.outcome === 'victory' && NOW() - victory.endedAt < 3 * DAYMS && !(W.triumph && W.triumph.war === victory.endedAt);
+  const myPalaces = Object.keys(h).filter(id => h[id].palace && (h[id].holder === W.viewer || (mine && h[id].holder === 'crown')));
+  const me = W.citizens?.[W.viewer] || {};
+  const tower = coll(W.citizens).filter(([, c]) => inTower(c));
+  const evs = coll(W.events).sort((a, b) => b[1].at - a[1].at).slice(0, 5);
+  const armed = coll(W.citizens).filter(([, c]) => c.retinue && c.retinue.until > NOW());
+  return `
+    ${mine ? `<div class="card"><h2>The Sovereign's desk</h2><div class="row">${openBtn('crown.proclaim', 'Proclaim…')}${openBtn('crown.ennoble', 'Ennoble someone…')}${Object.keys(W.provinces || {}).some(id => W.provinces[id].owner === 'realm') ? openBtn('crown.progress', 'A royal progress (15)…') : ''}${fresh ? btn('crown.triumph', {}, 'Hold a triumph (30)', 'aye') : ''}${absolute() ? openBtn('crown.lese', 'Charge lèse-majesté…', 'no') + openBtn('crown.tower', 'Commit to the Tower…', 'no') : ''}${!con ? openBtn('crown.propose', 'Propose marriage…') : btn('crown.divorce', {}, 'Divorce', 'no', 'Divorce your consort? It is a scandal.')}</div>
+      ${k.proposal && k.proposal.until > NOW() ? `<div class="m">Waiting for ${esc(who(k.proposal.to))} to answer your proposal, ${until(k.proposal.until)}.</div>` : ''}</div>` : ''}
+    ${!mine && isHC() && fresh ? `<div class="card"><h2>A triumph</h2><div class="row">${btn('crown.triumph', {}, 'Hold a triumph (30)', 'aye')}</div></div>` : ''}
+    <div class="grid">
+      <div class="card"><h2>The royal family</h2><p class="small">${con ? `Consort: ${esc(who(con.id))}.` : 'The monarch is unmarried.'}${k.inNameOf && k.inNameOf.id === r?.id && k.inNameOf.child ? ` Reigns in the name of ${esc(k.inNameOf.child)}, heir of two houses.` : ''}</p></div>
+      <div class="card"><h2>The peerage <span class="sub">${peers.length} of ${W.config?.limits?.peers ?? LIMITS.peers[4]}</span></h2>${peers.map(([id, c]) => `<div class="item row between"><span><span class="t">${esc(PEERAGE[c.peerage.rank]?.title)} ${esc(c.name)}</span></span>${mine ? btn('crown.attaint', { target: id }, 'Strip the title', 'no', `Strip ${c.name}?`) : ''}</div>`).join('') || '<div class="empty">No peers yet.</div>'}</div>
+    </div>
+    <div class="card"><h2>Royal holdings <span class="sub">estates pay rent each payday; a palace adds 3</span></h2>
+      ${Object.entries(ESTATES).map(([id, e]) => { const x = h[id] || { holder: 'crown', palace: !!e.royal }; const holder = x.holder === 'crown' ? 'the Crown' : x.holder === 'state' ? 'the State' : who(x.holder);
+        return `<div class="item"><div class="row between"><span class="t">${esc(e.name)}${x.palace ? ' · ' + (e.royal ? 'royal palace' : 'palace') : ''}</span><span class="small mut">${esc(e.province ? PROVINCE_NAMES[e.province] : 'the home counties')}${e.province && W.provinces?.[e.province]?.owner !== 'realm' ? ' (lost)' : ''} · ${esc(holder)}${e.royal ? '' : ` · ${e.rent + (x.palace ? 3 : 0)} a week`}</span></div>
+          <div class="row" style="margin-top:4px">${mine && x.holder === 'crown' && !e.royal && peers.length && !(e.province && W.provinces?.[e.province]?.owner !== 'realm') ? `${pickSelect('est' + id, peers.map(([pid, c]) => [pid, c.name]), 'Grant to…')}<button class="sm" data-estgrant="${esc(id)}">Grant</button>` : ''}${mine && !['crown', 'state'].includes(x.holder) ? btn('crown.resume', { estate: id }, 'Take back', 'no', `Take ${e.name} back?`) : ''}${!x.palace && (x.holder === W.viewer || (mine && x.holder === 'crown')) ? btn('estate.palace', { estate: id }, 'Build a palace (60)', '', `Build a palace at ${e.name}?`) : ''}</div></div>`; }).join('')}</div>
+    ${myPalaces.length || evs.length ? `<div class="card"><h2>Hunts and balls</h2>${myPalaces.length ? `<div class="row">${openBtn('estate.host', 'Hold a hunt or a ball…')}</div>` : ''}
+      ${evs.map(([id, v]) => `<div class="item"><div class="row between"><span class="t">${esc(cap1(EVENTS[v.kind]?.name || ''))} at ${esc(ESTATES[v.estate]?.name)}</span><span class="small mut">${esc(who(v.host))} · ${v.came.length} of ${v.guests.length} came</span></div><div class="m">${v.done ? (v.snubs?.length ? 'Snubbed by ' + v.snubs.map(who).map(esc).join(', ') : 'Nobody stayed away') : 'Until ' + until(v.until)}</div>${!v.done && v.guests.includes(W.viewer) && !v.came.includes(W.viewer) ? btn('event.attend', { event: id }, 'Go') : ''}</div>`).join('')}</div>` : ''}
+    ${armed.length || (me.grievance && me.grievance.until > NOW() && !(me.retinue && me.retinue.until > NOW())) ? `<div class="card"><h2>Tenants under arms</h2>${armed.map(([, c]) => `<div class="m">${esc(c.name)}: +${c.retinue.strength} on a coup night, until ${until(c.retinue.until)}</div>`).join('')}
+      ${me.grievance && me.grievance.until > NOW() && !(me.retinue && me.retinue.until > NOW()) ? `<p class="small">The Crown took ${esc(me.grievance.estates.join(', '))} from you.</p><div class="row">${btn('estate.raise', {}, 'Raise your tenants (10)', 'no', 'Arm your tenants? It is public.')}</div>` : ''}</div>` : ''}
+    ${r?.knelt ? `<div class="card"><h2>The Coronation Durbar</h2><p class="small"><b>Knelt:</b> ${esc(r.knelt.map(who).join(', ') || 'nobody')}<br><b>Stood apart:</b> ${esc((r.stoodApart || []).map(who).join(', ') || 'nobody')}</p></div>` : ''}
+    ${tower.length ? `<div class="card"><h2>The Tower</h2>${tower.map(([id, c]) => `<div class="item row between"><span class="t">${esc(c.name)}</span><span>${mine ? btn('crown.towerRelease', { target: id }, 'Release') : !me.defected && id !== W.viewer ? btn('tower.escape', { target: id }, 'Bribe the guards (10)', 'no', 'Bribe the guards? You may be caught.') : ''}</span></div>`).join('')}</div>` : ''}`;
+}
+document.addEventListener('click', async e => {
+  const g = e.target.closest('[data-estgrant]'); if (!g) return;
+  const target = PICKS['est' + g.dataset.estgrant];
+  if (!target) return toast('Choose a peer first.', true);
+  const r = await act('crown.grant', { estate: g.dataset.estgrant, target });
+  if (r.ok) delete PICKS['est' + g.dataset.estgrant];
+  toast(r.ok ? 'Granted.' : r.error, !r.ok);
+});
 
 /* ═════════════════════════════════════════════ quick buttons anywhere */
 document.addEventListener('click', async e => {

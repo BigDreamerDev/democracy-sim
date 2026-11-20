@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 73, text: 'The Realm Console has caught up: life abroad, the realm against its defectors, plants, trials, the exile press, wanted posters, invasions, revolts, the peerage, estates and palaces, hunts and balls, the Tower, the Durbar, and every limit in the bill writer.' },
   { n: 72, text: 'Palaces come alive: their holders host hunts and balls, and the invited who stay away are named. A peer stripped of their lands can arm their tenants for a coup night. A new emperor’s first Durbar puts on the record who knelt and who stood apart. And when the throne falls empty, a defector with a royal child abroad can claim it.' },
   { n: 71, text: 'Royal heirs at home are gone: the monarch can still marry, but there is no royal child and no regency. Royal children abroad are unchanged.' },
   { n: 70, text: 'The dynasty: the monarch can marry a citizen (a national holiday) and have an heir, and if the throne falls empty the consort reigns as Regent. The Crown holds estates and palaces and grants them to peers for rent. Under the empire, every payday brings the Imperial Durbar, where absences are noted. An absolute monarch can send traitors to the Tower, and friends can bribe the guards. Exiles can stir the provinces into revolt.' },
