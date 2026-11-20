@@ -1,6 +1,7 @@
 // What's new, shown once to each player after the site updates. Add a line (next n, newest first) with any change
 // players will notice. Plain British English, second person, one or two short sentences.
 export const CHANGES: { n: number; text: string }[] = [
+  { n: 80, text: 'Newspapers grow up: sign your story with a byline of your choosing (“war correspondent”), write letters to the editor (editors choose which to print), and editors can stop the presses for a special edition that leads the front page at once. The Realm Console now has the press too, with formatting and posters.' },
   { n: 79, text: 'Newspapers take WhatsApp formatting: *bold*, _italic_, ~strike~, paragraphs, subheadings, bullets and quotes, so you can paste a story straight from the group. Stories can be up to 4000 characters, and you can print any war poster with your story.' },
   { n: 78, text: 'Saving a poster works on phones: tap Save image, then Share it to your photos or WhatsApp, Download it, or press and hold the picture.' },
   { n: 77, text: 'Posters are on the walls everywhere now: a poster of the day on Today, the poster of the week on the front page, and the right one on the Army, the Security Service, bonds, the war memorial, the empire and the Crown, plus a small one in the sidebar. Tap any to open the war room.' },

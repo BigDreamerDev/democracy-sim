@@ -103,6 +103,7 @@ Rated by impact for *this* game. ✓ = fixed in this review.
 | S37 ✓ | Plants (the Security Service's secret defectors) add new secret state: who is a plant, the Service's private offers, its operations log, and a plant's reports and sabotage in their public record of deeds. | High | `viewFor` keeps `c.defected.plant` only for the plant, the PM and the Director; `w.plants` only for the citizen asked plus the PM and the Director; `w.ops` only for the PM and the Director; deeds marked `secret` are dropped for everyone else. |
 | S38 ✓ | Double agents and trials add more secret state: a plant's turn offer and suspicion, who turned (c.agentOf), and how each judge or juror voted. | High | `viewFor` blanks `turnOffer`/`suspected` for everyone but the plant; `agentOf` was already stripped (so even the PM and the Director cannot see a plant was turned); an open trial's `votes` keep only the viewer's own until the verdict. |
 | S39 ✓ | Defaced posters record who scrawled on them, which a regime would love to know. | Medium | `viewFor` blanks `w.defaced[poster][].by` for everyone but the writer, unless they were caught (then it is in the Gazette anyway). |
+| S40 ✓ | Letters to the editor wait privately for the editor, and the console now renders player-written story text as HTML. | Medium | `viewFor` keeps a waiting or declined letter only for its writer and the paper's editor. The console escapes story text before adding its few formatting tags; the site builds elements and never sets HTML from player text. |
 
 ### The Returning Officer
 

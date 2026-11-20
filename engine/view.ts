@@ -195,6 +195,8 @@ export function viewFor(full: W, me: Id): W {
   // plants: the offer is between the Service and the citizen asked; the operations log is the PM's and the Director's
   if (w.plants) Object.keys(w.plants).forEach((id) => { const p = w.plants[id]; if (p.to !== me && !canSeeIntel(full, me)) delete w.plants[id]; });
   if (!canSeeIntel(full, me)) w.ops = [];
+  // letters to the editor: printed ones are public; a waiting or declined one only to its writer and the paper's editor
+  (w.stories || []).forEach((st: any) => st.letters && (st.letters = st.letters.filter((l: any) => l.status === 'printed' || l.by === me || full.papers?.[st.paper]?.editor === me)));
   // defaced posters: what was written is public; who wrote it only if they were caught (or it was you)
   Object.values(w.defaced || {}).forEach((list: any) => list.forEach((x: any) => { if (x.by !== me && !x.caught) x.by = null; }));
   // trials: how each judge voted is secret until the verdict; your own vote is yours

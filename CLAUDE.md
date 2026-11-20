@@ -35,6 +35,7 @@ cd .. && npm run dev:online # the real UI against the local API
 
 npm run copy:extract        # every player-facing string → copy/strings.json
 npm run copy:apply          # write copy/edits.json into the source (the desk at #/copy does both, dev only)
+npm run console:posters     # bundle web/src/posters.ts into examples/realm-console/console.html and copy it to docs/ (after poster changes)
 ```
 
 **Definition of done** for any change: `npm run typecheck`, `npm run smoke`, and
@@ -102,7 +103,9 @@ engine/      pure TS, no I/O, no DOM, no Node APIs. Runs in the browser AND on t
                web/src/posters.ts: FONTS, PALETTES, POSTERS, WAR_POSTERS (per enemy), ENEMY_POSTERS; fitPosters() fits type in the
                browser; savePoster() embeds the fonts in the PNG. Money on posters uses config.currency
                Stories (press, underground, exile) carry s.poster (propaganda.posterRef) and render with web/src/StoryText.tsx
-               (WhatsApp-style *bold* _italic_ ~strike~, paragraphs, subheadings; builds elements, never HTML)
+               (WhatsApp-style *bold* _italic_ ~strike~, paragraphs, subheadings; builds elements, never HTML). society.ts: s.byline,
+               letters to the editor (s.letters; waiting ones only to writer and editor), special editions (press.extra →
+               makeFrontPage(w, story), fp.extra)
   catalog.ts   CATALOG — public description of every player command and its args (served by /api/v1/commands)
   index.ts     COMMANDS table; run(world, actor, cmd, args) applies one to a structuredClone
   bots.ts      bot turns: botsAct (demo, smoke) and actBots(w, isBot) — the clock runs practice bots during induction

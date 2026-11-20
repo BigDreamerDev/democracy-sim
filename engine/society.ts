@@ -1,7 +1,7 @@
 // The press and the Friday front page, the Supreme Court, and the weekly crisis.
 import { posterRef } from './propaganda';
 import { lim } from './limits';
-import { W, Id, DAY, WEEK, fail, newId, pick, cit, nm, own, text, allCitizens, mustBeFree, gazette, earn, stamp, transfer, ca, meter, approve, tick, isPM, weekNo, standing, fmtDay, addCard, holderOf } from './core';
+import { W, Id, DAY, WEEK, fail, newId, pick, cit, nm, own, text, allCitizens, mustBeFree, gazette, earn, stamp, transfer, ca, meter, approve, tick, isPM, weekNo, standing, fmtDay, addCard, holderOf, bal } from './core';
 import { armyLoyalty } from './foreign';
 import { photoId } from './streets';
 import { licensed } from './acts';
@@ -30,7 +30,7 @@ export function follow(w: W, actor: Id, pid: Id) {
   const i = p.followers.indexOf(actor);
   i >= 0 ? p.followers.splice(i, 1) : p.followers.push(actor);
 }
-export function submitStory(w: W, actor: Id, pid: Id, headline: string, body: string, photo?: string | null, poster?: unknown) {
+export function submitStory(w: W, actor: Id, pid: Id, headline: string, body: string, photo?: string | null, poster?: unknown, byline?: unknown) {
   mustBeFree(w, actor);
   const p = own(w.papers, pid);
   if (!p) fail('Pick a paper.');
@@ -38,11 +38,12 @@ export function submitStory(w: W, actor: Id, pid: Id, headline: string, body: st
   const h = text(headline, 5, 120, 'headline');
   const b = prose(body, lim(w, 'storyLength'), 'story');
   const pin = posterRef(w, poster);
+  const by = text(byline, 0, 60, 'byline');
   if (w.stories.filter((x: any) => x.by === actor && !x.exile && x.at > w.now - DAY).length >= lim(w, 'storiesPerDay')) fail(`You have filed ${lim(w, 'storiesPerDay')} stor${lim(w, 'storiesPerDay') === 1 ? 'y' : 'ies'} today. Come back tomorrow.`);
   const mine = p.editor === actor;
   // under censorship an editor's yes only sends the story to the censor ('held')
   const held = !!w.regime?.censorship;
-  w.stories.unshift({ id: newId(w, 'st'), paper: pid, by: actor, headline: h, body: b, photo: photoId(photo), ...(pin ? { poster: pin } : {}), status: mine ? (held ? 'held' : 'published') : 'submitted', at: w.now, cheers: [] });
+  w.stories.unshift({ id: newId(w, 'st'), paper: pid, by: actor, headline: h, body: b, photo: photoId(photo), ...(pin ? { poster: pin } : {}), ...(by ? { byline: by } : {}), letters: [], status: mine ? (held ? 'held' : 'published') : 'submitted', at: w.now, cheers: [] });
   tick(w, actor, 'stories');
   if (mine && !held) earn(w, actor, 1, 'Published a story');
 }
@@ -69,12 +70,13 @@ export function cheer(w: W, actor: Id, sid: Id) {
 }
 
 // ---------- the Friday front page ----------
-export function makeFrontPage(w: W) {
+export function makeFrontPage(w: W, forced: any = null) {
   const since = w.now - WEEK;
   const stories = w.stories.filter((s: any) => s.status === 'published' && s.at > since && !s.exile);
   // a dispatch from a war correspondent counts double
   const score = (s: any) => (s.cheers.length * 2 + (w.papers[s.paper]?.followers.length || 0) / 4 + (s.leak ? 3 : 0)) * (s.war ? 2 : 1);
-  const lead = stories.sort((a: any, b: any) => score(b) - score(a))[0] || null;
+  // a special edition leads with the story its editor stopped the presses for
+  const lead = forced || stories.sort((a: any, b: any) => score(b) - score(a))[0] || null;
   if (lead) {
     if (!lead.underground || lead.named) w.citizens[lead.by].stats.frontPage = true;
     earn(w, lead.by, 5, 'Your story made the front page');
@@ -89,10 +91,10 @@ export function makeFrontPage(w: W) {
     id: worst.id, title: ct.title, text: ct.text, extreme: !!ct.extreme, how: worst.how, choice: ct.options[worst.choice].label, what: ct.options[worst.choice].what,
     quote: (worst.speeches || []).slice(-1)[0] || null, consequence: !!worst.cause
   } : null;
-  const crisisLeads = !!crisis && (crisis.extreme || !lead);
+  const crisisLeads = !forced && !!crisis && (crisis.extreme || !lead);
   const fp = {
-    id: newId(w, 'fp'), at: w.now, week: weekNo(w), crisis, crisisLeads,
-    lead: lead ? { headline: lead.headline, body: lead.body, by: lead.underground && !lead.named ? null : lead.by, paper: lead.underground ? 'The underground press' : w.papers[lead.paper]?.name, photo: lead.photo || null, poster: lead.poster || null } : null,
+    id: newId(w, 'fp'), at: w.now, week: weekNo(w), crisis, crisisLeads, ...(forced ? { extra: true, paper: w.papers[forced.paper]?.name ?? null } : {}),
+    lead: lead ? { headline: lead.headline, body: lead.body, by: lead.underground && !lead.named ? null : lead.by, paper: lead.underground ? 'The underground press' : w.papers[lead.paper]?.name, photo: lead.photo || null, poster: lead.poster || null, byline: lead.byline || null } : null,
     snapshot: snapshotOfWeek(w, since),
     laws: w.laws.filter((l: any) => l.at > since && !l.classified).map((l: any) => ({ ref: l.ref, title: l.title })),
     meters: { prosperity: w.meters.prosperity, stability: w.meters.stability, standing: standing(w) },
@@ -102,6 +104,7 @@ export function makeFrontPage(w: W) {
   };
   w.frontpages.unshift(fp);
   w.frontpages = w.frontpages.slice(0, 12);
+  if (forced) return gazette(w, 'press', `STOP PRESS. A special edition of ${w.papers[forced.paper]?.name ?? 'the press'}: ${String(lead.headline).replace(/[*_~]/g, '')}`, '#/frontpage/' + fp.id);
   gazette(w, 'press', `This week's front page: ${crisisLeads ? crisis!.title : lead ? lead.headline : 'a quiet week in the realm'}.`, '#/frontpage/' + fp.id);
 }
 
@@ -156,3 +159,46 @@ export function rule(w: W, k: any, forPlaintiff: boolean) {
 // ---------- the weekly crisis: the PM picks which meter takes the hit (the list lives in crises.ts) ----------
 import { CRISES, crisisById } from './crises';
 export { CRISES, spawnCrisis, decideCrisis, voteCrisis, speakCrisis, timeoutCrisis, fireQueued, respond, help, bribe, grudgeAgainst, MOVES } from './crises';
+
+
+// ---------- special editions: an editor stops the presses, and the story leads a front page at once ----------
+export const EXTRA_EVERY = 3 * DAY;
+export function specialEdition(w: W, actor: Id, sid: unknown) {
+  const s = w.stories.find((x: any) => x.id === sid);
+  if (!s || s.status !== 'published' || !s.paper) fail('Pick a published story in your paper.');
+  const p = own(w.papers, s.paper);
+  if (!p || p.editor !== actor) fail('Only its editor stops the presses.');
+  mustBeFree(w, actor);
+  if (p.extraAt && w.now - p.extraAt < EXTRA_EVERY) fail('Your paper ran a special edition in the last three days.');
+  if (w.now - s.at > 2 * DAY) fail('That is not news any more. A special edition is for a story under two days old.');
+  if (bal(w, ca(actor)) < 5) fail('A special edition costs 5 to print.');
+  transfer(w, ca(actor), 'reserve', 5, `A special edition of ${p.name}`);
+  p.extraAt = w.now;
+  s.extra = true;
+  earn(w, s.by, 2, 'Your story ran as a special edition');
+  makeFrontPage(w, s);
+}
+
+// ---------- letters to the editor: any citizen writes; the editor chooses what to print ----------
+export function writeLetter(w: W, actor: Id, sid: unknown, words: unknown) {
+  const s = w.stories.find((x: any) => x.id === sid);
+  if (!s || s.status !== 'published' || !s.paper || !w.papers[s.paper]) fail('Letters go to a story in a paper.');
+  mustBeFree(w, actor);
+  const t = text(words, 8, 400, 'letter');
+  s.letters ??= [];
+  if (s.letters.some((l: any) => l.by === actor && l.status === 'waiting')) fail('Your last letter on this is still with the editor.');
+  if (s.letters.filter((l: any) => l.by === actor).length >= 3) fail('Three letters on one story is enough.');
+  s.letters.push({ id: newId(w, 'lt'), by: actor, text: t, at: w.now, status: 'waiting' });
+  s.letters = s.letters.slice(-30);
+}
+export function printLetter(w: W, actor: Id, sid: unknown, lid: unknown, yes: unknown) {
+  const s = w.stories.find((x: any) => x.id === sid);
+  if (!s || !s.paper || w.papers[s.paper]?.editor !== actor) fail('Only the editor decides which letters to print.');
+  const l = (s.letters || []).find((x: any) => x.id === lid);
+  if (!l || l.status !== 'waiting') fail('That letter is not waiting.');
+  l.status = yes === true ? 'printed' : 'declined';
+  if (l.status === 'printed') {
+    earn(w, l.by, 1, 'Your letter was printed');
+    gazette(w, 'press', `${w.papers[s.paper].name} prints a letter from ${nm(w, l.by)} on “${String(s.headline).replace(/[*_~]/g, '')}”.`, '#/press');
+  }
+}

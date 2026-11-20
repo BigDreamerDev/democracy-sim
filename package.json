@@ -11,7 +11,8 @@
     "smoke": "tsx scripts/smoke.ts",
     "typecheck": "tsc --noEmit",
     "copy:extract": "tsx scripts/copy.ts extract",
-    "copy:apply": "tsx scripts/copy.ts apply"
+    "copy:apply": "tsx scripts/copy.ts apply",
+    "console:posters": "node scripts/console-posters.mjs"
   },
   "dependencies": {
     "preact": "^10.24.0",

@@ -141,14 +141,15 @@ export function Press() {
         <div class="stack">
           {stories.map((s: any) => (
             <Card kind={s.leak ? 'warn' : undefined}>
-              <div class="kicker" style={{ margin: 0 }}>{s.underground ? 'The underground press' : s.exile ? `${w.exilePress?.[s.exile]?.name ?? 'The exile press'}, from abroad` : w.papers[s.paper]?.name}{s.leak ? ' · leaked' : ''}</div>
+              <div class="kicker" style={{ margin: 0 }}>{s.extra && <span style={{ color: 'var(--red)' }}>Special edition · </span>}{s.underground ? 'The underground press' : s.exile ? `${w.exilePress?.[s.exile]?.name ?? 'The exile press'}, from abroad` : w.papers[s.paper]?.name}{s.leak ? ' · leaked' : ''}</div>
               <div class="serif" style={{ fontSize: 21, lineHeight: 1.15 }}>{plainHeadline(s.headline)}</div>
               <Photo id={s.photo} alt={s.headline} />
               {s.poster && <GazettePoster p={s.poster} width={140} float="right" />}
               <StoryText text={s.body} />
               <div style={{ clear: 'both' }} />
               {w.acts?.press && (isPM(w, me) || hasPower(w, me, 'detain')) && <button type="button" class="btn plain small" style={{ marginBottom: 6 }} onClick={() => act('press.remove', { story: s.id }, 'Removed.')}>Remove</button>}
-              <div class="row"><span class="small muted">{s.by ? nm(w, s.by) : 'Unsigned'}, {fmtDay(s.at)}</span><button type="button" class={'cheer' + (s.cheers.includes(me) ? ' on' : '')} aria-pressed={s.cheers.includes(me) ? 'true' : 'false'} onClick={() => act('press.cheer', { story: s.id })}>Cheer <b class="tnum">{s.cheers.length}</b></button></div>
+              <Letters s={s} />
+              <div class="row"><span class="small muted">{s.by ? <>By {nm(w, s.by)}{s.byline ? `, ${s.byline}` : ''}</> : 'Unsigned'}, {fmtDay(s.at)}{s.paper && w.papers[s.paper]?.editor === me && s.status === 'published' && !s.extra && w.now - s.at < 2 * 86400000 && <> · <button type="button" class="btn plain small" style={{ minHeight: 0, padding: '2px 8px' }} onClick={() => confirm('Stop the presses? This story leads a special front page now (5 crowns, once every 3 days).') && act('press.extra', { story: s.id }, 'Stop press! The special edition is out.')}>Stop the presses</button></>}</span><button type="button" class={'cheer' + (s.cheers.includes(me) ? ' on' : '')} aria-pressed={s.cheers.includes(me) ? 'true' : 'false'} onClick={() => act('press.cheer', { story: s.id })}>Cheer <b class="tnum">{s.cheers.length}</b></button></div>
             </Card>
           ))}
           {!stories.length && <Empty>No stories yet.</Empty>}
@@ -157,6 +158,7 @@ export function Press() {
       <Sec title="Write a story"><Card><div class="stack">
         <Pick label="Paper" value={f.paper} onChange={(v) => setF({ ...f, paper: v })} options={Object.values(w.papers).map((p: any) => [p.id, p.name])} />
         <Field label="Headline" value={f.headline} onInput={(v) => setF({ ...f, headline: v })} />
+        <Field label={`Byline: ${nm(w, me)}, …`} value={f.byline || ''} onInput={(v) => setF({ ...f, byline: v.slice(0, 60) })} placeholder="war correspondent" />
         <Field label={`Story (${f.body.length} of ${lim(w, 'storyLength')})`} area value={f.body} onInput={(v) => setF({ ...f, body: v.slice(0, lim(w, 'storyLength')) })} />
         <span class="small muted">Formatting as in WhatsApp: *bold*, _italic_, ~strike~. Leave a blank line between paragraphs; a line that is all *bold* becomes a subheading.</span>
         <PhotoPick value={f.photo} onChange={(photo) => setF({ ...f, photo })} />
@@ -350,5 +352,27 @@ export function Season() {
         <div class="stack">{w.archive.map((a: any) => <Card><div class="serif" style={{ fontSize: 22 }}>Season {a.n}</div><div class="small">Champion {nm(w, a.champion)}. PM {nm(w, a.pm)}. Laws: {a.laws.map((l: any) => l.ref).join(', ') || 'none'}.</div><details style={{ marginTop: 6 }}><summary class="small">Ambitions revealed</summary><ul class="small">{a.reveals.map((r: any) => <li>{nm(w, r.id)}: {r.text} {r.done ? '✓' : '✗'}</li>)}</ul></details></Card>)}{!w.archive.length && <Empty>No season has ended yet. In the demo, skip to the next election.</Empty>}</div>
       </Sec>
     </Page>
+  );
+}
+
+// letters to the editor under a story: printed ones for all, waiting ones for the editor to judge, a form for anyone
+function Letters({ s }: { s: any }) {
+  const { world: w, me } = useStore();
+  const [open, setOpen] = useState(false);
+  const [txt, setTxt] = useState('');
+  if (!s.paper || s.status !== 'published' || !w.papers[s.paper]) return null;
+  const editor = w.papers[s.paper].editor === me;
+  const letters = (s.letters || []) as any[];
+  const printed = letters.filter((l) => l.status === 'printed');
+  const waiting = letters.filter((l) => l.status === 'waiting');
+  const mine = letters.filter((l) => l.by === me && l.status !== 'printed');
+  return (
+    <div class="letters" style={{ margin: '6px 0 8px' }}>
+      {printed.length > 0 && <div class="stack" style={{ gap: 6, borderTop: '1px solid var(--rule)', paddingTop: 8 }}><span class="kicker" style={{ margin: 0 }}>Letters to the editor</span>{printed.map((l) => <p class="small" style={{ margin: 0 }}>“{l.text}” <span class="muted">— {nm(w, l.by)}</span></p>)}</div>}
+      {editor && waiting.length > 0 && <div class="stack" style={{ gap: 6, marginTop: 8 }}><span class="kicker" style={{ margin: 0 }}>Waiting for you</span>{waiting.map((l) => <div class="small"><span>“{l.text}” — {nm(w, l.by)}</span><div class="row" style={{ gap: 6, justifyContent: 'flex-start', marginTop: 4 }}><Btn small onClick={() => act('press.printLetter', { story: s.id, letter: l.id, yes: true }, 'Printed.')}>Print it</Btn><Btn small kind="plain" onClick={() => act('press.printLetter', { story: s.id, letter: l.id, yes: false }, 'Declined.')}>Decline</Btn></div></div>)}</div>}
+      {!editor && mine.map((l) => <p class="small muted" style={{ margin: '4px 0' }}>Your letter is {l.status === 'waiting' ? 'with the editor' : 'not printed'}.</p>)}
+      {!open ? <button type="button" class="btn plain small" style={{ minHeight: 0, padding: '2px 8px', marginTop: 4 }} onClick={() => setOpen(true)}>Write to the editor</button>
+        : <div class="stack" style={{ gap: 6, marginTop: 6 }}><Field label="Your letter (8–400 characters)" area value={txt} onInput={(v) => setTxt(v.slice(0, 400))} /><div class="row" style={{ gap: 6, justifyContent: 'flex-start' }}><Btn small disabled={txt.trim().length < 8} onClick={() => act('press.letter', { story: s.id, text: txt }, 'Sent to the editor.') && (setTxt(''), setOpen(false))}>Send</Btn><Btn small kind="plain" onClick={() => setOpen(false)}>Cancel</Btn></div></div>}
+    </div>
   );
 }
