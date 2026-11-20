@@ -704,15 +704,6 @@ export function setHos(w: W, id: Id | null, until: number | null) {
 export function startHosSelection(w: W) {
   // under the Protection of the State Act the Prime Minister appoints the next head of state
   if (inForce(w, 'protection')) return gazette(w, 'hos', `The Prime Minister will appoint the next ${hosTitle(w)}.`, '#/powers');
-  // a royal heir (dynasty.ts): the consort reigns as Regent for the child, unless the monarch was removed by law
-  const k = w.crown;
-  const regent = w.config.hos === 'monarchy' && k?.heir && k.consort && !k.deposed ? k.consort.id : null;
-  if (k) k.deposed = false;
-  if (regent && w.citizens[regent]?.active && !w.citizens[regent].defected && !exiled(w, regent) && !detained(w, regent)) {
-    k.regency = { id: regent, heir: k.heir.name, at: w.now };
-    gazette(w, 'hos', `The line of succession holds: ${k.heir.name} is heir, and ${nm(w, regent)} takes the throne as Regent.`, '#/hos', { k: 'regency', who: regent, title: k.heir.name });
-    return setHos(w, regent, null);
-  }
   const m = w.config.hosMethod;
   const pool = allCitizens(w).filter((c: any) => !exiled(w, c.id) && !detained(w, c.id)).map((c: any) => c.id);
   if (m === 'life' || m === 'citizens') {

@@ -49,9 +49,8 @@ export function syncCrown(w: W) {
   k.ending = null;
   if (k.offer && k.offer.by !== h) k.offer = null;
   if (h && !k.reign) {
-    // a new reign: the Regent keeps the heir (and is widowed of the old consort); anyone else starts the line afresh
-    if (k.regency?.id === h) k.consort = null;
-    else if (k.consort?.of !== h) (k.consort = null), (k.heir = null), (k.regency = null), (k.proposal = null);
+    // a new reign: the old monarch's consort and any open proposal go with them
+    if (k.consort?.of !== h) (k.consort = null), (k.proposal = null);
     const name = String(nm(w, h)).trim().split(/\s+/)[0].slice(0, 24) || 'Nameless';
     k.reign = { id: h, at: w.now, name, numeral: numeralFor(w, name), styled: false, oath: null, crownAt: w.now + DAY, crownedAt: null, postponed: false,
       homage: {}, homageUntil: null, honours: 0, jubileeAt: null, jubilees: 0, claim: null, claimed: [], toasts: 0, toastDay: null, toastedToday: [] };

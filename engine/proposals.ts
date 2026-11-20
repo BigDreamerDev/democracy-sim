@@ -1013,7 +1013,6 @@ export function applyClause(w: W, e: any, ref: string) {
         break;
       }
       gazette(w, 'hos', `${nm(w, w.hos.holder)} is removed as ${hosTitle(w)}.`);
-      if (w.crown) w.crown.deposed = true;
       w.hos = { holder: null, since: w.now, until: null };
       startHosSelection(w);
       break;

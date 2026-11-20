@@ -144,22 +144,20 @@ export function TrialPage({ id }: { id: string }) {
   );
 }
 
-// the royal family: consort, heir, the line of succession
+// the royal family: the consort
 function RoyalFamily() {
   const { world: w, me } = useStore();
   const [who, setWho] = useState('');
-  const [child, setChild] = useState('');
   const k = w.crown || {};
   const r = k.reign;
   const mine = r?.id === me && !!r?.crownedAt;
   const con = consortOf(w);
   const home = (Object.values(w.citizens) as any[]).filter((c) => c.active && !c.bot && !c.defected && c.id !== me);
   return (
-    <Sec title="The royal family" sub="A consort draws 5 a week. With an heir, if the throne falls empty, the consort reigns as Regent for the child (unless the monarch was removed by law).">
+    <Sec title="The royal family" sub="The monarch may marry a citizen: a royal wedding is a national holiday, and the consort draws 5 a week.">
       <Card><div class="stack">
-        <span class="small">{con ? <>Consort: <Who id={con.id} />, married <When at={con.at} />.</> : 'The monarch is unmarried.'} {k.heir ? <>Heir: <b>{k.heir.name}</b>, born <When at={k.heir.born} />.</> : 'There is no heir.'}{k.regency && k.regency.id === r?.id ? ` ${nm(w, r.id)} reigns as Regent for ${k.regency.heir}.` : ''}</span>
+        <span class="small">{con ? <>Consort: <Who id={con.id} />, married <When at={con.at} />.</> : 'The monarch is unmarried.'}</span>
         {mine && !con && (k.proposal && k.proposal.until > w.now ? <span class="small muted">Waiting for {nm(w, k.proposal.to)} to answer, <Left at={k.proposal.until} />.</span> : <div class="grid2"><Pick value={who} onChange={setWho} empty="Propose to…" options={home.map((c) => [c.id, c.name])} /><Btn disabled={!who} onClick={() => confirm(`Propose to ${nm(w, who)}? It is public.`) && act('crown.propose', { target: who }, 'You have asked.')}>Propose</Btn></div>)}
-        {mine && con && !k.heir && <div class="grid2"><Field label="The child's name" value={child} onInput={(v) => setChild(v.slice(0, 24))} /><Btn style={{ alignSelf: 'end' }} disabled={child.trim().length < 2 || (k.heirTriedAt && w.now - k.heirTriedAt < 2 * 86400000)} onClick={() => act('crown.child', { name: child }, 'We shall see.')}>Hope for an heir</Btn></div>}
         {mine && con && <Btn small kind="danger ghost" style={{ alignSelf: 'flex-start' }} onClick={() => confirm('Divorce your consort? It is a scandal.') && act('crown.divorce', {}, 'Divorced.')}>Divorce</Btn>}
       </div></Card>
     </Sec>

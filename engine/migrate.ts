@@ -120,6 +120,8 @@ export function migrate(w: W): W {
   w.triumph ??= null;
   w.durbar ??= null;
   w.holdings ??= {};
+  // royal heirs at home were removed
+  if (w.crown) ['heir', 'regency', 'heirTriedAt', 'deposed'].forEach((k) => delete w.crown[k]);
   w.ops ??= [];
   w.sweeps ??= [];
   w.exileGov ??= null;

@@ -1,9 +1,6 @@
 // The dynasty and its lands. Everything here is public.
 // - Royal weddings: the crowned monarch proposes to a citizen, who has a day to answer. A wedding is a national holiday.
 //   The consort (w.crown.consort {id, of, at}) draws an allowance each week.
-// - The heir: a married monarch may have a child (w.crown.heir {name, born}). If the throne falls empty (abdication, death
-//   of a reign) while there is an heir, the consort becomes Regent and reigns for the child (politics.ts, startHosSelection),
-//   unless the monarch was removed by law (w.crown.deposed).
 // - The Tower: an absolute monarch may send a citizen convicted at trial to the Tower: jailed with no end date. Friends at
 //   home bribe the guards to get them out; each try makes the next likelier, and a helper may be caught.
 // - The Imperial Durbar: under the empire, each payday opens a day of homage. Governors, peers, Privy Councillors and the
@@ -67,22 +64,11 @@ export function divorce(w: W, actor: Id) {
   w.crown.consort = null;
   approve(w, actor, -3);
   meter(w, 'stability', -1, 'A royal divorce');
-  gazette(w, 'hos', `Scandal at court: ${w.config.hosTitle} ${nm(w, actor)} and ${nm(w, c.id)} divorce.${w.crown.heir ? ` ${w.crown.heir.name} remains heir.` : ''}`, '#/hos');
+  gazette(w, 'hos', `Scandal at court: ${w.config.hosTitle} ${nm(w, actor)} and ${nm(w, c.id)} divorce.`, '#/hos');
 }
-// an heir: every two days the royal couple may try; half the time a child is born
-export function haveHeir(w: W, actor: Id, name: unknown) {
-  mustReign(w, actor);
-  const k = w.crown;
-  if (!consortOf(w)) fail('Marry first: an heir needs a consort.');
-  if (k.heir) fail(`${k.heir.name} is already heir to the throne.`);
-  const t = text(name, 2, 24, "child's name");
-  if (!/^[\p{L}][\p{L} '’-]*$/u.test(t)) fail('A name is letters only.');
-  if (k.heirTriedAt && w.now - k.heirTriedAt < 2 * DAY) fail('Give it two days.');
-  k.heirTriedAt = w.now;
-  if (!chance(w, 0.5)) return;
-  k.heir = { name: t, born: w.now, parents: [actor, k.consort.id] };
-  meter(w, 'stability', 1, 'An heir is born');
-  gazette(w, 'hos', `Bells ring across the realm: an heir is born. ${t}, child of ${w.config.hosTitle} ${nm(w, actor)} and ${nm(w, k.consort.id)}, is next in line to the throne.`, '#/hos', { k: 'heir', who: actor, title: t });
+// royal heirs at home were removed; the command stays for apps that know it (API contract) and refuses
+export function haveHeir(_w: W, _actor: Id, _name: unknown) {
+  fail('The Crown no longer has royal children.');
 }
 
 // ---------- the Tower ----------
@@ -276,7 +262,7 @@ export function dynastyWeek(w: W) {
       gazette(w, 'law', 'With no monarch, every royal and noble estate passes to the State.', '#/hos');
     }
     allCitizens(w).forEach((c: any) => inTower(w, c.id) && ((c.jail = null), gazette(w, 'law', `${c.name} walks out of the Tower: there is no Crown to hold them.`, '#/tower')));
-    if (w.crown) (w.crown.consort = null), (w.crown.heir = null);
+    if (w.crown) w.crown.consort = null;
     return;
   }
   // a monarchy again: the State hands the estates back to the Crown
